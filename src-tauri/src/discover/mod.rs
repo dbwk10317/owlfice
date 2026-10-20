@@ -38,7 +38,7 @@ pub struct Site {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadMode {
     Append,
-    /// 파일 전체를 다시 읽는다 (Gemini 가정, PLAN 4.6.3)
+    /// 파일 전체를 다시 읽는다. Antigravity가 append 전용이면 지운다 (PLAN 4.6.3)
     WholeFile,
 }
 
@@ -48,6 +48,6 @@ pub enum Product {
     ClaudeCli,
     CodexApp,
     CodexCli,
-    GeminiApp,
-    GeminiCli,
+    AntigravityApp,
+    AntigravityCli,
 }

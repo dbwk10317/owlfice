@@ -1067,7 +1067,7 @@ outcome: 구조 필드가 없다. `run_command` 결과 첫 줄 `Command exited w
 
 서브에이전트 (확인됨): `invoke_subagent` (`args.Prompt, Role, TypeName, Model?`) 결과 GENERIC 본문의 JSON `conversationId` 가 자식 id다. **여기서 SubagentSpawn을 낸다** (`description` = `Role`. `model` 은 `inherit` 이거나 없어서 4.7.4의 "모델 없음"이다). 부모 폴더의 `.system_generated\subagents\<자식 id>.json` 에도 있어 Scan이 먼저 볼 수 있다. 자식은 같은 `brain\` 아래 형제 폴더이고, 첫 줄은 부모가 보낸 SYSTEM_MESSAGE다 (USER_INPUT 없음). 동기·비동기는 기록으로 구별되지 않는다.
 
-모델명은 jsonl에 없다 (`conversations\<uuid>.db` 의 blob에만 있다). 1차는 SQLite를 읽지 않으니 서브의 모델은 없음으로 본다. cwd도 jsonl에 없다. CLI는 `history.jsonl` 의 `workspace` 와 `subagents\*.json` 의 `workspaceUris` 가 있고, 앱은 프로젝트 밖 세션이면 없다 (6부). 파일이 append만 되는지는 미확인이다 (같은 대화를 이어 가도 앞부분 바이트가 그대로였다는 표본 하나뿐, 6부). 다시 쓰이면 TailReader의 Reset 규칙(4.5)이 잡는다. append 전용이 확인되면 `ReadMode::WholeFile` 을 지운다.
+모델명은 jsonl에 없다 (`conversations\<uuid>.db` 의 blob에만 있다). 1차는 SQLite를 읽지 않으니 서브의 모델은 없음으로 본다. cwd도 jsonl에 없다. CLI는 `history.jsonl` 의 `workspace` 와 `subagents\*.json` 의 `workspaceUris` 가 있고, 앱은 프로젝트 밖 세션이면 없다 (6부). 승인 대기 중에는 호출 줄만 있고 결과 줄이 없다. 승인되면 결과 줄이 그 뒤에 붙고, 승인 자체의 레코드는 없다 (확인됨, CLI). 파일이 append만 되는지는 증명하지 못했다. 앱·CLI 대화를 이어 간 표본 셋 모두 앞부분 바이트가 그대로였다 (6부). 다시 쓰이면 TailReader의 Reset 규칙(4.5)이 잡는다. append 전용이 확인되면 `ReadMode::WholeFile` 을 지운다.
 
 #### 4.6.4 명령 분류 (`classify_command`)
 
@@ -1464,7 +1464,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 
 | 항목 | 현재 가정 | 확인 방법 | 영향 |
 |---|---|---|---|
-| Antigravity 기록의 남은 모양 | 레코드 종류·짝짓기·서브에이전트·도구 실패·거부(앱)는 확인 (4.6.3). 승인 대기 중 모양, CLI의 거부, append 전용인지(이어 쓴 표본 하나는 앞부분 그대로), `chunks\` 가 나뉘는 조건, 압축 레코드는 미확인 | 긴 대화 하나, CLI에서 승인 대기·거부 | T32 |
+| Antigravity 기록의 남은 모양 | 레코드 종류·짝짓기·서브에이전트·도구 실패·거부(앱)는 확인 (4.6.3). CLI의 거부, append 전용인지(이어 쓴 표본 셋은 앞부분 그대로), `chunks\` 가 나뉘는 조건, 압축 레코드는 미확인 | 긴 대화 하나, CLI에서 승인 대기·거부 | T32 |
 | Antigravity 모델명·cwd | jsonl에 없다. 모델은 `conversations\<uuid>.db` 의 blob에만 있다. 1차는 모델 없음으로 본다 | SQLite 읽기를 2차에서 검토. 프로젝트를 연 앱 대화에서 cwd 출처 확인 | T32, T09 |
 | 기존 공개 도구 재사용 | 조사함 (2026-10-20). 그대로 쓸 의존성 없음: agent-sessions(Rust, MIT)는 신생·SQLite 번들·서브에이전트 파일 미지원, pixtuoid(Rust, MIT, 터미널 픽셀 사무실)는 hook 기반이라 읽기 전용 원칙(1.3)과 다르다 | 파서 티켓에서 포맷 대조 자료로만 쓴다 (4.6) | T07 T08 T32 |
 | Codex exec 분류 | `cmd:` 리터럴을 뽑아 classify_command (4.6.2). 변수·템플릿 문자열로 만든 명령은 못 뽑는다. CLI 표본에서 명령 하나의 CommandExecution item이 빠진 일이 있다 (`git init` 이 읽기 전용 파일시스템에서 실패) | 실제 사용에서 Script로 떨어진 비율 보기 (미대응 로그), 같은 명령을 쓰기 가능한 폴더에서 다시 | T08, T38 |

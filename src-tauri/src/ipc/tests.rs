@@ -753,6 +753,8 @@ fn bindings() -> String {
         Incident,
         Cue,
         Rank,
+        Role,
+        WorkType,
         Room,
         Pose,
         TeamPhase,

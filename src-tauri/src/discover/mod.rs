@@ -28,6 +28,17 @@ pub enum Vendor {
     Gemini,
 }
 
+impl Vendor {
+    /// 화면에 나가는 이름
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
+            Self::Gemini => "Gemini",
+        }
+    }
+}
+
 /// 세션 루트 하나. 동(Product)은 세션마다 파서가 정하므로 여기에 없다
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Site {

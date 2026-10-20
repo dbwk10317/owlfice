@@ -849,7 +849,7 @@ pub struct TailReader {
     last_mtime: SystemTime,
     file_id: Option<u64>, // Windows 파일 ID (교체 감지)
     tail_hash: u64,       // offset 직전 4KB의 해시 (길이가 늘었을 때의 덮어쓰기 보조 감지, 규칙 (d))
-    gen: u32,             // 파일 세대. Reset마다 +1. RawRef에 실려 팝업 커서 무효화에 쓴다
+    generation: u32,      // 파일 세대 (`gen` 은 Rust 2024 예약어). Reset마다 +1. RawRef에 실려 팝업 커서 무효화에 쓴다
 }
 impl TailReader {
     /// stat만 한다. 길이·mtime이 바뀌었거나, 아직 안 읽은 바이트(backlog = len > offset + remainder.len())가 남아 있으면 true.
@@ -866,7 +866,7 @@ impl TailReader {
 - 한 틱에 최대 8MB. 남으면(backlog) `changed()` 가 true를 돌려주므로 파일이 더 안 바뀌어도 다음 틱에 이어 읽는다.
 - offset은 마지막 개행 직후를 가리킨다. remainder는 그 뒤 바이트다. 다음 읽기는 `offset + remainder.len()` 에서 시작해 remainder 뒤에 이어 붙인다. 같은 바이트를 두 번 합치지 않는다.
 - remainder가 64MB를 넘으면 그 줄을 버리고 다음 개행까지 건너뛴다. 로그에 남긴다.
-- 재작성·교체 감지. 다음 중 하나면 `gen += 1`, offset 0, remainder 비움, 상위에 `Reset`. 상위는 4.3 재구성 규칙대로 다시 만든다.
+- 재작성·교체 감지. 다음 중 하나면 `generation += 1`, offset 0, remainder 비움, 상위에 `Reset`. 상위는 4.3 재구성 규칙대로 다시 만든다.
   - (a) 길이 < `offset + remainder.len()`. 이미 읽어 둔 미완성 구간까지 포함해 비교한다. `offset` 만 비교하면 remainder 구간이 잘린 것을 놓친다.
   - (b) 파일 ID 변경 (다른 파일로 교체). 핸들 모드(WSL)에서는 핸들의 ID가 바뀌지 않으므로 경로 접근이 허용되는 Scan 시점에 경로 ID와 대조한다 (4.4.2).
   - (c) 길이가 `offset + remainder.len()` 과 같은데 mtime이 바뀜 → 조건 없이 Reset. append 전용 로그에서 같은 길이 쓰기는 그 자체로 비정상이고, remainder 안의 미완성 JSON이 같은 길이로 바뀐 경우는 해시로 잡을 수 없다.
@@ -919,7 +919,7 @@ pub struct Event {
     pub agent_id: String,           // 메인은 session_id와 같음, 서브는 고유 id
     pub parent_agent: Option<String>,
     pub kind: EventKind,
-    pub raw_ref: RawRef,            // { path, gen, byte_offset, line_no } (팝업 "원본 열기"·타임라인 페이징용. gen은 파일 세대, 4.5)
+    pub raw_ref: RawRef,            // { path, generation, byte_offset, line_no } (팝업 "원본 열기"·타임라인 페이징용. generation은 파일 세대, 4.5)
 }
 
 pub enum EventKind {
@@ -1306,7 +1306,7 @@ Tauri 커맨드 (프론트 → 백엔드):
 |---|---|---|
 | `get_world_snapshot` | 없음 | `WorldDto { list_seq, scale, offices: [OfficeSummaryDto], selected: Option<OfficeDto> }`. `OfficeDto` 는 `state_seq` 를 포함한다 |
 | `select_office` | `office_id, request_id` | `OfficeDto`(state_seq 포함) + `request_id`. 프론트는 마지막으로 보낸 request_id의 응답만 받아들이고, 그 사무실의 마지막 state_seq **미만**이면 버린다. 같으면 멱등이라 적용한다 (A→B→A처럼 변경 없는 사무실로 돌아올 때 화면을 채워야 한다). 늦게 온 응답이 이미 받은 이벤트보다 과거라 화면을 되돌리는 것만 막는다 |
-| `get_employee_timeline` | `office_id, agent_id, before: Option<{gen, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 RawRef로 읽어 온 한 페이지. 커서는 (파일 세대, 오프셋)이다. Reset으로 gen이 바뀌었으면 `cursor_invalid` 를 돌려주고 프론트는 첫 페이지부터 다시 연다 |
+| `get_employee_timeline` | `office_id, agent_id, before: Option<{generation, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 RawRef로 읽어 온 한 페이지. 커서는 (파일 세대, 오프셋)이다. Reset으로 generation이 바뀌었으면 `cursor_invalid` 를 돌려주고 프론트는 첫 페이지부터 다시 연다 |
 | `get_session_detail` | `office_id, team_id` | `SessionDetailDto` |
 | `open_path` | `path` | 탐색기로 열기 |
 | `rescan` | 없음 | 즉시 Scan 1회 |
@@ -1389,7 +1389,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 - `tools/anonymize.py`: 실제 세션 파일을 fixture로 바꾼다. 경로·이름·프롬프트와 결과 본문을 치환하고 구조·레코드 종류·타임스탬프 간격은 보존한다. 실제 세션에는 프롬프트 전문, 경로, 도구 출력(비밀이 섞일 수 있음)이 들어가므로 익명화 없이 저장소에 넣지 않는다.
 - `fixtures/` 최소 세트: Claude 메인+비동기 서브에이전트 1, Claude 메인+동기 서브에이전트 1 (자식 이벤트가 Spawn보다 이른 ts), Codex 앱 1 (`custom_tool_call` 포함), 테스트 실패→수정→통과 1, 재작성(길이 감소) 1, 병렬 호출 + 역순 결과 1, compaction 1, 반려 1, 내부 도구 호출의 실패 결과 1.
 - `owlfice-replay --speed 10 --shift-to-now fixtures/...`: fixture를 임시 폴더에 속도 조절해 append한다. `--shift-to-now` 는 fixture의 모든 timestamp를 "지금"에 맞춰 평행이동한다. 60초 출근 판정과 시간 전이를 재현하려면 필수다. 3.10의 시나리오 재현 도구다. 추정 상태(응답 대기, 결재 대기, 서브 종료)까지 replay로 재현한다. 실제 세션으로만 재현하도록 요구하지 않는다.
-- Rust 단위 테스트: `TailReader` (잘린 줄, 8MB 상한 뒤 backlog 이어 읽기, 길이 감소, remainder 구간까지 줄어든 축소, 다른 파일로 교체, 같은 길이 덮어쓰기(mtime 변경 → Reset), remainder 구간 덮어쓰기(캐시 비교), 길이 증가 시 4KB 해시 검증, 64MB 줄 폐기, gen 증가), `classify_command` 표 전체 + 따옴표 안 구분자 + 복합 명령 우선순위 + `compound` 판정 + `command_key`/`command_norm`, `rank` 토큰 매칭(4.7.4의 여덟 예, `gpt-5` 연속 토큰 포함), `TailReader` 2단계 commit (commit 전 폐기 → 다음 읽기가 같은 구간), 짝 없는 ToolResult 무시(Err 포함), `classify_command` 의 개행·단독 `&`·분석 불가 구문 → Mixed/Unknown, `names`·`rooms`·층 번호 결정성과 영속, `incident_check` (Rejected·Unknown 제외, command_norm 기준), `pending` 역순 결과·Started·Unknown 처리, Mixed 명령이 성공해도 트럭이 안 감.
+- Rust 단위 테스트: `TailReader` (잘린 줄, 8MB 상한 뒤 backlog 이어 읽기, 길이 감소, remainder 구간까지 줄어든 축소, 다른 파일로 교체, 같은 길이 덮어쓰기(mtime 변경 → Reset), remainder 구간 덮어쓰기(캐시 비교), 길이 증가 시 4KB 해시 검증, 64MB 줄 폐기, generation 증가), `classify_command` 표 전체 + 따옴표 안 구분자 + 복합 명령 우선순위 + `compound` 판정 + `command_key`/`command_norm`, `rank` 토큰 매칭(4.7.4의 여덟 예, `gpt-5` 연속 토큰 포함), `TailReader` 2단계 commit (commit 전 폐기 → 다음 읽기가 같은 구간), 짝 없는 ToolResult 무시(Err 포함), `classify_command` 의 개행·단독 `&`·분석 불가 구문 → Mixed/Unknown, `names`·`rooms`·층 번호 결정성과 영속, `incident_check` (Rejected·Unknown 제외, command_norm 기준), `pending` 역순 결과·Started·Unknown 처리, Mixed 명령이 성공해도 트럭이 안 감.
 - Rust 통합 테스트: replay로 fixture를 재생하며 `Employee.room`·`sentence`·`confidence` 스냅샷 비교. 시계 검증: 논리 시계(4.3)를 주입한 상태에서 같은 fixture를 (a) 한 번에 전체 읽기, (b) `--speed 1`, (c) `--speed 50` 으로 넣고 같은 논리 시점에서 비교하면 상태가 같아야 한다. 벽시계로는 성립하지 않는다. 서브 파일의 user 레코드가 사장님 방문을 일으키지 않는다. `TaskStop` 실패 뒤 작업표가 남고 완료 알림이 정상 처리된다. 서브 파일 Reset 뒤 팀 전체가 다시 만들어지고 휴지통·무재해·EMA가 중복 집계되지 않는다. `Started → 완료 알림 → Ok` 경로가 정상 완료로 이어진다. 서브의 TokenUsage가 팀 화분을 바꾸지 않는다. 규모 변경 뒤 좌석이 겹치지 않고 선택 사무실이 4.7.9대로 매핑된다.
 - 프론트: `anim-queue` 의 건너뛰기 규칙, `seq`·`office_id` 버림 규칙(A→B→A, 중간 변경 없음에서 A가 다시 그려진다), 문장 시간 표기. 그 외 UI는 수동.
 - Scan 테스트: 임시 폴더에 새 세션 파일을 만들면 3.5초 안에 Team이 생기고, 전체 읽기로 만든 상태가 같은 파일을 append로 재생한 상태와 같다. 첫 레코드가 60초 이내면 출근 cue, 아니면 cue 없음. 파일을 지우면 Team이 사라진다.
@@ -1487,6 +1487,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | Codex 거부 기록 | Claude는 `toolDenialKind`, Antigravity 앱은 `ERROR` + `permission check failed` 로 확인. Codex는 표본에서 허가 창이 안 떴거나 허용됐다 | 허가 창에서 거부 | T08 |
 | `/compact` 기록 | 2026-10-20 표본 세 제품 모두 없음. Claude `compact_boundary` 는 옛 실제 세션으로 확인됨(fixture). Codex는 옛 실제 세션에 `compacted` 레코드가 있었다 (키 미확인) | 각 제품에서 한 턴 더 한 뒤 `/compact` | T07, T08, T32 |
 | Codex 질문 답 | `request_user_input_async` 결과는 `{accepted: true}` 뿐. 사용자의 선택이 어디 남는지 미확인 | 질문에 답하고 한 턴 더 | T08 |
+| Codex 앱 mtime 늦은 갱신과 규칙 (c) | Codex 앱은 쓰는 동안 mtime을 안 바꾼다. 나중에 OS가 mtime을 한꺼번에 갱신할 때 길이가 읽은 곳과 같으면 규칙 (c)가 가짜 Reset을 내 팀을 다시 만든다 (조용한 재구성이라 화면은 그대로지만 비용이 든다) | Codex 앱 세션을 켜 둔 채 Reset 횟수를 로그로 보기 | T12, T13 |
 | WSL UNC 200ms 폴링 비용 | 미측정 | T13 | T13, T31 |
 | MSVC 빌드 (기본 경로) | `vcruntime140.dll` 의존 없음은 확인됨 (Defender만 켜진 개발 PC, 커밋 5a7ea29). 깨끗한 PC에서 설치·실행만 미확인 | 깨끗한 Windows 11 VM에 설치·실행 | T01, T36 |
 | GNU 폴백의 MSYS2 빌드 | MSYS2 UCRT64로 된다고 가정. 개발 PC는 SEP 때문에 확인 불가. rustup의 windows-gnu std는 msvcrt로 링크하므로(확인됨: Rust 1.98 링크 인자 `-lmsvcrt`) UCRT64 gcc와 CRT가 섞인다. WSL 폴백의 mingw64는 msvcrt라 섞이지 않는다 | SEP 없는 PC에서 `bash build-gnu.sh`. 링크·실행이 깨지면 MSYS2 MINGW64(`mingw-w64-x86_64-gcc`)로 바꾼다 | T01 |

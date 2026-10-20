@@ -106,6 +106,8 @@ pub enum EventKind {
         prompt: String,
         model: Option<String>,
         description: Option<String>,
+        /// Codex 서브의 reasoning_effort. Claude 서브는 meta.json 사전 등록이 맡아 None
+        effort: Option<String>,
         depth: u8,
     },
     /// 완료 기록에서 낸다 (4.6.1~4.6.3). 못 봤으면 추정 (4.7.2)
@@ -205,6 +207,10 @@ pub struct ToolSummary {
     pub background: bool,
     /// max(old_string 줄 수, new_string 줄 수)
     pub lines_changed: Option<u32>,
+    /// Codex `sandbox_permissions: "require_escalated"` 로 승인 창을 요청한 호출
+    pub escalated: bool,
+    /// `git commit -m` 의 메시지 (커밋 문장용)
+    pub commit_message: Option<String>,
 }
 
 /// 합격·반려 숫자. 종료 코드가 아니라 결과 본문에서 온다
@@ -726,6 +732,77 @@ pub fn classify_command(cmd: &str) -> Classified {
         path: best.path,
         commit_message: best.msg,
         async_unknown: s.async_bg,
+    }
+}
+
+/// `word` 바로 앞의 숫자 (`3 passed` 의 3)
+pub(crate) fn count_before(line: &str, word: &str) -> Option<u32> {
+    line.match_indices(word).find_map(|(i, _)| {
+        let head = line[..i].trim_end();
+        let start = head
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| c.is_ascii_digit())
+            .last()?
+            .0;
+        head[start..].parse().ok()
+    })
+}
+
+/// 도장 숫자만 뽑는다. 성공·실패 판정에는 쓰지 않는다 (4.6.1)
+pub(crate) fn parse_test_result(text: &str) -> Option<TestResult> {
+    let pick = |l: &str| {
+        count_before(l, "passed").map(|passed| TestResult {
+            passed,
+            failed: count_before(l, "failed").unwrap_or(0),
+        })
+    };
+    let cargo: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains("test result:"))
+        .collect();
+    if cargo.is_empty() {
+        // pytest `1 failed, 3 passed in …`, jest `Tests: 1 failed, 3 passed, 4 total`
+        return text.lines().rev().find_map(pick);
+    }
+    // cargo 는 크레이트·doc 테스트마다 한 줄씩 낸다
+    cargo
+        .into_iter()
+        .filter_map(pick)
+        .reduce(|a, b| TestResult {
+            passed: a.passed.saturating_add(b.passed),
+            failed: a.failed.saturating_add(b.failed),
+        })
+}
+
+/// 4.6.1 매핑표의 `mcp__` 행. 도구 이름의 단어가 외근(웹)인지 거래처(Mcp)인지 정한다
+pub(crate) fn mcp_kind(name: &str) -> ToolKind {
+    let rest = name.strip_prefix("mcp__").unwrap_or(name);
+    let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));
+    let lower = tool.to_ascii_lowercase();
+    if lower.contains("search") {
+        return ToolKind::WebSearch;
+    }
+    if ["fetch", "scrape", "crawl"]
+        .iter()
+        .any(|w| lower.contains(w))
+    {
+        return ToolKind::WebFetch;
+    }
+    // Claude Desktop 커넥터는 서버 id가 UUID라 상호로 못 쓴다. JS 식별자라 `-` 가 `_` 로 바뀌어 있을 수 있다
+    let uuid = server.len() == 36
+        && server.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-' || c == '_',
+            _ => c.is_ascii_hexdigit(),
+        });
+    let server = if uuid {
+        tool.split('_').next().unwrap_or(tool)
+    } else {
+        server
+    };
+    ToolKind::Mcp {
+        server: server.to_string(),
+        tool: tool.to_string(),
     }
 }
 

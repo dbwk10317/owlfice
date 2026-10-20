@@ -12,6 +12,7 @@ import type {
 } from "../src/types/ipc.ts";
 
 // 이름표의 경과 시간이 보이게 몇 분 전
+const nowIso = () => new Date().toISOString();
 const since = new Date(Date.now() - 154_000).toISOString();
 
 function emp(
@@ -62,6 +63,10 @@ function parallel(e: EmployeeDto, extra: number): EmployeeDto {
   return { ...e, activity: { ...e.activity, extra } };
 }
 
+function inferred(e: EmployeeDto): EmployeeDto {
+  return { ...e, activity: { ...e.activity, confidence: "Inferred" } };
+}
+
 function team(
   teamId: string,
   building: string,
@@ -95,13 +100,20 @@ const LARGE: OfficeDto = {
   teams: [
     team("t1", "A", 0, [
       emp("L-boss", "김부장", "Bujang", "Backend", "TeamLead", "Type", "보고서 작성 중"),
-      emp("L-dev0", "이대리", "Daeri", "Frontend", "Dev", "Type", "app.ts 수정 중", { seat: 0 }),
+      // 말풍선은 4초만 뜬다. 다시 보려면 페이지를 새로 고친다
+      emp("L-dev0", "이대리", "Daeri", "Frontend", "Dev", "Type", "app.ts 수정 중", {
+        seat: 0,
+        bubble: { at: nowIso(), say: { kind: "Say", text: "린트부터 고칠게요" } },
+      }),
       // +n 배지: 병렬 호출 중
       parallel(
         emp("L-par", "서대리", "Daeri", "Backend", "Dev", "Read", "열람 중 (외 2건)", { seat: 1 }),
         2,
       ),
-      emp("L-dev3", "박사원", "Sawon", "Qa", "Dev", "Sit", "출근 중 · 자리 찾는 중", { seat: 3 }),
+      emp("L-dev3", "박사원", "Sawon", "Qa", "Dev", "Sit", "출근 중 · 자리 찾는 중", {
+        seat: 3,
+        bubble: { at: nowIso(), say: { kind: "Rank" } },
+      }),
       emp(
         "L-temp",
         "최사원",
@@ -112,7 +124,9 @@ const LARGE: OfficeDto = {
         "턱 괴고 고민 중인 듯 ({elapsed})",
         { seat: 6 },
       ),
-      emp("L-lib", "정과장", "Gwajang", "Writer", "Archive", "Sit", "'todo' 전사 수색 중"),
+      emp("L-lib", "정과장", "Gwajang", "Writer", "Archive", "Sit", "'todo' 전사 수색 중", {
+        bubble: { at: nowIso(), say: { kind: "NewVendor", server: "figma" } },
+      }),
       emp(
         "L-build",
         "한대리",
@@ -134,7 +148,9 @@ const LARGE: OfficeDto = {
         "거래처 figma와 get_file 건으로 미팅 중",
       ),
       emp("L-ship", "임사원", "Sawon", "Backend", "Shipping", "Sit", "출고 포장 중"),
-      emp("L-door", "강대리", "Daeri", "Writer", "Door", "Sit", "결재판 들고 문 앞 대기"),
+      emp("L-door", "강대리", "Daeri", "Writer", "Door", "Sit", "결재판 들고 문 앞 대기", {
+        bubble: { at: nowIso(), say: { kind: "PlanApproval" } },
+      }),
       emp("L-inc", "조사원", "Sawon", "DevOps", "Incident", "Sit", "장애 상황실 소집"),
       emp("L-pantry", "신대리", "Daeri", "Backend", "Pantry", "Sit", "탕비실에서 게임 중인 듯", {
         retiredAt: since,
@@ -146,6 +162,13 @@ const LARGE: OfficeDto = {
       emp("L-pantry3", "배사원", "Sawon", "Qa", "Pantry", "Sit", "탕비실에서 쉬는 중", {
         retiredAt: since,
       }),
+      // 추정 점선
+      inferred(
+        emp("L-inf", "추대리", "Daeri", "Backend", "Dev", "Think", "고민 중인 듯", {
+          seat: 2,
+          bubble: { at: nowIso(), say: { kind: "ThinkingDuck" } },
+        }),
+      ),
       emp("L-out", "외근자", "Sawon", "Backend", "Outside", "Sit", "외근 중 (안 보여야 한다)"),
     ]),
   ],

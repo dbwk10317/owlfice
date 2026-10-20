@@ -82,7 +82,7 @@ pub struct Counters {
     pub errors: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Employee {
     pub id: String,
     /// 비어 있으면 world 가 채운다. 이름은 사무실 안에서 겹치지 않아야 해서 팀이 정할 수 없다 (4.7.7)
@@ -143,7 +143,7 @@ pub enum Light {
     Red,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TeamProps {
     pub boss_visit: Option<String>,
     /// 화분 성장도 = 부장 컨텍스트 사용률 (0~1). 분갈이 직후 0
@@ -210,7 +210,7 @@ pub enum Cue {
 }
 
 /// 세션 하나 (4.7). 사무실 합성·좌석은 world 몫이다
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Team {
     pub id: String,
     pub product: Product,

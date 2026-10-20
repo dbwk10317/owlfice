@@ -104,6 +104,25 @@ pub struct NameBook {
     path: PathBuf,
     writable: bool,
     entries: BTreeMap<String, NameEntry>,
+    /// 메모리에만 배정하고 아직 저장하지 않은 이름이 있다
+    dirty: bool,
+}
+
+/// 잠금 밖에서 쓸 names.json 내용. world 잠금 안에서 파일을 쓰지 않으려고 꺼내 둔다
+pub struct NamesSave {
+    path: PathBuf,
+    writable: bool,
+    entries: BTreeMap<String, NameEntry>,
+}
+
+impl NamesSave {
+    pub fn write(self) -> io::Result<()> {
+        if self.writable {
+            save_json(&self.path, &self.entries)
+        } else {
+            Err(unwritable(&self.path))
+        }
+    }
 }
 
 impl NameBook {
@@ -114,6 +133,7 @@ impl NameBook {
             path,
             writable,
             entries,
+            dirty: false,
         }
     }
 
@@ -126,8 +146,20 @@ impl NameBook {
         in_use: &HashSet<String>,
         now: DateTime<Utc>,
     ) -> (String, io::Result<()>) {
+        let name = self.assign_unsaved(id, in_use, now);
+        let saved = self.unsaved().map_or(Ok(()), NamesSave::write);
+        (name, saved)
+    }
+
+    /// `assign` 과 같지만 메모리에만 둔다. 저장은 `unsaved` 로 꺼내 부르는 쪽이 한다
+    pub fn assign_unsaved(
+        &mut self,
+        id: &str,
+        in_use: &HashSet<String>,
+        now: DateTime<Utc>,
+    ) -> String {
         if let Some(e) = self.entries.get(id) {
-            return (e.name.clone(), Ok(()));
+            return e.name.clone();
         }
         let seed = fnv1a64(id);
         let combos = (SURNAMES.len() * GIVEN_NAMES.len()) as u64;
@@ -146,12 +178,17 @@ impl NameBook {
                 first_seen: now.to_rfc3339(),
             },
         );
-        let saved = if self.writable {
-            save_json(&self.path, &self.entries)
-        } else {
-            Err(unwritable(&self.path))
-        };
-        (name, saved)
+        self.dirty = true;
+        name
+    }
+
+    /// 아직 저장하지 않은 이름이 있으면 쓸 내용을 꺼낸다
+    pub fn unsaved(&mut self) -> Option<NamesSave> {
+        std::mem::take(&mut self.dirty).then(|| NamesSave {
+            path: self.path.clone(),
+            writable: self.writable,
+            entries: self.entries.clone(),
+        })
     }
 }
 

@@ -10,7 +10,7 @@ const SAME_COMMAND_FAILS: u32 = 3;
 const BURST_ERRORS: usize = 3;
 const BURST_WINDOW: Duration = Duration::seconds(60);
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct TeamStats {
     /// command_key → 평균 소요 초
     pub avg: HashMap<String, f32>,

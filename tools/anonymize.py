@@ -62,10 +62,10 @@ ENUM_VALUES = {
     "history_mode": "paginated",
     "inference_geo": "global",
     "isolation": "worktree",
-    "kind": "human|task-notification",
+    "kind": "clock.sleep|human|task-notification",
     "level": "info|suggestion",
     "mode": "default|normal",
-    "model": "claude-opus-5-5|gpt-6-astra|opus",
+    "model": "claude-opus-5-5|gpt-6-astra|gpt-6.1-sol|opus",
     "model_provider": "openai",
     "operation": "dequeue|enqueue|remove",
     "originator": "Codex Desktop",
@@ -75,26 +75,28 @@ ENUM_VALUES = {
     "phase": "commentary|final_answer",
     "producer": "session-task",
     "promptSource": "sdk|system",
+    "reason": "interrupted",
     "reasonType": "classifier|other|rule",
     "reasoning_effort": "xhigh",
     "requestShape": "background|foreground",
     "requestedModel": "claude-opus-5-5",
     "resolvedModel": "claude-opus-5-5",
     "role": "assistant|developer|user",
+    "sandbox_permissions": "require_escalated",
     "service_tier": "standard",
-    "source": "config|unified_exec_startup|vscode",
+    "source": "config|unified_exec_startup|user_permanent|vscode",
     "speed": "standard",
-    "status": "async_launched|completed",
+    "status": "async_launched|completed|failed",
     "stopReason": "",
     "stop_reason": "end_turn|tool_use",
     "subagent_type": "general-purpose",
     "subtype": "compact_boundary|stop_hook_summary",
     "thread_source": "user",
     "toolDenialKind": "user-rejected",
-    "trigger": "auto",
+    "trigger": "auto|manual",
     "turnOrigin": "human|peer|task_notification",
     "turn_trigger": "composer",
-    "type": "AgentMessage|CommandExecution|Reasoning|Text|UserMessage|agent-name|agent_listing_delta|assistant|atis-latch|attachment|auto_mode|credential_org|custom-title|custom_tool_call|custom_tool_call_output|date|deferred_tools_delta|deferred_tools_record|direct|environment|event_msg|file|file_unchanged|input_text|instructions|item_completed|last-prompt|mcp_instructions_delta|message|mode|model|output_text|prompt_snapshot|queue-operation|queued_command|reasoning|remote_session_change|response_item|session_context|session_meta|skill_listing|system|task_complete|task_started|text|thinking|token_count|token_usage_record|tool_result|tool_use|total_tokens_reminder|turn_context|unknown|user|function_call|function_call_output|mcp_tool_use|server_tool_use",
+    "type": "AgentMessage|CommandExecution|ContextCompaction|Extension|Reasoning|Text|UserMessage|agent-name|additional_tools|agent_listing_delta|assistant|atis-latch|attachment|auto_mode|credential_org|compacted|custom-title|custom_tool_call|custom_tool_call_output|date|deferred_tools_delta|deferred_tools_record|direct|environment|event_msg|file|file_unchanged|input_text|instructions|item_completed|last-prompt|mcp_instructions_delta|message|mode|model|output_text|prompt_snapshot|queue-operation|queued_command|reasoning|remote_session_change|response_item|session_context|session_meta|skill_listing|system|task_complete|task_started|text|thinking|thread_settings_applied|token_count|token_usage_record|tool_result|tool_use|total_tokens_reminder|turn_aborted|turn_context|unknown|user|function_call|function_call_output|mcp_tool_use|server_tool_use",
     "userType": "external",
     "version": "2.1.295",
 }  # fmt: skip
@@ -139,6 +141,7 @@ ALLOWED_KEYS = {
     "userType", "uuid", "uuids", "version", "web_fetch_requests", "web_search_requests", "window_id",
     "workspace_roots", "worktreeBranch", "worktreePath",
     # 앱 내부 도구 결과(JSON 문자열) 안의 키: ccd_pr, Codex exec 출력
+    "accepted", "arguments", "metadata", "namespace", "question", "questions", "sandbox_permissions", "user_input_order",
     "auto_archive_on_close", "bound", "chunk_id", "monitor", "original_token_count", "wall_time_seconds",
 }  # fmt: skip
 ID_KEYS = {
@@ -172,12 +175,12 @@ DROP_KEYS = {
     "input_transformations", "slug", "attributionSkill", "attributionMcpServer", "attributionMcpTool",
     "attributionAgent", "base_instructions", "developer_instructions", "replacement_history", "model_catalog",
     "permission_profile", "file_system_sandbox_policy", "sandbox_policy", "thread_settings", "rate_limits",
-    "metadata", "internal_chat_message_metadata_passthrough", "mcp_attribution", "last_agent_message",
+    "internal_chat_message_metadata_passthrough", "mcp_attribution", "last_agent_message",
 }  # fmt: skip
 # Claude 내장 다섯, Codex custom_tool_call 의 exec, Codex exec 안 JS 의 tools.<이름> 넷 (PLAN 4.6.2), 내부 도구
 TOOL_NAMES = {
     "Agent", "Bash", "Edit", "Read", "Write", "exec", "exec_command", "write_stdin", "apply_patch", "web__run",
-    "mcp__ccd_pr__bind_pr", "mcp__ccd_pr__get_status",
+    "mcp__ccd_pr__bind_pr", "mcp__ccd_pr__get_status", "request_user_input_async", "sleep",
 }  # fmt: skip
 CCD_TOOL_RE = re.compile(
     r"mcp__ccd_[a-z_]+__[a-z_]+"
@@ -198,6 +201,9 @@ TUR_KEEP = {
     "interrupted", "noOutputExpected", "isImage", "durationSeconds", "totalDurationMs", "totalTokens",
     "totalToolUseCount", "content", "agentType", "task_id", "task_type", "success", "filePath", "type", "file",
 }  # fmt: skip
+META_KEEP = {
+    "user_input_order"
+}  # Codex 줄 metadata 에서 UserMessage 근거(PLAN 4.6.2)만 남긴다
 KEEP_RECORDS = {
     "user", "assistant", "system", "queue-operation", "custom-title", "agent-name", "pr-link", "attachment",
     "last-prompt", "mode", "atis-latch", "session_meta", "turn_context", "response_item", "event_msg",
@@ -220,7 +226,7 @@ KEEP_WORDS = {
 }  # fmt: skip
 STRUCT_TAGS = (
     "task-notification|summary|note|result|usage|worktree|worktreeBranch|persisted-output|system-reminder|"
-    "agent-message|subagent_tokens|tool_uses|duration_ms|task-id|tool-use-id|output-file|status|worktreePath"
+    "agent-message|command-name|command-message|local-command-stdout|local-command-caveat|send_user_message_question_reply|subagent_tokens|tool_uses|duration_ms|task-id|tool-use-id|output-file|status|worktreePath"
 )
 LITERAL_PHRASES = [
     (
@@ -235,6 +241,10 @@ LITERAL_PHRASES = [
     "Async agent launched successfully.",
     "agentId: ",
     "output_file: ",
+    'exec_command failed: CreateProcess { message: "Rejected(\\"rejected by user\\")" }',
+    '"questionItemId"',
+    '"question"',
+    '"answer"',
     "Script completed",
     "Script running",
     "Script failed",
@@ -583,7 +593,7 @@ class Anon:
 
     def js(self, code: str) -> str:
         """Codex exec 의 JS 입력. tools.<이름>, 인자 키, cmd 안의 셸 명령만 구조로 남긴다."""
-        keep = r"tools\.[A-Za-z_]\w*|\b(?:await|text|workdir|yield_time_ms|max_output_tokens|session_id|chars)\b"
+        keep = r"tools\.[A-Za-z_]\w*|\b(?:await|text|workdir|yield_time_ms|max_output_tokens|session_id|chars|sandbox_permissions|require_escalated)\b"
         pat = re.compile(
             rf'(?P<cmd>\bcmd\s*:\s*)"(?P<val>(?:[^"\\]|\\.)*)"|(?P<keep>{keep})'
         )
@@ -659,7 +669,11 @@ class Anon:
         out = {}
         typ = d.get("type") if isinstance(d.get("type"), str) else ""
         for k, x in d.items():
-            if k in DROP_KEYS or (parent == "toolUseResult" and k not in TUR_KEEP):
+            if (
+                k in DROP_KEYS
+                or (parent == "toolUseResult" and k not in TUR_KEEP)
+                or (parent == "metadata" and k not in META_KEEP)
+            ):
                 continue
             kk = self.key(k, parent)
             self.cur = k

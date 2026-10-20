@@ -616,7 +616,7 @@ fn retired_sub_rehires_only_for_later_events() {
     );
     s.cues.clear();
     // 서브 파일의 마지막 줄을 부모의 Done 보다 늦게 읽었다
-    s.on(SUB, 6, text("끝"));
+    s.on(SUB, 6, text("늦은 줄"));
     let untimed = Event {
         ts: None,
         ..ev(SUB, 0, EventKind::Thinking)
@@ -627,6 +627,9 @@ fn retired_sub_rehires_only_for_later_events() {
     s.tick(200);
     assert_eq!(s.sub().retired_at, Some(at(10)));
     assert!(!s.cues.iter().any(|c| matches!(c, Cue::Rehire { .. })));
+    // 재출근하지 못한 옛 줄은 상태를 바꾸지 않는다
+    is(s.sub(), Room::Pantry, "탕비실에서 쉬는 중", Confirmed);
+    assert_eq!(s.sub().last_say.as_deref(), Some("끝"));
     s.on(SUB, 201, EventKind::Thinking);
     assert!(s.sub().retired_at.is_none());
     assert!(s.cues.contains(&Cue::Rehire { agent: SUB.into() }));
@@ -733,6 +736,45 @@ fn every_pending_call_counts_for_give_up_and_squat() {
         .on(MAIN, 101, call("l", ToolKind::Shell, cmd("ls")))
         .tick(125);
     assert_eq!(s.boss().activity.pose, Pose::Squat);
+}
+
+#[test]
+fn long_run_is_told_by_the_oldest_call() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("cargo run")))
+        .on(MAIN, 100, call("b", ToolKind::FileRead, file("a.rs")))
+        .tick(130);
+    assert_eq!(
+        s.boss().activity.sentence,
+        "서버실에서 땀 흘리는 중 (`cargo run`)"
+    );
+    assert_eq!(s.boss().activity.pose, Pose::Squat);
+}
+
+#[test]
+fn question_waits_past_the_call_give_up() {
+    let mut s = Sim::new();
+    s.team.alive_in_registry = true;
+    s.on(MAIN, 0, call("q", ToolKind::Ask, summary()))
+        .on(MAIN, 0, ask("배포할까요?", false))
+        .on(
+            MAIN,
+            5,
+            EventKind::UserMessage {
+                text: "잠깐".into(),
+            },
+        );
+    // 같은 허가 대기가 이어지면 경과를 처음부터 세지 않는다
+    assert_eq!(s.boss().activity.since, at(0));
+    s.tick(40 * 60);
+    assert_eq!(s.boss().pending.len(), 1);
+    is(
+        s.boss(),
+        Room::Door,
+        "결재판 들고 문 앞 대기: 「배포할까요?」",
+        Confirmed,
+    );
+    assert!(s.team.needs_boss(s.boss(), at(40 * 60)));
 }
 
 #[test]
@@ -1185,7 +1227,7 @@ fn snapshot_async_subagent() {
     is(
         boss(&t),
         Room::TeamLead,
-        "`$dir11/dir12/file13.py` 열람",
+        "`VAR1=\"C:/dir3/dir4/dir5/dir6/dir7/dir8/d` 완료",
         Confirmed,
     );
     let t = c.at("2026-03-02T09:01:30.259Z", 3);

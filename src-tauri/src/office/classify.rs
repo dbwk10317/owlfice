@@ -209,7 +209,9 @@ impl Team {
             }
             self.last_activity = self.last_activity.max(t);
         }
-        let i = self.employee_for(ev, ts, cues);
+        let Some(i) = self.employee_for(ev, ts, cues) else {
+            return;
+        };
         self.employees[i].last_event = ts;
         match &ev.kind {
             EventKind::SessionMeta {
@@ -232,19 +234,21 @@ impl Team {
                 e.waiting_user_since = None;
                 e.last_was_text = false;
                 // 서브 파일의 지시는 사장님 방문이 아니다
-                if e.is_boss() {
+                let boss = e.is_boss();
+                if boss {
                     // 사장님이 답했으면 반려 직후가 끝난다
                     e.rejected_at = None;
-                    e.set_activity(Activity::new(
+                    self.props.boss_visit = Some(text.clone());
+                    cues.push(Cue::BossVisit { text: text.clone() });
+                }
+                if !self.refresh(i, ts) && boss {
+                    self.employees[i].set_activity(Activity::new(
                         sentence::REQUEST,
                         Room::TeamLead,
                         ts,
                         Confidence::Confirmed,
                     ));
-                    self.props.boss_visit = Some(text.clone());
-                    cues.push(Cue::BossVisit { text: text.clone() });
                 }
-                self.refresh(i, ts);
             }
             EventKind::Thinking => {
                 let e = &mut self.employees[i];
@@ -267,11 +271,12 @@ impl Team {
                 } else {
                     (sentence::report(text), home_room(e))
                 };
-                e.set_activity(Activity {
-                    pose: Pose::Type,
-                    ..Activity::new(sentence, room, ts, Confidence::Confirmed)
-                });
-                self.refresh(i, ts);
+                if !self.refresh(i, ts) {
+                    self.employees[i].set_activity(Activity {
+                        pose: Pose::Type,
+                        ..Activity::new(sentence, room, ts, Confidence::Confirmed)
+                    });
+                }
             }
             EventKind::ToolCall {
                 call_id,
@@ -401,22 +406,24 @@ impl Team {
                 if let Some(pre) = pre_tokens {
                     e.context_window = Some(window_from_pre_tokens(*pre, e.context_window));
                 }
-                if e.is_boss() {
+                let boss = e.is_boss();
+                if boss {
                     // 압축 레코드가 침묵을 끊는다. 안 끊으면 같은 틱에 고민·결재 대기가 분갈이를 덮는다
                     e.quiet_since = None;
                     e.waiting_user_since = None;
                     self.props.plant = Some(0.0);
                     cues.push(Cue::Repot);
-                    e.set_activity(Activity::new(
+                } else {
+                    e.last_say = Some(sentence::REPOT_SAY.to_string());
+                }
+                if !self.refresh(i, ts) && boss {
+                    self.employees[i].set_activity(Activity::new(
                         sentence::REPOT,
                         Room::TeamLead,
                         ts,
                         Confidence::Confirmed,
                     ));
-                } else {
-                    e.last_say = Some(sentence::REPOT_SAY.to_string());
                 }
-                self.refresh(i, ts);
             }
             EventKind::TitleChanged { title } => {
                 // 같은 제목이 턴마다 다시 쓰인다 (4.6.1). 바뀔 때만 액자를 간다
@@ -472,7 +479,7 @@ impl Team {
             while let Some(k) = self.employees[i]
                 .pending
                 .iter()
-                .position(|c| now - c.started > CALL_GIVE_UP)
+                .position(|c| now - c.started > CALL_GIVE_UP && !waits_for_boss(c))
             {
                 let call = self.employees[i].pending.remove(k);
                 let at = call.started + CALL_GIVE_UP;
@@ -551,17 +558,26 @@ impl Team {
         }
     }
 
-    fn employee_for(&mut self, ev: &Event, ts: DateTime<Utc>, cues: &mut Vec<Cue>) -> usize {
+    /// 이벤트를 받을 직원. 퇴근한 직원의 늦게 읽힌 옛 줄이면 None (무시한다)
+    fn employee_for(
+        &mut self,
+        ev: &Event,
+        ts: DateTime<Utc>,
+        cues: &mut Vec<Cue>,
+    ) -> Option<usize> {
         if let Some(i) = self.employees.iter().position(|e| e.id == ev.agent_id) {
             let e = &mut self.employees[i];
-            // 종료로 본 서브가 그 뒤에 다시 움직이면 재출근 (S60)
-            if rehires(e, ev.ts) {
+            if e.retired_at.is_some() {
+                // 종료로 본 서브가 그 뒤에 다시 움직이면 재출근 (S60)
+                if !rehires(e, ev.ts) {
+                    return None;
+                }
                 e.retired_at = None;
                 cues.push(Cue::Rehire {
                     agent: e.id.clone(),
                 });
             }
-            return i;
+            return Some(i);
         }
         // 서브 파일을 Spawn 보다 먼저 읽었다. 직급·설명은 뒤의 SubagentSpawn 이 채운다 (4.3)
         let e = Employee::new(
@@ -573,7 +589,7 @@ impl Team {
             Confidence::Inferred,
         );
         self.employees.push(e);
-        self.employees.len() - 1
+        Some(self.employees.len() - 1)
     }
 
     fn on_result(&mut self, i: usize, kind: &EventKind, ts: DateTime<Utc>, cues: &mut Vec<Cue>) {
@@ -762,8 +778,8 @@ impl Team {
         self.refresh(i, ts);
     }
 
-    /// 허가 대기와 진행 중 호출은 다른 무엇보다 앞선다 (2.5 우선순위 1·2번)
-    fn refresh(&mut self, i: usize, ts: DateTime<Utc>) {
+    /// 허가 대기와 진행 중 호출은 다른 무엇보다 앞선다 (2.5 우선순위 1·2번). 그 문장을 썼으면 true
+    fn refresh(&mut self, i: usize, ts: DateTime<Utc>) -> bool {
         let boss = self.employees[i].is_boss();
         let expected = self.employees[i]
             .pending
@@ -772,9 +788,16 @@ impl Team {
             .and_then(|k| self.stats.avg.get(k).copied());
         let e = &mut self.employees[i];
         if let Some(q) = &e.asking {
-            let a = Activity::new(sentence::asking(q), Room::Door, ts, Confidence::Confirmed);
+            let sentence = sentence::asking(q);
+            // 같은 허가 대기가 이어지면 경과를 처음부터 세지 않는다
+            let since = if e.activity.room == Room::Door && e.activity.sentence == sentence {
+                e.activity.since
+            } else {
+                ts
+            };
+            let a = Activity::new(sentence, Room::Door, since, Confidence::Confirmed);
             e.set_activity(a);
-            return;
+            return true;
         }
         if let Some(call) = e.pending.last() {
             let a = Activity {
@@ -788,7 +811,9 @@ impl Team {
                 )
             };
             e.set_activity(a);
+            return true;
         }
+        false
     }
 
     /// 확정 결과 없이 끝난 호출이 켠 노랑은 켜기 전 색으로 돌린다. 함께 도는 빌드·테스트가 있으면 둔다
@@ -883,13 +908,16 @@ impl Team {
                         (now - c.started).num_milliseconds() as f32 / 1000.0 > a * 2.0
                     })
             });
-            let elapsed = now - call.started;
-            if elapsed > LONG_RUN
-                && let Some(s) = sentence::long_run(&call)
-            {
+            // 장기 실행은 함께 도는 호출 중 가장 오래된 것으로 말한다
+            let long = e
+                .pending
+                .iter()
+                .find(|c| now - c.started > LONG_RUN)
+                .cloned();
+            if let Some(s) = long.as_ref().and_then(sentence::long_run) {
                 e.activity.sentence = s;
             }
-            if slow || elapsed > LONG_RUN {
+            if slow || long.is_some() {
                 e.activity.pose = Pose::Squat;
             }
             return;
@@ -970,6 +998,12 @@ pub fn merge(files: Vec<Vec<Event>>) -> Vec<Event> {
 /// 퇴근한 직원은 그보다 뒤 ts 의 이벤트로만 돌아온다. 늦게 읽힌 옛 줄은 확인된 종료를 풀지 않는다 (4.7.1)
 fn rehires(e: &Employee, ts: Option<DateTime<Utc>>) -> bool {
     e.retired_at.is_some_and(|r| ts.is_some_and(|t| t > r))
+}
+
+/// 사장님 결재를 기다리는 호출. 자리를 비우면 30분을 넘길 수 있어 포기하지 않는다.
+/// 죽은 세션은 팀 Off 가 정리한다 (4.7.2)
+fn waits_for_boss(c: &PendingCall) -> bool {
+    c.tool == ToolKind::Ask || c.summary.escalated
 }
 
 /// 신호등을 노랑으로 켜는 호출. Mixed 는 결과를 보증하지 못해 신호등을 건드리지 않는다 (4.6.4)

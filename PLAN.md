@@ -38,7 +38,7 @@
 
 ### 1.2 이 앱이 하는 일
 
-내 컴퓨터에서 지금 돌아가고 있는 AI 코딩 에이전트(Claude, Codex, Gemini)의 세션 기록 파일을 0.2초마다 읽어서, 그 내용을 **작은 IT 회사 사무실** 로 바꿔 보여주는 구경용 앱이다.
+내 컴퓨터에서 지금 돌아가고 있는 AI 코딩 에이전트(Claude, Codex. Antigravity는 2차, T32)의 세션 기록 파일을 0.2초마다 읽어서, 그 내용을 **작은 IT 회사 사무실** 로 바꿔 보여주는 구경용 앱이다.
 
 - 세션 하나가 **팀** 하나(부장 1명 + 그 세션의 서브에이전트)가 된다.
 - 팀이 사무실에 어떻게 들어가는지는 첫 실행 때 고르는 **회사 규모**(2.0)에 따라 다르다. 대기업이면 팀 하나가 사무실 하나(`B동 203호`), 중소기업이면 같은 제조사의 팀들이 한 층짜리 사무실을 함께 쓴다.
@@ -53,7 +53,7 @@
 - 에이전트를 조종하지 않는다. 세션 파일을 쓰지 않는다. 읽기 전용이다. 꺼진 WSL 배포판을 깨우지도 않는다.
 - 외부 서버에 연결하지 않고 포트를 열지 않는다. WSL 파일은 `\\wsl.localhost` 루프백 공유로 읽는다. 이것이 유일한 네트워크 사용이다.
 - 과거 세션을 재생하지 않는다 (1차 범위 밖).
-- 세 회사(Anthropic, OpenAI, Google) 제품 외의 에이전트는 지원하지 않는다. 1차 범위는 Claude Desktop(Code 탭), Claude Code CLI, Codex 앱이다. Codex CLI는 레코드 확인 후 같은 파서로 지원한다. Gemini CLI는 포맷 확인 후, Gemini 앱(Antigravity)은 저장 형식이 DB라 1차 범위 밖이다 (4.4.1, 6부).
+- 세 회사(Anthropic, OpenAI, Google) 제품 외의 에이전트는 지원하지 않는다. 1차 범위는 Claude Desktop(Code 탭), Claude Code CLI, Codex 앱이다. Codex CLI는 앱과 레코드가 같아 같은 파서로 지원한다 (확인됨). Google 쪽은 Antigravity CLI(`agy`)를 표본 확인 후 지원한다 (T32). Gemini CLI는 2026-06-18 개인 사용자 서비스가 끝나 지원하지 않는다. Antigravity 앱(IDE)은 CLI와 같은 기록 파일을 쓰는 것이 확인되면 같은 파서로 지원한다. Gemini 채팅 데스크톱 앱은 코딩 에이전트가 아니고 대화 기록 파일이 없어 지원하지 않는다 (4.4.1, 6부).
 
 ---
 
@@ -82,7 +82,7 @@
 |---|---|---|
 | **팀** | 활성 세션 하나 | 부장 1명 + 그 세션의 서브에이전트. 규모와 무관한 기본 단위 |
 | **회사** | 이 앱 전체 | 회사 이름은 Owlfice |
-| **동** | 제품 (대기업) | A동 Claude Desktop(Code 탭), B동 Claude Code CLI, C동 Codex 앱, D동 Codex CLI, E동 Gemini 앱(Antigravity), F동 Gemini CLI. 동은 세션마다 정한다 (4.4.1). 같은 폴더에 A동 세션과 B동 세션이 섞여 있다 |
+| **동** | 제품 (대기업) | A동 Claude Desktop(Code 탭), B동 Claude Code CLI, C동 Codex 앱, D동 Codex CLI, E동 Antigravity 앱(IDE), F동 Antigravity CLI. 동은 세션마다 정한다 (4.4.1). 같은 폴더에 A동 세션과 B동 세션이 섞여 있다 |
 | **층** | 대기업: 호스트. 중소기업: 제조사 | 대기업 1층 Windows, 2층·3층 … WSL 배포판(처음 본 순서로 매겨 저장. 바뀌지 않는다) / 중소기업 1층 Claude, 2층 Codex, 3층 Gemini |
 | **호** | 대기업: 팀 하나 | 층 숫자 + 두 자리 순번. `203호` = 2층(WSL) 3번째 방. 중소기업에는 호가 없다 |
 | **사무실** | 화면 하나에 그리는 단위 | 대기업: 팀 1개 (`B동 203호`). 중소기업: 층의 팀 전부 (`2층 Codex 사무실`) |
@@ -468,6 +468,7 @@
 | 반려 | 반려됨: `rm -rf dist` 안 됩니다 |
 | 서브에이전트 종료 | 탕비실에서 게임 중인 듯 (마지막 보고 14:32) |
 | 컨텍스트 요약 | 분갈이 중 (서류 정리) |
+| 처음 보는 도구 | 처음 보는 업무: `{도구 이름}` |
 
 #### 정렬과 움직임
 
@@ -496,7 +497,16 @@
 
 공용 IT 농담 풀: "빌드 깨졌습니다…", "머지 컨플릭트!", "전부 초록불입니다!", "이거 누가 짰어요… 아, 저네요", "린트가 또 잡네", "캐시 지우고 다시 해볼게요", "문서엔 된다고 써 있는데", "로컬에선 됐는데요".
 
-말풍선은 한 번에 직원당 하나, 4초 유지, 새 사건이 오면 교체. 추정 상태의 말풍선은 테두리가 점선 (2.5).
+말풍선은 한 번에 직원당 하나, 4초 유지, 새 사건이 오면 교체. 추정 상태의 말풍선은 테두리가 점선 (2.5). 문구 풀은 **상태별로 분리**한다. `needs_boss()`(4.7.2)인 직원은 작업 중·농담 풀을 쓰지 않고 대기 전용 풀만 쓴다 ("거의 다 됐어요"를 결재판 들고 말하는 사고 방지). 토스트는 상태에 **들어가는 순간**에만 내고, 같은 팀·같은 사유는 30초(완료·출고는 10초) 안에 한 번만 낸다 (도구 실패마다 깜박이지 않게).
+
+**OS 알림** (Windows 토스트): 어떤 직원이 `needs_boss()`(4.7.2) 상태로 30초 이상 머물고 앱 창이 보이지 않을 때(`document.hidden`) 한 번 낸다. 같은 에피소드(상태를 벗어나기 전)에는 다시 내지 않고, 허가 대기↔반려 왕복은 같은 에피소드다. 내용은 팀 이름과 "결재 기다립니다" 한 줄뿐 — 프롬프트·명령은 넣지 않는다. 설정에서 끌 수 있다 (기본 켬, T30). 야근 중 창을 가려 둔 사장님에게 가장 쓸모 있는 기능이다.
+
+미대응 동작(4.11)도 조용히 넘기지 않는다.
+- 직원의 행동인데 분류를 못 한 것(모르는 도구)은 그 직원의 말풍선에 "처음 보는 일" 문구를 직급 말투로 낸다 ("이건 나도 처음 보는데", "이거… 어떻게 쓰는 거예요?"). 같은 직원·같은 도구는 처음 한 번만 말풍선이고, 그 뒤로는 카드 문장만 바뀐다.
+- 셸 폴백, 처음 본 거래처·스킬, 결과 미확인에도 말풍선 문구를 하나씩 둔다.
+- 보이는 것은 도구 이름 같은 구조 정보뿐이다. 인자·결과 본문은 보이지 않는다 (4.11과 같은 기준). 도구를 쓴 것은 확인된 사실이라 추정 점선은 붙이지 않는다.
+- 직원 행동이 아닌 처음 보는 레코드 종류(`record_type`, `system_subtype`)는 앱을 켠 동안 종류마다 한 번 사내 방송 티커에 낸다 ("총무팀: 처음 보는 서류 양식 접수"). `state_conflict`·`scenario_gap` 은 화면에 내지 않는다.
+- 문구는 `design/handoff/phrases.ko.json` 에 더한다 (아직 없다).
 
 ### 3.7 팝업 두 종류
 
@@ -633,7 +643,7 @@
 | 레지스트리 | `winreg` 크레이트 | `reg query` 자식 프로세스보다 깔끔 |
 | 해시 | `xxhash-rust` 또는 std `DefaultHasher` | 이름·방 번호 결정용. 암호학적일 필요 없음 |
 
-**C 런타임 (기본 경로)**: MSVC 빌드가 `vcruntime140.dll` 에 의존하면 VC++ 재배포 패키지가 없는 PC에서 실행되지 않는다. Tauri 2의 `tauri-build` 가 VC 런타임을 정적으로 링크한다고 가정한다 (미확인, 6부). 그래서 T01의 완료 기준은 "빈 창이 뜬다"가 아니라 "빌드 → NSIS 설치 파일 → 개발 도구가 없는 Windows 11에서 설치·실행"이다. 의존 DLL은 `dumpbin /dependents owlfice.exe` 로 확인해 Windows 시스템 DLL뿐임을 `BUILD.md`에 기록한다.
+**C 런타임 (기본 경로)**: MSVC 빌드가 `vcruntime140.dll` 에 의존하면 VC++ 재배포 패키지가 없는 PC에서 실행되지 않는다. Tauri 2의 `tauri-build` 가 VC 런타임을 정적으로 링크한다고 가정한다 (미확인, 6부). 그래서 T01의 완료 기준은 "빈 창이 뜬다"가 아니라 "빌드 → NSIS 설치 파일 → 개발 도구가 없는 Windows 11에서 설치·실행"이다. 의존 DLL은 `dumpbin /dependents owlfice.exe` 로 확인해 Windows 시스템 DLL뿐임을 `docs/BUILD.md`에 기록한다.
 
 **GNU 폴백 (Visual Studio를 쓸 수 없는 PC)**: `x86_64-pc-windows-gnu` + MSYS2 GCC로 같은 앱을 빌드한다. 저장소는 이 경로도 계속 지원한다. GNU 타깃은 Tauri 공식 지원 범위 밖이다. `.cargo/config.toml`:
 ```toml
@@ -644,7 +654,7 @@ MSYS2의 `libgcc_s`, `libwinpthread` DLL에 의존하지 않게 정적 링크한
 
 **WSL 크로스 빌드 (GNU 폴백의 폴백. 로컬 링크가 막힌 PC에서만)**: 회사 보안 소프트웨어가 Windows에서 링크한 exe를 전부 격리하는 PC가 있다 (확인됨: Symantec Endpoint Protection `Heur.AdvML.B`, 2026-10-20. 경로·release·정적 링크와 무관하고 예외 등록은 정책상 불가). 이런 PC에서는 WSL 배포판에서 GNU 타깃으로 크로스 빌드한다. 크로스 빌드한 exe와 NSIS 설치 파일은 격리되지 않는다 (확인됨). 필요한 것: rustup + `rustup target add x86_64-pc-windows-gnu`, 배포판의 mingw64 gcc·binutils(`x86_64-w64-mingw32-gcc`, `-windres`), WSL에서 `npm ci` 한 리눅스용 `node_modules`(tauri-cli도 여기 들어 있다), `makensis`(배포판 패키지가 없으면 NSIS 소스에서 컴파일러만 빌드하고 Stubs·Include·Plugins·Contrib는 같은 버전의 Windows 배포본에서 복사). `cargo test --target x86_64-pc-windows-gnu`는 WSL interop이 exe를 Windows 프로세스로 띄우므로 레지스트리·환경변수 테스트도 WSL에서 돌릴 수 있다 (확인됨). Tauri 앱 전체의 크로스 번들과 `tauri dev`(Vite 서버는 WSL, 앱은 Windows 프로세스)도 동작한다 (확인됨, T01). 소스는 Windows 쪽에 두고 빌드 산출물(`CARGO_TARGET_DIR`)만 WSL 디스크에 둔다. `/mnt/c` 위의 target은 느리다.
 
-세 경로 모두 저장소 파일은 같고, PC별 선택은 `BUILD.md` 절차로만 가른다. 정확한 버전과 명령도 `BUILD.md`에 적는다.
+세 경로 모두 저장소 파일은 같고, PC별 선택은 `docs/BUILD.md` 절차로만 가른다. 명령도 거기에 적는다.
 
 `tauri.conf.json`의 `bundle.targets`는 `["nsis"]`.
 
@@ -653,11 +663,12 @@ MSYS2의 `libgcc_s`, `libwinpthread` DLL에 의존하지 않게 정적 링크한
 ```
 owlfice/
 ├── PLAN.md                      ← 이 문서
-├── BUILD.md                     ← 툴체인 버전, 의존 DLL 확인 절차 (T01)
+├── docs/BUILD.md                ← 설치·빌드·테스트 명령, 의존 DLL 확인 절차 (T01)
 ├── build-gnu.sh                 ← GNU 폴백 릴리스 빌드 + 의존 DLL 검사. MSYS2·WSL 공용 (T01)
 ├── src-tauri/                   ← Rust 백엔드
 │   ├── Cargo.toml
 │   ├── tauri.conf.json
+│   ├── tests/                   ← Rust 통합 테스트 (Cargo는 Cargo.toml 옆의 tests/만 찾는다)
 │   └── src/
 │       ├── main.rs              ← lib의 run()만 부른다
 │       ├── lib.rs               ← 모듈 선언, Tauri 진입, 커맨드·이벤트 등록. bin/이 같은 모듈을 쓰려면 라이브러리여야 한다
@@ -676,7 +687,7 @@ owlfice/
 │       │   ├── mod.rs           ← Event enum, Parser trait, classify_command
 │       │   ├── claude.rs
 │       │   ├── codex.rs
-│       │   └── gemini.rs
+│       │   └── antigravity.rs
 │       ├── office/              ← 상태 기계
 │       │   ├── mod.rs           ← Team, Employee, Room
 │       │   ├── world.rs         ← OfficeWorld: 규모에 따라 팀을 사무실로 합성, seq
@@ -710,11 +721,10 @@ owlfice/
 ├── assets/                      ← 스프라이트 시트, 타일, 폰트
 ├── tools/
 │   └── anonymize.py             ← 실제 세션 파일 → fixture 익명화
-├── fixtures/                    ← 테스트용 세션 파일 샘플 (익명화)
-│   ├── claude/
-│   ├── codex/
-│   └── gemini/
-└── tests/                       ← Rust 통합 테스트
+└── fixtures/                    ← 테스트용 세션 파일 샘플 (익명화)
+    ├── claude/
+    ├── codex/
+    └── gemini/
 ```
 
 ### 4.3 프로세스 구조와 데이터 흐름
@@ -759,25 +769,36 @@ gemini = %USERPROFILE%\.gemini
 |---|---|---|---|---|---|
 | Claude Desktop (Code 탭) | A | `<home>\projects\<프로젝트폴더>\<uuid>.jsonl` | jsonl append | 레코드 `entrypoint: "claude-desktop"` | 지원 (확인됨) |
 | Claude Code CLI | B | 같은 폴더 | jsonl append | `entrypoint: "cli"` | 지원 (확인됨, 표본 적음) |
-| Codex 앱 | C | `<codex>\sessions\YYYY\MM\DD\rollout-<시각>-<uuid>.jsonl` | jsonl append | `session_meta.payload.originator: "Codex Desktop"` | 지원 (확인됨) |
-| Codex CLI | D | 같은 폴더 | jsonl append | `originator`가 그 외 | 지원 예정 (레코드 미확인) |
-| Gemini 앱 (Antigravity) | E | `<gemini>\antigravity\conversations\<uuid>.db`, `brain\<uuid>\`, `%APPDATA%\Antigravity` | DB·protobuf | — | 1차 범위 밖 |
-| Gemini CLI | F | `<gemini>\tmp\…` (미확인. 개발 PC에 세션 없음) | JSON 전체 파일 (가정) | — | 포맷 확인 후 |
+| Codex 앱 | C | `<codex>\sessions\YYYY\MM\DD\rollout-<시각>-<uuid>.jsonl` (undo 뒤에는 `rollout-<시각>-<thread>_<rollout>.jsonl` 페이지 파일이 더 생기고, 7일 지난 파일은 `.jsonl.zst` 로 압축되며, 보관하면 `<codex>\archived_sessions\` 로 평평하게 옮겨진다는 관찰이 있다. 셋 다 미확인, 이 PC 0건. `.zst` 는 읽지 않는다, 6부) | jsonl append | `session_meta.payload.originator: "Codex Desktop"` | 지원 (확인됨) |
+| Codex CLI | D | 같은 폴더 | jsonl append | `originator: "codex-tui"` | 지원 (확인됨, WSL) |
+| Antigravity 앱 (IDE) | E | `<gemini>\antigravity\brain\<uuid>\.system_generated\logs\transcript_full.jsonl` | jsonl (append 전용인지 미확인) | 경로 (`antigravity`) | T32. Windows에서 확인됨 |
+| Gemini 앱 (채팅) | — | `%APPDATA%\gemini` (Electron·Chromium 저장소) | — | — | 지원 안 함. 코딩 에이전트가 아니고 대화 기록 파일이 없다 (확인됨) |
+| Antigravity CLI (`agy`) | F | `<gemini>\antigravity-cli\brain\<uuid>\.system_generated\logs\transcript_full.jsonl` | jsonl (append 전용인지 미확인) | 경로 (`antigravity-cli`) | T32. WSL에서 확인됨 |
+
+**호스트마다 찾는 제품.** Windows는 데스크톱 앱과 CLI를 모두 찾는다. WSL은 데스크톱이 없으니 CLI만 찾는다 (4.4.2). Claude·Codex는 앱과 CLI가 같은 폴더를 써서 경로가 같고 동은 세션마다 정한다. Antigravity는 앱(`<gemini>\antigravity\`, E동)과 CLI(`<gemini>\antigravity-cli\`, F동)의 폴더가 달라 Windows에서는 둘 다 본다.
 
 Claude 세션 폴더의 구조 (확인됨):
 - `<프로젝트폴더>\<uuid>.jsonl` 이 세션 본체.
 - 같은 이름의 `<uuid>\` 폴더 아래: `subagents\agent-<id>.jsonl` (서브에이전트 기록) + `agent-<id>.meta.json`, `tool-results\<id>.txt` (분리된 큰 도구 결과), `custom-title.json` (제목). `memory\` 등 다른 하위 폴더는 무시한다.
-- Scan은 `<프로젝트폴더>\*.jsonl`, `<프로젝트폴더>\<uuid>\subagents\*.jsonl`, 같은 폴더의 `*.meta.json` 만 본다.
+- Scan은 `<프로젝트폴더>\*.jsonl`, `<프로젝트폴더>\<uuid>\subagents\*.jsonl`, 같은 폴더의 `*.meta.json` 만 본다. `subagents\workflows\<runId>\` 아래의 `agent-*.jsonl` 은 서브 파일이지만 `journal.jsonl` 은 다른 스키마(최상위 `type: started|result`)의 완료 원장이라 서브 파일로 집지 않는다 (미확인, 4.6.1 Workflow).
 
 **동(제품)은 Site가 아니라 세션마다 정한다.** Claude Desktop과 CLI는 같은 폴더를 쓰고, Codex 앱과 CLI도 같은 폴더를 쓴다. 파서가 첫 레코드에서 `Product`를 정해 `SessionMeta`에 담는다.
-- Claude: `entrypoint` 필드. 이 PC 표본 5,777건이 `claude-desktop`, 42건이 `cli`였다. `<uuid>.desktop-released.json` 사이드카는 세션을 삭제·보관했을 때 생기는 표식(`{"v":1,"releasedAt":…,"reason":"delete"}`)이라 활성 세션에는 없다. 구분에 쓰지 않는다.
+- Claude: `entrypoint` 필드. 이 PC 표본 5,777건이 `claude-desktop`, 42건이 `cli`였다. `sdk-cli`(`claude -p`), `sdk-py`, `sdk-ts`, `claude-vscode`, `mcp`, `remote_desktop` 값이 더 있다는 관찰이 있다 (미확인). 모르는 값은 B동(CLI)으로 두고 미대응 로그. `sdk-ts`·`sdk-py` 는 jsonl을 쓰지 않는다고 한다. `<uuid>.desktop-released.json` 사이드카는 세션을 삭제·보관했을 때 생기는 표식(`{"v":1,"releasedAt":…,"reason":"delete"}`)이라 활성 세션에는 없다. 구분에 쓰지 않는다.
 - Codex: `session_meta.payload.originator`. `source` 필드(`vscode`)는 참고만.
 
-**세션 등록부** (확인됨): `<home>\sessions\<pid>.json`. 살아 있는 Claude 프로세스마다 하나. 필드: `pid, sessionId, cwd, entrypoint, kind, name, nameSource, status, startedAt, updatedAt, version`. 쓰임:
-1. 활성 판정. 등록부에 있고 pid가 살아 있으면 퇴근이 아니다 (2.4).
+Antigravity 폴더의 구조 (확인됨, 앱과 CLI가 같다):
+- `brain\<uuid>\` 가 대화 하나다. 서브에이전트도 같은 `brain\` 아래 형제 폴더 하나다. 기록 파일과 레코드는 4.6.3.
+- 제목은 `annotations\<uuid>.pbtxt` 의 `title` (텍스트 protobuf, 부모 대화에만).
+- `conversations\<uuid>.db` (SQLite)와 `conversation_summaries.db` 가 원본이다. SQLite crate를 들이지 않으려고 1차에서는 읽지 않는다.
+- Gemini CLI의 옛 `<gemini>\tmp\<사용자>\chats\` 는 서비스 종료로 보지 않는다.
+
+**세션 등록부** (확인됨): `<home>\sessions\<pid>.json`. 살아 있는 Claude 프로세스마다 하나. 필드: `pid, sessionId, cwd, entrypoint, kind, name, nameSource, nameSince, status, statusUpdatedAt, startedAt, procStart, updatedAt, version, hostSessionId, pidDomain, peerProtocol, peerFeatures, messagingSocketPath, bridgeSessionId?` (Desktop 2.1.3xx 6건 확인. 모르는 키는 무시한다). 같은 폴더의 `<pid>.<hash>.key` 는 `CLAUDE_CODE_CHILD_SESSION=1` 로 뜬 숨은 자식 세션의 표식이라 jsonl도 등록부 행도 없다. `.json` 만 집는다 (타 프로젝트 관찰, 이 PC에 `.key` 6건 확인). `kind: "background"`·`state: "blocked"` 이고 `pid` 가 없는 행이 남을 수 있다 (미확인). 파서는 `pid` 없는 행에서 실패하지 않는다. 쓰임:
+1. 활성 판정. 등록부에 있고 pid가 살아 있으면 퇴근이 아니다 (2.4). pid는 재사용되므로 프로세스 생성 시각이 `startedAt`(ms)보다 5초 넘게 늦으면 다른 프로세스로 본다 (`procStart` 는 `ps -o lstart` 꼴이라 Windows에서 쓰이는지 미확인. 생성 시각은 `GetProcessTimes`, 6부 T02).
 2. 제목. `name`이 사용자가 붙인 이름.
 3. A/B동 보조.
-`status` 값의 종류는 `busy`만 확인했다 (6부). WSL 안의 Claude도 같은 등록부를 쓰므로 UNC로 읽을 수 있지만, Linux pid의 생존은 Windows에서 확인할 수 없어 `updatedAt` 이 10분 이상 오래되면 죽은 것으로 본다 (6부). Codex는 등록부가 없어 mtime 규칙만 쓴다.
+`status` 는 `idle`·`busy` 를 확인했다. 허가·질문·sandbox·MCP 입력 프롬프트가 떠 있으면 `waiting` + `waitingFor` 가 된다는 2차 자료가 있다 (CC 2.1.212+, 타 프로젝트 fixture. 이 PC 미확인, 6부). 확인되면 Claude 허가 대기는 침묵 추정(4.7.2) 대신 이 값으로 Confirmed가 된다. `shell` 은 `!` 셸 모드라 busy로 본다. `updatedAt` 은 상태가 바뀔 때만 갱신된다 (확인됨). WSL 안의 Claude도 같은 등록부를 쓰므로 UNC로 읽을 수 있지만 Linux pid의 생존은 Windows에서 확인할 수 없다. 그래서 등록부 파일이 있으면 살아 있다고 보고, 비정상 종료로 남은 파일은 세션 파일의 마지막 기록 시각으로 퇴근 규칙(2.4)이 가린다 (6부). `updatedAt` 나이로 생존을 판단하지 않는다. 오래 쉬는 세션이 죽은 것으로 보인다.
+
+Codex·Antigravity는 등록부가 없어 세션 파일의 길이와 마지막 기록 시각만 쓴다. Codex 앱은 파일을 연 채 써서 mtime이 첫 기록 시각에 머문다 (확인됨). mtime을 활동 신호로 쓰지 않는다.
 
 프로젝트 폴더 이름은 작업 경로의 `:` `\` `/` 를 `-` 로 바꾼 것이다 (`C--Workspace-lumaweave`). 원래 경로는 세션 레코드의 `cwd` 필드에서 읽는다.
 
@@ -785,18 +806,18 @@ Claude 세션 폴더의 구조 (확인됨):
 
 AI 없이 기계적으로 따라가는 체인이다. 1번은 개발 PC에서 확인됐다.
 
-1. 레지스트리 `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` 아래 GUID 키를 모두 연다. 키마다 `DistributionName`, `DefaultUid`, `BasePath`, `State`, `Flags` 가 있다. 루트 키의 `DefaultDistribution` 값이 기본 배포판 GUID. (확인됨: Rocky-9, DefaultUid 1000)
-2. **켜진 배포판만 다룬다.** Probe 주기(30초)마다 `wsl.exe -l --running -q` 를 한 번 실행해(약 100ms) 켜진 목록을 얻는다. 3초 Scan에서는 프로세스를 띄우지 않는다. 꺼진 배포판은 "소등"으로 표시하고 UNC를 건드리지 않는다. UNC 첫 접근은 VM을 부팅시키기 때문이다 (1.3).
+1. 레지스트리 `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` 아래 GUID 키를 모두 연다. 키마다 `DistributionName`, `DefaultUid`, `BasePath`, `State`, `Flags` 가 있다. 루트 키의 `DefaultDistribution` 값이 기본 배포판 GUID. (확인됨: Rocky-9·Ubuntu-26.04, DefaultUid 1000)
+2. **켜진 배포판만 다룬다.** Probe 주기(30초)마다 `wsl.exe -l --running -q` 를 한 번 실행해(약 100ms) 켜진 목록을 얻는다. 출력은 UTF-16LE이고, 켜진 배포판이 없으면 빈 출력에 종료 코드 0이다 (확인됨). 실행이 실패하면 "모름"으로 두고 UNC를 건드리지 않는다. 3초 Scan에서는 프로세스를 띄우지 않는다. 꺼진 배포판은 "소등"으로 표시하고 UNC를 건드리지 않는다. UNC 첫 접근은 VM을 부팅시키기 때문이다 (1.3).
 3. 배포판 루트는 `\\wsl.localhost\<DistributionName>\`. `BasePath` 의 vhdx는 열지 않는다. 구버전 호환으로 `\\wsl$\<이름>\` 도 시도한다.
 4. `\\wsl.localhost\<이름>\etc\passwd` 를 읽어 세 번째 필드가 `DefaultUid` 와 같은 줄의 여섯 번째 필드가 홈 디렉터리.
-5. 홈 아래 `.claude/projects`, `.codex/sessions`, `.gemini/tmp` 존재 확인.
-6. 못 찾으면 폴백: `wsl.exe -d <이름> -- printenv HOME CLAUDE_CONFIG_DIR CODEX_HOME` 을 한 번 실행한다. 로그인 셸(`sh -lc`)은 느리고 프로필 출력이 섞이므로 쓰지 않는다. 그래도 없으면 설정의 수동 경로.
+5. 홈 아래 `.claude/projects`, `.codex/sessions`, `.gemini/antigravity-cli/brain` 존재 확인. CLI 폴더만 본다 (4.4.1 "호스트마다 찾는 제품").
+6. 홈을 못 찾으면(DefaultUid 없음, passwd 실패) 폴백: `wsl.exe -d <이름> -- printenv` 를 한 번 실행해 `HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` 의 `KEY=VALUE` 줄만 고른다. 변수 이름을 인자로 주면 값만 찍혀서 하나가 빠졌을 때 어느 줄이 어느 변수인지 모른다. 로그인 셸(`sh -lc`)은 느리고 프로필 출력이 섞이므로 쓰지 않는다. 홈은 찾았는데 폴더가 없으면 폴백하지 않는다. `wsl.exe -d` 는 꺼진 배포판을 부팅하고, 켜진 배포판도 Probe마다 깨워 두기 때문이다. 그래도 없으면 설정의 수동 경로.
 
 **깨우지 않기의 한계와 완화.** 경로 기반 UNC 접근은 어떤 주기로 켜짐을 확인해도 "확인 직후 종료"의 창이 남는다. 그래서:
 1. Hot·Warm은 파일을 한 번 열어 핸들을 유지하고, stat(`GetFileInformationByHandle`)과 읽기를 핸들로 한다. 핸들은 경로를 다시 풀지 않아 배포판을 깨우지 않고, 배포판이 꺼지면 에러가 난다. 핸들은 옛 파일을 계속 가리키므로 같은 경로에 새 파일이 생겨도 모른다. 그래서 경로 접근이 허용되는 시점(WSL은 Probe 직후 Scan, 로컬은 매 Scan)에 경로의 파일 ID와 핸들의 파일 ID를 대조하고, 다르면 다시 열고 `Reset` 한다.
 2. 핸들 에러가 나거나 감시자(4.5)가 2초 넘는 정지를 보면 그 호스트를 "의심"으로 바꾸고, Probe가 켜짐을 다시 확인할 때까지 그 호스트의 모든 UNC 접근(나열 포함)을 멈춘다. 사이드바에는 "통신 지연" 점선(S46). 멈춘 I/O 안의 스레드는 자기 지연을 잴 수 없으므로 감시는 다른 스레드가 한다.
 3. 디렉터리 나열은 경로 기반이라 WSL 호스트의 Scan은 Probe 직후에만 한 번 돈다. WSL의 새 세션 발견은 3초가 아니라 30초다.
-4. 경로 접근이 꺼진 배포판을 실제로 재시작하는지는 T03에서 확인한다 (6부). 재시작하지 않는다면 3을 되돌려 WSL도 3초 Scan으로 간다.
+4. 경로 접근은 꺼진 배포판을 재시작한다 (확인됨: Stopped 상태에서 `\\wsl.localhost\<이름>\` 을 한 번 나열하자 약 0.7초 뒤 Running). 그래서 3을 유지한다.
 
 레지스트리 키가 없으면 WSL 미설치로 보고 건너뛴다. 실패해도 다른 호스트를 막지 않는다 (호스트별 스레드, 4.3). 층 번호는 호스트를 처음 본 순서로 매겨 `%APPDATA%\Owlfice\rooms.json` 에 함께 저장한다. 이름순이면 새 배포판이 앞에 끼어들 때 기존 층 번호와 저장된 방 번호가 어긋난다.
 
@@ -813,7 +834,7 @@ pub struct Site {                 // 세션 루트 하나. 동은 모른다
     pub root: PathBuf,             // UNC 또는 로컬
     pub read_mode: ReadMode,       // Append (jsonl) | WholeFile (Gemini 가정)
 }
-pub enum Product { ClaudeDesktop, ClaudeCli, CodexApp, CodexCli, GeminiApp, GeminiCli }  // 세션마다 파서가 정한다
+pub enum Product { ClaudeDesktop, ClaudeCli, CodexApp, CodexCli, AntigravityApp, AntigravityCli }  // 세션마다 파서가 정한다
 impl Product { pub fn building(&self) -> char /* 'A'..='F' */; pub fn vendor(&self) -> Vendor }
 ```
 
@@ -830,7 +851,7 @@ pub struct TailReader {
     last_mtime: SystemTime,
     file_id: Option<u64>, // Windows 파일 ID (교체 감지)
     tail_hash: u64,       // offset 직전 4KB의 해시 (길이가 늘었을 때의 덮어쓰기 보조 감지, 규칙 (d))
-    gen: u32,             // 파일 세대. Reset마다 +1. RawRef에 실려 팝업 커서 무효화에 쓴다
+    generation: u32,      // 파일 세대 (`gen` 은 Rust 2024 예약어). Reset마다 +1. RawRef에 실려 팝업 커서 무효화에 쓴다
 }
 impl TailReader {
     /// stat만 한다. 길이·mtime이 바뀌었거나, 아직 안 읽은 바이트(backlog = len > offset + remainder.len())가 남아 있으면 true.
@@ -847,12 +868,12 @@ impl TailReader {
 - 한 틱에 최대 8MB. 남으면(backlog) `changed()` 가 true를 돌려주므로 파일이 더 안 바뀌어도 다음 틱에 이어 읽는다.
 - offset은 마지막 개행 직후를 가리킨다. remainder는 그 뒤 바이트다. 다음 읽기는 `offset + remainder.len()` 에서 시작해 remainder 뒤에 이어 붙인다. 같은 바이트를 두 번 합치지 않는다.
 - remainder가 64MB를 넘으면 그 줄을 버리고 다음 개행까지 건너뛴다. 로그에 남긴다.
-- 재작성·교체 감지. 다음 중 하나면 `gen += 1`, offset 0, remainder 비움, 상위에 `Reset`. 상위는 4.3 재구성 규칙대로 다시 만든다.
+- 재작성·교체 감지. 다음 중 하나면 `generation += 1`, offset 0, remainder 비움, 상위에 `Reset`. 상위는 4.3 재구성 규칙대로 다시 만든다.
   - (a) 길이 < `offset + remainder.len()`. 이미 읽어 둔 미완성 구간까지 포함해 비교한다. `offset` 만 비교하면 remainder 구간이 잘린 것을 놓친다.
   - (b) 파일 ID 변경 (다른 파일로 교체). 핸들 모드(WSL)에서는 핸들의 ID가 바뀌지 않으므로 경로 접근이 허용되는 Scan 시점에 경로 ID와 대조한다 (4.4.2).
   - (c) 길이가 `offset + remainder.len()` 과 같은데 mtime이 바뀜 → 조건 없이 Reset. append 전용 로그에서 같은 길이 쓰기는 그 자체로 비정상이고, remainder 안의 미완성 JSON이 같은 길이로 바뀐 경우는 해시로 잡을 수 없다.
   - (d) 길이가 커짐 → 새 바이트를 읽기 전에 remainder 구간을 다시 읽어 캐시와 비교하고, offset 직전 4KB의 해시도 비교한다. 하나라도 다르면 Reset. 로컬에서 수 µs다.
-  - 한계: 파일 앞부분만 바뀐 경우는 전체 해시 없이는 못 잡는다. 두 제품 모두 append만 하므로 1차는 이 전제를 받아들인다. 앞부분 재작성이 관찰되면 Scan에서 전체 해시 비교로 올린다.
+  - 한계: 파일 앞부분만 바뀐 경우는 전체 해시 없이는 못 잡는다. 두 제품 모두 append만 하므로 1차는 이 전제를 받아들인다. 앞부분 재작성이 관찰되면 먼저 **파일 머리 4KB 해시**를 (d)에 더하고(싸다), 그래도 모자라면 Scan에서 전체 해시 비교로 올린다 (전체 해시는 4MB 이하이거나 offset이 1/8 늘었거나 60초 지났을 때만, 타 프로젝트 일정).
 - 읽기는 공유 모드로 연다. Windows에서 다른 프로세스가 append 중인 파일도 읽힌다.
 - UNC 경로에서 `fs::watch` 류는 쓰지 않는다. 9P 위에서 이벤트가 안 온다.
 - Claude Code는 큰 도구 결과를 `tool-results/<id>.txt` 로 빼고 jsonl에는 참조만 남긴다 (확인됨). 그래도 한 줄이 수 MB일 수 있어 8MB 상한은 유지한다.
@@ -865,7 +886,7 @@ impl TailReader {
 | Warm | 나머지 활성 팀 | 2s | 같음. 상태를 똑같이 유지한다 |
 | Scan | 모든 Site의 세션 폴더, 세션 등록부 폴더, Codex `session_index.jsonl` | 3s (WSL 호스트는 Probe 직후 1회) | 새 세션 파일·서브 파일·meta.json 발견, 사라진 파일, mtime 수집. 신규 세션은 아래 "신규 세션 발견" 규칙 |
 | Probe | 레지스트리, `wsl -l --running`, Site 존재 여부 | 30s | 호스트·Site 변화 (WSL 켜짐·꺼짐, 새 제품 설치) |
-| Cold | 퇴근 팀 | 60s | mtime만 확인 |
+| Cold | 퇴근 팀 | 60s | 길이·mtime만 확인 (Codex 앱은 쓰는 동안 mtime이 안 바뀐다, 4.4.1) |
 
 - 스레드는 호스트마다 하나. `tokio` 없이 `std::thread::sleep` 루프. 각 틱의 소요를 측정해 200ms를 넘기면 로그에 남긴다. 한 호스트 스레드가 멈춰도(UNC 행) 다른 호스트는 계속 돈다.
 - 감시자: 호스트 스레드는 틱마다 `last_tick_at` 을 갱신한다. Windows 호스트 스레드가 감시자 역할을 겸해 매 틱 다른 스레드의 심장박동을 보고, 2초 넘게 멈춘 호스트를 "의심"으로 바꾸고 S46을 띄운다. 멈춘 I/O는 취소하지 않는다 (`CancelSynchronousIo` 는 드라이버 지원이 보장되지 않는다). OS가 돌려주면 그 스레드는 의심 상태를 확인하고 결과를 버린 뒤 Probe가 켜짐을 확인할 때까지 쉰다. 버린 읽기는 `commit` 하지 않으므로 offset이 그대로고, 재개한 첫 틱이 같은 구간을 다시 읽는다. 읽기만 끝내고 이벤트만 버리면 그 구간의 도구 호출·결과가 영영 빠진다. UNC 타임아웃은 수십 초지만 그동안 다른 호스트는 영향이 없다.
@@ -891,6 +912,8 @@ impl TailReader {
 
 제품별 파서는 각자 포맷을 읽어 아래 하나의 enum으로 바꾼다. 상태 기계는 제품을 모른다.
 
+포맷 대조 자료 (2차 자료다. 다르면 실제 파일이 기준): Codex는 **openai/codex 공개 소스**가 1차 근거다 (`codex-rs/protocol/src/protocol.rs` 의 레코드 정의, `rollout/src/policy.rs` 의 기록 여부(transient 목록), `recorder.rs`, `revert_thread.rs`. 커밋을 고정해 본다). 그 밖에 majiayu000/agent-sessions 의 `docs/formats.md` (Claude·Codex), kenn-io/agentsview 의 `docs/internal/session-format-sources.md` (버전별 가장자리 사례가 가장 많다), pixtuoid·zoetrope·c9watch 의 디코더 (모두 MIT. 의존성으로 쓰지 않는다, 6부), traces.com/blog/gemini-cli (Antigravity 레코드 종류). coding_agent_session_search(cass)는 라이선스가 Anthropic과 그 대리인을 배제하므로 코드를 보지도 쓰지도 않는다.
+
 ```rust
 pub struct Event {
     pub ts: Option<DateTime<Utc>>,  // 메타 레코드(custom-title 등)에는 없다. None이면 상태 기계가 직전 이벤트 시각을 쓴다
@@ -898,7 +921,7 @@ pub struct Event {
     pub agent_id: String,           // 메인은 session_id와 같음, 서브는 고유 id
     pub parent_agent: Option<String>,
     pub kind: EventKind,
-    pub raw_ref: RawRef,            // { path, gen, byte_offset, line_no } (팝업 "원본 열기"·타임라인 페이징용. gen은 파일 세대, 4.5)
+    pub raw_ref: RawRef,            // { path, generation, byte_offset, line_no } (팝업 "원본 열기"·타임라인 페이징용. generation은 파일 세대, 4.5)
 }
 
 pub enum EventKind {
@@ -908,8 +931,8 @@ pub enum EventKind {
     ToolCall { call_id: String, tool: ToolKind, summary: ToolSummary },
     ToolResult { call_id: String, outcome: ToolOutcome, outcome_confidence: Confidence, preview: String, test_result: Option<TestResult> },
     SubagentSpawn { child_id: String, prompt: String, model: Option<String>, description: Option<String>, depth: u8 },  // 자식 ID가 확인된 시점에 낸다
-    SubagentDone { child_id: String },          // 추정 (4.7.2)
-    PermissionRequest { question: String },     // 확인됨: AskUserQuestion / ExitPlanMode / Codex request_user_input
+    SubagentDone { child_id: String },          // 완료 기록에서 낸다 (4.6.1~4.6.3). 못 봤으면 추정 (4.7.2)
+    PermissionRequest { question: String },     // 확인됨: AskUserQuestion / ExitPlanMode / Codex request_user_input_async / Antigravity ask_question
     ContextCompaction { pre_tokens: Option<u64>, post_tokens: Option<u64> },
     TitleChanged { title: String },
     PrLinked { number: u32, url: String },
@@ -957,18 +980,21 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 
 | type | 처리 |
 |---|---|
-| `user` | `message.content` 가 문자열이면 UserMessage (agent_id 포함. 서브 파일의 첫 레코드는 프롬프트 전문을 담은 user 레코드다, 확인됨. 사장님 방문 여부는 상태 기계가 소유자로 가른다, 4.7.1). 블록 배열이고 `tool_result` 면 ToolResult. `isMeta: true` 면 시스템 주입이라 UserMessage로 내지 않는다. 그 안에 `<task-notification>` 이 있으면 백그라운드 작업 완료 알림이다 (아래). `isCompactSummary: true` 면 요약 본문(무시) |
-| `assistant` | content 블록 하나마다 레코드 하나. `text` / `thinking` / `tool_use`. 같은 API 응답은 `requestId` 가 같다. `message.model`, `message.usage` |
-| `system` | `subtype`: `compact_boundary` → ContextCompaction (`compactMetadata.preTokens / postTokens`), `stop_hook_summary`·`informational` 무시 |
-| `custom-title`, `agent-name` | `customTitle` / `agentName` → TitleChanged. `timestamp` 없음 |
-| `pr-link` | `prNumber`, `prUrl` → PrLinked |
-| `queue-operation` | 사용자가 입력한 문장과 시각. 뒤이어 오는 user 레코드와 중복이므로 이벤트는 내지 않는다. 단, 파일 첫 줄인 경우가 많아 "첫 레코드 시각"(4.5)에는 이 timestamp를 쓴다 |
-| `attachment`, `file-history-snapshot`, `file-history-delta`, `last-prompt`, `mode`, `atis-latch` | 무시 |
+| `user` | 먼저 `origin.kind` 를 본다 (값 `human`·`task-notification`·`peer`, 확인됨): `task-notification` 이면 완료 알림이다 (아래. `isMeta` 는 붙지 않는다, 확인됨). **`peer` 는 다른 세션·에이전트가 보낸 메시지라 UserMessage가 아니다** (확인됨 37건. 사장님 방문으로 보이면 안 된다). `turnOrigin`·`promptSource`(`sdk`·`system`) 도 같은 뜻의 보조 필드다. 그 밖에 `message.content` 가 문자열이면 UserMessage (`<pasted_content>`·`[Image` 로 시작해도 사람 입력이다. `<artifact-view-context>` 로 시작하면 시스템 주입이라 아니다, 확인됨) (agent_id 포함. 서브 파일의 첫 레코드는 프롬프트 전문을 담은 user 레코드다, 확인됨. 사장님 방문 여부는 상태 기계가 소유자로 가른다, 4.7.1). 블록 배열이고 `tool_result` 면 ToolResult. `isMeta: true` 면 시스템 주입이라 UserMessage로 내지 않는다. 거부 직후 오는 `[Request interrupted by user for tool use]` text 블록도 UserMessage가 아니다. `isCompactSummary: true` 면 요약 본문(무시). 문자열이 `<command-name>`·`<command-message>`·`<local-command-stdout>`·`<local-command-caveat>` 로 시작하면 슬래시 명령(`/compact` 등)의 흔적이라 UserMessage가 아니다 (확인됨). `<bash-input>`·`<bash-stdout>`·`<bash-stderr>` 는 사용자의 `!` 셸 모드 흔적이라 역시 아니다 (미확인) |
+| `assistant` | content 블록 하나마다 레코드 하나. `text` / `thinking` / `tool_use`. 같은 API 응답은 `requestId`·`message.id` 가 같고 `apiBlockIndex` 가 는다. `message.model`(`<synthetic>` 은 도구 생성 턴 표식이라 모델이 아니다. 모델 갱신에서 뺀다), `message.usage`. `message.stop_reason` 은 한 응답의 모든 블록이 같은 값이다 (`tool_use`·`end_turn`. 서브 파일은 마지막 블록만 값이 있고 앞은 null). 턴 끝은 `end_turn` 으로만 안다 (확인됨) |
+| `system` | `subtype`: `compact_boundary` → ContextCompaction (`compactMetadata.preTokens / postTokens`. `trigger` 는 `/compact` 일 때 `manual`, 확인됨). 뒤이어 `isCompactSummary` 요약, 슬래시 명령 흔적 user 레코드 셋, attachment 재주입이 온다. `stop_hook_summary`·`turn_duration`·`away_summary`·`informational` 무시 |
+| `custom-title`, `agent-name`, `ai-title` | `customTitle` / `agentName` → TitleChanged. `timestamp` 없음. `ai-title` 은 CLI에만 있다 (키는 T07에서 확인). **같은 값이 턴마다 다시 쓰인다** (확인됨, 12파일에 `custom-title` 660건). 상태 기계는 제목이 같으면 이벤트를 무시한다 (액자 교체 cue가 매 턴 나오면 안 된다). `agent-name` 은 사용자가 붙인 이름이 아니라 번들이 자동으로 쓰는 값이라는 관찰이 있다 (미확인). `custom-title` 이 있으면 그것이 우선 |
+| `pr-link` | `prNumber`, `prUrl`, `prRepository` → PrLinked. 역시 반복해 쓰이므로 같은 번호면 무시 (미확인, 이 PC 0건) |
+| `queue-operation` | `operation` 은 `enqueue`·`dequeue`·`remove`. 사람 입력이든 알림이든 뒤이어 오는 user·attachment 레코드와 중복이므로 이벤트는 내지 않는다. 단, Desktop에서는 파일 첫 줄인 경우가 많아 "첫 레코드 시각"(4.5)에는 이 timestamp를 쓴다 (CLI는 첫 입력에 queue-operation이 없다) |
+| `attachment` | `attachment.type: queued_command` 는 턴 진행 중에 큐에 들어온 것이다 (확인됨 120건). `prompt` 앞머리로 가른다 (`commandMode` 만 믿지 않는다. `commandMode: prompt` 인데 `<task-notification>` 으로 시작하는 알림도 있다는 관찰, 미확인): `<task-notification>` 이면 완료 알림 (`commandMode: task-notification` 70건, 확인됨), `<agent-message` 로 시작하면 peer 메시지라 무시 (23건, 확인됨), `<artifact-view-context>` 등 `<` 로 시작하면 주입이라 무시, **그 밖의 평문이면 턴 중에 사장님이 친 입력이라 UserMessage** (26건, 확인됨. 이걸 무시하면 사장님 방문을 놓친다). `ultra_effort_enter`·`ultrathink_effort`·`ultra_effort_exit` 는 effort 표식이라 미대응 로그에 넣지 않는다 (미확인). 그 밖의 attachment 는 무시 |
+| `file-history-snapshot`, `file-history-delta`, `last-prompt`, `mode`, `permission-mode`, `atis-latch`, `cost-state`, `api-request*`, `bridge-session`, `frame-link`, `artifact-comment-monitor`, `artifact-autoreact-ledger` | 무시 (뒤 넷은 Desktop 표본에서 확인됨). `api-request-blob` 은 `message` 모양이지만 `timestamp` 가 없다 (미확인). `system.turn_duration` 은 CLI만 쓴다 (Desktop 표본 0건, 확인됨) |
 | `summary`, `progress` | 더 이상 나오지 않는다 (구버전). 나오면 무시 |
 
-공통 필드: `uuid`, `parentUuid`, `timestamp`, `cwd`, `sessionId`, `version`, `gitBranch`, `entrypoint`, `isSidechain`, `promptId` (턴 식별). 서브 파일의 모든 레코드는 `isSidechain: true` 와 `agentId` 를 가진다.
+표에 없는 `type` 은 미대응 로그 `record_type` 으로 간다 (4.11). 그중 `timestamp` + `message.role` + `message.content` 셋을 다 가진 레코드는 이름이 바뀐 턴 레코드일 수 있어 `renamed_turn: true` 를 붙여 따로 센다.
 
-`message.usage` (확인됨): `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens`. 캐시가 켜져 있으면 `input_tokens` 는 한 자리 수(표본: 2)이고 `cache_read` 가 수만이다. **컨텍스트 사용량은 세 input의 합**이다. 윈도우 크기는 파일에 없어 모델표(4.7.1)로 정한다.
+공통 필드: `uuid`, `parentUuid`, `timestamp`, `cwd`, `sessionId`, `version`, `gitBranch`, `entrypoint`, `isSidechain`, `promptId` (턴 식별). 서브 파일의 모든 레코드는 `isSidechain: true` 와 `agentId` 를 가진다. 최상위 `attributionSkill`·`attributionMcpServer`·`attributionMcpTool` 은 그 턴이 쓴 스킬·MCP 이름이다 (확인됨. tool_use 이름으로 이미 알 수 있어 1차는 쓰지 않는다). `attributionAgent` 는 이 PC 표본에 없다 (미확인). `tool_use` 블록의 `caller` 는 **객체**다 (확인됨, `{type: "direct"}`). 파서는 모르는 필드를 전부 무시하고(serde `Value` 또는 무시), 한 필드의 타입 불일치가 줄 전체를 버리게 두지 않는다. `tool_result.content` 는 문자열 또는 배열, `toolUseResult` 는 문자열 또는 객체다.
+
+`message.usage` (확인됨): `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens`. 캐시가 켜져 있으면 `input_tokens` 는 한 자리 수(표본: 2)이고 `cache_read` 가 수만이다. **컨텍스트 사용량은 세 input의 합**이다. 윈도우 크기는 파일에 없어 모델표(4.7.1)로 정한다. 네 값이 모두 0인 usage(API 오류·중단 때 하네스가 넣는 합성 레코드, `model: "<synthetic>"`)는 TokenUsage를 내지 않는다. 0은 "새 소식 없음"이지 사용량이 아니다 (미확인, 이 PC 표본 0건).
 
 `thinking` 블록 (확인됨): `thinking` 본문이 대부분 빈 문자열 + `signature`. 표본 743건 중 64건만 본문이 있었다. Thinking 이벤트는 "생각했음" 기록이지 "생각 중" 신호가 아니다. 그래서 응답 대기 연출은 침묵 구간으로 켠다 (4.7.2).
 
@@ -976,7 +1002,7 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 
 | name | ToolKind |
 |---|---|
-| TodoWrite, `mcp__ccd_turn__update_plan` | Todo → TodoChanged 이벤트도 함께. 내부 MCP 제외 규칙보다 먼저 봐야 한다 |
+| TodoWrite, `mcp__ccd_turn__update_plan` | Todo → TodoChanged 이벤트도 함께. 내부 MCP 제외 규칙보다 먼저 봐야 한다. 2026-10-20 표본(Desktop·CLI)에는 할 일 도구가 없었다 (6부) |
 | AskUserQuestion, ExitPlanMode | Ask → PermissionRequest { question } (허가 대기, 확인됨) |
 | Read | FileRead (input.file_path, offset/limit → range) |
 | Grep, Glob | FileSearch (pattern, path) |
@@ -991,52 +1017,82 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 | `mcp__ccd_*`, `mcp__terminal__*`, `mcp__Claude_Browser__*`, `mcp__claude-in-chrome__*`, ToolSearch, Monitor, SendMessage, ScheduleWakeup, Workflow, Artifact* | **이벤트를 내지 않는다.** 앱 내부 배관이라 pending·실적·미대응 로그 어디에도 안 들어간다. 파서는 이렇게 버린 call_id를 기억해 뒤따르는 tool_result도 내지 않는다 (내부 도구의 실패가 사고로 세지지 않게) |
 | `mcp__<server>__<tool>` 중 tool 이름에 `search`, `fetch`, `scrape`, `crawl` | WebSearch / WebFetch (외근). Claude Desktop의 웹 도구는 커넥터 MCP로 들어온다 |
 | `mcp__<server>__<tool>` | Mcp (거래처). server가 UUID 꼴(`04586901-4c2c-…`)이면 상호는 tool 이름의 첫 토큰(`asset_search` → `asset`, `firecrawl_search` → `firecrawl`). Claude Desktop 커넥터는 서버 id가 UUID다 |
-| 그 외 | Other(name). 미지원 도구. pending에 넣어 "뭔가 하는 중"은 보이되 실적에는 세지 않고 미대응 로그에 남긴다 |
+| 그 외 | Other(name). 미지원 도구. pending에 넣어 "뭔가 하는 중"은 보이되 실적에는 세지 않고 미대응 로그에 남긴다. 말풍선은 3.6 |
 
 서브에이전트 (확인됨):
-- 호출: `Agent` tool_use, `input: { description, model: "opus", subagent_type, prompt }`. `model` 은 별칭이다.
-- 결과: `toolUseResult: { isAsync: true, status: "async_launched", agentId: "a0a8…", description, resolvedModel: "claude-opus-5-5", prompt }`. **여기서 SubagentSpawn을 낸다.** 직급은 `resolvedModel` 로 정한다. 동기 실행(`isAsync` 없음)이면 결과가 곧 완료라 Spawn과 Done을 함께 낸다. 이때 자식 파일의 이벤트는 이 Spawn보다 이른 ts를 가지므로 재구성에서는 직원 사전 등록(4.3)이 먼저 처리한다.
-- 자식 파일: `<세션>/subagents/agent-<agentId>.jsonl`. 옆에 `agent-<agentId>.meta.json = { agentType, description, toolUseId, spawnDepth, requestShape, requestNonInteractive, model }`. Scan이 meta.json을 먼저 발견하면 그것으로도 SubagentSpawn을 낸다. 같은 agentId는 한 번만 (상태 기계가 중복을 걸러낸다).
+- 호출: `Agent` tool_use, `input: { description, subagent_type, prompt, run_in_background? }`. `model` 은 있을 때만이고 별칭이다 (표본 4건 모두 없었다). `run_in_background` 가 없어도 비동기로 뜰 수 있어 (CLI, 확인됨) 동기·비동기는 결과로 가른다.
+- 결과: `toolUseResult: { isAsync: true, status: "async_launched", agentId: "a0a8…", description, resolvedModel: "claude-opus-5-5", prompt, outputFile }`. **여기서 SubagentSpawn을 낸다.** 직급은 `resolvedModel` 로 정한다. 동기 실행이면 `isAsync` 가 없고 `status: "completed"` 에 `agentId, content, totalDurationMs, totalTokens, totalToolUseCount, usage` 가 온다 (확인됨). 결과가 곧 완료라 Spawn과 Done을 함께 낸다. 이때 자식 파일의 이벤트는 이 Spawn보다 이른 ts를 가지므로 재구성에서는 직원 사전 등록(4.3)이 먼저 처리한다.
+- 자식 파일: `<세션>/subagents/agent-<agentId>.jsonl`. 옆에 `agent-<agentId>.meta.json = { agentType, description, toolUseId, spawnDepth, requestShape, requestNonInteractive, model?, effort?, worktreePath?, spawnedWithWorktree?, worktreeBranch?, stoppedByUser? }` (확인됨, Desktop 64건: `model` 은 별칭(`opus`·`sonnet`·`haiku`)이고 `effort` 는 `high`·`medium` 이 60건에 있다. CLI는 `launchedWithDefaults`, 끝나면 `finished: true` 가 더 붙는다). Scan이 meta.json을 먼저 발견하면 그것으로도 SubagentSpawn을 낸다 (`resolvedModel` 을 못 봤으면 별칭으로 직급을 정한다, 4.7.4). 같은 agentId는 한 번만 (상태 기계가 중복을 걸러낸다). `finished`·`stoppedByUser` 는 시각 없는 최종값이라 **상태 전이에 쓰지 않는다** (재구성 때 서브가 첫 활동부터 "끝남"으로 보인다). 완료는 시각 있는 레코드(완료 알림·동기 결과)로만 낸다. Workflow 도구가 띄운 서브는 `<세션>/subagents/workflows/<runId>/agent-*.jsonl` 에 있고 같은 폴더의 `journal.jsonl` 이 완료 원장이다 (미확인, 이 PC 표본 0건. 표본이 생기면 Scan 경로와 SubagentDone 출처에 더한다, 6부).
 - `spawnDepth` 로 중첩을 안다. 1차는 깊이와 무관하게 모두 개발실에 앉힌다. 깊이 2 이상이면 카드 둘째 줄에 "· 상사 ○○"로 부모 이름을 적는다. 깊이 1은 상사가 부장이라 적지 않는다 (3.5).
-- 종료 레코드는 없다. 상태 기계가 추정한다 (4.7.2).
+- 비동기 서브의 완료는 부모 파일에 완료 알림으로 온다 (`<task-id>` = agentId, `<tool-use-id>` = Agent 호출 id, 태그 `note`·`result`·`usage` 가 더 붙는다, 확인됨). 이것으로 SubagentDone을 낸다. 같은 에이전트가 여러 번 알릴 수 있어 상태 기계가 중복을 거른다. 알림을 못 봤을 때만 추정한다 (4.7.2).
 
 `tool_result` 의 `outcome`:
-- `is_error: true` → `Err` (Confirmed). 단, 본문이 "The user doesn't want to proceed with this tool use" 로 시작하면 `Rejected` (확인됨).
-- `is_error` 없음·false → `Ok` (Confirmed). Claude Code는 셸 종료 코드가 0이 아니면 `is_error` 를 세운다.
-- 호출이 `background` 였고 결과가 "started"·셸 id를 돌려주는 중간 응답이면 `Started`. 완료는 나중에 `isMeta` user 레코드의 `<task-notification>` 으로 온다. 알림 본문의 작업 id로 원래 call_id를 찾아 `Ok`/`Err` 를 낸다. 알림 레코드의 정확한 모양은 미확인 (6부). 시간 제한은 두지 않는다. `npm run dev` 처럼 끝나지 않는 작업이 흔하다. 정리는 완료 알림, `TaskStop` 의 성공 결과, 팀 퇴근 중 먼저 오는 것으로 한다 (4.7.2).
+- `is_error: true` → `Err` (Confirmed). 단, 최상위 `toolDenialKind` 가 있으면 `Rejected` (`user-rejected` 사장님 반려, `automode-blocked` 자동 모드 차단. 차단도 사고로 세지 않으려고 반려로 본다, 확인됨). 본문이 "The user doesn't want to proceed with this tool use" 로 시작하는 것도 `Rejected` (옛 버전).
+- `is_error` 없음·false → `Ok` (Confirmed). Read·Edit 등 많은 도구는 성공 때 `is_error` 키 자체가 없다. Claude Code는 명령의 **마지막 문장** 종료 코드가 0이 아니면 `is_error` 를 세운다 (`npm test; echo $?` 는 false, 확인됨). 실패하면 `toolUseResult` 가 객체가 아니라 `Error: Exit code N…` 문자열이다.
+- 호출이 `background` 였으면 결과는 `toolUseResult.backgroundTaskId` 가 있는 중간 응답이고 `Started` 다. 완료는 나중에 완료 알림으로 온다 (확인됨). 알림은 두 모양이다: 턴이 끝나 있으면 `origin.kind: task-notification` 인 문자열 user 레코드, 턴 진행 중이면 `attachment.type: queued_command` (`prompt` 에 같은 XML). 태그는 `task-id`(= backgroundTaskId), `tool-use-id`(= 원래 call_id), `output-file`, `status`(`completed`·`failed` 확인됨), `summary`(성공 `… completed (exit code 0)`, 실패 `… failed with exit code 2`, 확인됨). `tool-use-id` 로 원래 호출을 찾고 summary의 `exit code (\d+)` 로 `Ok`/`Err` 를 낸다 (하네스가 쓰는 문구라 Confirmed. exit code가 없으면 Unknown). 종료 코드는 summary 문구 안에만 있다. `TaskStop` 으로 멈춘 작업은 알림이 오지 않는다 (확인됨). 시간 제한은 두지 않는다. `npm run dev` 처럼 끝나지 않는 작업이 흔하다. 정리는 완료 알림, `TaskStop` 의 성공 결과, 팀 퇴근 중 먼저 오는 것으로 한다 (4.7.2).
 - 결과 본문의 테스트 요약 정규식(`(\d+) passed`, `test result: ok. (\d+) passed; (\d+) failed`, `Tests: (\d+) failed, (\d+) passed`)은 `test_result` (도장 숫자)에만 쓴다. 성공·실패 판정에는 쓰지 않는다.
-- 본문에 `<persisted-output>` 참조가 있으면 `tool-results/` 경로를 RawRef에 덧붙인다.
+- 분리된 큰 결과는 구조 필드 `toolUseResult.persistedOutputPath` 가 우선이고 (확인됨), 없으면 본문의 `<persisted-output>` 참조에서 `tool-results/` 경로를 읽어 RawRef에 덧붙인다. 서브의 결과 파일도 **부모** 세션의 `tool-results/` 에 있다. "원본 열기"에 넘기기 전에 그 경로가 세션 폴더 안인지 검사한다 (레코드 값이라 믿지 않는다).
 
-허가 대기 레코드는 따로 없다. `permissionDecision` 은 훅 attachment에만 나타난다. 옛 "Bash 결과 30초 안 오면 위험 명령 추정" 규칙은 폐기한다. 30초짜리 빌드마다 오탐이다.
+허가 대기 레코드는 따로 없다. tool_result 레코드의 `permissionDecision { decision, source }` (`source`: `config`·`user_permanent`·`user_temporary`)는 허가가 끝난 뒤의 기록이다. 대기 중인지는 결과 없는 호출과 침묵으로만 안다. 옛 "Bash 결과 30초 안 오면 위험 명령 추정" 규칙은 폐기한다. 30초짜리 빌드마다 오탐이다.
 
 #### 4.6.2 Codex 파서 (`parse/codex.rs`)
 
-확인 기준: Codex Desktop 0.163. CLI 전용 레코드는 미확인 (6부). 한 줄 = JSON, `timestamp` + `type` + `payload`:
+확인 기준: Codex Desktop·CLI 0.163 (2026-10-20 표본). 앱과 CLI의 레코드 모양은 같다. 한 줄 = JSON, `timestamp` + `ordinal` + `type` + `payload` (+ 가끔 `metadata`):
 
-- `session_meta.payload`: `id, cwd, originator, source, cli_version, timestamp, runtime_workspace_roots` → SessionMeta. `originator` 로 C/D동.
-- `turn_context` → 모델명 (effort 필드가 있으면 직급에 반영. 미확인)
+- 세션 id는 파일명 끝 36자 UUID (`rollout-<시각>-<uuid>`) 이고 `session_meta.payload.id` 와 같다 (확인됨).
+- `session_meta.payload`: `id, session_id, cwd, originator, cli_version, source, thread_source, context_window, history_mode, forked_from_id, git {branch, repository_url}, …` → SessionMeta (`context_window` 과 `git.branch` 가 여기 있다, 확인됨. detached HEAD면 branch 없음). 한 파일에 `session_meta` 가 여럿이면 첫 번째 비어 있지 않은 `id` 가 정본이고 다른 id의 meta는 복제된 남의 것이다 (4.6.2 서브). 사용자가 연 포크(`forked_from_id` 가 있고 `thread_source: "user"`)도 부모 이력을 복제하는데 복제 줄의 timestamp가 새로 찍힌다는 관찰이 있다 (미확인. 그러면 부모의 지난 활동이 "방금 일"로 재생된다. `turn_context.turn_id` 가 부모 파일에 있는 턴은 건너뛴다, 6부). `thread_source` 값 `guardian_review`(Desktop 자동 리뷰, 모델 `codex-auto-review`, `source: {subagent: {other: "guardian"}}`)와 `roborev` 는 내부 작업이라 팀으로 만들지 않는다 (미확인, 이 PC는 `user`·`subagent` 만). `originator` 로 C/D동 (`Codex Desktop` / `codex-tui`, 확인됨). `source` 는 앱·CLI 모두 `vscode` 라 쓰지 않는다.
+- `turn_context` → 모델명(`model`), effort(`effort`). effort는 앱에만 늘 있고 CLI 본 세션에는 없었다 (확인됨, 6부).
 - `response_item.payload.type`:
-  - `message` role user → UserMessage, role assistant → AssistantText
-  - `reasoning` → Thinking
-  - `function_call` → ToolCall. `name` 이 `shell` / `exec_command` / `shell_command` 면 `arguments.command` (문자열 또는 배열)를 `classify_command`. `spawn_agent` → Spawn (자식 ID는 결과에서). `wait_agent`, `send_message` → Other. `request_user_input`, `request_user_input_async` → Ask. `mcp__` 접두 → Mcp
-  - `custom_tool_call` → ToolCall. Codex 앱의 `exec` 는 `input` 이 **JS 코드 문자열**이다 (예: `text(await tools.web__run({...}))`). 셸 명령이 아니다. Script로 분류해 빌드실 "스크립트 돌리는 중". 코드 안에 `tools.web__` 가 있으면 외근. 세분 매핑은 6부
-  - `function_call_output`, `custom_tool_call_output` → ToolResult. `outcome` 은 구조 필드로만 정한다: `output` 이 JSON이고 `metadata.exit_code` 가 있으면 0 → `Ok`, 그 외 → `Err` (Confirmed). 그런 필드가 없으면 `Unknown`. 본문 단어(`error`, `Traceback`)로 성공·실패를 정하지 않는다. 성공한 검색 결과에도 `error` 는 흔하고, 실패 문구가 200자 뒤에 올 수도 있다. 필드 이름은 미확인 (6부). 백그라운드 플래그가 있는 호출의 첫 응답은 `Started`
-- `event_msg.payload.type`: `task_started` (`turn_attribution { turn_id, parent_turn_id, initiating_agent_path, root_turn_id }`, `model_context_window`), `task_complete`, `token_count` → TokenUsage (context_window 포함), `agent_message`. 그 외 무시.
-- 서브에이전트: `spawn_agent` 호출과 `turn_attribution.initiating_agent_path` 가 연결 고리다 (확인됨). 자식이 별도 rollout 파일인지, 같은 파일에 섞이는지는 미확인 (6부). **1차 범위**: `spawn_agent` 결과에서 직원을 만들어 개발실에 앉히고(이름·직급만, 활동 없음), `wait_agent` 결과로 종료한다. 자식의 실제 활동(파일 읽기·수정 연출)은 자식 파일 위치가 확인된 뒤 T33에서 붙인다. T08의 완료 기준도 여기까지다.
+  - `message`: role user는 주입 문맥(`<environment_context>` 등)이 섞인다. 줄 `metadata.user_input_order` 가 있는 것만 UserMessage (확인됨). 단 본문이 `<send_user_message_question_reply>` 로 시작하면 질문 답이다. 안의 JSON `[{questionItemId, question, answer}]` 의 `questionItemId` 에 질문 호출의 call_id가 들어 있다. UserMessage로 내지 않는다 (확인됨). role assistant → AssistantText
+  - `reasoning` → Thinking (요약은 거의 비어 있다)
+  - `custom_tool_call` `name: "exec"` → ToolCall. **셸·파일 편집·웹 검색이 모두 여기로 온다** (앱·CLI 모두, 확인됨). `input` 은 JS 코드이고 그 안에서 `tools.exec_command({cmd: "<문자열>", …})`, `tools.apply_patch("*** Begin Patch…")`, `tools.web__run({…})`, `tools.write_stdin({session_id, chars})` 를 부른다. 한 호출에 여러 개가 들어가고 `Promise.allSettled` 로 병렬도 돈다. 분류: 코드에서 `cmd:` 문자열 리터럴을 모두 뽑아 `classify_command` 에 넣고 우선순위가 가장 높은 것을 대표로 고른다 (4.6.4 3번과 같은 규칙). 명령이 둘 이상이면 `compound = Mixed`. `apply_patch` 만 있으면 `*** Add File` → FileWrite, `*** Update File`·`*** Delete File`·`*** Move to` → FileEdit (경로는 패치 머리줄. 뒤 둘은 미확인). `web__` 만 있으면 WebSearch. 뽑을 것이 없으면 Script. `write_stdin` 의 `chars` 가 `\u0003` 이면 백그라운드 작업 중단이다 (TaskStop과 같게)
+  - `custom_tool_call_output` → ToolResult. `output` 은 `[{type: "input_text", text}]` 배열이다. 첫 text는 `Script completed` / `Script failed` 로 시작한다. 둘째부터는 모델이 `text()` 로 찍은 값이라 모양이 정해져 있지 않다 (`exit_code` 가 든 JSON일 때도, 모델이 감쌌을 때도 있다). 사용자가 승인 창에서 거부하면 `Script failed` 와 `exec_command failed: CreateProcess { message: "Rejected(\"rejected by user\")" }` 가 오고 CommandExecution item도 exit_code도 없다. 이 문구가 있으면 `Rejected` (확인됨). 승인 창은 `sandbox_permissions: "require_escalated"` 로 요청된다. `function_call.arguments`(JSON 문자열)와 **`custom_tool_call` 의 `input`(JS) 둘 다**에 실린다 (확인됨, 이 PC exec 1,056건 중 10건). `justification` 혼자는 신호가 아니다 (자동 승인된 명령에도 붙는다, 미확인). 승인 자체는 rollout에 남지 않고(transient) 결정이 날 때까지 `token_usage_record` 만 온다. 그래서 허가 대기는 "턴 진행 중 + 마지막 레코드가 도구 호출 + `require_escalated` + 결과 없이 35초"(codex 소스의 yield 상한 30초 + 5초) 로 추정한다 (Inferred, 4.7.2). `request_user_input`·`request_permissions` 호출(이름 또는 exec 본문 `tools.request_user_input(`)은 즉시 허가 대기다 (Confirmed). `approvals_reviewer = guardian_subagent` 설정이면 별도 rollout의 guardian 서브가 심사하는 약 10초 침묵이 생기고 자동 승인된다 (미확인). 승인 뒤에도 잠깐 대기로 보일 수 있다
+  - `function_call` → ToolCall. 확인된 이름: `spawn_agent`·`wait_agent`·`followup_task` (`namespace: collaboration`) → Spawn·Other, `request_user_input_async` (`request_user_input` 도 있다) → Ask. 그 결과 `{accepted: true}` 는 접수일 뿐이고 답은 뒤의 user 메시지로 온다 (위). 답을 기다리며 부르는 `sleep` (`namespace: clock`)은 이벤트를 내지 않는다. `mcp__` 접두 → Mcp. 결과는 `function_call_output`. `call_id` 가 없는 `function_call_output` 은 호스트가 보낸 출력이라 정상 모양이고 무시한다. `custom_tool_call_output` 에 `call_id` 가 없으면 미대응 로그 (미확인)
+  - `agent_message` (`author`, `recipient`): 부모·자식 사이 메시지. 이벤트를 내지 않는다
+  - `additional_tools` 무시 (확인됨). `web_search_call` → WebSearch, `tool_search_call`·`tool_search_output`·`image_generation_call` 은 미대응 로그 (셋 다 미확인)
+- `event_msg.payload.type`:
+  - `item_completed`: item마다 `id`, `started_at_ms`, `completed_at_ms` 가 있다 (소요 시간은 레코드 시각 차가 아니라 이것으로 낸다, 미확인). `item.type` 이 `CommandExecution` (`command, cwd, parsed_cmd, status, exit_code, duration, process_id, source`. `command` 는 **배열** `[셸, "-lc", 명령]` 이라 셸 래퍼를 벗겨 `classify_command` 에 넣는다. `source` 는 표본 1,001건 전부 `unified_exec_startup` 이었다. 둘 다 확인됨), `FileChange` (`changes, status`), `Extension` (`kind: web.search`), `SubAgentActivity`, `CollabAgentToolCall`, `AgentMessage`, `Reasoning`, `UserMessage`. **명령의 성공·실패를 알려 주는 구조 필드는 CommandExecution 의 `exit_code` 와 `status`(`completed`/`failed`) 다** (확인됨). item에 call_id가 없어서, exec 호출과 그 결과 사이에 온 item을 그 호출의 것으로 본다. exec 하나의 outcome: 그 사이 CommandExecution이 하나라도 `failed` 면 Err, 모두 `completed` 면 Ok (Confirmed). 하나도 없으면 첫 text가 `Script failed` 일 때 Err, 그 외 Unknown
+  - `task_started` (`turn_attribution { turn_id, turn_trigger, parent_turn_id, initiating_agent_path, root_turn_id }`, `model_context_window`), `task_complete`, `token_count` → TokenUsage (컨텍스트 사용량은 `info.last_token_usage`. `input_tokens` 는 `cached_input_tokens` 를 포함한 값이다. `total_token_usage` 는 세션 누적이라 압축 뒤에도 줄지 않는다, 확인됨. 창 크기는 `info.model_context_window`. `info` 가 없는 `token_count` 는 rate-limit 알림이라 무시). 턴 끝은 `task_complete` 이고, 중단된 턴은 `task_complete` 없이 `turn_aborted { reason: "interrupted" }` 로 끝난다. 중단된 턴의 대기 호출이 출력을 받는다는 보장이 없으므로 `turn_aborted` 때 그 턴의 `pending` 을 `Unknown` 으로 정리한다. 서브에이전트 신호가 `event_msg` 로 직접 오는 모양(`collab_agent_spawn_end {call_id, new_thread_id, new_agent_nickname, status}`, `sub_agent_activity {kind, agent_thread_id}`)과 user 메시지의 `<subagent_notification>{status: completed|errored|running}` 도 있다는 관찰이 있다 (미확인, 이 PC 0건. 보이면 `item_completed` 모양과 같게 처리). `AgentMessage` 의 `phase: "final_answer"` 는 질문 직후에도 나와 턴 끝 신호가 아니다 (확인됨). 그 외 무시. `thread_settings_applied` 는 `task_complete` 몇 분 뒤에도 온다 (`thread_settings.model` 이 모델명이라는 관찰이 있다, 미확인)
+- 최상위 `world_state`, `token_usage_record`, `inter_agent_communication_metadata` 는 무시. `event_msg` `thread_rolled_back {num_turns}` 는 마지막 N턴 취소다 (미확인. 보이면 미대응 로그, 상태는 Idle로).
+- 내부 에이전트의 rollout: `session_meta.payload.source` 가 `{subagent: {other: "guardian"}}` 또는 `{subagent: "<문자열>"}` 이면 승인 심사 같은 내부 작업이라 팀으로 만들지 않는다 (미확인, 타 프로젝트. 이 PC는 `thread_spawn` 만). 모르는 `originator`(`codex_exec`, `Claude Code`, `Claude Cowork` 관찰)는 D동(CLI)으로 두고 미대응 로그. 같은 `session_meta.payload.id` 의 rollout 파일이 재개로 여럿 생길 수 있다는 관찰이 있다 (미확인, 이 PC 18건 중 0). 팀 키는 파일 경로가 아니라 thread id로 둔다 (4.7.9).
+- `write_stdin` 폴링은 최대 300초 기다릴 수 있다 (미확인). 그 사이 침묵은 응답 대기가 아니라 장기 실행이다.
+- 백그라운드: 표시 플래그가 없다. `exec_command` 결과 JSON에 `session_id` 가 있고 `exit_code` 가 없으면 아직 도는 작업이라 `Started`. 끝나면 `process_id` 가 그 session_id인 CommandExecution item이 따로 온다 (확인됨). 이것으로 원래 호출의 `Ok`/`Err` 를 낸다. 푸시 알림 레코드는 없다.
+- 서브에이전트 (확인됨):
+  - 자식은 같은 날짜 폴더의 별도 rollout 파일이다. 자식 `session_meta.payload` 에 `parent_thread_id`(= `forked_from_id`), `thread_source: "subagent"`, `agent_path: "/root/<이름>"`, `agent_nickname`, `subagent_history_start_ordinal` 이 있다. `source` 는 루트에선 문자열(`vscode`·`cli`·`exec`), 자식에선 객체(`{subagent: {thread_spawn: {parent_thread_id, depth, agent_path, agent_nickname}}}`)다 (확인됨). 구버전(0.146 이하)은 `source: {subagent: "review"}` + 최상위 `parent_thread_id` 다 (미확인). `source` 는 `Value` 로 받고 모양이 달라도 파일 전체를 버리지 않는다. 자식 파일 앞부분에는 부모 이력이 복제돼 있다. **`ordinal` 이 `subagent_history_start_ordinal` 보다 작은 줄은 읽지 않는다.** 읽으면 부모의 입력·턴이 자식에 한 번 더 들어간다. **단, 파일 첫 줄의 자기 `session_meta` 는 `ordinal: 0` 이라 이 조건에 걸린다** (확인됨, 자식 2건 모두). 첫 `session_meta` 는 ordinal 검사 전에 자기 것으로 채택하고, 복제 구간 안의 둘째 `session_meta`(부모 것)는 버린다.
+  - 부모 쪽: `spawn_agent` 결과는 `{task_name}` 뿐이다. 자식 thread id·모델·effort는 `item_completed` 의 `SubAgentActivity {id, kind: "started", agent_thread_id, agent_path, model, reasoning_effort}` 에 있다. **`id` 가 `spawn_agent` 호출의 `call_id` 와 같다** (확인됨, 5/5). 위치(직후)가 아니라 id로 잇는다. **여기서 SubagentSpawn을 낸다.** `kind: "completed"` 로 SubagentDone (한 자식에 여러 번 온다, 확인됨 5건 spawn에 10건. 상태 기계가 거른다), `"interacted"` 는 추가 지시다. `wait_agent` 결과(`{message, timed_out}`)에는 대상 정보가 없어 쓰지 않는다.
+  - `spawn_agent`·`followup_task` 의 `message` 와 자식이 받은 지시는 암호화돼 있다. SubagentSpawn의 `prompt` 는 비운다.
+  - 자식 파일의 활동(파일 읽기·수정 연출)은 T33에서 붙인다. T08은 Spawn·Done까지.
+- `/compact` (확인됨): 사용자 입력 없는 `task_started`(`turn_attribution` 없음) → 최상위 `compacted` (`replacement_history`, `window_id` 등. 요약은 암호화돼 있다) → `item_completed` 의 `ContextCompaction` → `task_complete`. ContextCompaction을 내고 토큰 수는 비운다. 압축 뒤 사용량은 다음 `token_count` 의 `last_token_usage` 로 안다.
+- 할 일 도구는 이 버전에 없다 (모델이 todo 파일로 대신했다, 확인됨).
 
-`~/.codex/session_index.jsonl` (`{ id, thread_name, updated_at }`) 과 `history.jsonl` (`{ session_id, ts, text }`) 은 Scan 단계에서 세션 목록·제목·첫 요청을 얻는 데 쓴다 (확인됨).
+`~/.codex/session_index.jsonl` (`{ id, thread_name, updated_at }`) 은 Scan 단계에서 세션 제목을 얻는 데 쓴다 (확인됨). 이름을 바꿀 때마다 append되어 같은 id면 마지막 줄이 이기고, 한 번도 안 바꿨으면 파일이 없는 것이 정상이다 (미확인). `session_index` 에는 자식 세션이 없고, `updated_at` 은 첫 턴 직후 값에서 갱신되지 않는다. `history.jsonl` (`{ session_id, ts, text }`) 은 TUI만 쓴다 — **Codex Desktop만 쓴 이 PC에는 없다** (확인됨). 있으면 첫 요청 보조로만 쓰고, 크기 제한으로 꼬리가 제자리에서 다시 쓰일 수 있어 TailReader가 아니라 통째로 읽는다. 스레드 메타의 원본 `thread_history_1.sqlite`·`state_5.sqlite` 는 1차에서 읽지 않는다 (6부).
 
-#### 4.6.3 Gemini 파서 (`parse/gemini.rs`)
+#### 4.6.3 Antigravity 파서 (`parse/antigravity.rs`)
 
-포맷 미확인. 개발 PC에 Gemini CLI 세션이 없다 (6부). 문서의 가정(`session-*.json` 에 messages 배열)이 맞으면 jsonl tail이 아니라 **파일 전체를 다시 읽어 이전 길이와 비교**하는 방식이 필요하다. `Site.read_mode = WholeFile` 로 분리한다. 뼈대만 두고 `UserMessage` / `AssistantText` / `ToolCall` 세 종류부터.
+확인 기준: Antigravity 앱(Windows)·CLI(WSL), 2026-10-20 표본. 앱과 CLI의 jsonl 모양은 같다. `brain\<uuid>\.system_generated\logs\transcript_full.jsonl` 을 tail한다 (`ReadMode::Append`). 같은 폴더의 `transcript.jsonl` 은 `tool_calls[].args` 값이 JSON 문자열로 한 번 더 감싸진 것만 다르고, `chunks\` 는 복사본이다. 줄은 도구가 끝난 뒤에 쓰인다. 공통 키 `type, step_index, created_at (UTC, 초), status, source`. `step_index` 는 0부터 빠짐없이 연속이다.
+
+| type | 처리 |
+|---|---|
+| `USER_INPUT` | UserMessage. `content` 의 `<USER_REQUEST>` 안쪽만 본문이다 (`<ADDITIONAL_METADATA>`, `<USER_SETTINGS_CHANGE>` 는 버린다) |
+| `PLANNER_RESPONSE` | `content` 가 있으면 AssistantText. `tool_calls[] {name, args}` 가 있으면 항목마다 ToolCall, `thinking` 이 있으면 Thinking도. `input_tokens + cache_read_tokens` → TokenUsage (context_window 없음) |
+| `GENERIC` | 도구 결과. call id가 없다. step N의 호출 줄이 호출 k개를 담으면 N+1…N+k 줄이 호출 순서대로 그 결과다 (확인됨, 70건 전수). `status: RUNNING` 이면 백그라운드로 넘어간 작업이라 `Started` 다. RUNNING 줄은 작업이 끝나도 바뀌지 않는다 |
+| `SYSTEM_MESSAGE` | 사용자 입력이 아니다. 본문 `[Message] … sender=<id> priority=… content=…`. 발신자가 `<세션 id>/task-<N>` 이면 step N 작업의 완료(`finished with result: Command exited with code M.`) 또는 취소(`was canceled`)다. 발신자가 자식 대화 id면 서브의 보고이고 SubagentDone이다 |
+
+도구 이름 → ToolKind: `read_file` → FileRead, `write_file` → FileWrite, `edit_file` → FileEdit (경로 `args.Path`), `run_command` → `args.CommandLine` 을 `classify_command`, `search_web` → WebSearch, `ask_question` → Ask (PermissionRequest), `invoke_subagent` → Spawn, `manage_task` (`Action: kill`) → 백그라운드 작업 중단 (TaskStop과 같게), `manage_subagents`·`send_message` → 내부 배관이라 이벤트를 내지 않는다. `write_file`·`edit_file` 의 `args.Path` 가 그 대화 brain 폴더의 `task.md` 면 할 일 목록 갱신이다 (마크다운 체크박스 `[ ]`·`[/]`·`[x]` → TodoChanged).
+
+outcome: 구조 필드가 없다. `run_command` 결과 첫 줄 `Command exited with code N.` 은 도구 런타임이 쓰는 고정 문구라 구조 필드로 본다 (N=0 → Ok, 그 외 Err, Confirmed). 실패한 명령도 `status` 는 `DONE` 이다. Windows 앱은 PowerShell을 거쳐 0이 아닌 코드가 1로 바뀔 수 있다 (확인됨). 도구 자체가 실패하면 결과 줄이 `status: ERROR` 이고 본문이 `Encountered error in step execution: <이유>` 다 → Err (Confirmed). 이유가 `permission check failed` 로 시작하면 사장님 반려 → Rejected (확인됨, 앱). 그 밖의 `DONE` 은 Ok.
+
+서브에이전트 (확인됨): `invoke_subagent` (`args.Prompt, Role, TypeName, Model?`) 결과 GENERIC 본문의 JSON `conversationId` 가 자식 id다. **여기서 SubagentSpawn을 낸다** (`description` = `Role`. `model` 은 `inherit` 이거나 없어서 4.7.4의 "모델 없음"이다). 부모 폴더의 `.system_generated\subagents\<자식 id>.json` 에도 있어 Scan이 먼저 볼 수 있다. 자식은 같은 `brain\` 아래 형제 폴더이고, 첫 줄은 부모가 보낸 SYSTEM_MESSAGE다 (USER_INPUT 없음). 동기·비동기는 기록으로 구별되지 않는다.
+
+모델명은 jsonl에 없다 (`conversations\<uuid>.db` 의 blob에만 있다). 1차는 SQLite를 읽지 않으니 서브의 모델은 없음으로 본다. cwd도 jsonl에 없다. CLI는 `history.jsonl` 의 `workspace` 와 `subagents\*.json` 의 `workspaceUris` 가 있고, 앱은 프로젝트 밖 세션이면 없다 (6부). 승인 대기 중에는 호출 줄만 있고 결과 줄이 없다. 승인되면 결과 줄이 그 뒤에 붙고, 승인 자체의 레코드는 없다 (확인됨, CLI). 파일이 append만 되는지는 증명하지 못했다. 앱·CLI 대화를 이어 간 표본 셋 모두 앞부분 바이트가 그대로였다 (6부). 다시 쓰이면 TailReader의 Reset 규칙(4.5)이 잡는다. append 전용이 확인되면 `ReadMode::WholeFile` 을 지운다.
 
 #### 4.6.4 명령 분류 (`classify_command`)
 
-1. 명령을 개행, `|`, `&&`, `||`, `;` 로 나눈다. 따옴표(`'`, `"`) 안과 `\` 뒤의 구분자는 자르지 않는다 (간단한 따옴표 상태 머신). 세그먼트 끝의 단독 `&`(`&&` 아님)는 비동기 실행이다. 셸이 즉시 0을 돌려주므로 그 호출의 결과는 `Unknown` 으로 본다 (`git push &` 가 출고 성공이 되면 안 된다). 서브셸 `( )`, `$( )`, heredoc, `for`/`while`/`if`, `{ }` 가 들어 있으면 분석하지 않고 `compound = Mixed` 로 둔다. 분석하지 못하는 구문은 개별 명령의 성공을 보증하지 않는 쪽으로 처리한다.
+1. 명령을 개행, `|`, `&&`, `||`, `;` 로 나눈다. 따옴표(`'`, `"`) 안과 `\` 뒤의 구분자는 자르지 않는다 (간단한 따옴표 상태 머신). 세그먼트 끝의 단독 `&`(`&&` 아님)는 비동기 실행이다. 셸이 즉시 0을 돌려주므로 그 호출의 결과는 `Unknown` 으로 본다 (`git push &` 가 출고 성공이 되면 안 된다). 세그먼트 첫 토큰의 `&` 는 PowerShell 호출 연산자라 비동기가 아니다. 벗기고 다음 토큰을 프로그램으로 본다. 서브셸 `( )`, `$( )`, heredoc, `for`/`while`/`if`, `{ }` 가 들어 있으면 분석하지 않고 `compound = Mixed` 로 둔다. heredoc 본문 줄은 세그먼트로 나누지 않는다. 분석하지 못하는 구문은 개별 명령의 성공을 보증하지 않는 쪽으로 처리한다.
 2. 각 세그먼트를 아래 표로 분류한다.
 3. **우선순위가 가장 높은 것**을 대표로 고른다. 마지막 명령 기준이 아니다. `cargo test 2>&1 | tail -20` 은 Test, `cd x && npm test | head` 도 Test다. 우선순위: Release > PrCreate > GitPush > GitCommit > Test > Build > GitDiff > PrView > GitQuery > FileSearch > FileRead > Shell. 대표 분류는 **방과 문장**(화면 위치)을 정하는 데 쓴다.
-4. `compound`: 세그먼트가 하나면 `Single`, 결합이 `&&` 뿐이면 `AndOnly`, 파이프·`||`·`;`·개행·단독 `&`·분석 불가 구문이 하나라도 있으면 `Mixed`. 파이프는 pipefail이 없으면 마지막 명령의 종료 코드만 남아 `cargo test | tail` 이 테스트 실패에도 0을 돌려준다. Claude Code의 Bash가 pipefail을 켜는지는 미확인(6부)이고, 켜는 것이 확인되면 파이프를 AndOnly로 완화한다.
-5. 키 두 개를 뽑는다. `command_key` 는 대표 세그먼트의 첫 토큰 + 서브커맨드 (`cargo build`, `npm test`, `git push`)로 **평균 소요**의 키다. `command_norm` 은 공백을 정규화한 원문 전체로 **"같은 명령 3회 연속 실패"**의 키다. `pytest a.py` 와 `pytest b.py` 는 평균은 같이 세고 장애는 따로 센다. 표시용 `command` 는 원문 40자.
+4. `compound`: 세그먼트가 하나면 `Single`, 결합이 `&&` 뿐이면 `AndOnly`, 파이프·`||`·`;`·개행·단독 `&`·분석 불가 구문이 하나라도 있으면 `Mixed`. 파이프는 pipefail이 없으면 마지막 명령의 종료 코드만 남아 `cargo test | tail` 이 테스트 실패에도 0을 돌려준다. Claude Code의 Bash와 Codex의 bash는 pipefail이 꺼져 있다 (확인됨, `false | true` 가 성공).
+5. 키 두 개를 뽑는다. `command_key` 는 대표 세그먼트의 첫 토큰 + 서브커맨드 (`cargo build`, `npm test`, `git push`. `npm run build`, `gh pr create` 처럼 두 단어인 것은 둘 다. `git -C <경로>`, `cargo +<툴체인>` 같은 앞 옵션은 건너뛴다)로 **평균 소요**의 키다. `command_norm` 은 공백을 정규화한 원문 전체로 **"같은 명령 3회 연속 실패"**의 키다. `pytest a.py` 와 `pytest b.py` 는 평균은 같이 세고 장애는 따로 센다. 표시용 `command` 는 원문 40자.
 
 | 패턴 | ToolKind |
 |---|---|
@@ -1044,12 +1100,12 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 | `cargo build`, `cargo check`, `npm run build`, `make`, `go build`, `tsc`, `gradle`, `mvn` | Build |
 | `git status`, `git log`, `git show`, `git branch` (인자 없음 또는 `-a`/`--list`), `git tag` (인자 없음 또는 `-l`), `gh release list/view` | GitQuery |
 | `git diff` | GitDiff |
-| `git commit` | GitCommit (메시지 `-m` 값 추출) |
+| `git commit` | GitCommit (메시지 `-m` 값 추출. `"$(cat <<'EOF' …)"` 꼴이면 본문 첫 줄) |
 | `git push` | GitPush |
 | `gh pr view`, `gh pr diff`, `gh pr list` | PrView |
 | `gh pr create` | PrCreate |
 | `git tag <이름>`, `git tag -a`, `gh release create` | Release |
-| `cat`, `head`, `tail`, `sed -n`, `less` | FileRead (경로 추출) |
+| `cat`, `head`, `tail`, `sed -n` (`-i` 없을 때), `less` | FileRead (경로 추출) |
 | `grep`, `rg`, `find`, `fd` | FileSearch |
 | `git branch <이름>` 등 그 외 git, 그 외 명령 | Shell |
 
@@ -1157,26 +1213,30 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 "큰 파일·연속 읽기" 기준: 범위 없이 전체 읽기이거나 10초 안에 Read가 3회 이상이면 서고로 이동, 아니면 자리에서 휠만 굴린다. 사소한 읽기마다 걸어다니면 산만하다.
 
-컨텍스트 윈도우: Codex는 `task_started.model_context_window` 가 준다. Claude는 레코드에 없고 모델명(`claude-fable-5-1`)에도 윈도우 표기가 없다. 개발 PC에서 본 compaction 레코드의 `preTokens` 는 967,113이라 이 PC는 1M 윈도우를 쓰고 있었다. 200,000을 기본값으로 두면 화분이 20%에서 시든다. 규칙: (1) 세션 안에서 compaction을 한 번이라도 봤으면 `preTokens` 를 200k 또는 1M 중 가까운 쪽으로 올림해 윈도우로 쓴다. (2) 아직 못 봤으면 같은 호스트의 다른 세션에서 학습한 값을 쓴다. (3) 그것도 없으면 설정값(기본 200,000)을 쓰고 화분 옆에 "?" 를 붙인다. 입력 토큰 합이 윈도우를 넘으면 그 즉시 1M로 올린다 (6부).
+컨텍스트 윈도우: Codex는 `task_started.model_context_window` 가 준다. Claude는 레코드에 없고 모델명(`claude-fable-5-1`)에도 윈도우 표기가 없다. 개발 PC에서 본 compaction 레코드의 `preTokens` 는 967,113이라 이 PC는 1M 윈도우를 쓰고 있었다. 200,000을 기본값으로 두면 화분이 20%에서 시든다. 규칙: (1) 세션 안에서 compaction을 한 번이라도 봤으면 `preTokens` 를 200k 또는 1M 중 가까운 쪽으로 올림해 윈도우로 쓴다. (2) 아직 못 봤으면 같은 호스트의 다른 세션에서 학습한 값을 쓴다. (3) 그것도 없으면 모델명으로 정한다: `haiku` 계열과 4.x 이하(`-4-0`, `-4-1`, `claude-3*`)는 200k, 그 밖은 1M (타 프로젝트의 실측 최대값이 opus·fable·sonnet 5 계열 모두 200k를 넘었다, 미확인). 화분 옆에 "?" 를 붙인다. 입력 토큰 합이 윈도우를 넘으면 그 즉시 1M로 올린다 (6부).
 
 #### 4.7.2 시간 기반 전이 (매 틱 평가)
 
 | 조건 | 전이 | 근거 |
 |---|---|---|
-| (직원) `pending` 비어 있고 `quiet_since` 있고 `waiting_user_since` 없음 | 응답 대기: pose=Think, "턱 괴고 고민 중인 듯 (n초)". 10초 넘으면 pose=Duck, "러버덕과 상담 중인 듯". 10분 넘으면 `quiet_since = None` (응답이 끊긴 것으로 보고 졸음 규칙에 맡긴다) | 추정 |
+| (직원) `pending` 비어 있고 `quiet_since` + 2초 지났고 `waiting_user_since` 없음 | 응답 대기: pose=Think, "턱 괴고 고민 중인 듯 (n초)". 2초 안에 다음 tool_use가 오면 자세를 바꾸지 않는다 (도구 사이마다 자세·방이 깜박이지 않게). 10초 넘으면 pose=Duck, "러버덕과 상담 중인 듯". 10분 넘으면 `quiet_since = None` (응답이 끊긴 것으로 보고 졸음 규칙에 맡긴다) | 추정 |
 | (부장) `waiting_user_since` + 3초 | 결재 대기: 화면보호기, 서성임, "요구사항 대기 중인 듯". 턴 종료 판단 = "마지막 블록이 tool_use가 아니고 3초 동안 같은 턴의 블록이 더 오지 않음". 레코드에 `stop_reason` 이 있으면 그것을 우선한다 (6부) | 추정 |
+| (Claude 직원) 등록부 `status: waiting` | 허가 대기 (room=출입문, Confirmed). `waitingFor` 를 문장에. 등록부가 `busy`·`idle` 로 돌아오면 해제 (4.4.1, 값 모양은 6부 미확인) | 확인됨 (값이 확인되면) |
+| (Codex 직원) `pending` 의 마지막 호출이 `require_escalated` 이고 결과 없이 35초 | 허가 대기 (room=출입문, Inferred). 결과가 오면 해제. `request_user_input`·`request_permissions` 는 호출 즉시 Confirmed (4.6.2) | 추정 (임계값은 codex 소스 yield 상한) |
 | (팀) `now - last_activity > 3분` 이고 모든 직원의 `pending`·`background` 가 비어 있고 응답 대기 중인 직원이 없음 | phase=Dozing, 부장 room=탕비실 (결재 대기 연출을 대체) | |
 | (팀) `> 30분` 이고 `!alive_in_registry` | phase=Off. 등록부에 살아 있으면 Dozing 유지, 조명만 어둡게 (S58) | |
 | (직원) `pending` 중 하나의 경과 > `avg[command_key] × 2` | pose=Squat, 선풍기 | |
 | (직원) `pending` 경과 > 120초 | 땀, "장기 실행". 졸음으로 가지 않는다 | |
 | (직원) `pending` 경과 > 30분, 또는 팀이 Off로 바뀜 | 그 호출을 `Unknown` 으로 정리. 결과가 영영 오지 않는 호출(프로세스 종료, 연결 단절)의 뒷정리 | |
 | (직원) `background` 작업 | 시간 제한 없음. 완료 알림(Ok/Err 규칙 적용), `TaskStop` 의 성공 결과(Unknown), 팀 Off(Unknown) 중 먼저 오는 것으로 정리하고 작업표를 뗀다. 작업표에는 경과 시간만 | |
-| (서브) `pending`·`background` 비어 있고, 마지막 레코드가 tool_use 없는 assistant이고, 60초 무변경. 또는 부모의 Agent 결과 본문이 완료를 말함 | SubagentDone | 추정 |
+| (서브) 완료 기록(4.6.1~4.6.3)을 못 본 채 `pending`·`background` 비어 있고, 마지막 레코드가 tool_use 없는 assistant이고, 60초 무변경 | SubagentDone | 추정 |
 | 현지 22~06시 | props.night = true | |
 | 활성 경과 매 60분 (2시간 이후) | props.pizza += 1 | |
 | incident 중 에러 없이 120초 | incident=None | |
 
 상태 간 우선순위는 2.5를 따른다.
+
+**"사장님 손이 필요한 상태"는 한 곳에서 정한다.** 허가 대기(PermissionRequest), 결재 대기(`waiting_user_since`), 반려 직후를 `needs_boss()` 하나로 묶고, 말풍선 풀 선택(3.6)·토스트·장애 판정·탕비실 연출 금지가 모두 이 함수를 쓴다. 같은 집합을 네 곳에 따로 적으면 한 곳이 빠져 "허가 대기 중인데 축하 연출"이 난다 (타 프로젝트에서 실제로 난 버그).
 
 #### 4.7.3 장애 판정 (`stats.rs`)
 
@@ -1192,7 +1252,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | 순서 | 토큰 | 직급 |
 |---|---|---|
 | 1 | `haiku`, `mini`, `nano`, `lite`, 모델 없음 | 사원 |
-| 2 | `opus`, `fable`, `mythos`, `o3`, (`gemini` 와 `pro` 둘 다 포함), (연속 토큰 `gpt`,`5` 이고 effort `high`) | 과장 |
+| 2 | `opus`, `fable`, `mythos`, `o3`, (`gemini` 와 `pro` 둘 다 포함), (연속 토큰 `gpt`,`5` 이고 effort `high` 이상. `xhigh` 포함) | 과장 |
 | 3 | `sonnet`, (연속 토큰 `gpt`,`5`), (연속 토큰 `gpt`,`4`,`1`), (`gemini` 와 `flash` 둘 다 포함) | 대리 |
 | 4 | 그 외 | 대리 |
 
@@ -1223,7 +1283,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 #### 4.7.7 이름 부여 (`names.rs`)
 
-- 성 풀 40개(김 이 박 최 정 강 조 윤 장 임 한 오 서 신 권 황 안 송 류 홍 …), 이름 풀 2글자 200개(하늘 서준 지우 도윤 예린 민재 수아 …). 세 글자 조합.
+- 성 풀 40개(김 이 박 최 정 강 조 윤 장 임 한 오 서 신 권 황 안 송 류 홍 …), 이름 풀 2글자 300개 이상(하늘 서준 지우 도윤 예린 민재 수아 …). 세 글자 조합. 오래 켜 둬도 같은 이름이 자주 보이지 않을 만큼 넉넉하게.
 - 시드: `hash(agent_id)`. 같은 agent_id는 항상 같은 이름.
 - 저장: `%APPDATA%\Owlfice\names.json` `{ "<agent_id>": {"name": "김하늘", "first_seen": "..."} }`. 재입사해도 유지. 저장 실패 시 메모리만.
 - 같은 사무실에 이미 쓰는 이름이면 시드+1로 다시 뽑는다. 부장 이름은 세션 ID 해시, 서브는 agent_id 해시.
@@ -1238,6 +1298,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 #### 4.7.9 사무실 합성 (`world.rs`)
 
+- 팀 키는 `(host.id, product, session_id)` 다. 같은 원시 id가 다른 호스트·제품에서 와도 충돌하지 않는다 (WSL 홈이 `/mnt/c` 심링크인 구성은 6부).
 - 대기업: `office_id = session_id`. 층 = 호스트 번호 (Windows 1, WSL은 처음 본 순서로 2, 3 … `rooms.json` 에 저장, 4.4.2).
 - 중소기업: `office_id = vendor`. 층 = Claude 1, Codex 2, Gemini 3. 그 vendor의 모든 팀이 한 사무실.
 - 팀장석: 팀이 사무실에 들어올 때 비어 있는 첫 번호(0~3)를 `desk_slot` 에 주고 유지한다. 활동 순서로 바꾸지 않는다 (바꾸면 부장들이 책상을 옮겨 다닌다). 네 자리가 찼을 때 새 팀이 오면 가장 오래 조용한 팀이 간이 책상(4~5)으로 내려가고 그 자리를 넘긴다. 간이 책상도 찼으면 카드만. 카드 정렬은 3.5대로 활동 순이고 좌석과 무관하다.
@@ -1259,7 +1320,7 @@ Tauri 커맨드 (프론트 → 백엔드):
 |---|---|---|
 | `get_world_snapshot` | 없음 | `WorldDto { list_seq, scale, offices: [OfficeSummaryDto], selected: Option<OfficeDto> }`. `OfficeDto` 는 `state_seq` 를 포함한다 |
 | `select_office` | `office_id, request_id` | `OfficeDto`(state_seq 포함) + `request_id`. 프론트는 마지막으로 보낸 request_id의 응답만 받아들이고, 그 사무실의 마지막 state_seq **미만**이면 버린다. 같으면 멱등이라 적용한다 (A→B→A처럼 변경 없는 사무실로 돌아올 때 화면을 채워야 한다). 늦게 온 응답이 이미 받은 이벤트보다 과거라 화면을 되돌리는 것만 막는다 |
-| `get_employee_timeline` | `office_id, agent_id, before: Option<{gen, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 RawRef로 읽어 온 한 페이지. 커서는 (파일 세대, 오프셋)이다. Reset으로 gen이 바뀌었으면 `cursor_invalid` 를 돌려주고 프론트는 첫 페이지부터 다시 연다 |
+| `get_employee_timeline` | `office_id, agent_id, before: Option<{generation, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 RawRef로 읽어 온 한 페이지. 커서는 (파일 세대, 오프셋)이다. Reset으로 generation이 바뀌었으면 `cursor_invalid` 를 돌려주고 프론트는 첫 페이지부터 다시 연다 |
 | `get_session_detail` | `office_id, team_id` | `SessionDetailDto` |
 | `open_path` | `path` | 탐색기로 열기 |
 | `rescan` | 없음 | 즉시 Scan 1회 |
@@ -1286,10 +1347,10 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 - `store.ts`: 단일 객체 상태. `applyList`, `applyOfficeState` (둘 다 전체 교체, 스트림별 seq 검사). 구독자는 사이드바 둘과 렌더러.
 - `scale.ts`: 첫 실행 규모 선택 화면. 설정에 규모가 없을 때만 뜬다.
 - `sidebar-left.ts`, `sidebar-right.ts`: DOM 직접 조작. 카드는 `agent_id` 키로 재사용하고 바뀐 필드만 갱신한다. 매 상태마다 innerHTML을 다시 쓰지 않는다. 중소기업은 팀 묶음 헤더. 3.2의 구간에 따라 레일(48px)·드로어·압축형 카드로 바뀐다.
-- `office/anim-queue.ts`: `AnimCue` 를 직원별 큐에 넣고 순서대로 재생. 이동은 A* 없이 방 중심점 간 직선 + 모서리 우회 두 점. 최소 0.5초, 최대 1.5초. 큐가 5개 넘게 쌓이면 중간을 건너뛰고 마지막 상태로 점프.
+- `office/anim-queue.ts`: `AnimCue` 를 직원별 큐에 넣고 순서대로 재생. 이동은 A* 없이 방 중심점 간 직선 + 모서리 우회 두 점. 최소 0.5초, 최대 1.5초. 큐가 5개 넘게 쌓이면 중간을 건너뛰고 마지막 상태로 점프. 큐가 비고 자리에 앉은 직원은 5~10초마다(직원 id 해시로 어긋나게) 자리 주변 한두 타일을 오가는 유휴 동작을 한다. 이 동작은 이벤트가 아니고 의미도 주장하지 않는다. `needs_boss()`(4.7.2) 직원은 하지 않는다. 아틀라스 로드에 실패하면 코드로 그린 대체 몸체(단색 사각 + 눈)로 그려 에셋 없이도 화면을 검증할 수 있게 한다.
 - `office/floorplan.ts`: 방마다 `{tiles, anchor, seats[]}`. 원본 데이터는 `design/sprites/floorplan.json`. 개발실 좌석 6 + 임시 책상 4, 팀장석 4 + 간이 2. 좌석 번호는 백엔드가 준 `seat` 를 따른다 (해시 아님).
 - `office/props.ts`: 신호등·화분·전광판·휴지통·칸반·피자·창밖은 `TeamDto.props` 와 `SharedPropsDto` 를 받아 즉시 반영. 애니메이션은 cue로.
-- `office/renderer.ts`: 정수 배율만 (3.2 공식). 720 미만에서 패닝 모드와 미니맵. ResizeObserver 100ms 디바운스. 렌더 루프 60fps. 보이지 않는 창(최소화)이면 10fps로 낮춘다.
+- `office/renderer.ts`: 정수 배율만 (3.2 공식). 720 미만에서 패닝 모드와 미니맵. ResizeObserver 100ms 디바운스. 렌더 루프 60fps. 보이지 않는 창(`document.hidden`)이면 렌더를 멈추고 `office-state` 는 마지막 스냅샷만 들고 있다가 보일 때 한 번 적용한다 (cue는 버린다. 전체 스냅샷이라 seq 규칙과 어긋나지 않는다, 4.3). 한 틱에 두 번 이상 그리지 않도록 `requestAnimationFrame` 하나로 모은다.
 - 글꼴: UI는 IBM Plex Sans KR과 IBM Plex Mono (OFL). 사무실 캔버스 위 말풍선과 이름표만 한글 픽셀 폰트 Galmuri11 (OFL). 사이드바와 카드에는 픽셀 폰트를 쓰지 않는다. 모두 앱에 묶어 외부에서 받지 않는다 (1.3). 토큰과 컴포넌트 스타일은 `design/handoff/tokens.css`.
 
 ### 4.10 성능 예산
@@ -1332,17 +1393,19 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | `scenario_gap` | 이벤트는 처리했지만 대응 cue가 없는 전이 | from, to |
 
 - 레코드마다 `first_seen`, `last_seen`, `count`. 같은 (kind, key)는 한 줄로 합치고 count만 올린다. 메모리에 집계하고 1분마다 flush.
+- 화면에도 보인다 (말풍선·티커, 3.6). 로그는 그와 상관없이 남긴다.
 - 기본값은 구조 정보만이다: 도구 이름, 키 목록, 분류, 자리표시자로 치환한 토큰 열, 횟수. 명령·결과·프롬프트·파일 내용의 원문은 기본으로 저장하지 않는다. 앞부분만 자르는 것은 내용 제거가 아니다 (토큰이나 인라인 프롬프트가 80자 안에 들어온다). 설정의 **"원문 진단"** 을 켰을 때만 `command` 는 원문 80자, `result_shape` 는 첫 200자를 추가로 저장하고, 켜 둔 동안 사이드바 간판에 경고 점을 띄운다 (6부).
 - `owlfice-probe unhandled` 가 이 파일을 kind별·count순으로 요약한다. 다음 버전 기획은 이 요약으로 시작한다.
-- 설정 팝업: "진단 정보 복사"(탐색한 경로, 찾은 Site, 각 팀의 파일 경로와 오프셋, 호스트별 틱 통계)와 "미대응 로그 폴더 열기".
+- 설정 팝업: "진단 정보 복사"(탐색한 경로, 찾은 Site, 각 팀의 파일 경로와 오프셋, 호스트별 틱 통계)와 "미대응 로그 폴더 열기". 복사한 텍스트에서 홈 경로는 `<home>` 으로, 프로젝트 폴더 이름은 해시 앞 8자로 치환한다. 사용자가 이슈에 붙이는 순간 사용자명·프로젝트명이 새는 것을 막는다.
 
 ### 4.12 테스트 전략
 
 - `tools/anonymize.py`: 실제 세션 파일을 fixture로 바꾼다. 경로·이름·프롬프트와 결과 본문을 치환하고 구조·레코드 종류·타임스탬프 간격은 보존한다. 실제 세션에는 프롬프트 전문, 경로, 도구 출력(비밀이 섞일 수 있음)이 들어가므로 익명화 없이 저장소에 넣지 않는다.
-- `fixtures/` 최소 세트: Claude 메인+비동기 서브에이전트 1, Claude 메인+동기 서브에이전트 1 (자식 이벤트가 Spawn보다 이른 ts), Codex 앱 1 (`custom_tool_call` 포함), 테스트 실패→수정→통과 1, 재작성(길이 감소) 1, 병렬 호출 + 역순 결과 1, compaction 1, 반려 1, 내부 도구 호출의 실패 결과 1.
+- `fixtures/` 최소 세트: Claude 메인+비동기 서브에이전트 1, Claude 메인+동기 서브에이전트 1 (자식 이벤트가 Spawn보다 이른 ts), Codex 앱 1 (`custom_tool_call` 포함), 테스트 실패→수정→통과 1, 재작성(길이 감소) 1, 병렬 호출 + 역순 결과 1, compaction 1, 반려 1, 내부 도구 호출의 실패 결과 1. 흐름은 익명화한 실제 발췌로, **가장자리 사례(레코드 모양 하나)는 2~8줄짜리 손으로 쓴 합성 fixture**로 둔다. 값은 티 나게 가짜(`00000000-0000-4000-8000-…`, `<redacted>`)라 비밀 검사가 필요 없다.
 - `owlfice-replay --speed 10 --shift-to-now fixtures/...`: fixture를 임시 폴더에 속도 조절해 append한다. `--shift-to-now` 는 fixture의 모든 timestamp를 "지금"에 맞춰 평행이동한다. 60초 출근 판정과 시간 전이를 재현하려면 필수다. 3.10의 시나리오 재현 도구다. 추정 상태(응답 대기, 결재 대기, 서브 종료)까지 replay로 재현한다. 실제 세션으로만 재현하도록 요구하지 않는다.
-- Rust 단위 테스트: `TailReader` (잘린 줄, 8MB 상한 뒤 backlog 이어 읽기, 길이 감소, remainder 구간까지 줄어든 축소, 다른 파일로 교체, 같은 길이 덮어쓰기(mtime 변경 → Reset), remainder 구간 덮어쓰기(캐시 비교), 길이 증가 시 4KB 해시 검증, 64MB 줄 폐기, gen 증가), `classify_command` 표 전체 + 따옴표 안 구분자 + 복합 명령 우선순위 + `compound` 판정 + `command_key`/`command_norm`, `rank` 토큰 매칭(4.7.4의 여덟 예, `gpt-5` 연속 토큰 포함), `TailReader` 2단계 commit (commit 전 폐기 → 다음 읽기가 같은 구간), 짝 없는 ToolResult 무시(Err 포함), `classify_command` 의 개행·단독 `&`·분석 불가 구문 → Mixed/Unknown, `names`·`rooms`·층 번호 결정성과 영속, `incident_check` (Rejected·Unknown 제외, command_norm 기준), `pending` 역순 결과·Started·Unknown 처리, Mixed 명령이 성공해도 트럭이 안 감.
-- Rust 통합 테스트: replay로 fixture를 재생하며 `Employee.room`·`sentence`·`confidence` 스냅샷 비교. 시계 검증: 논리 시계(4.3)를 주입한 상태에서 같은 fixture를 (a) 한 번에 전체 읽기, (b) `--speed 1`, (c) `--speed 50` 으로 넣고 같은 논리 시점에서 비교하면 상태가 같아야 한다. 벽시계로는 성립하지 않는다. 서브 파일의 user 레코드가 사장님 방문을 일으키지 않는다. `TaskStop` 실패 뒤 작업표가 남고 완료 알림이 정상 처리된다. 서브 파일 Reset 뒤 팀 전체가 다시 만들어지고 휴지통·무재해·EMA가 중복 집계되지 않는다. `Started → 완료 알림 → Ok` 경로가 정상 완료로 이어진다. 서브의 TokenUsage가 팀 화분을 바꾸지 않는다. 규모 변경 뒤 좌석이 겹치지 않고 선택 사무실이 4.7.9대로 매핑된다.
+- Rust 단위 테스트: `TailReader` (잘린 줄, 8MB 상한 뒤 backlog 이어 읽기, 길이 감소, remainder 구간까지 줄어든 축소, 다른 파일로 교체, 같은 길이 덮어쓰기(mtime 변경 → Reset), remainder 구간 덮어쓰기(캐시 비교), 길이 증가 시 4KB 해시 검증, 64MB 줄 폐기, generation 증가), `classify_command` 표 전체 + 따옴표 안 구분자 + 복합 명령 우선순위 + `compound` 판정 + `command_key`/`command_norm`, `rank` 토큰 매칭(4.7.4의 여덟 예, `gpt-5` 연속 토큰 포함), `TailReader` 2단계 commit (commit 전 폐기 → 다음 읽기가 같은 구간), 짝 없는 ToolResult 무시(Err 포함), `classify_command` 의 개행·단독 `&`·분석 불가 구문 → Mixed/Unknown, `names`·`rooms`·층 번호 결정성과 영속, `incident_check` (Rejected·Unknown 제외, command_norm 기준), `pending` 역순 결과·Started·Unknown 처리, Mixed 명령이 성공해도 트럭이 안 감.
+- Rust 통합 테스트: replay로 fixture를 재생하며 `Employee.room`·`sentence`·`confidence` 스냅샷 비교. 시계 검증: 논리 시계(4.3)를 주입한 상태에서 같은 fixture를 (a) 한 번에 전체 읽기, (b) `--speed 1`, (c) `--speed 50` 으로 넣고 같은 논리 시점에서 비교하면 상태가 같아야 한다. 벽시계로는 성립하지 않는다. 서브 파일의 user 레코드가 사장님 방문을 일으키지 않는다. `TaskStop` 실패 뒤 작업표가 남고 완료 알림이 정상 처리된다. 서브 파일 Reset 뒤 팀 전체가 다시 만들어지고 휴지통·무재해·EMA가 중복 집계되지 않는다. `Started → 완료 알림 → Ok` 경로가 정상 완료로 이어진다. 서브의 TokenUsage가 팀 화분을 바꾸지 않는다. 규모 변경 뒤 좌석이 겹치지 않고 선택 사무실이 4.7.9대로 매핑된다. **순서 불변**: 한 팀의 여러 파일(메인 + 서브)에서 나온 이벤트 열을 ts 병합 규칙(4.3)이 허용하는 범위 안에서 결정적 난수(고정 seed LCG)로 40가지 순서로 섞어 적용해도 최종 Team 상태가 같다. 역순 결과·서브 완료 선행·meta.json 선발견을 한 번에 잡는다.
+- 코퍼스 drift 테스트: 환경변수 `OWLFICE_CORPUS_DIR` 가 있을 때만 돈다 (없으면 skip). 그 폴더의 `.claude`·`.codex` 세션 전부를 두 파서로 파싱해 (a) 패닉·파싱 실패 0, (b) 미대응 로그 `record_type`·`system_subtype` 집계를 출력하고 알려진 목록 밖이 있으면 실패한다. 실제 데이터는 저장소 밖에 둔다 (8절). 개발 PC에서 `OWLFICE_CORPUS_DIR=%USERPROFILE%` 로 돌리면 포맷 변화를 가장 먼저 잡는다.
 - 프론트: `anim-queue` 의 건너뛰기 규칙, `seq`·`office_id` 버림 규칙(A→B→A, 중간 변경 없음에서 A가 다시 그려진다), 문장 시간 표기. 그 외 UI는 수동.
 - Scan 테스트: 임시 폴더에 새 세션 파일을 만들면 3.5초 안에 Team이 생기고, 전체 읽기로 만든 상태가 같은 파일을 append로 재생한 상태와 같다. 첫 레코드가 60초 이내면 출근 cue, 아니면 cue 없음. 파일을 지우면 Team이 사라진다.
 - 미대응 로그 테스트: 모르는 도구·레코드·명령이 든 fixture를 재생하면 `unhandled.jsonl` 에 4.11 표의 kind가 집계되고, 프롬프트·파일 내용이 들어가지 않는다.
@@ -1358,9 +1421,9 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 
 | 티켓 | 내용 | 난이도 | 선행 | 완료 기준 |
 |---|---|---|---|---|
-| T01 | 저장소 초기화. Tauri 2 템플릿, MSVC 빌드(기본)와 GNU 폴백 빌드, `.cargo/config.toml`, NSIS 설정, `build-gnu.sh`, `BUILD.md` | 상 | 없음 | Visual Studio Build Tools로 `npm run tauri build` → NSIS 설치 파일 → 개발 도구가 없는 Windows 11 VM에서 설치·실행·빈 창. `dumpbin /dependents` 로 의존 DLL이 시스템 DLL뿐. Rust·Tauri·Visual Studio 버전과 검증 명령을 `BUILD.md` 에 기록. 폴백 경로(4.1)를 쓴 PC면 그 버전과 절차, `tauri dev` 동작 여부도 함께 |
+| T01 | 저장소 초기화. Tauri 2 템플릿, MSVC 빌드(기본)와 GNU 폴백 빌드, `.cargo/config.toml`, NSIS 설정, `build-gnu.sh`, `docs/BUILD.md` | 상 | 없음 | Visual Studio Build Tools로 `npm run tauri build` → NSIS 설치 파일 → 개발 도구가 없는 Windows 11 VM에서 설치·실행·빈 창. `dumpbin /dependents` 로 의존 DLL이 시스템 DLL뿐. Rust·Tauri·Visual Studio 버전과 검증 명령을 `docs/BUILD.md` 에 기록. 폴백 경로(4.1)를 쓴 PC면 그 버전과 절차, `tauri dev` 동작 여부도 함께 |
 | T02 | `discover/windows.rs` + `registry.rs`: 환경변수와 홈에서 Site 목록, 세션 등록부 읽기 | 하 | T01 | 개발 PC에서 Claude·Codex Site 반환. 등록부에서 살아 있는 세션 목록. 단위 테스트에 가짜 홈 폴더 |
-| T03 | `discover/wsl.rs`: 레지스트리 → 켜진 배포판 → passwd → 홈 → Site | 중 | T01 | 개발 PC에서 Rocky-9 Site 반환. 레지스트리 없을 때 빈 목록. 꺼진 배포판은 UNC를 건드리지 않음 (프로세스 목록으로 검증). 감시 중 `wsl --terminate` 로 배포판을 끄면 다음 Hot·Scan 뒤에도 꺼진 상태가 유지됨 (핸들·의심 상태, 4.4.2). 핸들 모드에서 같은 경로의 파일을 바꿔치기하면 다음 Scan에서 Reset. I/O를 멈추게 하면(공유 끊기) 감시자가 2초 안에 의심으로 전환하고, 재개 뒤 멈춘 동안 append된 줄이 하나도 빠지지 않음(2단계 commit). 경로 접근이 꺼진 배포판을 재시작하는지 결과를 6부에 기록 |
+| T03 | `discover/wsl.rs`: 레지스트리 → 켜진 배포판 → passwd → 홈 → Site | 중 | T01 | 개발 PC에서 WSL 배포판의 Claude·Codex Site 반환. 레지스트리 없을 때 빈 목록. 꺼진 배포판은 UNC를 건드리지 않음 (프로세스 목록으로 검증). 경로 접근이 꺼진 배포판을 재시작하는지 결과를 6부에 기록. 감시 중 동작(핸들·의심 상태)은 T12에서 |
 | T04 | `tail/mod.rs` TailReader | 하 | T01 | 4.12의 TailReader 단위 테스트 전부 |
 | T05 | `parse/mod.rs` Event 모델 + `classify_command` | 하 | T01 | 4.6.4 표 전체 + 복합 명령 우선순위 + `command_key` 테스트 |
 | T06 | `tools/anonymize.py` + fixture 1차 세트 | 하 | 없음 | 4.12 최소 세트. 원본의 경로·비밀이 없음을 grep으로 확인 |
@@ -1369,7 +1432,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | T09 | `office/rank.rs`, `names.rs`, 방 번호 | 하 | T05 | 결정성 테스트: 같은 입력 같은 출력. names.json·rooms.json 저장·복원. 4.7.4의 여덟 예 (`gemini-2.5-pro` → 과장, `gemini-2.5-flash-lite` → 사원, `gpt-5` + high → 과장 포함) |
 | T10 | `owlfice-probe` + `owlfice-replay` CLI | 하 | T07 T08 | probe가 탐색 결과·이벤트 열을 JSON으로 출력. replay가 fixture를 속도 조절해 append하고 `--shift-to-now` 로 시각을 옮긴다. 디자이너·QA가 UI 없이 데이터 확인 가능 |
 | T11 | `office/classify.rs` + `stats.rs`: Team 상태 기계, 문장 생성, pending 목록, 시간 전이, 추정 표시, 장애 판정 | 상 | T07 T08 T09 T10 | replay로 fixture를 재생해 room·sentence·confidence 스냅샷 일치. 병렬 역순 결과, 반려, compaction, 서브 종료 추정, 동기 서브(사전 등록·임시 직원), 서브 파일만 삭제 시 팀 유지 포함 |
-| T12 | `tail/scheduler.rs` 호스트별 스레드 (Hot/Warm/Scan/Probe/Cold) + `office/world.rs` (OfficeWorld, office_of, seq) | 상 | T10 T11 | probe가 실제 세션 변화를 500ms 내 출력. 새 세션 파일 생성 후 3.5초(WSL 35초) 내 Team 생성과 출근 판정. WSL 스레드 멈춤을 주입하면 감시자가 2초 안에 의심으로 바꾸고 Windows 갱신은 유지. 논리 시계 주입 아래 전체 읽기와 append 결과 동일. 규모 변경 절차(4.7.9) 테스트. 유휴 CPU 2% 미만 (측정 조건 4.10) |
+| T12 | `tail/scheduler.rs` 호스트별 스레드 (Hot/Warm/Scan/Probe/Cold) + `office/world.rs` (OfficeWorld, office_of, seq) | 상 | T10 T11 | probe가 실제 세션 변화를 500ms 내 출력. 새 세션 파일 생성 후 3.5초(WSL 35초) 내 Team 생성과 출근 판정. WSL 스레드 멈춤을 주입하면 감시자가 2초 안에 의심으로 바꾸고 Windows 갱신은 유지. 감시 중 `wsl --terminate` 로 배포판을 끄면 다음 Hot·Scan 뒤에도 꺼진 상태가 유지됨 (핸들·의심 상태, 4.4.2). 핸들 모드에서 같은 경로의 파일을 바꿔치기하면 다음 Scan에서 Reset. I/O를 멈추게 하면(공유 끊기) 재개 뒤 멈춘 동안 append된 줄이 하나도 빠지지 않음 (2단계 commit). 논리 시계 주입 아래 전체 읽기와 append 결과 동일. 규모 변경 절차(4.7.9) 테스트. 유휴 CPU 2% 미만 (측정 조건 4.10) |
 | T13 | WSL 폴링 측정 (핸들 기반 Hot stat·read, Probe 직후 나열) | 중 | T12 | UNC stat/read/나열 평균·p99 기록. stat 20ms 초과면 T31 착수 |
 | T38 | `diag.rs` 미대응 동작 로그 + `owlfice-probe unhandled` 요약 (번호는 뒤지만 파서 다음에 바로 착수. `state_conflict`·`scenario_gap` 두 kind만 T11 뒤. 설정 버튼은 T30에서) | 하 | T07 T08 | 4.12의 미대응 로그 테스트 통과. 기본 설정에서 원문이 한 글자도 저장되지 않음 |
 
@@ -1398,14 +1461,14 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | T27 | 팝업 2종 (타임라인 페이징) | 하 | T14 | 3.7 항목 전부. "더 보기"가 원본 파일에서 50개씩. "원본 열기"가 탐색기를 연다 |
 | T28 | 사무실 전환: 스냅샷, 페이드, Hot 계층 이동, request_id | 중 | T12 T20 | 전환 후 0.3초 안에 직원이 제자리. 빠른 A→B 전환에서 A 응답 버림 |
 | T29 | 중소기업 합성 연출: 팀 출근·퇴근, 팀장석 고정 배정, 팀 색, 사장님이 해당 부장으로, 규모 변경 절차(선택 매핑·좌석 재배정·큐 비움) | 중 | T20 T22 | S50~S53 (replay). 규모를 왕복해도 좌석이 겹치지 않음 |
-| T30 | 설정 팝업: 규모, 수동 경로, 소리, 사장님 이름, 원문 진단(경고 점 포함), 진단 복사, 미대응 로그 폴더 열기 | 하 | T14 | 저장·복원 |
+| T30 | 설정 팝업: 규모, 수동 경로, 소리, OS 알림(3.6), 사장님 이름, 원문 진단(경고 점 포함), 진단 복사, 미대응 로그 폴더 열기 | 하 | T14 | 저장·복원. OS 알림은 replay로 30초 허가 대기를 만들어 창을 가린 채 한 번만 오는지 |
 
 ### 5.4 4단계: 마감
 
 | 티켓 | 내용 | 난이도 | 선행 | 완료 기준 |
 |---|---|---|---|---|
 | T31 | WSL 스트리밍 폴백 (`wsl tail -F`), T13 결과에 따라 | 상 | T13 | 폴백 전환 자동. 틱 p99 20ms 이내 |
-| T32 | Gemini CLI 포맷 확인 후 `parse/gemini.rs` (WholeFile 읽기) | 중 | T05 | fixture 일치 |
+| T32 | Antigravity CLI 표본(도구 호출·서브에이전트 포함) 확인 후 `parse/antigravity.rs` | 중 | T05 | fixture 일치 |
 | T33 | Codex 서브에이전트 자식 파일 위치 확인 후 지원 | 중 | T08 | fixture 일치 |
 | T34 | 효과음 (기본 꺼짐) | 하 | T30 | 설정 토글 |
 | T35 | 최종 아트 교체, 야근 모드 팔레트 | 중 | T19 | 디자이너 승인 |
@@ -1425,23 +1488,30 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 
 | 항목 | 현재 가정 | 확인 방법 | 영향 |
 |---|---|---|---|
-| Gemini CLI 세션 포맷 | 미확인. 개발 PC에 세션 없음 | Gemini CLI로 세션 하나 만들고 폴더 열어 보기 | T32 |
-| Gemini 앱 (Antigravity) 저장 형식 | `~/.gemini/antigravity/conversations/*.db`. 1차 범위 밖 | DB 스키마 열어 보기. 읽을 만하면 2차 | 없음 (1차) |
-| Codex 서브에이전트 자식 파일 | `spawn_agent`·`turn_attribution` 은 확인됨. 자식이 별도 rollout인지 미확인 | 서브를 쓰는 Codex 세션의 rollout 폴더 비교 | T33 |
-| Codex CLI 레코드 | Desktop 레코드만 확인. CLI의 `shell` function_call 형태, `originator` 값 미확인 | Codex CLI 세션 하나 | T08 |
-| Codex 앱 `exec` JS 세분 매핑 | Script로 뭉뚱그림 | 자주 나오는 `tools.*` 호출 목록 수집 | T11 |
-| Codex `turn_context` effort 필드 | 있으면 직급에 반영 | turn_context 레코드 키 확인 | T09 |
-| 세션 등록부 `status` 값 | `busy` 만 확인. idle·허가 대기 값 미확인 | 결재·허가 대기 중에 등록부 파일 보기 | T02, T11 |
-| WSL 안 Claude의 등록부 | UNC로 읽을 수 있고 `updatedAt` 10분 규칙으로 생존 판정한다고 가정 | WSL 세션을 켜 두고 `updatedAt` 이 주기적으로 갱신되는지 보기 | T02, T03 |
-| Claude 백그라운드 완료 알림 | `isMeta` user 레코드의 `<task-notification>` 에 작업 id가 있다고 가정 | `run_in_background: true` Bash 하나 돌리고 jsonl 끝 확인 | T07, T11 |
-| Claude assistant `stop_reason` | 레코드에 있으면 턴 종료 판단에 우선 사용 | assistant 레코드의 `message.stop_reason` 값 확인 | T07, T11 |
-| Codex 결과의 종료 코드 필드 | `function_call_output.output` 안에 `metadata.exit_code` 가 있다고 가정. 없으면 전부 Unknown | Codex 셸 호출 결과 레코드 하나 열어 보기 | T08 |
-| Claude Code Bash의 pipefail | 꺼져 있다고 가정해 파이프를 Mixed로 분류 | Bash 도구로 `false \| true` 를 실행해 `is_error` 가 서는지 확인 | T05 |
-| UNC 경로 접근이 꺼진 WSL 배포판을 재시작하는가 | 한다고 가정 (핸들·의심 상태·Probe 묶인 Scan으로 완화) | 배포판을 끈 뒤 `\\wsl.localhost\<이름>\` 디렉터리를 한 번 나열하고 `wsl -l --running` 확인 | T03, T13 |
+| Antigravity 기록의 남은 모양 | 레코드 종류·짝짓기·서브에이전트·도구 실패·거부(앱)는 확인 (4.6.3). CLI의 거부, append 전용인지(이어 쓴 표본 셋은 앞부분 그대로), `chunks\` 가 나뉘는 조건, 압축 레코드는 미확인 | 긴 대화 하나, CLI에서 승인 대기·거부 | T32 |
+| Antigravity 모델명·cwd | jsonl에 없다. 모델은 `conversations\<uuid>.db` 의 blob에만 있다. 1차는 모델 없음으로 본다 | SQLite 읽기를 2차에서 검토. 프로젝트를 연 앱 대화에서 cwd 출처 확인 | T32, T09 |
+| 기존 공개 도구 재사용 | 조사함. 그대로 쓸 의존성 없음: agent-sessions(Rust, MIT)는 신생·SQLite 번들·서브에이전트 파일 미지원. pixtuoid(Rust, MIT, 터미널 픽셀 사무실)는 디코더 원문을 대조했다: JSONL에서 읽는 것이 tool_use/tool_result 짝·모델·토큰뿐이고 결과 성패·도구 종류·서브 생명주기가 없다 (생명주기는 hook + pid 생존 확인, Windows 미구현). 가져올 코드는 없고 가장자리 사례만 4.4.1·4.6.1·4.6.2에 반영했다 | 파서 티켓에서 포맷 대조 자료로만 쓴다 (4.6) | T07 T08 T32 |
+| 훅 수집 (2차 후보) | 1차는 기록 파일만 읽는다. Claude·Codex 훅(`PermissionRequest`·`SessionEnd`·`SubagentStop`)을 받으면 허가 대기·세션 종료가 추정 아닌 확인이 되지만, 사용자의 `settings.json`·`config.toml` 을 고쳐야 하고(1.3) 수신 파이프와 훅·기록 중복 제거가 생긴다 | Claude Desktop Code 탭과 Codex 앱에서 훅이 발화하는지 확인 뒤 2차에서 결정 | 2차 |
+| Codex exec 분류 | `cmd:` 리터럴을 뽑아 classify_command (4.6.2). 변수·템플릿 문자열로 만든 명령은 못 뽑는다. CLI 표본에서 명령 하나의 CommandExecution item이 빠진 일이 있다 (`git init` 이 읽기 전용 파일시스템에서 실패) | 실제 사용에서 Script로 떨어진 비율 보기 (미대응 로그), 같은 명령을 쓰기 가능한 폴더에서 다시 | T08, T38 |
+| 직급 표의 모델명 | 표본 모델명은 `gpt-6.1-sol`, `gemini-4-argon-trial` 로 4.7.4 예시보다 새것이다. Codex effort는 `turn_context.effort` (앱만 늘 있다, `xhigh`)와 `SubAgentActivity.reasoning_effort` (`low`) | 4.7.4 토큰 표를 지금 모델명으로 다시 보기 | T09 |
+| 세션 등록부 허가 대기 `status` | `idle`·`busy` 확인. 허가 창이 떠 있을 때의 값은 미확인. 타 프로젝트(c9watch) fixture는 `waiting` + `waitingFor` (CC 2.1.280, macOS CLI) | 허가 창을 띄운 채 등록부 보기 (Desktop Code 탭·Windows에서). 확인되면 4.7.2의 Claude 허가 대기 행이 Confirmed로 산다 | T02, T11 |
+| 등록부 pid 재사용·`procStart` | `startedAt` 과 프로세스 생성 시각 비교로 재사용을 거른다 (4.4.1). Windows 생성 시각은 `GetProcessTimes` 라 `windows-sys` 직접 의존이 필요할 수 있다 | T02에서 std로 되는지 먼저 본다. 안 되면 crate 추가는 메인 허락 | T02 |
+| WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T03, T12 |
+| WSL 홈의 `.claude`·`.codex` 가 `/mnt/c` 심링크인 구성 | WSL Site가 Windows Site와 같은 파일을 가리켜 세션이 두 번 잡힐 수 있다 (추정) | 심링크 구성에서 probe로 두 Site의 파일 ID 대조. 겹치면 WSL 쪽을 뺀다 | T12 |
+| 기록 모양의 남은 미확인 | Claude 알림 `status` 는 `completed`·`failed`, 압축 `trigger` 는 `manual` 만 봤다 (타 프로젝트는 `stopped`·`error` 도 구별한다). Codex 거부는 사용자 거부 문구만 봤다. Codex `originator` 에 `codex_exec`(비대화형)가, `event_msg` 에 `turn_complete` 가 올 수 있다는 관찰이 있다 (타 프로젝트, 미확인) | 자동 압축이 난 세션, `TaskStop` 아닌 방법으로 죽은 백그라운드 작업, 샌드박스가 막은 Codex 명령을 하나씩 보기 | T07, T08 |
 | 컨텍스트 윈도우 | Claude는 compaction `preTokens` 로 학습 (이 PC 표본 967k → 1M). 못 봤으면 설정값 200k + "?" 표시. Codex는 `model_context_window` 확인됨 | 200k 세션과 1M 세션을 하나씩 돌려 화분 곡선 확인 | T11, T23 |
-| 서브에이전트 종료 | 추정 규칙 (60초 무변경) | 비동기 Agent 완료 시 부모 파일에 남는 레코드 확인 | T11 |
+| 할 일 도구 | Claude Desktop·CLI(2.1.299·2.1.304)와 Codex 0.163 표본에는 할 일 도구가 없었다 (모델이 todo 파일로 대신). Antigravity는 `task.md` (4.6.3). 칸반(S40)을 무엇으로 움직일지 미정 | 할 일 도구가 있는 빌드·설정이 있는지 보기. 없으면 칸반 신호를 바꾼다 | T07, T23 |
+| Codex 앱 mtime 늦은 갱신과 규칙 (c) | Codex 앱은 쓰는 동안 mtime을 안 바꾼다. 나중에 OS가 mtime을 한꺼번에 갱신할 때 길이가 읽은 곳과 같으면 규칙 (c)가 가짜 Reset을 내 팀을 다시 만든다 (조용한 재구성이라 화면은 그대로지만 비용이 든다). 타 프로젝트(ai-office-dollhouse)는 반대로 "mtime 15분 이내"로 활성 파일을 고르니 어느 쪽이 맞는지 재확인 | Codex 앱 세션을 켜 둔 채 Reset 횟수를 로그로 보기 | T12, T13 |
+| Claude Agent Teams (이름 붙은 동료) | 동료가 서브 파일이 아니라 같은 프로젝트 폴더의 **독립 `<uuid>.jsonl`** 로 생기고 레코드에 최상위 `teamName`·`agentName` 이 붙는다. 부장 쪽 신호는 tool_result 본문의 `agent_id: <name>@<team>` 줄, 설정은 `~/.claude/teams/session-<8hex>/config.json` (타 프로젝트 관찰, CLI 2.1.2xx). 이대로면 동료가 별도 팀·별도 사무실로 잡힌다. 이 PC 표본에는 없다 (`teams/` 없음, `teamName` 0건, 확인됨) | 팀 기능을 쓴 세션이 생기면 위 셋을 확인하고 4.4.1·4.7.9에 "동료 → 같은 팀" 규칙을 더한다 | T07, T12 (조건부) |
+| Claude bg 포크 재연 | Ctrl+B·`/background` 는 `--fork-session` 으로 새 jsonl을 만들고 이전 체인 전체를 원래 uuid·timestamp 그대로 다시 쓴다(`sessionKind: "bg"`). 원본 포인터는 없다 (타 프로젝트 관찰, 이 PC 0건). 같은 대화가 팀 둘로 보인다. 재연 구간은 오래된 ts라 출근 연출은 없다 | `sessionKind` 가 보이면 같은 cwd·같은 첫 uuid의 팀과 잇는 규칙을 정한다 | T07, T12 |
+| Codex undo·포크·압축·보관 | undo 페이지 파일 `<thread>_<rollout>.jsonl`(`history_base.thread_id`), 포크의 timestamp 새로 찍힌 복제 이력, 7일 뒤 `.jsonl.zst` 압축, `archived_sessions/` 이동. 전부 타 프로젝트 관찰, 이 PC 0건 (4.4.1, 4.6.2) | 각각 한 번 재현해 파일을 본다. undo는 팀 키를 thread id로 두면 한 팀으로 모인다 | T08, T12 |
+| Claude Desktop Cowork | Cowork(local agent mode)는 Claude Code와 같은 jsonl을 `%APPDATA%\Claude\local-agent-mode-sessions\<org>\<ws>\local_<uuid>\.claude\projects\…` (MSIX 설치는 `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\…`) 에 쓰고 옆 `local_<uuid>.json` 에 `title`·`cliSessionId` 가 있다는 관찰 (타 프로젝트, 미확인). **2차 범위로 확정** (결정 2026-10-20). 같은 파서, Site 하나 추가 | 2차에서 경로를 이 PC로 확인하고 4.4.1에 행을 더한다 | 2차 |
+| `/clear` 와 새 파일 | `/clear` 가 같은 폴더에 새 `<uuid>.jsonl` 을 만들고 옛 파일은 멈춘다는 관찰 (타 프로젝트). 이대로면 새 팀 출근 + 옛 팀 졸음·퇴근으로 보인다. 등록부의 같은 pid가 `sessionId` 를 바꾸는지 미확인 (이 PC 표본 0건) | `/clear` 한 번 하고 등록부·파일을 보기. 같은 pid면 "같은 팀 새 업무"로 잇는다 | T12 |
+| Codex `state_5.sqlite` | `~/.codex/state_5.sqlite` 의 `threads`(id, title, cwd, archived, agent_nickname)와 `thread_spawn_edges`(parent, child, status) 가 서브 부모-자식·종료의 또 다른 원천이라는 관찰 (타 프로젝트. 스키마 비공개, 버전 접미사). 1차는 SQLite를 읽지 않는다 | rollout만으로 SubagentDone 누락이 보이면 2차에서 검토 | 2차 |
+| API 오류·한도로 죽은 턴 | 훅에는 `StopFailure`(`rate_limit`·`authentication_failed`)가 있다. jsonl에 대응 레코드(`system` subtype? `isApiErrorMessage`?)가 있는지 미확인. 있으면 "턴이 조용히 죽음"과 "결재 대기"를 가를 수 있다 | 한도에 걸린 세션 파일 하나 보기 | T07, T11 |
+| Codex 앱 프로세스 이름 | 타 프로젝트는 Codex 앱을 `ChatGPT.exe` 의 자식 `codex.exe` 로 구분한다 (미확인). 우리는 `originator` 로 가르니 필요 없지만 퇴근 판정에 프로세스를 쓸 때 참고 | Codex 앱을 켜고 `Get-Process` 한 번 | T12 |
 | WSL UNC 200ms 폴링 비용 | 미측정 | T13 | T13, T31 |
-| MSVC 빌드 (기본 경로) | `tauri-build` 가 VC 런타임을 정적 링크해 `vcruntime140.dll` 의존이 없다고 가정. 개발 PC는 보안 소프트웨어 때문에 Windows에서 링크할 수 없어 확인 불가 | Visual Studio Build Tools가 있는 PC에서 `npm run tauri build` 뒤 `dumpbin /dependents`, 깨끗한 Windows 11 VM에 설치·실행 | T01 |
+| MSVC 빌드 (기본 경로) | `vcruntime140.dll` 의존 없음은 확인됨 (Defender만 켜진 개발 PC, 커밋 5a7ea29). 깨끗한 PC에서 설치·실행만 미확인 | 깨끗한 Windows 11 VM에 설치·실행 | T01, T36 |
 | GNU 폴백의 MSYS2 빌드 | MSYS2 UCRT64로 된다고 가정. 개발 PC는 SEP 때문에 확인 불가. rustup의 windows-gnu std는 msvcrt로 링크하므로(확인됨: Rust 1.98 링크 인자 `-lmsvcrt`) UCRT64 gcc와 CRT가 섞인다. WSL 폴백의 mingw64는 msvcrt라 섞이지 않는다 | SEP 없는 PC에서 `bash build-gnu.sh`. 링크·실행이 깨지면 MSYS2 MINGW64(`mingw-w64-x86_64-gcc`)로 바꾼다 | T01 |
 | 중소기업 팀장석 5팀 초과 | 간이 책상 2 + 카드만 | 실제 사용 보고 | T29 |
 | 픽셀아트 어셋 조달 | `design/tools/owlfice_art.py` 가 만든 부품 시트(올빼미 5종·옷·담당 레이어 693프레임, 소품 125종)를 1차 어셋으로 쓴다. 손그림으로 바꿀지는 미정 | 프레임 이름·기준점 규약(`design/HANDOFF.md` 6.3–6.4)을 고정한 채 올빼미 1종을 손으로 다시 그려 비교 | T19, T35 |

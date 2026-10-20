@@ -707,8 +707,11 @@ pub fn apply_settings(ipc: &Ipc, book: &SettingsBook, dto: SettingsDto) -> Resul
     let Some(scale) = dto.scale else {
         return Ok(());
     };
+    // 동시에 두 번 불려도 파일과 실행 중 world 가 같은 값이 되게 world 락 안에서 함께 한다 (락 순서 world → settings)
+    let mut world = lock(&ipc.world);
     let saved = book.set_scale(scale);
-    lock(&ipc.world).set_scale(scale);
+    world.set_scale(scale);
+    drop(world);
     saved.map_err(|e| format!("설정을 저장하지 못했습니다: {e}"))
 }
 

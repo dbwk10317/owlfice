@@ -185,6 +185,7 @@
     "label": "사내 방송",
     "item": "{time} {name} {rank}, {event}",
     "itemTeam": "{time} [{team}] {event}",
+    "itemTeamPerson": "{time} [{team}] {name} {rank}, {event}",
     "unknownRecord": ["{time} 총무팀: 처음 보는 서류 양식 접수 ({kind})", "{time} 총무팀: 양식 미상 서류, 일단 보관 ({kind})"],
     "quiet": "조용한 밤입니다"
   },

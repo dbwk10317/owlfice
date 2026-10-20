@@ -35,6 +35,8 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | Rust 테스트 | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | Rust 포맷 검사 | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
 | Rust 린트 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
+| 이벤트 열 JSON 확인 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- events fixtures/claude/reject` |
+| fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 10 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |
 | 프론트 포맷·린트·타입 검사 | `npm run check` (포맷만 고치기 `npm run fmt`) |
 | 프론트 빌드 | `npm run build` (린트·타입 검사 후 빌드) |
 | Python 린트·포맷 검사 | `uvx ruff check tools`, `uvx ruff format --check tools` |

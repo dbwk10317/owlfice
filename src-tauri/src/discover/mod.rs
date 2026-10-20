@@ -6,20 +6,20 @@ pub mod registry;
 mod windows;
 pub mod wsl;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Host {
     pub id: String,
     pub kind: HostKind,
     pub label: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum HostKind {
     Windows,
     Wsl { distro: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Vendor {
     Claude,
     Codex,
@@ -27,7 +27,7 @@ pub enum Vendor {
 }
 
 /// 세션 루트 하나. 동(Product)은 세션마다 파서가 정하므로 여기에 없다
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Site {
     pub host: Host,
     pub vendor: Vendor,
@@ -36,14 +36,14 @@ pub struct Site {
     pub read_mode: ReadMode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum ReadMode {
     Append,
     /// 파일 전체를 다시 읽는다. Antigravity가 append 전용이면 지운다 (PLAN 4.6.3)
     WholeFile,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Product {
     ClaudeDesktop,
     ClaudeCli,

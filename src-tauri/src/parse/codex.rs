@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 
 use super::{
     Classified, Compound, Confidence, Event, EventKind, Parser, RawRef, ToolKind, ToolOutcome,
-    ToolSummary, Unhandled, classify_command, rank,
+    ToolSummary, Unhandled, classify_command, mcp_kind, parse_test_result, rank,
 };
 use crate::discover::Product;
 
@@ -68,6 +68,8 @@ struct ExecWait {
     tools: Vec<String>,
     /// 단독 `&` 로 띄운 명령. 셸이 즉시 0을 돌려준다 (4.6.4)
     async_unknown: bool,
+    /// Test 로 분류된 호출. 결과 본문에서 도장 숫자를 뽑는다
+    test: bool,
     /// `write_stdin` 으로 `\u0003` 을 보낸 백그라운드 session_id
     stop_session: Option<String>,
     /// 중단을 기다리는 동안 온 그 세션의 item. 중단이 실패하면 이것으로 닫는다
@@ -311,8 +313,10 @@ impl CodexParser {
             return;
         }
         let scan = scan_exec(str_at(p, &["input"]).unwrap_or_default());
-        let (tool, summary, async_unknown) = exec_tool(&scan);
+        let (tool, mut summary, async_unknown) = exec_tool(&scan);
+        summary.escalated = scan.escalated;
         let ask = tool == ToolKind::Ask;
+        let test = tool == ToolKind::Test;
         out.push(EventKind::ToolCall {
             call_id: call_id.clone(),
             tool,
@@ -337,6 +341,7 @@ impl CodexParser {
             wait: Wait::Exec(ExecWait {
                 tools: scan.tools,
                 async_unknown,
+                test,
                 stop_session,
                 ..ExecWait::default()
             }),
@@ -410,7 +415,17 @@ impl CodexParser {
 ",
         );
         let preview = if rest.is_empty() { first } else { &rest };
-        out.push(result(p.call_id, outcome, preview.to_string()));
+        let mut ev = result(p.call_id, outcome, preview.to_string());
+        if w.test
+            && matches!(outcome, ToolOutcome::Ok | ToolOutcome::Err)
+            && let EventKind::ToolResult { test_result, .. } = &mut ev
+        {
+            *test_result = parse_test_result(&texts.join(
+                "
+",
+            ));
+        }
+        out.push(ev);
         if outcome == ToolOutcome::Unknown && !w.polling_only() {
             let mut result_keys: Vec<String> = objs
                 .iter()
@@ -455,27 +470,23 @@ impl CodexParser {
             "spawn_agent" => ToolKind::Spawn,
             // 확인된 협업 배관이라 미대응이 아니다
             "wait_agent" | "followup_task" => ToolKind::Other(name.to_string()),
-            _ => match name.strip_prefix("mcp__") {
-                Some(rest) => {
-                    let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));
-                    ToolKind::Mcp {
-                        server: server.to_string(),
-                        tool: tool.to_string(),
-                    }
-                }
-                None => {
-                    un.push(Unhandled::ToolName {
-                        name: name.to_string(),
-                        input_keys: keys(&args),
-                    });
-                    ToolKind::Other(name.to_string())
-                }
-            },
+            _ if name.starts_with("mcp__") => mcp_kind(name),
+            _ => {
+                un.push(Unhandled::ToolName {
+                    name: name.to_string(),
+                    input_keys: keys(&args),
+                });
+                ToolKind::Other(name.to_string())
+            }
         };
         out.push(EventKind::ToolCall {
             call_id: call_id.clone(),
             tool,
-            summary: empty_summary(),
+            summary: ToolSummary {
+                escalated: args.get("sandbox_permissions").and_then(Value::as_str)
+                    == Some("require_escalated"),
+                ..empty_summary()
+            },
         });
         if ask {
             let question = args
@@ -586,7 +597,7 @@ impl CodexParser {
             "sub_agent_activity" => subagent_activity(p, self.depth, out, un),
             "collab_agent_spawn_end" => {
                 if let Some(child) = str_at(p, &["new_thread_id"]) {
-                    out.push(spawn(child, None, self.depth));
+                    out.push(spawn(child, None, None, self.depth));
                 }
             }
             "task_started" | "task_complete" | "thread_settings_applied" => {}
@@ -736,7 +747,12 @@ impl Parser for CodexParser {
 fn subagent_activity(item: &Value, depth: u8, out: &mut Vec<EventKind>, un: &mut Vec<Unhandled>) {
     let kind = str_at(item, &["kind"]).unwrap_or_default();
     match (kind, str_at(item, &["agent_thread_id"])) {
-        ("started", Some(child)) => out.push(spawn(child, str_at(item, &["model"]), depth)),
+        ("started", Some(child)) => out.push(spawn(
+            child,
+            str_at(item, &["model"]),
+            str_at(item, &["reasoning_effort"]),
+            depth,
+        )),
         ("completed", Some(child)) => out.push(EventKind::SubagentDone {
             child_id: child.to_string(),
         }),
@@ -750,12 +766,13 @@ fn subagent_activity(item: &Value, depth: u8, out: &mut Vec<EventKind>, un: &mut
 }
 
 /// 지시문은 암호화돼 있어 prompt 는 비운다
-fn spawn(child: &str, model: Option<&str>, depth: u8) -> EventKind {
+fn spawn(child: &str, model: Option<&str>, effort: Option<&str>, depth: u8) -> EventKind {
     EventKind::SubagentSpawn {
         child_id: child.to_string(),
         prompt: String::new(),
         model: model.map(str::to_string),
         description: None,
+        effort: effort.map(str::to_string),
         depth: depth.saturating_add(1),
     }
 }
@@ -781,6 +798,8 @@ fn empty_summary() -> ToolSummary {
         compound: Compound::Single,
         background: false,
         lines_changed: None,
+        escalated: false,
+        commit_message: None,
     }
 }
 
@@ -856,6 +875,8 @@ struct ExecScan {
     /// 첫 `tools.apply_patch(` 의 리터럴 인자
     patch: Option<String>,
     question: Option<String>,
+    /// `sandbox_permissions: "require_escalated"` 리터럴
+    escalated: bool,
     /// `write_stdin` 의 (session_id, chars)
     stdin: Vec<(Option<String>, Option<String>)>,
 }
@@ -882,6 +903,7 @@ fn exec_tool(s: &ExecScan) -> (ToolKind, ToolSummary, bool) {
             command: Some(rep.command.clone()),
             command_key: Some(rep.command_key.clone()),
             command_norm: Some(rep.command_norm.clone()),
+            commit_message: rep.commit_message.clone(),
             // 리터럴을 못 뽑은 호출이 섞여 있어도 명령은 둘 이상이다
             compound: if cs.len() > 1 || s.tools.iter().filter(|t| *t == "exec_command").count() > 1
             {
@@ -915,37 +937,6 @@ fn exec_tool(s: &ExecScan) -> (ToolKind, ToolSummary, bool) {
         return (mcp_kind(&s.tools[0]), empty_summary(), false);
     }
     (ToolKind::Script, empty_summary(), false)
-}
-
-/// 4.6.1 매핑표의 `mcp__` 행. 도구 이름의 단어가 외근(웹)인지 거래처(Mcp)인지 정한다
-fn mcp_kind(name: &str) -> ToolKind {
-    let rest = name.strip_prefix("mcp__").unwrap_or(name);
-    let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));
-    let lower = tool.to_ascii_lowercase();
-    if lower.contains("search") {
-        return ToolKind::WebSearch;
-    }
-    if ["fetch", "scrape", "crawl"]
-        .iter()
-        .any(|w| lower.contains(w))
-    {
-        return ToolKind::WebFetch;
-    }
-    // Claude Desktop 커넥터는 서버 id가 UUID라 상호로 못 쓴다. JS 식별자라 `-` 가 `_` 로 바뀌어 있을 수 있다
-    let uuid = server.len() == 36
-        && server.char_indices().all(|(i, c)| match i {
-            8 | 13 | 18 | 23 => c == '-' || c == '_',
-            _ => c.is_ascii_hexdigit(),
-        });
-    let server = if uuid {
-        tool.split('_').next().unwrap_or(tool)
-    } else {
-        server
-    };
-    ToolKind::Mcp {
-        server: server.to_string(),
-        tool: tool.to_string(),
-    }
 }
 
 /// 첫 파일 머리줄. 머리줄을 못 찾으면 경로 없는 FileEdit
@@ -1043,6 +1034,11 @@ fn scan_exec(src: &str) -> ExecScan {
             && matches!(t.get(i + 3), Some(Tok::Punct(',' | '}' | ')')))
         {
             s.cmds.push(text.clone());
+        }
+        if let Some(Tok::Str { text, .. }) = value_of(i, "sandbox_permissions")
+            && text == "require_escalated"
+        {
+            s.escalated = true;
         }
         if s.question.is_none()
             && let Some(Tok::Str { text, .. }) = value_of(i, "question")
@@ -1412,6 +1408,7 @@ mod tests {
             command: Some(c.command),
             command_key: Some(c.command_key),
             command_norm: Some(c.command_norm),
+            commit_message: c.commit_message,
             compound,
             ..empty_summary()
         }
@@ -1628,9 +1625,13 @@ mod tests {
         let (id, tool, summary) = call_at(&ev, 36);
         assert_eq!(id, "call_2d7f9633e1f8e2109f02d1736c053d36");
         assert_eq!(tool, &ToolKind::Shell);
+        // 승인 창을 요청한 호출이라 escalated 만 다르다
         assert_eq!(
             summary,
-            &summary_of(r"prog1 arg2 arg3 arg4 'C:\file2.txt'", Compound::Single)
+            &ToolSummary {
+                escalated: true,
+                ..summary_of(r"prog1 arg2 arg3 arg4 'C:\file2.txt'", Compound::Single)
+            }
         );
         assert_eq!(
             result_at(&ev, 38),
@@ -1977,6 +1978,7 @@ mod tests {
             prompt: String::new(),
             model: Some("gpt-x".into()),
             description: None,
+            effort: Some("high".into()),
             depth: 1,
         };
         let done = EventKind::SubagentDone {
@@ -2053,6 +2055,7 @@ mod tests {
                     prompt: String::new(),
                     model: None,
                     description: None,
+                    effort: None,
                     depth: 2,
                 },
             ]
@@ -2555,5 +2558,71 @@ mod tests {
         let (tool, summary) = only_call(&kinds);
         assert_eq!(tool, &ToolKind::GitPush);
         assert_eq!(summary.compound, Compound::Mixed);
+    }
+
+    #[test]
+    fn test_exec_result_fills_test_result() {
+        let (k, _) = feed(&[
+            exec("t", "tools.exec_command({cmd:\"cargo test\"})"),
+            cmd_item("failed", Some(101), "1"),
+            exec_out(
+                "t",
+                &[
+                    "Script completed
+",
+                    "test result: FAILED. 3 passed; 1 failed; 0 ignored
+",
+                ],
+            ),
+        ]);
+        let got = k.iter().find_map(|e| match e {
+            EventKind::ToolResult { test_result, .. } => *test_result,
+            _ => None,
+        });
+        assert_eq!(
+            got,
+            Some(crate::parse::TestResult {
+                passed: 3,
+                failed: 1
+            })
+        );
+    }
+
+    #[test]
+    fn require_escalated_marks_summary() {
+        let (k, _) = feed(&[
+            exec(
+                "e",
+                "tools.exec_command({cmd:\"git push\", sandbox_permissions:\"require_escalated\"})",
+            ),
+            exec("n", "tools.exec_command({cmd:\"git push\"})"),
+            func(
+                "f",
+                "shell",
+                json!({"command": ["ls"], "sandbox_permissions": "require_escalated"}),
+            ),
+        ]);
+        let esc = |id: &str| {
+            k.iter()
+                .find_map(|e| match e {
+                    EventKind::ToolCall {
+                        call_id, summary, ..
+                    } if call_id == id => Some(summary.escalated),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!((esc("e"), esc("n"), esc("f")), (true, false, true));
+    }
+
+    #[test]
+    fn commit_message_is_carried_to_summary() {
+        let (k, _) = feed(&[exec(
+            "c",
+            "tools.exec_command({cmd:\"git commit -m \\\"fix: x\\\"\"})",
+        )]);
+        let (tool, summary) = only_call(&k);
+        assert_eq!(tool, &ToolKind::GitCommit);
+        assert_eq!(summary.commit_message.as_deref(), Some("fix: x"));
     }
 }

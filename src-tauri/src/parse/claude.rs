@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::{
     Compound, Confidence, Event, EventKind, Parser, RawRef, TestResult, TodoItem, TodoStatus,
-    ToolKind, ToolOutcome, ToolSummary, Unhandled, classify_command,
+    ToolKind, ToolOutcome, ToolSummary, Unhandled, classify_command, mcp_kind, parse_test_result,
 };
 use crate::discover::Product;
 
@@ -285,6 +285,8 @@ impl ClaudeParser {
             compound: Compound::Single,
             background: false,
             lines_changed: None,
+            escalated: false,
+            commit_message: None,
         };
         let mut call = Call {
             name: name.to_string(),
@@ -355,6 +357,7 @@ impl ClaudeParser {
                         summary.command = Some(c.command);
                         summary.command_key = Some(c.command_key);
                         summary.command_norm = Some(c.command_norm);
+                        summary.commit_message = c.commit_message;
                         summary.compound = c.compound;
                         call.test = c.kind == ToolKind::Test;
                         call.async_unknown = c.async_unknown;
@@ -400,30 +403,13 @@ impl ClaudeParser {
                 return;
             }
             n if n.starts_with("mcp__") => {
-                let rest = &n["mcp__".len()..];
-                let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));
-                let lower = tool.to_ascii_lowercase();
-                if lower.contains("search") {
-                    summary.pattern = s("query").map(str::to_string);
-                    ToolKind::WebSearch
-                } else if ["fetch", "scrape", "crawl"]
-                    .iter()
-                    .any(|w| lower.contains(w))
-                {
-                    summary.pattern = s("url").map(domain);
-                    ToolKind::WebFetch
-                } else {
-                    // Desktop 커넥터는 서버 id가 UUID라 상호로 못 쓴다
-                    let server = if is_uuid(server) {
-                        tool.split('_').next().unwrap_or(tool)
-                    } else {
-                        server
-                    };
-                    ToolKind::Mcp {
-                        server: server.to_string(),
-                        tool: tool.to_string(),
-                    }
+                let kind = mcp_kind(n);
+                match kind {
+                    ToolKind::WebSearch => summary.pattern = s("query").map(str::to_string),
+                    ToolKind::WebFetch => summary.pattern = s("url").map(domain),
+                    _ => {}
                 }
+                kind
             }
             _ => {
                 unhandled.push(Unhandled::ToolName {
@@ -533,6 +519,7 @@ impl ClaudeParser {
             // 동기 결과에는 resolvedModel이 없어 호출의 별칭으로 둔다 (4.7.4가 별칭을 받는다)
             model: pick("/resolvedModel", input.and_then(|i| i.model.as_ref())),
             description: pick("/description", input.and_then(|i| i.description.as_ref())),
+            effort: None,
             depth: self.depth.saturating_add(1),
         }));
         if async_launched {
@@ -873,17 +860,6 @@ fn domain(url: &str) -> String {
         .to_string()
 }
 
-fn is_uuid(s: &str) -> bool {
-    s.len() == 36
-        && s.char_indices().all(|(i, c)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                c == '-'
-            } else {
-                c.is_ascii_hexdigit()
-            }
-        })
-}
-
 fn tag<'a>(s: &'a str, name: &str) -> Option<&'a str> {
     let open = format!("<{name}>");
     let start = s.find(&open)? + open.len();
@@ -927,46 +903,6 @@ fn exit_code(summary: &str) -> Option<i64> {
         _ => return None,
     };
     n.parse().ok()
-}
-
-/// `word` 바로 앞의 숫자 (`3 passed` 의 3)
-fn count_before(line: &str, word: &str) -> Option<u32> {
-    line.match_indices(word).find_map(|(i, _)| {
-        let head = line[..i].trim_end();
-        let start = head
-            .char_indices()
-            .rev()
-            .take_while(|(_, c)| c.is_ascii_digit())
-            .last()?
-            .0;
-        head[start..].parse().ok()
-    })
-}
-
-/// 도장 숫자만 뽑는다. 성공·실패 판정에는 쓰지 않는다 (4.6.1)
-fn parse_test_result(text: &str) -> Option<TestResult> {
-    let pick = |l: &str| {
-        count_before(l, "passed").map(|passed| TestResult {
-            passed,
-            failed: count_before(l, "failed").unwrap_or(0),
-        })
-    };
-    let cargo: Vec<&str> = text
-        .lines()
-        .filter(|l| l.contains("test result:"))
-        .collect();
-    if cargo.is_empty() {
-        // pytest `1 failed, 3 passed in …`, jest `Tests: 1 failed, 3 passed, 4 total`
-        return text.lines().rev().find_map(pick);
-    }
-    // cargo 는 크레이트·doc 테스트마다 한 줄씩 낸다
-    cargo
-        .into_iter()
-        .filter_map(pick)
-        .reduce(|a, b| TestResult {
-            passed: a.passed.saturating_add(b.passed),
-            failed: a.failed.saturating_add(b.failed),
-        })
 }
 
 #[cfg(test)]
@@ -1176,6 +1112,7 @@ mod tests {
                 prompt,
                 model,
                 description,
+                effort,
                 depth,
             } => {
                 assert_eq!(child_id, "a4fa9a3e07b34f715");
@@ -1185,6 +1122,7 @@ mod tests {
                     description.as_deref(),
                     Some("Tqj xzzdv RQZ tvptrdxbxf-nsceqzm kroh")
                 );
+                assert_eq!(*effort, None);
                 assert_eq!(*depth, 1);
             }
             k => panic!("{k:?}"),
@@ -1907,5 +1845,18 @@ mod tests {
         assert!(
             matches!(&at(&r, 1)[..], [EventKind::UserMessage { text }] if text == "look\nhere")
         );
+    }
+
+    #[test]
+    fn commit_message_is_carried_to_summary() {
+        let r = feed(&[tool_use(
+            "toolu_c1",
+            "Bash",
+            r#"{"command":"git commit -m \"fix: x\""}"#,
+        )]);
+        let (_, tool, summary) = call_at(&r, 1);
+        assert_eq!(tool, ToolKind::GitCommit);
+        assert_eq!(summary.commit_message.as_deref(), Some("fix: x"));
+        assert!(!summary.escalated);
     }
 }

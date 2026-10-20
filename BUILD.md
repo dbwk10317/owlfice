@@ -14,15 +14,18 @@
 
 ## 기본: Visual Studio (MSVC)
 
-**(미확인)** 이 경로는 아직 돌려 보지 않았다. 처음 설정하는 PC에서 아래 명령이 모두 통과하면 버전을 표에 적고 이 문단을 지운다.
+개발 PC 기준 (2026-10-20 확인):
 
-| 도구 | 설치 |
-|---|---|
-| Visual Studio Build Tools | "C++를 사용한 데스크톱 개발" 워크로드 (MSVC, Windows SDK) |
-| Rust | rustup. 기본 호스트 `x86_64-pc-windows-msvc`. `rustup component add rustfmt clippy` |
-| Node / npm | 26 / 12 |
-| WebView2 | Windows 11에 들어 있다 |
-| NSIS, tauri-cli | 따로 깔지 않는다. NSIS는 Tauri 번들러가 첫 빌드 때 받고, tauri-cli는 `package.json` devDependency |
+| 도구 | 버전 | 설치 |
+|---|---|---|
+| Visual Studio | Community 2026 18.11, MSVC 14.51, Windows SDK 10.0.26100 | "C++를 사용한 데스크톱 개발" 워크로드. Build Tools만 깔아도 된다 |
+| Rust | 1.99.1 | `winget install Rustlang.Rustup`. 기본 호스트 `x86_64-pc-windows-msvc`, rustfmt·clippy 포함 |
+| Node / npm | 26.8.1 / 11.19.0 | `winget install OpenJS.NodeJS` |
+| Python | 3.14.7 | `winget install Python.Python.3.14 --scope user`. 앱 아이콘과 `tools/` 스크립트용 |
+| WebView2 | 155 | Windows 11에 들어 있다 |
+| NSIS, tauri-cli | 3.13 / 2.12.3 | 따로 깔지 않는다. NSIS는 Tauri 번들러가 첫 빌드 때 받고, tauri-cli는 `package.json` devDependency |
+
+winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연다. PowerShell 실행 정책이 `npm.ps1` 을 막으면 `npm.cmd` 로 부른다.
 
 명령은 저장소 루트에서 돌린다.
 
@@ -37,7 +40,17 @@
 | 릴리스 | `npm run tauri build` → `src-tauri/target/release/bundle/nsis/*-setup.exe` |
 | 의존 DLL 확인 | `dumpbin /dependents src-tauri\target\release\owlfice.exe` (Developer PowerShell for VS) |
 
-의존 DLL에는 Windows 시스템 DLL만 나와야 한다. `vcruntime140.dll` 이 보이면 VC 런타임이 정적으로 링크되지 않은 것이다 (PLAN 4.1, 6부).
+의존 DLL에는 Windows 시스템 DLL만 나와야 한다. `vcruntime140.dll` 이 보이면 VC 런타임이 정적으로 링크되지 않은 것이다 (PLAN 4.1, 6부). `api-ms-win-crt-*` 는 Windows 10부터 OS에 든 UCRT라 괜찮다.
+
+### 확인 기록 (2026-10-20)
+
+tauri 2.12.4, tauri-build 2.7.3, 나머지는 위 표의 버전. Defender만 켜진 PC.
+
+- 명령표가 전부 통과했다. 테스트는 아직 0개다.
+- `owlfice.exe` 4.0 MB, `Owlfice_0.1.0_x64-setup.exe` 1.3 MB. Defender가 격리하지 않았다.
+- 의존 DLL은 Windows 시스템 DLL과 `api-ms-win-*` 뿐이다. `vcruntime140.dll` 은 없다.
+- 릴리스 exe와 `tauri dev` 모두 창 「야근불 · Owlfice」가 뜬다.
+- **(미확인)** 개발 도구가 없는 Windows 11에 설치 파일을 깔아 실행하는 것 (T01 완료 기준).
 
 ## 폴백 1: MSYS2 (GNU)
 

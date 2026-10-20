@@ -746,9 +746,9 @@ owlfice/
 
 시작 시, 신규 세션 발견 시, Reset 시에는 파일을 처음부터 읽어 상태를 만든다. 수 MB jsonl 파싱은 Rust에서 100ms 안이다.
 
-- **시계**: 상태 기계는 항상 이벤트의 원본 시각 `ev.ts` 를 쓴다 (`quiet_since`, `since`, `hired_at` 등). 벽시계 `now` 는 시간 기반 전이(4.7.2)에만 쓴다. 재구성 중에는 `now` 를 "마지막으로 읽은 이벤트의 ts"로 두고 시간 전이를 평가한 뒤, 끝나면 벽시계로 돌아온다. 이렇게 해야 한 번에 읽은 결과와 실제 간격으로 append한 결과가 같은 상태가 된다. 시계는 `Clock` 트레이트로 주입한다. 실행 중에는 벽시계, replay·테스트에서는 **논리 시계**(마지막으로 읽은 이벤트의 ts + 그 뒤 벽시계 경과 × 배속)다. 배속만 올리고 벽시계를 그대로 쓰면 60초 간격 이벤트가 1.2초 만에 들어와도 결재 대기·졸음·종료 추정이 벽시계로 계산되어 결과가 달라진다. 비교는 같은 논리 시점에서 한다.
+- **시계**: 상태 기계는 항상 이벤트의 원본 시각 `ev.ts` 를 쓴다 (`quiet_since`, `since`, `hired_at` 등). 벽시계 `now` 는 시간 기반 전이(4.7.2)에만 쓴다. 재구성 중에는 이벤트마다 **적용하기 전에** 그 ts 로 시간 전이를 평가하고(이벤트 사이에 넘은 30분 포기·60초 서브 종료가 다음 이벤트보다 먼저 일어나야 한다), 끝나면 벽시계로 돌아온다. 시간 전이가 남기는 시각은 평가한 틱이 아니라 문턱 시각(시작 + 30분 등)이다. 그래야 틱 간격과 무관하다. 이렇게 해야 한 번에 읽은 결과와 실제 간격으로 append한 결과가 같은 상태가 된다. 시계는 `Clock` 트레이트로 주입한다. 실행 중에는 벽시계, replay·테스트에서는 **논리 시계**(마지막으로 읽은 이벤트의 ts + 그 뒤 벽시계 경과 × 배속)다. 배속만 올리고 벽시계를 그대로 쓰면 60초 간격 이벤트가 1.2초 만에 들어와도 결재 대기·졸음·종료 추정이 벽시계로 계산되어 결과가 달라진다. 비교는 같은 논리 시점에서 한다.
 - **범위**: 어느 파일이든 Reset이면 그 팀 전체(메인 + 모든 서브)를 다시 만든다. 서브의 실패와 소요는 팀의 휴지통·무재해·장애·EMA에 섞여 있어 직원 하나만 빼고 다시 넣을 수 없다. Reset은 드물고(두 제품 모두 append만 한다) 전체 읽기는 100ms라 비용이 없다.
-- **순서**: 여러 파일의 이벤트를 `ts` 로 병합해 적용한다. ts가 같거나 없으면 파일 순서(메인 먼저) 다음 줄 순서.
+- **순서**: 여러 파일의 이벤트를 `ts` 로 병합해 적용한다. ts가 같거나 없으면 파일 순서(메인 먼저) 다음 줄 순서. 한 파일 안의 줄 순서는 뒤집지 않는다. 표본에 ts 가 거꾸로 가는 줄이 있다 (확인됨, queued_command). 정렬 키는 파일마다 지금까지의 최대 ts 다. ts 없는 이벤트는 같은 파일의 직전 ts 를 쓴다.
 - **직원 사전 등록**: 병합 적용 전에 `subagents/` 의 파일 목록과 meta.json으로 서브 직원을 먼저 만든다. 동기 Agent는 부모의 결과 시점에 Spawn이 나는데 자식 파일의 이벤트는 그보다 이른 ts라서, 사전 등록이 없으면 모르는 agent_id의 이벤트가 먼저 들어온다. 그래도 모르는 agent_id가 나오면 임시 직원(이름은 해시, 직급은 사원, Inferred)을 만들고 뒤의 SubagentSpawn이 모델·설명을 채운다.
 - **교체**: 재구성은 임시 Team/Employee에 적용하고 끝나면 한 번에 교체한다. 재구성 중 들어온 append는 기록해 둔 오프셋에서 다음 틱이 이어 읽는다.
 - **조용한 재구성**: 그동안 토스트·연출·소리는 내지 않는다. 끝나면 `office-state` 에 `rebuilt: true` 를 붙여 프론트가 애니메이션 없이 즉시 배치한다. 단, 4.5의 "방금 시작된 세션" 판정이 참이면 출근 연출만 낸다.
@@ -1196,7 +1196,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | ToolResult Rejected | pending 제거, sentence "반려됨: …", 결재판 반려 cue. 사고로 세지 않는다. `quiet_since = ev.ts` |
 | ToolResult Started | pending에서 빼서 `background` 로 옮긴다. 작업표 종이 cue, 직원은 자리로. 완료 알림이 오면 그때 Ok/Err 규칙을 적용한다 (S61) |
 | ToolResult Unknown, 또는 Inferred | pending·background 제거. 신호등·무재해·출고·EMA 모두 건드리지 않는다. 행적 "결과 확인 불가" (S59). `quiet_since = ev.ts` |
-| SubagentSpawn | child_id가 없으면 Employee 생성 (이름, 직급은 `model`(resolvedModel), 좌석 배정, Confirmed), 출근 cue. 임시 직원(4.3 사전 등록)이면 모델·설명·직급을 채우고 Confirmed로 올린다. 이미 있고 `retired_at` 이 있으면 재출근: `retired_at = None`, 좌석 재배정, 재출근 cue (S60). 그 외엔 모델·description만 갱신 |
+| SubagentSpawn | child_id가 없으면 Employee 생성 (이름, 직급은 `model`(resolvedModel), 좌석 배정, Confirmed), 출근 cue. 임시 직원(4.3 사전 등록)이면 모델·설명·직급을 채우고 Confirmed로 올린다. 이미 있고 `retired_at` 이 있으면 Spawn 의 ts 가 그보다 뒤일 때만 재출근: `retired_at = None`, 좌석 재배정, 재출근 cue (S60). 앞선 ts 의 중복 Spawn(meta.json 선발견, Codex 중복 started)은 무시한다. 퇴근한 직원 파일의 이벤트도 같은 규칙이다. 그 외엔 모델·description만 갱신 |
 | (모르는 agent_id의 첫 이벤트) | 임시 Employee 생성 (이름은 해시, 직급 사원, Inferred) 뒤 그 이벤트를 적용한다. 서브 파일을 Spawn보다 먼저 읽은 경우 |
 | SubagentDone | room=탕비실, retired_at 설정, 좌석 반납. 이후 그 직원 파일에 새 이벤트가 오면 재출근 (S60) |
 | PermissionRequest | 해당 agent room=출입문, sentence "결재판 들고 문 앞 대기: …", Confirmed |
@@ -1231,7 +1231,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | (직원) `background` 작업 | 시간 제한 없음. 완료 알림(Ok/Err 규칙 적용), `TaskStop` 의 성공 결과(Unknown), 팀 Off(Unknown) 중 먼저 오는 것으로 정리하고 작업표를 뗀다. 작업표에는 경과 시간만 | |
 | (서브) 완료 기록(4.6.1~4.6.3)을 못 본 채 `pending`·`background` 비어 있고, 마지막 레코드가 tool_use 없는 assistant이고, 60초 무변경 | SubagentDone | 추정 |
 | 현지 22~06시 | props.night = true | |
-| 활성 경과 매 60분 (2시간 이후) | props.pizza += 1 | |
+| 활성 경과 매 60분 (2시간 이후) | props.pizza += 1. 활성 경과는 팀이 마지막으로 퇴근(Off)에서 깨어난 때부터 센다 | |
 | incident 중 에러 없이 120초 | incident=None | |
 
 상태 간 우선순위는 2.5를 따른다.

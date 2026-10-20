@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-mod registry;
+pub mod registry;
 mod windows;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,4 +50,16 @@ pub enum Product {
     CodexCli,
     AntigravityApp,
     AntigravityCli,
+}
+
+/// 실제 환경의 Windows 호스트 Site 목록
+pub fn discover_all() -> Vec<Site> {
+    windows::find_sites(&|k| std::env::var(k).ok())
+}
+
+/// 실제 환경의 Claude 홈에서 살아 있는 세션 등록부 항목
+pub fn live_claude_sessions() -> Vec<registry::RegistryEntry> {
+    windows::claude_home(&|k| std::env::var(k).ok())
+        .map(|h| registry::live_sessions(&h))
+        .unwrap_or_default()
 }

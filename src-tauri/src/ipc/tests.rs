@@ -498,6 +498,50 @@ fn non_quiet_rebuild_keeps_cues_and_scale_change_is_rebuilt() {
     assert!(state.rebuilt && state.cues.is_empty());
 }
 
+/// 설정으로 규모를 바꾸면 world 가 재배치하고 목록·상태가 rebuilt 로 나간다 (4.7.9).
+/// 저장이 실패해도 규모는 바뀐다
+#[test]
+fn set_settings_scale_rebuilds_and_failed_save_still_applies() {
+    let e = env(Scale::Large);
+    let a = key("windows", Vendor::Claude, "a");
+    let now = t0();
+    {
+        let mut w = lock(&e.world);
+        w.put_team(a.clone(), team("a"), now, true);
+        let office = w.office_of(&a);
+        assert!(w.select(Some(office)));
+    }
+    let mut sent = Sent::default();
+    e.ipc.poll(&mut sent, now);
+
+    let dir = tempfile::tempdir().unwrap();
+    let book = SettingsBook::load(dir.path());
+    let small = SettingsDto {
+        scale: Some(Scale::Small),
+    };
+    // 빈 칸은 건드리지 않는다
+    apply_settings(&e.ipc, &book, SettingsDto::default()).unwrap();
+    assert!(e.ipc.poll(&mut sent, now).0.is_none());
+
+    apply_settings(&e.ipc, &book, small.clone()).unwrap();
+    assert_eq!(SettingsBook::load(dir.path()).scale(), Some(Scale::Small));
+    let (list, state) = e.ipc.poll(&mut sent, now);
+    let list = list.unwrap();
+    assert!(list.rebuilt && list.scale == Scale::Small);
+    assert_eq!(list.selected_id.as_deref(), Some("vendor/claude"));
+    assert!(state.unwrap().rebuilt);
+
+    let file = dir.path().join("file");
+    std::fs::write(&file, "x").unwrap();
+    let broken = SettingsBook::load(&file);
+    let large = SettingsDto {
+        scale: Some(Scale::Large),
+    };
+    assert!(apply_settings(&e.ipc, &broken, large).is_err());
+    assert_eq!(broken.scale(), Some(Scale::Large));
+    assert!(e.ipc.poll(&mut sent, now).0.unwrap().scale == Scale::Large);
+}
+
 /// 중소기업 사무실의 연출에는 어느 팀 것인지 실린다
 #[test]
 fn cues_carry_team_id_in_shared_office() {
@@ -753,11 +797,14 @@ fn bindings() -> String {
         Incident,
         Cue,
         Rank,
+        Role,
+        WorkType,
         Room,
         Pose,
         TeamPhase,
         Light,
         Scale,
+        SettingsDto,
         Confidence,
         TodoItem,
         TodoStatus,

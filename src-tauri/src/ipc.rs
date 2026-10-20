@@ -6,17 +6,19 @@ use std::thread;
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use ts_rs::TS;
 
 use crate::discover::{Host, HostKind, Product, Vendor};
 use crate::office::names::RoomBook;
+use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
     Activity, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
 };
 use crate::parse::{Confidence, TodoItem};
+use crate::settings::SettingsBook;
 
 /// 최대 5회/초 (4.8)
 const PUBLISH_EVERY: StdDuration = StdDuration::from_millis(200);
@@ -34,6 +36,15 @@ pub struct OfficeListDto {
     pub selected_id: Option<String>,
     /// 그 선택을 만든 마지막 `select_office` 요청 번호. store 는 자기 마지막 요청 이상일 때만 선택을 따른다
     pub select_request: u64,
+}
+
+/// `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
+/// 나머지 설정 칸은 T30 이 여기에 더한다
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDto {
+    /// 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
+    pub scale: Option<Scale>,
 }
 
 /// `get_world_snapshot` 반환. 목록 필드를 그대로 품어 store 가 목록처럼 받는다
@@ -89,6 +100,8 @@ pub struct TeamSummaryDto {
     pub delayed: bool,
     /// 호스트 배지 (`WSL`). Windows 는 null
     pub host_badge: Option<String>,
+    /// 오늘의 업무 (3.3 사무실 한 줄)
+    pub work_type: WorkType,
 }
 
 /// 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
@@ -155,6 +168,7 @@ pub struct TeamDto {
     pub started: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
+    pub work_type: WorkType,
     /// 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (4.7.9)
     pub desk_slot: Option<u8>,
     /// 첫 번째가 부장
@@ -170,6 +184,8 @@ pub struct EmployeeDto {
     pub agent_id: String,
     pub name: String,
     pub rank: Rank,
+    /// 담당 (3.5 카드)
+    pub role: Role,
     pub model: Option<String>,
     pub description: Option<String>,
     pub activity: Activity,
@@ -342,6 +358,7 @@ fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> T
         border: border(t.props.light),
         delayed: w.suspect_hosts.contains(&k.host),
         host_badge: host_badge(w, &k.host),
+        work_type: t.work_type,
     }
 }
 
@@ -415,6 +432,7 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
         agent_id: e.id.clone(),
         name: e.name.clone(),
         rank: e.rank,
+        role: e.role,
         model: e.model.clone(),
         description: e.description.clone(),
         activity: e.activity.clone(),
@@ -443,6 +461,7 @@ fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team) -> TeamDto {
         started: t.started,
         last_activity: t.last_activity,
         phase: t.phase,
+        work_type: t.work_type,
         desk_slot: t.desk_slot,
         employees: t.employees.iter().map(employee_dto).collect(),
         props: t.props.clone(),
@@ -680,6 +699,36 @@ impl Ipc {
 #[tauri::command]
 pub fn get_world_snapshot(ipc: State<'_, Arc<Ipc>>) -> WorldDto {
     ipc.snapshot(Utc::now())
+}
+
+/// 저장이 실패해도 이번 실행의 설정은 바뀐다. 에러는 저장 실패를 알린다.
+/// 규모가 바뀌면 world 가 재배치하고(4.7.9) 발행기가 rebuilt 로 낸다
+pub fn apply_settings(ipc: &Ipc, book: &SettingsBook, dto: SettingsDto) -> Result<(), String> {
+    let Some(scale) = dto.scale else {
+        return Ok(());
+    };
+    // 동시에 두 번 불려도 파일과 실행 중 world 가 같은 값이 되게 world 락 안에서 함께 한다 (락 순서 world → settings)
+    let mut world = lock(&ipc.world);
+    let saved = book.set_scale(scale);
+    world.set_scale(scale);
+    drop(world);
+    saved.map_err(|e| format!("설정을 저장하지 못했습니다: {e}"))
+}
+
+#[tauri::command]
+pub fn get_settings(settings: State<'_, Arc<SettingsBook>>) -> SettingsDto {
+    SettingsDto {
+        scale: settings.scale(),
+    }
+}
+
+#[tauri::command]
+pub fn set_settings(
+    ipc: State<'_, Arc<Ipc>>,
+    settings: State<'_, Arc<SettingsBook>>,
+    dto: SettingsDto,
+) -> Result<(), String> {
+    apply_settings(&ipc, &settings, dto)
 }
 
 #[tauri::command]

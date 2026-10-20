@@ -5,6 +5,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use chrono::{DateTime, FixedOffset, Utc};
 
 use super::names::{NameBook, NamesSave};
+use super::work::WorkType;
 use super::{Cue, Team, TeamPhase};
 use crate::discover::{Host, Vendor};
 use crate::parse::Event;
@@ -15,7 +16,7 @@ const SEATS: u8 = 10;
 const DESKS: u8 = 4;
 const SPARES: u8 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 pub enum Scale {
     Large,
     Small,
@@ -69,7 +70,7 @@ pub struct OfficeWorld {
 }
 
 /// 목록(office-list)에 보이는 값. 이것이 바뀌면 list_seq 를 올린다
-type ListView = (TeamPhase, String, usize, bool);
+type ListView = (TeamPhase, String, usize, bool, WorkType);
 
 fn list_view(t: &Team) -> ListView {
     (
@@ -77,6 +78,7 @@ fn list_view(t: &Team) -> ListView {
         t.title.clone(),
         t.employees.len(),
         t.incident.is_some(),
+        t.work_type,
     )
 }
 

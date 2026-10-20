@@ -86,7 +86,11 @@ delayed: boolean,
 /**
  * 호스트 배지 (`WSL`). Windows 는 null
  */
-hostBadge: string | null, };
+hostBadge: string | null, 
+/**
+ * 오늘의 업무 (3.3 사무실 한 줄)
+ */
+workType: WorkType, };
 
 /**
  * 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
@@ -118,7 +122,7 @@ building: string, hostBadge: string | null,
 /**
  * 통신 지연 구름 (S46)
  */
-delayed: boolean, folder: string, started: string, lastActivity: string, phase: TeamPhase, 
+delayed: boolean, folder: string, started: string, lastActivity: string, phase: TeamPhase, workType: WorkType, 
 /**
  * 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (4.7.9)
  */
@@ -131,7 +135,11 @@ employees: Array<EmployeeDto>, props: TeamProps, incident: Incident | null, };
 /**
  * 직원 카드 한 장 (3.5)
  */
-export type EmployeeDto = { agentId: string, name: string, rank: Rank, model: string | null, description: string | null, activity: Activity, 
+export type EmployeeDto = { agentId: string, name: string, rank: Rank, 
+/**
+ * 담당 (3.5 카드)
+ */
+role: Role, model: string | null, description: string | null, activity: Activity, 
 /**
  * 최근 행적, 최신이 먼저
  */
@@ -208,6 +216,16 @@ export type AnimCue = { "kind": "BossVisit", text: string, } | { "kind": "Clap",
 export type Rank = "Bujang" | "Gwajang" | "Daeri" | "Sawon";
 
 /**
+ * 담당. 선언 순서가 동률일 때의 우선순위다
+ */
+export type Role = "Backend" | "Frontend" | "Qa" | "DevOps" | "Writer" | "Trainee";
+
+/**
+ * 오늘의 업무
+ */
+export type WorkType = "CodeReview" | "BugFix" | "Refactor" | "Docs" | "Research" | "NewDev";
+
+/**
  * 사무실 안 구역 (PLAN 2.3)
  */
 export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" | "Incident" | "Meeting" | "Shipping" | "Pantry" | "Outside" | "Door";
@@ -225,6 +243,16 @@ export type TeamPhase = "Working" | "Dozing" | "Off";
 export type Light = "Off" | "Yellow" | "Green" | "Red";
 
 export type Scale = "Large" | "Small";
+
+/**
+ * `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
+ * 나머지 설정 칸은 T30 이 여기에 더한다
+ */
+export type SettingsDto = { 
+/**
+ * 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
+ */
+scale: Scale | null, };
 
 /**
  * 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)

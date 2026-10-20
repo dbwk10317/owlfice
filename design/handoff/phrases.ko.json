@@ -159,13 +159,25 @@
     "scratch": "이게 왜 안 되지",
     "tooLong": "왜 이렇게 오래 걸려",
     "compaction": "분갈이",
-    "mcp": "{server}와 {tool} 건으로"
+    "allGreen": "전부 초록불입니다!",
+    "mcp": "{server}와 {tool} 건으로",
+    "unknownTool": {
+      "bujang": ["이건 나도 처음 보는데", "요즘은 이런 것도 쓰나"],
+      "gwajang": ["처음 보는 장비네요, 써 보겠습니다", "매뉴얼부터 확인하겠습니다"],
+      "daeri": ["이거 처음 써 봅니다!", "매뉴얼 어디 있죠?"],
+      "sawon": ["이거… 어떻게 쓰는 거예요?", "이거 눌러도 돼요?"]
+    },
+    "scriptFallback": ["뭔지는 몰라도 일단 돌려 볼게요", "스크립트 하나 돌립니다"],
+    "newVendor": ["{server}, 처음 뵙겠습니다", "새 거래처네요"],
+    "newSkill": ["이 매뉴얼은 처음 펴 보네", "{skill}, 처음 펼쳐 봅니다"],
+    "unknownResult": ["됐나…? 모르겠네", "결과는 안 보이는데요"]
   },
 
   "ticker": {
     "label": "사내 방송",
     "item": "{time} {name} {rank}, {event}",
     "itemTeam": "{time} [{team}] {event}",
+    "unknownRecord": ["{time} 총무팀: 처음 보는 서류 양식 접수 ({kind})", "{time} 총무팀: 양식 미상 서류, 일단 보관 ({kind})"],
     "quiet": "조용한 밤입니다"
   },
 

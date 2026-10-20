@@ -4,6 +4,7 @@ pub mod classify;
 pub mod names;
 pub mod rank;
 pub mod stats;
+pub mod work;
 pub mod world;
 
 use std::collections::{HashMap, VecDeque};
@@ -15,6 +16,7 @@ use ts_rs::TS;
 
 use crate::discover::Product;
 use crate::parse::{Confidence, TodoItem, ToolKind, ToolSummary};
+use work::{Role, Touched, WorkTally, WorkType};
 
 /// 직원 직급 (PLAN 4.7.4). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -91,6 +93,9 @@ pub struct Employee {
     /// 비어 있으면 world 가 채운다. 이름은 사무실 안에서 겹치지 않아야 해서 팀이 정할 수 없다 (4.7.7)
     pub name: String,
     pub rank: Rank,
+    /// 만진 파일로 정한 담당 (4.7.5)
+    pub role: Role,
+    touched: Touched,
     pub model: Option<String>,
     pub description: Option<String>,
     pub activity: Activity,
@@ -225,6 +230,9 @@ pub struct Team {
     pub id: String,
     pub product: Product,
     pub title: String,
+    /// 오늘의 업무 (4.7.6)
+    pub work_type: WorkType,
+    work: WorkTally,
     pub cwd: PathBuf,
     pub git_branch: Option<String>,
     pub started: DateTime<Utc>,

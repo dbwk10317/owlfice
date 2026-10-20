@@ -1,0 +1,13 @@
+# fixtures
+
+익명화 방법과 검사는 `tools/anonymize.py` 머리말. 경로 → 담은 시나리오, 합성 여부.
+
+- `claude/async-subagent/302222d1-a790-f2ee-6a9b-2212d4de135d.jsonl` (+ `subagents/agent-a4fa9a3e07b34f715.{jsonl,meta.json}`) → 비동기 서브에이전트(Agent 호출, async_launched 결과, 자식 파일), 백그라운드 Bash의 `<task-notification>`, 자식 파일 안의 반려. 실제 세션 발췌
+- `claude/sync-subagent/ed46b23c-eb2a-4459-1e37-cb69d8ecad93.jsonl` (+ `subagents/agent-ac0c27afe76bccd54.{jsonl,meta.json}`) → 동기 서브에이전트(자식 이벤트가 부모의 결과 레코드보다 이른 ts). 합성 (위 비동기 fixture를 바탕으로 결과 모양과 시각을 바꿈. 동기 결과의 실제 필드는 미확인)
+- `claude/test-fail-fix-pass/015373c5-6b19-d6c2-c7e1-86385bee9237.jsonl` → `cargo test` 실패 → Edit → `cargo test` 통과. 합성
+- `claude/rewrite-shrink/before/aac62cc7-c834-9cc6-8f65-4a0da16e2e1d.jsonl`, `claude/rewrite-shrink/aac62cc7-c834-9cc6-8f65-4a0da16e2e1d.jsonl` → 재작성(길이 감소). `before/` 를 먼저 쓰고 같은 이름으로 위 짧은 파일을 덮어쓴다. 합성 (반려 fixture를 바탕으로 앞 절반만 남김)
+- `claude/parallel-reversed/bb5d9bb5-fb0b-cbf9-a342-7a82e4d82553.jsonl` → 병렬 tool_use 둘, 결과가 역순, `<persisted-output>`. 실제 세션 발췌
+- `claude/compaction/2d416c44-e80b-dfec-6627-ef150260a525.jsonl` → `compact_boundary` + `isCompactSummary`. 실제 세션 발췌
+- `claude/reject/13f4d27c-e1d7-fa23-0b0e-05ad838d1b68.jsonl` → 사용자 반려(Bash). 실제 세션 발췌
+- `claude/internal-tool-failure/e52d1abf-7516-aeb5-e401-2f94e956374d.jsonl` → 내부 도구(`mcp__ccd_pr__bind_pr`)의 `is_error` 결과. 실제 세션 발췌
+- `codex/codex-app/rollout-2026-03-02T09-00-00-a3c002ef-5a35-668d-d178-1e8241413423.jsonl` → Codex Desktop, `custom_tool_call` exec, 한 턴. 실제 세션 발췌

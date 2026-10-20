@@ -19,7 +19,7 @@ pub enum HostKind {
     Wsl { distro: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
 pub enum Vendor {
     Claude,
     Codex,

@@ -79,6 +79,7 @@ impl Employee {
             last_say: None,
             hired_at: at,
             retired_at: None,
+            seat: None,
             pending: Vec::new(),
             background: Vec::new(),
             quiet_since: None,
@@ -143,6 +144,7 @@ impl Team {
             last_activity: started,
             phase: TeamPhase::Working,
             alive_in_registry: false,
+            desk_slot: None,
             employees: vec![boss],
             props: TeamProps::new(started),
             incident: None,
@@ -179,6 +181,13 @@ impl Team {
         e.model = model.map(str::to_string);
         e.description = description.map(str::to_string);
         self.employees.push(e);
+    }
+
+    /// 서브 파일·meta.json 이 사라진 직원만 퇴장시킨다. 팀은 그대로 둔다 (4.5 신규 세션 발견 5번)
+    pub fn retire_employee(&mut self, agent_id: &str, at: DateTime<Utc>, cues: &mut Vec<Cue>) {
+        if let Some(i) = self.employees.iter().skip(1).position(|e| e.id == agent_id) {
+            self.retire(i + 1, at, Confidence::Confirmed, cues);
+        }
     }
 
     /// 이벤트 하나를 적용한다 (4.7.1). 시각은 언제나 `ev.ts` 다. 없으면 같은 파일의 직전 ts

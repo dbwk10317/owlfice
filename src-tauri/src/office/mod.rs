@@ -4,6 +4,7 @@ pub mod classify;
 pub mod names;
 pub mod rank;
 pub mod stats;
+pub mod world;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -81,7 +82,7 @@ pub struct Counters {
     pub errors: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Employee {
     pub id: String,
     /// 비어 있으면 world 가 채운다. 이름은 사무실 안에서 겹치지 않아야 해서 팀이 정할 수 없다 (4.7.7)
@@ -95,6 +96,8 @@ pub struct Employee {
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     pub retired_at: Option<DateTime<Utc>>,
+    /// 개발실·임시 책상 자리 번호. world 가 사무실 단위로 준다 (4.7.9)
+    pub seat: Option<u8>,
     /// 결과 안 온 호출 전부. 대표는 마지막
     pub pending: Vec<PendingCall>,
     /// Started 로 끝난 호출 (작업표)
@@ -140,7 +143,7 @@ pub enum Light {
     Red,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TeamProps {
     pub boss_visit: Option<String>,
     /// 화분 성장도 = 부장 컨텍스트 사용률 (0~1). 분갈이 직후 0
@@ -207,7 +210,7 @@ pub enum Cue {
 }
 
 /// 세션 하나 (4.7). 사무실 합성·좌석은 world 몫이다
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Team {
     pub id: String,
     pub product: Product,
@@ -219,6 +222,8 @@ pub struct Team {
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
     pub alive_in_registry: bool,
+    /// 팀장석 번호. 0~3 팀장석, 4~5 간이 책상, None 은 카드만. world 가 입장 때 준다 (4.7.9)
+    pub desk_slot: Option<u8>,
     /// 첫 번째가 부장
     pub employees: Vec<Employee>,
     pub props: TeamProps,

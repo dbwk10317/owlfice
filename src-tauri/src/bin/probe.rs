@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use owlfice_lib::diag::summarize;
-use owlfice_lib::discover::{discover_all, discover_wsl};
-use owlfice_lib::parse::claude::ClaudeParser;
-use owlfice_lib::parse::codex::CodexParser;
+use owlfice_lib::discover::{Vendor, discover_all, discover_wsl};
 use owlfice_lib::parse::{Parser, RawRef};
+use owlfice_lib::tail::scheduler::{self, is_subagent};
 use owlfice_lib::tail::{MAX_READ_BYTES, TailReader};
 
 const USAGE: &str = "사용법: owlfice-probe discover | owlfice-probe events <파일 또는 폴더>... | owlfice-probe unhandled [경로]";
@@ -77,35 +76,15 @@ fn jsonl_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(found)
 }
 
-fn is_subagent(p: &Path) -> bool {
-    p.parent()
-        .and_then(Path::file_name)
-        .is_some_and(|n| n == "subagents")
-}
-
-fn make_parser(path: &Path) -> Box<dyn Parser> {
+/// 파일명으로 제조사를 정해 앱과 같은 파서를 쓴다
+fn make_parser(path: &Path) -> Box<dyn Parser + Send> {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    if stem.starts_with("rollout-") {
-        // 파일명 끝 UUID (36자)
-        let id = stem.get(stem.len().saturating_sub(36)..).unwrap_or(stem);
-        return Box::new(CodexParser::new(id));
-    }
-    if is_subagent(path) {
-        let meta = path.with_extension("meta.json");
-        let depth = fs::read_to_string(meta)
-            .ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-            .and_then(|v| v["spawnDepth"].as_u64())
-            .and_then(|d| u8::try_from(d).ok())
-            .unwrap_or(1);
-        let boss = path
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned());
-        return Box::new(ClaudeParser::new(depth, boss));
-    }
-    Box::new(ClaudeParser::new(0, None))
+    let vendor = if stem.starts_with("rollout-") {
+        Vendor::Codex
+    } else {
+        Vendor::Claude
+    };
+    scheduler::make_parser(path, vendor)
 }
 
 fn events(paths: &[PathBuf], out: &mut impl Write) -> io::Result<()> {

@@ -1,5 +1,7 @@
 //! 증분 파일 읽기 (PLAN 4.5)
 
+pub mod scheduler;
+
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
 use std::hash::Hasher;
@@ -119,6 +121,14 @@ impl TailReader {
             last_mtime,
             tail_hash: hash_bytes(&[]),
             generation: 0,
+        })
+    }
+
+    /// 세대를 이어 연다. 재구성으로 다시 연 파일의 RawRef 세대가 0 으로 돌아가 옛 커서와 겹치지 않게
+    pub fn open_at(path: impl Into<PathBuf>, generation: u32) -> io::Result<Self> {
+        Ok(Self {
+            generation,
+            ..Self::open(path)?
         })
     }
 

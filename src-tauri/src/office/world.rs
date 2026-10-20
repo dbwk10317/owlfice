@@ -16,7 +16,7 @@ const SEATS: u8 = 10;
 const DESKS: u8 = 4;
 const SPARES: u8 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 pub enum Scale {
     Large,
     Small,

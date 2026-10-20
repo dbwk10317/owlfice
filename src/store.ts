@@ -3,6 +3,9 @@
 
 export interface ListMsg {
   listSeq: number;
+  // 백엔드가 스스로 바꾼 선택(팀 퇴장, 규모 변경)과 그 선택을 만든 마지막 요청 번호
+  selectedId: string | null;
+  selectRequest: number;
 }
 export interface StateMsg {
   stateSeq: number;
@@ -23,8 +26,8 @@ export function createStore<L extends ListMsg, S extends StateMsg>() {
   // 사무실마다 따로 센다. 선택을 옮겨도 지우지 않는다: A→B→A 에서 옛 A 응답이 화면을 되돌리지 못하게
   const lastStateSeq = new Map<string, number>();
   const subscribers = new Set<() => void>();
-  let lastRequestId: string | null = null;
-  let nextRequest = 0;
+  // 요청 번호는 단조 증가라 백엔드가 늦게 온 옛 요청을 가려낼 수 있다
+  let lastRequestId = 0;
   // 스냅샷이 오기 전의 이벤트. null 이면 이미 시작된 것
   let buffer: { list: L[]; state: S[] } | null = { list: [], state: [] };
 
@@ -34,6 +37,11 @@ export function createStore<L extends ListMsg, S extends StateMsg>() {
     if (buffer) return void buffer.list.push(msg);
     if (state.list && msg.listSeq < state.list.listSeq) return;
     state.list = msg;
+    // 더 새 요청을 보낸 뒤라면 그 응답 전의 백엔드 선택이 사용자 선택을 덮지 않게
+    if (msg.selectRequest >= lastRequestId && msg.selectedId !== state.selectedId) {
+      state.selectedId = msg.selectedId;
+      state.office = null;
+    }
     notify();
   }
 
@@ -53,6 +61,8 @@ export function createStore<L extends ListMsg, S extends StateMsg>() {
     state.list = world;
     state.selectedId = world.selected?.officeId ?? null;
     state.office = world.selected;
+    // WebView 만 다시 불러오면 백엔드는 옛 번호를 기억한다. 1부터 다시 세면 모든 선택이 늦은 요청으로 버려진다
+    lastRequestId = Math.max(lastRequestId, world.selectRequest);
     if (world.selected) lastStateSeq.set(world.selected.officeId, world.selected.stateSeq);
     // 스냅샷 seq 이하는 스냅샷이 이미 담고 있다
     for (const m of pending?.list ?? []) if (m.listSeq > world.listSeq) applyList(m);
@@ -63,16 +73,16 @@ export function createStore<L extends ListMsg, S extends StateMsg>() {
 
   /** 선택을 옮기고 requestId 를 돌려준다. 호출부가 이 id 로 select_office 를 부른다. */
   // ponytail: select_office 가 실패하면 화면이 빈 채로 남는다, 사무실 전환 티켓(T28)에서 되돌리기를 정한다
-  function selectOffice(officeId: string): string {
+  function selectOffice(officeId: string): number {
     state.selectedId = officeId;
     state.office = null;
-    lastRequestId = `r${++nextRequest}`;
+    lastRequestId += 1;
     notify();
     return lastRequestId;
   }
 
   /** select_office 응답. 마지막으로 보낸 requestId 의 것만, 이후는 office-state 규칙. */
-  function applySelectResponse(res: S & { requestId: string }): void {
+  function applySelectResponse(res: S & { requestId: number }): void {
     if (res.requestId !== lastRequestId) return;
     applyOfficeState(res);
   }

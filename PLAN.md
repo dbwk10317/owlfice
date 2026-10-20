@@ -1320,7 +1320,7 @@ Tauri 커맨드 (프론트 → 백엔드):
 | 커맨드 | 인자 | 반환 |
 |---|---|---|
 | `get_world_snapshot` | 없음 | `WorldDto { list_seq, scale, offices: [OfficeSummaryDto], selected: Option<OfficeDto> }`. `OfficeDto` 는 `state_seq` 를 포함한다 |
-| `select_office` | `office_id, request_id` | `OfficeDto`(state_seq 포함) + `request_id`. 프론트는 마지막으로 보낸 request_id의 응답만 받아들이고, 그 사무실의 마지막 state_seq **미만**이면 버린다. 같으면 멱등이라 적용한다 (A→B→A처럼 변경 없는 사무실로 돌아올 때 화면을 채워야 한다). 늦게 온 응답이 이미 받은 이벤트보다 과거라 화면을 되돌리는 것만 막는다 |
+| `select_office` | `office_id, request_id` | `OfficeDto`(state_seq 포함) + `request_id`. 프론트는 마지막으로 보낸 request_id의 응답만 받아들이고, 그 사무실의 마지막 state_seq **미만**이면 버린다. 같으면 멱등이라 적용한다 (A→B→A처럼 변경 없는 사무실로 돌아올 때 화면을 채워야 한다). 늦게 온 응답이 이미 받은 이벤트보다 과거라 화면을 되돌리는 것만 막는다 `request_id` 는 단조 증가 숫자다. 백엔드는 마지막으로 처리한 번호보다 작은 요청을 무시한다 (두 요청이 뒤바뀌어 처리되면 백엔드와 프론트의 선택이 어긋난다) |
 | `get_employee_timeline` | `office_id, agent_id, before: Option<{generation, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 RawRef로 읽어 온 한 페이지. 커서는 (파일 세대, 오프셋)이다. Reset으로 generation이 바뀌었으면 `cursor_invalid` 를 돌려주고 프론트는 첫 페이지부터 다시 연다 |
 | `get_session_detail` | `office_id, team_id` | `SessionDetailDto` |
 | `open_path` | `path` | 탐색기로 열기 |
@@ -1332,16 +1332,16 @@ Tauri 커맨드 (프론트 → 백엔드):
 | 이벤트 | 페이로드 | 빈도 |
 |---|---|---|
 | `startup-progress` | `{step: 0..7, state: "running"|"done"|"warn"|"error", summary, detail?}` | 시작 시 |
-| `office-list` | `{list_seq, rebuilt: bool, offices: [OfficeSummaryDto { office_id, floor, label, phase, dot, badge, teams: [TeamSummaryDto] }]}` | 바뀔 때만. **전체 목록** (변경분 아님). 중소기업의 팀 행은 `teams` 로 |
+| `office-list` | `{list_seq, rebuilt: bool, selected_id, select_request, offices: [OfficeSummaryDto { office_id, floor, label, phase, dot, badge, teams: [TeamSummaryDto] }]}` | 바뀔 때만. **전체 목록** (변경분 아님). 중소기업의 팀 행은 `teams` 로 백엔드가 선택을 스스로 바꾸면(팀 제거, 규모 변경 4.7.9) `selected_id` 로 알린다. 프론트는 `select_request` 가 자기 마지막 요청 번호 이상일 때만 받아들인다 |
 | `office-state` | `{state_seq, office_id, rebuilt: bool, teams: [TeamDto { team, employees, props, incident }], shared: SharedPropsDto, cues: [AnimCue]}` | 선택 사무실, 바뀔 때만 (최대 5회/초로 병합). **전체 상태**. 목록에 없는 직원은 삭제된 것 |
 | `ticker` | `{ts, office_id, team_id, agent_id, text}` | 사건마다 |
 | `toast` | `{text, kind}` | 입주·퇴거·퇴근·재출근·팀 출근 등 |
 
-`AnimCue` 는 프론트가 재생할 연출 지시다. 예: `{kind: "move", agent, to: "archive"}`, `{kind: "boss_visit", team, text}`, `{kind: "stamp", result: "pass", pass: 12, fail: 0}`, `{kind: "truck"}`, `{kind: "return"}` (반송), `{kind: "reject", agent}` (반려), `{kind: "siren", on: true}`, `{kind: "frame_swap", title}`, `{kind: "repot", team}`, `{kind: "team_enter", team}`, `{kind: "team_leave", team}`, `{kind: "paper", agent, on: true}` (작업표), `{kind: "rehire", agent}` (재출근). 상태(어디 있나)는 `EmployeeDto` 가 진실이고 `AnimCue` 는 "어떻게 거기 갔는지"를 꾸미는 힌트다. 큐를 놓쳐도 다음 상태로 자리는 맞는다. 조용한 재구성(`rebuilt: true`) 중에는 cues가 비어 있다.
+`AnimCue` 는 프론트가 재생할 연출 지시다. 예: `{kind: "move", agent, to: "archive"}`, `{kind: "boss_visit", team, text}`, `{kind: "stamp", result: "pass", pass: 12, fail: 0}`, `{kind: "truck"}`, `{kind: "return"}` (반송), `{kind: "reject", agent}` (반려), `{kind: "siren", on: true}`, `{kind: "frame_swap", title}`, `{kind: "repot", team}`, `{kind: "team_enter", team}`, `{kind: "team_leave", team}`, `{kind: "paper", agent, on: true}` (작업표), `{kind: "rehire", agent}` (재출근). 상태(어디 있나)는 `EmployeeDto` 가 진실이고 `AnimCue` 는 "어떻게 거기 갔는지"를 꾸미는 힌트다. 큐를 놓쳐도 다음 상태로 자리는 맞는다. 조용한 재구성(`rebuilt: true`) 중에는 cues가 비어 있다. 팀 단위 cue 는 `team_id` 를 단다 (중소기업 사무실에는 팀이 여럿이다).
 
 프론트 수신 규칙: 스트림마다 따로 센다. `office-list` 는 `list_seq` < 마지막 list_seq → 버림. `office-state` 는 `state_seq` < 그 사무실의 마지막 state_seq → 버림 (같으면 멱등 적용), `office_id` ≠ 현재 선택 → 버림. `rebuilt` → 애니메이션 없이 즉시 배치. `select_office` 응답과 스냅샷의 `selected` 도 `office-state` 와 같은 state_seq 규칙을 거친다. 시작 순서는 4.3 (구독 먼저, 스냅샷 다음, 스냅샷 seq 이하의 버퍼 이벤트 폐기).
 
-DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 Rust 쪽에서 `ts-rs` 로 생성한다. 손으로 두 벌 쓰지 않는다.
+DTO는 모두 `#[derive(Serialize)]` + `camelCase`. enum 값은 Rust 이름 그대로 쓴다 (`"TeamLead"`, `{kind: "FrameSwap"}`. 위 cue 예시의 소문자 표기는 설명용이다). 프론트의 `types.ts` 는 Rust 쪽에서 `ts-rs` 로 생성한다. 손으로 두 벌 쓰지 않는다.
 
 ### 4.9 프론트 구조
 
@@ -1356,7 +1356,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 
 ### 4.10 성능 예산
 
-아래 값은 전부 **목표**이지 측정 결과가 아니다. 본문의 "파싱 100ms", "메모리 150MB", 배포 빌드 가능성, WSL 비기동도 같다. 측정 조건: 활성 팀 4개(그중 WSL 1개), 직원 12명, 세션 파일 5MB + 서브 파일 2MB × 4, 60초 측정. `owlfice-probe --bench` 로 평균과 p99를 기록한다. 폴링 주기 200ms는 종단 반응 보장이 아니다. 종단 목표는 "파일 변경 → 화면 반영 500ms 이내 (Hot)".
+아래 값은 전부 **목표**이지 측정 결과가 아니다. 본문의 "파싱 100ms", "메모리 150MB", 배포 빌드 가능성, WSL 비기동도 같다. 측정 조건: 활성 팀 4개(그중 WSL 1개), 직원 12명, 세션 파일 5MB + 서브 파일 2MB × 4, 60초 측정. `owlfice-probe bench <폴더>` 로 평균과 p99를 기록한다. 폴링 주기 200ms는 종단 반응 보장이 아니다. 종단 목표는 "파일 변경 → 화면 반영 500ms 이내 (Hot)".
 
 | 항목 | 목표 |
 |---|---|
@@ -1371,6 +1371,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 메모리 | < 150MB (WebView2 포함) |
 
 이 PC 실측 (release, 실제 기록 팀 36·직원 135, Probe·WebView2 제외. 확인됨): 시작 때 전체 재구성 약 1~1.4초, 그 뒤 유휴 CPU 한 코어의 0.5~0.6%, 백엔드 메모리 약 22MB. 파일 크기는 측정 조건(5MB+2MB×4)과 다르다.
+WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨): 핸들 stat 0.35ms, 100KB 읽기 3.7ms, 경로 대조 1.4ms, 프로젝트 25개 나열 p50 31~42ms·p99 240ms (Probe 직후 Scan 틱은 가끔 200ms 를 넘는다). 로컬은 stat 0.007ms, 나열 3.1ms. 측정 파일은 Windows 쪽에서 썼다 (배포판 안에서 쓴 경우의 캐시 동작은 미확인).
 
 한 호스트의 Hot 틱이 200ms를 연속 5회 넘기면 그 호스트만 400ms로 늦추고 로그에 남긴다. 연속 5회 200ms 이하면 되돌린다. WSL이면 그 사무실에 "통신 지연" 구름(S46)을 띄운다. 다른 호스트는 영향 없다.
 
@@ -1439,6 +1440,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | T12 | `tail/scheduler.rs` 호스트별 스레드 (Hot/Warm/Scan/Probe/Cold) + `office/world.rs` (OfficeWorld, office_of, seq) | 상 | T10 T11 | probe가 실제 세션 변화를 500ms 내 출력. 새 세션 파일 생성 후 3.5초(WSL 35초) 내 Team 생성과 출근 판정. WSL 스레드 멈춤을 주입하면 감시자가 2초 안에 의심으로 바꾸고 Windows 갱신은 유지. 감시 중 `wsl --terminate` 로 배포판을 끄면 다음 Hot·Scan 뒤에도 꺼진 상태가 유지됨 (핸들·의심 상태, 4.4.2). 핸들 모드에서 같은 경로의 파일을 바꿔치기하면 다음 Scan에서 Reset. I/O를 멈추게 하면(공유 끊기) 재개 뒤 멈춘 동안 append된 줄이 하나도 빠지지 않음 (2단계 commit). 논리 시계 주입 아래 전체 읽기와 append 결과 동일. 규모 변경 절차(4.7.9) 테스트. 유휴 CPU 2% 미만 (측정 조건 4.10) |
 | T13 | WSL 폴링 측정 (핸들 기반 Hot stat·read, Probe 직후 나열) | 중 | T12 | UNC stat/read/나열 평균·p99 기록. stat 20ms 초과면 T31 착수 |
 | T38 | `diag.rs` 미대응 동작 로그 + `owlfice-probe unhandled` 요약 (번호는 뒤지만 파서 다음에 바로 착수. `state_conflict`·`scenario_gap` 두 kind만 T11 뒤. 설정 버튼은 T30에서) | 하 | T07 T08 | 4.12의 미대응 로그 테스트 통과. 기본 설정에서 원문이 한 글자도 저장되지 않음 |
+| T39 | `office` 담당(4.7.5)과 오늘의 업무(4.7.6), DTO 에 싣기 (번호는 뒤지만 T14 다음에 착수. 화면 T17·T21 이 쓴다) | 하 | T11 T14 | 4.7.5 분류 규칙(수습 5개 미만, 확장자·경로 규칙, `.ts .js` 경로 규칙)과 4.7.6 표(키워드·첫 20개 도구 패턴) 단위 테스트. fixture 하나의 담당·업무가 기대와 같다 |
 
 ### 5.2 2단계: 앱 껍데기와 정적 화면
 
@@ -1471,7 +1473,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 
 | 티켓 | 내용 | 난이도 | 선행 | 완료 기준 |
 |---|---|---|---|---|
-| T31 | WSL 스트리밍 폴백 (`wsl tail -F`), T13 결과에 따라 | 상 | T13 | 폴백 전환 자동. 틱 p99 20ms 이내 |
+| T31 | WSL 스트리밍 폴백 (`wsl tail -F`), T13 결과에 따라. **T13 에서 핸들 stat p99 0.35ms 라 착수하지 않는다** (4.10) | 상 | T13 | 폴백 전환 자동. 틱 p99 20ms 이내 |
 | T32 | Antigravity CLI 표본(도구 호출·서브에이전트 포함) 확인 후 `parse/antigravity.rs` | 중 | T05 | fixture 일치 |
 | T33 | Codex 서브에이전트 자식 파일 위치 확인 후 지원 | 중 | T08 | fixture 일치 |
 | T34 | 효과음 (기본 꺼짐) | 하 | T30 | 설정 토글 |

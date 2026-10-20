@@ -6,6 +6,8 @@ pub mod registry;
 mod windows;
 pub mod wsl;
 
+pub use windows::windows_host;
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Host {
     pub id: String,

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>반응형 · 960 · 현황판 드로어</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.ow button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s{width:14px;height:14px}
+.ib{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;color:#52525B;flex:none}
+.ib:hover{background:#F4F4F5;color:#18181B}
+.ib.sm{width:28px;height:28px}
+.ib.on{background:#18181B;color:#FFFFFF}
+.tr{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.mut{color:#71717A}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:500;background:#F4F4F5;color:#3F3F46;white-space:nowrap;flex:none}
+.code{font-family:'IBM Plex Mono',Consolas,monospace;font-size:.92em;background:#F4F4F5;border-radius:4px;padding:0 4px;color:#18181B}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px}
+.sd{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.sd>i{width:8px;height:8px;border-radius:50%;display:block}
+.g{background:#16A34A}.y{background:#CA8A04}.r{background:#DC2626}.k{background:#A1A1AA}
+.ring-y{box-shadow:inset 0 0 0 2px #EAB308}.ring-r{box-shadow:inset 0 0 0 2px #EF4444}.ring-d{border:1.5px dashed #71717A}
+.grp{display:flex;align-items:center;gap:7px;width:100%;height:30px;padding:0 8px;border-radius:8px;font-size:12px;color:#52525B}
+.grp b{color:#18181B;font-weight:600}
+.sq{width:8px;height:8px;border-radius:2px;flex:none}
+.cnt{margin-left:auto;font-size:11px;color:#71717A;font-family:'IBM Plex Mono',monospace}
+.row{position:relative;display:flex;align-items:flex-start;gap:2px;border-radius:10px;padding:0 4px 0 0}
+.row.sel{background:#fff;box-shadow:0 0 0 1px #E4E4E7,0 1px 3px rgba(24,24,27,.06)}
+.bar3{position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0}
+.rm{flex:1;min-width:0;display:flex;gap:9px;padding:9px 0 9px 12px}
+.rn{font-size:13px;font-weight:600;white-space:nowrap}
+.wt{font-size:11px;color:#52525B;background:#F0F0F1;border-radius:4px;padding:0 5px;line-height:18px;white-space:nowrap}
+.rs{font-size:12px;color:#71717A;margin-top:2px}
+.row .ib{margin-top:6px}
+.card{background:#fff;border:1px solid #E4E4E7;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:9px;flex:none}
+.card.boss{border-color:#D4A72C;box-shadow:inset 0 0 0 1px #D4A72C}
+.av{width:44px;height:44px;border-radius:10px;display:flex;align-items:flex-end;justify-content:center;flex:none;overflow:hidden;background:#FBEDE4}
+.av img{width:40px;height:44px}
+.nm{font-size:14px;font-weight:600}
+.rk{font-size:12px;color:#52525B;font-weight:500;margin-left:4px}
+.model{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#52525B;border:1px solid #E4E4E7;border-radius:5px;padding:0 5px;line-height:18px;white-space:nowrap}
+.mc{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}
+.ctx{display:inline-flex;align-items:center;gap:2px}
+.ctx i{width:5px;height:4px;border-radius:1px;background:#E4E4E7;display:block}
+.ctx i.on{background:#71717A}
+.ctx b{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500;color:#71717A;margin-left:4px}
+.st{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:500;background:#F4F4F5;color:#27272A}
+.st.est{background:#fff;border:1px dashed #A1A1AA}
+.st small{font-size:10.5px;color:#71717A;font-weight:500}
+.now{font-size:13px;font-weight:500;line-height:1.5}
+.trail{display:flex;flex-direction:column;gap:1px;font-size:12px;color:#52525B}
+.trail .t{font-family:'IBM Plex Mono',monospace;color:#71717A;font-size:11px;margin-right:6px}
+.pbar{height:4px;border-radius:2px;background:#F0F0F1;overflow:hidden}
+.pbar>i{display:block;height:100%;border-radius:2px}
+.bub{position:absolute;background:#fff;border:2px solid #2A1E1A;padding:1px 6px 2px;font-size:11px;font-weight:600;line-height:15px;color:#2A1E1A;white-space:nowrap;box-shadow:2px 2px 0 rgba(42,30,26,.2)}
+.bub.est{border-style:dashed}
+.bub svg{position:absolute;left:8px;bottom:-8px;width:8px;height:7px;overflow:visible}
+.tick{animation:tick 40s linear infinite}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+</style>
+</helmet>
+<div class="ow" style="width: 960px; height: 720px; display: flex; background: #FFFFFF; overflow: hidden">
+
+<nav aria-label="사무실 목록" style="width: 240px; flex: none; display: flex; flex-direction: column; background: #FAFAFA; border-right: 1px solid #E4E4E7">
+  <button aria-label="설정 열기" style="height: 60px; display: flex; align-items: center; gap: 10px; padding: 0 16px; flex: none">
+    <img class="px" src="/_blob/149ffb362ce868ea5cdfd88d99218a25" alt="" style="width: 32px; height: 26px">
+    <span style="display: flex; flex-direction: column; line-height: 1.2"><span style="font-size: 15px; font-weight: 700">Owlfice</span><span style="font-size: 11px; color: #71717A">야근불</span></span>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="margin-left: auto; color: #71717A"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+  </button>
+  <div style="flex: 1; overflow: hidden; padding: 0 8px; display: flex; flex-direction: column; gap: 2px">
+    <button class="grp"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="sq" style="background: #D97745"></span><b>A동</b><span class="tr">Claude Desktop</span><span class="cnt">1</span></button>
+    <div class="row"><button class="rm"><span class="sd" style="margin-top: 2px"><i class="g"></i></span><span style="min-width: 0; flex: 1"><span style="display: flex; align-items: center; gap: 6px"><span class="rn">A동 102호</span><span class="wt">리팩터링</span></span><span class="rs tr" style="display: block">owlfice · 부장 외 1명 · 48분째</span></span></button></div>
+    <button class="grp" style="margin-top: 4px"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="sq" style="background: #D97745"></span><b>B동</b><span class="tr">Claude Code CLI</span><span class="cnt">3</span></button>
+    <div class="row sel"><span class="bar3" style="background: #D97745"></span><button class="rm" aria-current="true"><span class="sd ring-y" style="margin-top: 2px"><i class="g"></i></span><span style="min-width: 0; flex: 1"><span style="display: flex; align-items: center; gap: 6px"><span class="rn">B동 203호</span><span class="wt">버그 수정</span></span><span class="rs tr" style="display: block">lumaweave · 부장 외 4명 · 12분째</span></span></button><button class="ib sm" aria-label="B동 203호 세션 상세"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></button></div>
+    <div class="row"><button class="rm"><span class="sd" style="margin-top: 2px"><i class="g"></i></span><span style="min-width: 0; flex: 1"><span style="display: flex; align-items: center; gap: 6px"><span class="rn">B동 204호</span><span class="wt">신규 개발</span></span><span class="rs tr" style="display: block">owlfice-site · 부장 혼자 · 1분째</span></span></button></div>
+    <div class="row"><button class="rm"><span class="sd" style="margin-top: 2px"><i class="y"></i></span><span style="min-width: 0; flex: 1"><span style="display: flex; align-items: center; gap: 6px"><span class="rn">B동 101호</span><span class="wt">문서 작업</span></span><span class="rs tr" style="display: block">dotfiles · 부장 혼자 · 1시간 4분째</span></span></button></div>
+    <button class="grp" style="margin-top: 4px"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="sq" style="background: #27272A"></span><b>C동</b><span class="tr">Codex 앱</span><span class="cnt">1</span></button>
+    <div class="row"><button class="rm"><span class="sd ring-r" style="margin-top: 2px"><i class="r"></i></span><span style="min-width: 0; flex: 1"><span style="display: flex; align-items: center; gap: 6px"><span class="rn">C동 105호</span><span class="wt">기술 조사</span></span><span class="rs tr" style="display: block">api-gateway · 부장 외 2명 · 25분째</span></span></button></div>
+  </div>
+  <div style="height: 44px; flex: none; display: flex; align-items: center; padding: 0 8px 0 16px; border-top: 1px solid #E4E4E7; font-size: 12px; color: #71717A">3초마다 자동 확인</div>
+</nav>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative">
+  <header style="height: 56px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 20px; border-bottom: 1px solid #E4E4E7; background: #FFFFFF">
+    <span class="sq" style="background: #D97745; width: 10px; height: 10px; border-radius: 3px"></span>
+    <h1 style="margin: 0; font-size: 16px; font-weight: 600; white-space: nowrap">B동 203호</h1>
+    <span class="tr" style="color: #52525B; flex: 1">tail 오프셋 되감기 버그 고치기</span>
+    <button class="ib" aria-label="소리 켜기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg></button>
+    <span class="chip mono">1×</span>
+    <button class="ib on" aria-label="직원 현황판 닫기" aria-expanded="true"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+  </header>
+  <div class="stage" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden">
+    <div style="position: relative; width: 520px; height: 320px; flex: none">
+      <img class="px" src="/_blob/76d20744ec1ea645d4949de55c50fefe" alt="B동 203호 사무실 전경" style="width: 520px; height: 320px">
+      <div class="bub" style="left: 158px; top: 64px">바로 고칠게요!<svg viewBox="0 0 8 7" aria-hidden="true" shape-rendering="crispEdges"><path d="M0 0h8L2 7z" fill="#FFFFFF"/><path d="M0 0L2 7 8 0" fill="none" stroke="#2A1E1A" stroke-width="2"/></svg></div>
+    </div>
+  </div>
+
+  <aside aria-label="직원 현황판" style="position: absolute; top: 56px; right: 0; bottom: 0; width: 320px; display: flex; flex-direction: column; background: #FAFAFA; border-left: 1px solid #E4E4E7; box-shadow: -12px 0 32px rgba(24,24,27,.12)">
+    <div style="height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-bottom: 1px solid #E4E4E7; background: #FFFFFF">
+      <h2 style="margin: 0; font-size: 14px; font-weight: 600">직원 현황판</h2>
+      <span class="chip" style="height: 20px; font-size: 11.5px">5명</span>
+      <button class="ib" aria-label="닫기" style="margin-left: auto"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div style="flex: 1; overflow: hidden; padding: 12px; display: flex; flex-direction: column; gap: 10px">
+      <article class="card boss">
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div class="av"><img class="px" src="/_blob/9b0239c1cae7e3dd48d84f4fdef8768a" alt=""></div>
+          <div style="flex: 1; min-width: 0"><div><span class="nm">김하늘</span><span class="rk">부장</span></div><div class="mut" style="font-size: 12px">담당 백엔드</div></div>
+          <div class="mc"><span class="model">opus-5.5</span><span class="ctx" role="img" aria-label="컨텍스트 62%" title="컨텍스트 62%"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><b>62%</b></span></div>
+        </div>
+        <div><span class="st est"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5h8v2M3 13h18"/></svg>팀장실<small>추정</small></span></div>
+        <div class="now">러버덕과 상담 중인 듯 (14초)</div>
+        <div class="trail">
+          <div class="tr"><span class="t">14:31</span><span class="code">tail.rs</span> 수정 (3줄)</div>
+          <div class="tr"><span class="t">14:30</span>박서준 과장에게 “테스트 돌려줘” 지시</div>
+          <div class="tr"><span class="t">14:29</span>‘<span class="code">offset</span>’ 검색</div>
+        </div>
+      </article>
+      <article class="card">
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div class="av"><img class="px" src="/_blob/b48934fe1125b68f1ecff6e11c9703dd" alt=""></div>
+          <div style="flex: 1; min-width: 0"><div><span class="nm">박서준</span><span class="rk">과장</span></div><div class="mut" style="font-size: 12px">담당 백엔드</div></div>
+          <div class="mc"><span class="model">opus-5.5</span><span class="ctx" role="img" aria-label="컨텍스트 35%" title="컨텍스트 35%"><i class="on"></i><i class="on"></i><i></i><i></i><i></i><b>35%</b></span></div>
+        </div>
+        <div><span class="st"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7 15h10"/></svg>테스트실</span></div>
+        <div class="now"><span class="code">cargo test</span> 돌리는 중 · 34초째 (평소 20초)</div>
+        <div class="pbar"><i style="width: 100%; background: repeating-linear-gradient(-45deg,#D97706 0 4px,#FBBF24 4px 8px)"></i></div>
+      </article>
+    </div>
+    <div style="height: 40px; flex: none; display: flex; align-items: center; gap: 10px; padding-left: 12px; border-top: 1px solid #E4E4E7; background: #FFFFFF; overflow: hidden">
+      <span class="chip" style="background: #18181B; color: #FFFFFF; height: 20px; font-size: 11px">사내 방송</span>
+      <div style="flex: 1; overflow: hidden"><div class="tick" style="display: flex; gap: 24px; width: max-content; white-space: nowrap; font-size: 12px; color: #3F3F46">
+        <span><span class="mono mut">14:31</span> 박서준 과장, cargo test 시작</span><span><span class="mono mut">14:31</span> 이지우 대리, card.ts 수정 완료</span>
+        <span><span class="mono mut">14:31</span> 박서준 과장, cargo test 시작</span><span><span class="mono mut">14:31</span> 이지우 대리, card.ts 수정 완료</span>
+      </div></div>
+    </div>
+  </aside>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

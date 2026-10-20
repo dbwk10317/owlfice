@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>반응형 · 최소 이하</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.ow button,.ow select{font:inherit;color:inherit}
+.ow button{background:none;border:0;padding:0;margin:0;cursor:pointer}
+.px{image-rendering:pixelated;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ib{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;color:#52525B;flex:none}
+.ib:hover{background:#F4F4F5;color:#18181B}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px}
+.sel{height:32px;flex:1;min-width:0;border:1px solid #D4D4D8;border-radius:8px;padding:0 10px;background:#FFFFFF;font-size:13px;font-weight:500}
+</style>
+</helmet>
+<div class="ow" style="width: 480px; height: 400px; display: flex; flex-direction: column; background: #FFFFFF; overflow: hidden">
+  <header style="height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; border-bottom: 1px solid #E4E4E7">
+    <button aria-label="설정 열기" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex: none"><img class="px" src="/_blob/149ffb362ce868ea5cdfd88d99218a25" alt="" style="width: 32px; height: 26px"></button>
+    <select class="sel" aria-label="사무실 선택">
+      <option>B동 203호 · 버그 수정</option>
+      <option>A동 102호 · 리팩터링</option>
+      <option>B동 204호 · 신규 개발</option>
+      <option>C동 105호 · 기술 조사</option>
+    </select>
+    <button class="ib" aria-label="직원 현황판 열기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+  </header>
+
+  <div class="stage" style="flex: 1; position: relative; overflow: hidden; cursor: grab">
+    <img class="px" src="/_blob/76d20744ec1ea645d4949de55c50fefe" alt="B동 203호 사무실 전경. 창이 작아 일부만 보이며 끌어서 옮겨 볼 수 있다." style="position: absolute; left: -40px; top: 16px; width: 520px; height: 320px">
+
+    <div style="position: absolute; left: 10px; bottom: 10px; height: 28px; padding: 0 10px; border-radius: 8px; background: rgba(24,24,27,.82); color: #FFFFFF; font-size: 12px; display: flex; align-items: center; gap: 6px">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 14px; height: 14px"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>끌어서 둘러보기
+    </div>
+
+    <div role="img" aria-label="미니맵. 사무실 오른쪽 대부분이 보이는 중" style="position: absolute; right: 10px; bottom: 10px; width: 128px; height: 82px; padding: 4px; border-radius: 10px; background: #FFFFFF; box-shadow: 0 4px 14px rgba(24,24,27,.16), 0 0 0 1px #E4E4E7">
+      <div style="position: relative; width: 120px; height: 74px">
+        <img class="px" src="/_blob/76d20744ec1ea645d4949de55c50fefe" alt="" style="width: 120px; height: 74px">
+        <div style="position: absolute; left: 9px; top: 0; width: 111px; height: 74px; border: 2px solid #18181B; border-radius: 3px; background: rgba(24,24,27,.06)"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":480,"height":400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

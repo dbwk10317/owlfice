@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>빈 상태 · 모두 퇴근</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.ow button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s{width:14px;height:14px}
+.ib{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;color:#52525B;flex:none}
+.ib:hover{background:#F4F4F5;color:#18181B}
+.ib.sm{width:28px;height:28px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:500;background:#F4F4F5;color:#3F3F46;white-space:nowrap;flex:none}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px}
+.sd{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.sd>i{width:8px;height:8px;border-radius:50%;display:block;background:#A1A1AA}
+.grp{display:flex;align-items:center;gap:7px;width:100%;height:36px;padding:0 8px;border-radius:8px;font-size:12px;color:#52525B}
+.grp:hover{background:#F4F4F5}
+.cnt{margin-left:auto;font-size:11px;color:#71717A;font-family:'IBM Plex Mono',monospace}
+</style>
+</helmet>
+<div class="ow" style="width: 1280px; height: 800px; display: flex; background: #FFFFFF; overflow: hidden">
+
+<nav aria-label="사무실 목록" style="width: 240px; flex: none; display: flex; flex-direction: column; background: #FAFAFA; border-right: 1px solid #E4E4E7">
+  <button aria-label="설정 열기" style="height: 60px; display: flex; align-items: center; gap: 10px; padding: 0 16px; flex: none">
+    <img class="px" src="/_blob/149ffb362ce868ea5cdfd88d99218a25" alt="" style="width: 32px; height: 26px">
+    <span style="display: flex; flex-direction: column; line-height: 1.2">
+      <span style="font-size: 15px; font-weight: 700; letter-spacing: -0.01em">Owlfice</span>
+      <span style="font-size: 11px; color: #71717A">야근불</span>
+    </span>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="margin-left: auto; color: #71717A"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+  </button>
+
+  <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 0 24px 40px; text-align: center">
+    <img class="px" src="/_blob/594ef66100db0a536f9e57fa27c345d0" alt="" style="width: 160px; height: 150px; opacity: .85">
+    <p style="margin: 0; font-size: 13px; font-weight: 600">불 켜진 사무실이 없어요</p>
+    <p style="margin: 0; font-size: 12px; color: #71717A">세션을 시작하면 여기에 나타납니다.</p>
+  </div>
+
+  <div style="padding: 0 8px">
+    <button class="grp" aria-expanded="false" style="border-top: 1px solid #EDEDEE; border-radius: 0"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg><span class="sd"><i></i></span><span>퇴근한 사무실</span><span class="cnt">5</span></button>
+  </div>
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-top: 1px solid #E4E4E7; font-size: 12px; color: #71717A">
+    <span>3초마다 자동 확인</span>
+    <button class="ib sm" aria-label="지금 다시 찾기" style="margin-left: auto"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
+  </div>
+</nav>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+  <header style="height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 20px; border-bottom: 1px solid #E4E4E7; background: #FFFFFF">
+    <h1 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">Owlfice 본사</h1>
+    <span class="chip"><span class="sd" style="width: 12px; height: 12px"><i style="width: 6px; height: 6px"></i></span>모두 퇴근 · 23:58</span>
+    <button class="ib" aria-label="소리 켜기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg></button>
+  </header>
+  <div class="stage" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px">
+    <img class="px" src="/_blob/594ef66100db0a536f9e57fa27c345d0" alt="모든 창문의 불이 꺼진 Owlfice 건물" style="width: 320px; height: 300px">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center">
+      <p style="margin: 0; font-size: 18px; font-weight: 600">모두 퇴근했습니다</p>
+      <p style="margin: 0; font-size: 13px; color: #52525B">Claude나 Codex 세션을 시작하면 불이 켜집니다.</p>
+    </div>
+  </div>
+</main>
+
+<aside aria-label="직원 현황판" style="width: 320px; flex: none; display: flex; flex-direction: column; background: #FAFAFA; border-left: 1px solid #E4E4E7">
+  <div style="height: 56px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid #E4E4E7; background: #FFFFFF">
+    <h2 style="margin: 0; font-size: 14px; font-weight: 600">직원 현황판</h2>
+    <span class="chip" style="height: 20px; font-size: 11.5px">0명</span>
+  </div>
+  <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #71717A; text-align: center; padding: 0 32px 40px">
+    <span style="width: 44px; height: 44px; border-radius: 12px; background: #F0F0F1; display: flex; align-items: center; justify-content: center; color: #52525B"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 20a6 6 0 0 0-2.5-5"/></svg></span>
+    <p style="margin: 0; font-size: 13px; color: #3F3F46; font-weight: 500">출근한 직원이 없습니다</p>
+  </div>
+  <div style="height: 40px; flex: none; display: flex; align-items: center; gap: 10px; padding-left: 12px; border-top: 1px solid #E4E4E7; background: #FFFFFF">
+    <span class="chip" style="background: #18181B; color: #FFFFFF; height: 20px; font-size: 11px">사내 방송</span>
+    <span style="font-size: 12px; color: #71717A">조용한 밤입니다</span>
+  </div>
+</aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

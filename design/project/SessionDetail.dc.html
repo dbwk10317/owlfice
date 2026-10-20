@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>팝업 · 세션 상세</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B;text-underline-offset:2px}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.ow button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s{width:14px;height:14px}
+.ib{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;color:#52525B;flex:none}
+.ib:hover{background:#F4F4F5;color:#18181B}
+.ib.sm{width:24px;height:24px;border-radius:6px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:500;background:#F4F4F5;color:#3F3F46;white-space:nowrap;flex:none}
+.code{font-family:'IBM Plex Mono',Consolas,monospace;font-size:.92em;background:#F4F4F5;border-radius:4px;padding:0 4px}
+dl{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;border:1px solid #E4E4E7;border-radius:12px;overflow:hidden}
+.kv{padding:10px 14px;border-bottom:1px solid #F0F0F1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.kv:nth-child(odd){border-right:1px solid #F0F0F1}
+dt{font-size:11.5px;color:#71717A;font-weight:500}
+dd{margin:0;font-size:13px;display:flex;align-items:center;gap:6px;min-width:0}
+.tl{display:grid;grid-template-columns:64px 24px 92px minmax(0,1fr) auto;align-items:center;column-gap:8px;padding:7px 4px;border-bottom:1px solid #F4F4F5;font-size:13px}
+.tl .t{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#71717A}
+.tl img{width:20px;height:22px}
+.tl .who{font-weight:500;white-space:nowrap}
+.tl .what{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3F3F46}
+.est{font-size:10.5px;font-weight:500;color:#52525B;border:1px dashed #A1A1AA;border-radius:4px;padding:0 4px;line-height:16px}
+.btn{height:36px;padding:0 14px;border-radius:9px;display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;border:1px solid #E4E4E7 !important;background:#FFFFFF !important}
+.btn:hover{background:#F4F4F5 !important}
+</style>
+</helmet>
+<div class="ow" style="width: 880px; height: 940px; background: #8E8E93; display: flex; align-items: center; justify-content: center">
+  <section role="dialog" aria-modal="true" aria-labelledby="sd-title" style="width: 780px; background: #FFFFFF; border-radius: 16px; box-shadow: 0 24px 64px rgba(0,0,0,.24); display: flex; flex-direction: column; overflow: hidden">
+    <header style="padding: 20px 20px 16px 24px; display: flex; gap: 12px; align-items: flex-start">
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <span style="width: 10px; height: 10px; border-radius: 3px; background: #D97745"></span>
+          <h1 id="sd-title" style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">B동 203호</h1>
+          <span class="chip">버그 수정</span>
+        </div>
+        <p style="margin: 0; color: #52525B">B동 · Claude Code CLI · 2층 WSL Rocky-9</p>
+      </div>
+      <button class="ib" aria-label="닫기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+
+    <div style="padding: 0 24px; display: flex; flex-direction: column; gap: 20px">
+      <dl>
+        <div class="kv"><dt>세션 ID</dt><dd><span class="mono" style="font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">7c1e4a9b-2f6d-4c1a-9e0b-58d3a1f2c7e4</span><button class="ib sm" aria-label="세션 ID 복사"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></button></dd></div>
+        <div class="kv"><dt>브랜치</dt><dd class="mono" style="font-size: 12px">fix/tail-offset</dd></div>
+        <div class="kv" style="grid-column: 1 / -1; border-right: 0"><dt>작업 폴더</dt><dd class="mono" style="font-size: 12px">\\wsl.localhost\Rocky-9\home\dev\work\lumaweave</dd></div>
+        <div class="kv"><dt>모델</dt><dd class="mono" style="font-size: 12px">claude-opus-5-5</dd></div>
+        <div class="kv"><dt>시작 · 경과</dt><dd>10월 20일 14:19 · 12분째</dd></div>
+        <div class="kv"><dt>턴 수</dt><dd>7</dd></div>
+        <div class="kv"><dt>토큰 사용량</dt><dd>입력 182,400 · 출력 9,870</dd></div>
+        <div class="kv" style="border-bottom: 0"><dt>직원 수</dt><dd>5명 <span style="color: #71717A">(부장 1 · 과장 1 · 대리 1 · 사원 2)</span></dd></div>
+        <div class="kv" style="border-bottom: 0"><dt>PR</dt><dd><a href="https://github.com/">lumaweave #142</a></dd></div>
+      </dl>
+
+      <div style="display: flex; flex-direction: column">
+        <div style="display: flex; align-items: center; padding-bottom: 6px; border-bottom: 1px solid #E4E4E7">
+          <h2 style="margin: 0; font-size: 14px; font-weight: 600">최근 사건</h2>
+          <span class="mono" style="margin-left: 8px; font-size: 12px; color: #71717A">20</span>
+          <span style="margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #71717A"><span class="est">추정</span>은 기록이 없어 시간으로 유추한 상태</span>
+        </div>
+        <div class="tl"><span class="t">14:31:40</span><img class="px" src="/_blob/b48934fe1125b68f1ecff6e11c9703dd" alt=""><span class="who">박서준 과장</span><span class="what"><span class="code">cargo test</span> 시작</span><span></span></div>
+        <div class="tl"><span class="t">14:31:32</span><img class="px" src="/_blob/d42bdf29fc83d7b6b082c4b7f70c567b" alt=""><span class="who">최도윤 사원</span><span class="what">‘<span class="code">fn poll</span>’ 검색 (외 2건)</span><span></span></div>
+        <div class="tl"><span class="t">14:31:10</span><img class="px" src="/_blob/6f3cffe060e2689bc6138ad15de4528f" alt=""><span class="who">이지우 대리</span><span class="what"><span class="code">src/ui/card.ts</span> 수정 (3줄)</span><span></span></div>
+        <div class="tl"><span class="t">14:31:02</span><img class="px" src="/_blob/9b0239c1cae7e3dd48d84f4fdef8768a" alt=""><span class="who">김하늘 부장</span><span class="what">턱 괴고 고민 시작</span><span class="est">추정</span></div>
+        <div class="tl"><span class="t">14:30:55</span><img class="px" src="/_blob/9b0239c1cae7e3dd48d84f4fdef8768a" alt=""><span class="who">김하늘 부장</span><span class="what">보고서 제출: “오프셋 되감기 로직을 고쳤습니다”</span><span></span></div>
+        <div class="tl"><span class="t">14:30:41</span><img class="px" src="/_blob/9b0239c1cae7e3dd48d84f4fdef8768a" alt=""><span class="who">김하늘 부장</span><span class="what">박서준 과장에게 “테스트 돌려줘” 지시</span><span></span></div>
+        <div class="tl"><span class="t">14:30:20</span><img class="px" src="/_blob/d42bdf29fc83d7b6b082c4b7f70c567b" alt=""><span class="who">최도윤 사원</span><span class="what">출근 · 개발실 3번 자리</span><span></span></div>
+        <div class="tl"><span class="t">14:29:58</span><img class="px" src="/_blob/da0cbfa42bb590fb9bd18de0e4f35bc6" alt=""><span class="who">사장님</span><span class="what">“오프셋 되감기 버그 좀 봐줘”</span><span></span></div>
+        <div class="tl"><span class="t">14:22:14</span><img class="px" src="/_blob/c3421721b366528574cb9f7be62d1216" alt=""><span class="who">정예린 사원</span><span class="what">일을 마치고 탕비실로</span><span class="est">추정</span></div>
+        <div class="tl" style="border-bottom: 0"><span class="t">14:21:47</span><img class="px" src="/_blob/c3421721b366528574cb9f7be62d1216" alt=""><span class="who">정예린 사원</span><span class="what"><span class="code">tests/fixtures/</span> 정리 (4개 파일)</span><span></span></div>
+        <button style="height: 36px; border-radius: 8px; margin-top: 4px; font-size: 13px; color: #3F3F46; background: #F7F7F6; display: flex; align-items: center; justify-content: center; gap: 6px">더 보기<span class="mono" style="font-size: 11.5px; color: #71717A">최대 100개</span></button>
+      </div>
+    </div>
+
+    <footer style="margin-top: 20px; padding: 14px 24px; border-top: 1px solid #E4E4E7; display: flex; justify-content: flex-end; gap: 8px; background: #FAFAFA">
+      <button class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>원본 파일 폴더 열기</button>
+      <button class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"/></svg>작업 폴더 열기</button>
+    </footer>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":940}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

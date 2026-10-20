@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>로딩</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.ic{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.step{display:flex;align-items:flex-start;gap:12px;padding:7px 0}
+.mk{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none;margin-top:0}
+.mk.done{background:#DCFCE7;color:#15803D}
+.mk.todo{border:1.5px solid #D4D4D8}
+.mk.warn{background:#FEF3C7;color:#B45309}
+.spin{width:20px;height:20px;border-radius:50%;border:2px solid #E4E4E7;border-top-color:#18181B;animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.kbd{font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid #D4D4D8;border-bottom-width:2px;border-radius:5px;padding:0 5px;color:#3F3F46;background:#fff}
+</style>
+</helmet>
+<div class="ow" style="width: 1280px; height: 800px; background: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; overflow: hidden">
+  <img class="px" src="/_blob/3ee042b08ddb56e70953c26fa2ddebdd" alt="창문에 불이 절반쯤 켜진 Owlfice 건물. 불 꺼진 창 몇 곳에서 올빼미 눈이 빛난다." style="width: 320px; height: 300px">
+
+  <section aria-label="준비 단계" aria-live="polite" style="width: 440px; display: flex; flex-direction: column">
+    <div class="step"><span class="mk done"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span><span>법인 등기 완료 <span style="color: #71717A">(사명: Owlfice)</span></span></div>
+    <div class="step"><span class="mk done"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span><span>후보지 2곳 확인 <span style="color: #71717A">(Windows, WSL Rocky-9)</span></span></div>
+    <div class="step"><span class="mk done"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span><span>A동 · B동 · D동 임대 계약 완료</span></div>
+    <div class="step" style="padding-top: 0"><span class="mk warn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v6M12 17h.01"/></svg></span><span style="color: #92400E">3층 임대 실패 <span style="color: #B45309">(WSL Ubuntu 응답 없음)</span></span></div>
+    <div class="step"><span class="mk done"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span><span>불 켜진 팀 4곳</span></div>
+    <div class="step">
+      <span class="spin" role="img" aria-label="진행 중"></span>
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-weight: 600">면접 보는 중..</span>
+        <span class="mono" style="font-size: 12px; color: #71717A">세션 파일 312개 확인 중 (187/312)</span>
+      </span>
+    </div>
+    <div class="step" style="color: #71717A"><span class="mk todo"></span><span>회사 사무실을 꾸미는 중</span></div>
+    <div class="step" style="color: #71717A"><span class="mk todo"></span><span>출근 카드 찍는 중</span></div>
+  </section>
+
+  <p style="margin: 0; font-size: 12px; color: #71717A; display: flex; align-items: center; gap: 6px">아무 키나 누르면 <span class="kbd">건너뛰기</span></p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>실패 · 세션 폴더 없음</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.ow button{font:inherit;cursor:pointer}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.pr{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid #F0F0F1}
+.host{font-size:11px;font-weight:600;border-radius:5px;padding:0 6px;line-height:20px;white-space:nowrap;flex:none;width:92px;text-align:center}
+.h-win{color:#3F3F46;background:#F4F4F5}
+.h-wsl{color:#1D4ED8;background:#EFF4FF}
+.path{font-family:'IBM Plex Mono',monospace;font-size:12px;color:#27272A;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res{font-size:12px;color:#71717A;white-space:nowrap}
+.btn{height:40px;padding:0 16px;border-radius:10px;display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;border:0}
+</style>
+</helmet>
+<div class="ow" style="width: 1280px; height: 800px; background: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; position: relative">
+  <div style="position: absolute; top: 24px; left: 28px; display: flex; align-items: center; gap: 10px">
+    <img class="px" src="/_blob/149ffb362ce868ea5cdfd88d99218a25" alt="" style="width: 32px; height: 26px">
+    <span style="font-size: 15px; font-weight: 700">Owlfice</span>
+    <span style="font-size: 12px; color: #71717A">야근불</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center">
+    <span style="width: 56px; height: 56px; border-radius: 16px; background: #F4F4F5; color: #3F3F46; display: flex; align-items: center; justify-content: center"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 26px; height: 26px"><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16M15 10h4a1 1 0 0 1 1 1v10M2 21h20M8 8h3M8 12h3M8 16h3"/></svg></span>
+    <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.02em">임대할 건물이 없습니다</h1>
+    <p style="margin: 0; font-size: 14px; color: #52525B">아직 아무도 출근 안 했나 봐요. 아래 경로에서 세션 폴더를 찾지 못했습니다.</p>
+  </div>
+
+  <section aria-label="찾아본 경로" style="width: 640px; border: 1px solid #E4E4E7; border-radius: 14px; overflow: hidden; background: #FFFFFF">
+    <div style="display: flex; align-items: center; padding: 12px 16px; background: #FAFAFA">
+      <h2 style="margin: 0; font-size: 13px; font-weight: 600">찾아본 경로</h2>
+      <span class="mono" style="margin-left: auto; font-size: 12px; color: #71717A">7곳</span>
+    </div>
+    <div class="pr"><span class="host h-win">Windows</span><span class="path">C:\Users\dev\.claude\projects</span><span class="res">없음</span></div>
+    <div class="pr"><span class="host h-win">Windows</span><span class="path">C:\Users\dev\.codex\sessions</span><span class="res">없음</span></div>
+    <div class="pr"><span class="host h-win">Windows</span><span class="path">C:\Users\dev\.gemini\tmp</span><span class="res">없음</span></div>
+    <div class="pr"><span class="host h-wsl">WSL Rocky-9</span><span class="path">\\wsl.localhost\Rocky-9\home\dev\.claude\projects</span><span class="res">없음</span></div>
+    <div class="pr"><span class="host h-wsl">WSL Rocky-9</span><span class="path">\\wsl.localhost\Rocky-9\home\dev\.codex\sessions</span><span class="res">없음</span></div>
+    <div class="pr"><span class="host h-wsl">WSL Rocky-9</span><span class="path">\\wsl.localhost\Rocky-9\home\dev\.gemini\tmp</span><span class="res">없음</span></div>
+    <div class="pr"><span class="host h-wsl">WSL Ubuntu</span><span class="path" style="color: #71717A">배포판이 꺼져 있어 확인하지 않았습니다</span><span class="res">소등</span></div>
+  </section>
+
+  <button class="btn" style="background: #18181B; color: #FFFFFF"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"/></svg>직접 지정</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

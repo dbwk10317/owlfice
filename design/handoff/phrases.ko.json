@@ -1,0 +1,249 @@
+{
+  "_note": "사용자에게 보이는 문구. 앱의 src/phrases.ko.json 원본으로 쓴다 (PLAN 4.2). {자리표시자}는 코드가 채운다. 배열은 풀에서 무작위로 고른다. 경로는 작업 폴더 기준 상대 경로, 명령은 40자에서 자른다.",
+
+  "app": {
+    "windowTitle": "야근불 · Owlfice",
+    "brand": "Owlfice",
+    "brandSub": "야근불",
+    "brandSubSmall": "야근불 · 중소기업"
+  },
+
+  "sidebar": {
+    "sectionLit": "불 켜진 사무실",
+    "sectionHq": "본사 건물",
+    "offGroup": "퇴근한 사무실",
+    "offTeams": "퇴근",
+    "vacant": "공실",
+    "autoCheck": "3초마다 자동 확인",
+    "refresh": "지금 다시 찾기",
+    "openSettings": "설정 열기",
+    "detail": "{office} 세션 상세",
+    "officeMeta": "{folder} · 부장 외 {n}명 · {elapsed}째",
+    "officeMetaAlone": "{folder} · 부장 혼자 · {elapsed}째",
+    "teamName": "{boss} 부장 팀",
+    "teamMeta": "{folder} · 외 {n}명 · {elapsed}째",
+    "teamMetaAlone": "{folder} · 혼자 · {elapsed}째",
+    "floorMeta": "팀 {teams} · 직원 {people}명",
+    "floorMetaIncident": "팀 {teams} · 직원 {people}명 · 장애 {n}",
+    "parseFailed": "세션 파일을 읽지 못했어요",
+    "offAgo": "{folder} · {ago} 퇴근",
+    "idleAlive": "대기 중",
+    "emptyTitle": "불 켜진 사무실이 없어요",
+    "emptyBody": "세션을 시작하면 여기에 나타납니다."
+  },
+
+  "toast": {
+    "moveIn": "{office} 입주",
+    "teamIn": "{team} 출근",
+    "back": "{office} 재출근",
+    "off": "{office} 퇴근",
+    "evicted": "{office} 퇴거",
+    "hired": "{name} {rank} 입사했습니다!"
+  },
+
+  "header": {
+    "working": "근무 중 · {elapsed}째",
+    "night": "야근 모드 · {time}",
+    "allOff": "모두 퇴근 · {time}",
+    "roomLabels": "방 이름 표시",
+    "soundOn": "소리 켜기",
+    "soundOff": "소리 끄기",
+    "scale": "캔버스 배율",
+    "panelOpen": "직원 현황판 열기",
+    "panelClose": "직원 현황판 닫기",
+    "workType": "오늘의 업무 · {type}",
+    "hq": "Owlfice 본사",
+    "officeSelect": "사무실 선택",
+    "panHint": "끌어서 둘러보기"
+  },
+
+  "workType": ["코드 리뷰", "버그 수정", "리팩터링", "문서 작업", "기술 조사", "신규 개발"],
+
+  "rooms": {
+    "boss": "팀장실", "bossSmall": "팀장석", "dev": "개발실", "library": "소스 서고", "build": "빌드실", "test": "테스트실",
+    "review": "리뷰실", "incident": "장애 상황실", "meeting": "거래처 미팅실", "shipping": "출고장", "pantry": "탕비실",
+    "away": "외근", "door": "출입문", "entrance": "출입문 · 출고장"
+  },
+
+  "ranks": { "bujang": "부장", "gwajang": "과장", "daeri": "대리", "sawon": "사원", "boss": "사장님" },
+  "roles": { "backend": "백엔드", "frontend": "프론트", "qa": "QA", "devops": "데브옵스", "writer": "테크라이터", "trainee": "수습" },
+  "species": { "eagle": "수리부엉이", "longeared": "칡부엉이", "little": "금눈쇠올빼미", "barn": "가면올빼미", "scops": "소쩍새", "snowy": "흰올빼미" },
+
+  "card": {
+    "role": "담당 {role}",
+    "modelUnknown": "모델 모름",
+    "roleWithBoss": "담당 {role} · 상사 {parent}",
+    "estimate": "추정",
+    "parallel": "(외 {n}건)",
+    "progress": "{sec}초 / 평균 {avg}초",
+    "tooLong": "길어지네…",
+    "context": "컨텍스트 {pct}%",
+    "contextUnknown": "컨텍스트 약 {pct}% · 창 크기 모름",
+    "stats": { "read": "읽은 파일", "edit": "수정", "cmd": "명령", "web": "출장", "mcp": "거래처", "incident": "사고" },
+    "panelTitle": "직원 현황판",
+    "count": "{n}명",
+    "empty": "출근한 직원이 없습니다"
+  },
+
+  "sentence": {
+    "read": "{file} 열람 중 ({from}~{to}행)",
+    "readShort": "{file} 열람 중",
+    "search": "'{query}' 전사 수색 중 ({glob})",
+    "newFile": "{file} 새 서류 작성 중",
+    "edit": "{file} 수정 중 ({lines}줄 교체)",
+    "editRepeat": "{file} 리팩터링 중 (오늘 {n}번째 수정)",
+    "shell": "{cmd} 실행 중 · {sec}초째",
+    "shellLong": "서버실에서 땀 흘리는 중 ({cmd} · {min}분 {sec}초)",
+    "background": "백그라운드: {cmd} 돌아가는 중 (작업표 {n}장)",
+    "unknownResult": "결과 확인 불가: {cmd}",
+    "script": "스크립트 돌리는 중 · {sec}초째",
+    "test": "{cmd} 돌리는 중 · {sec}초째 (평소 {avg}초)",
+    "testRetry": "빨간불 끄는 중: {test} {n}번째 시도",
+    "build": "빌드 서버 돌리는 중, 선풍기 가동",
+    "spawn": "{rank} {name}에게 \"{prompt}\" 지시",
+    "arriving": "출근 중 · 자리 찾는 중",
+    "mcp": "거래처 {server}와 {tool} 건으로 미팅 중",
+    "skill": "외주 매뉴얼 {skill} 펼쳐보는 중",
+    "web": "'{query}' 건으로 외근 중",
+    "review": "PR 리뷰 중 · 빨간펜 {n}개",
+    "commit": "출고 포장 중: \"{msg}\"",
+    "pushOk": "출고 완료",
+    "pushFail": "반송: push 거부됨",
+    "thinking": "턱 괴고 고민 중인 듯 ({sec}초)",
+    "thinkingDuck": "러버덕과 상담 중인 듯 ({sec}초)",
+    "reported": "보고서 제출함: \"{text}\"",
+    "incidentOne": "사고: {err}",
+    "incident": "장애 상황실 소집, 무재해 기록 0분",
+    "awaitingUser": "요구사항 대기 중인 듯 · 사장님 자리 비움 {min}분",
+    "askUser": "결재판 들고 문 앞 대기: 「{question}」",
+    "rejected": "반려됨: {cmd} 안 됩니다",
+    "subDone": "탕비실에서 게임 중인 듯 (마지막 보고 {time})",
+    "compaction": "분갈이 중 (서류 정리)",
+    "userMessage": "요구사항 접수: \"{text}\"",
+    "sleepy": "졸음",
+    "off": "퇴근"
+  },
+
+  "trail": {
+    "edited": "{file} 수정 ({lines}줄)",
+    "read": "{file} 열람",
+    "readRange": "{file} 열람 ({from}~{to}행)",
+    "searched": "'{query}' 검색",
+    "ran": "{cmd} 실행",
+    "started": "{cmd} 시작",
+    "failed": "{cmd} 실패",
+    "failedN": "{cmd} 실패 ({n}번째)",
+    "buildOk": "빌드 성공",
+    "testResult": "합격 {pass} / 반려 {fail}",
+    "delegated": "{name} {rank}에게 \"{prompt}\" 지시",
+    "received": "{name} {rank}의 지시 접수",
+    "arrived": "출근 · {seat}번 자리",
+    "webBack": "외근 복귀",
+    "incidentEnd": "장애 해제",
+    "shipped": "출고 완료",
+    "back": "재출근"
+  },
+
+  "bubble": {
+    "_rule": "직원당 하나, 4초 유지, 새 사건이 오면 교체. 추정 상태는 점선 테두리. 사장님 말풍선은 메시지 첫 30자, 부장 응답은 첫 40자, 허가 대기는 질문 첫 30자.",
+    "rank": {
+      "bujang": ["음, 이건 내가 보지", "다들 잠깐 모여봐"],
+      "gwajang": ["제가 처리하겠습니다", "확인해보니 이쪽이 문제네요"],
+      "daeri": ["확인했습니다!", "바로 고칠게요"],
+      "sawon": ["저… 이거 맞나요?", "찾았어요! 아마도요"]
+    },
+    "jokes": ["빌드 깨졌습니다…", "머지 컨플릭트!", "전부 초록불입니다!", "이거 누가 짰어요… 아, 저네요", "린트가 또 잡네", "캐시 지우고 다시 해볼게요", "문서엔 된다고 써 있는데", "로컬에선 됐는데요"],
+    "incident": ["로컬에선 됐는데요", "캐시 지우고 다시", "누가 건드렸어"],
+    "thinkingDuck": "…그러니까 이게…",
+    "planApproval": "계획 결재 올립니다",
+    "scratch": "이게 왜 안 되지",
+    "tooLong": "왜 이렇게 오래 걸려",
+    "compaction": "분갈이",
+    "mcp": "{server}와 {tool} 건으로"
+  },
+
+  "ticker": {
+    "label": "사내 방송",
+    "item": "{time} {name} {rank}, {event}",
+    "itemTeam": "{time} [{team}] {event}",
+    "quiet": "조용한 밤입니다"
+  },
+
+  "sessionDetail": {
+    "sessionId": "세션 ID", "branch": "브랜치", "folder": "작업 폴더", "model": "모델", "startElapsed": "시작 · 경과",
+    "turns": "턴 수", "tokens": "토큰 사용량", "tokensValue": "입력 {in} · 출력 {out}", "people": "직원 수",
+    "peopleValue": "{n}명 (부장 {b} · 과장 {g} · 대리 {d} · 사원 {s})", "pr": "PR", "recent": "최근 사건",
+    "estimateLegend": "추정은 기록이 없어 시간으로 유추한 상태", "more": "더 보기", "moreLimit": "최대 100개",
+    "openRaw": "원본 파일 폴더 열기", "openWork": "작업 폴더 열기", "copyId": "세션 ID 복사", "close": "닫기"
+  },
+
+  "employeeDetail": {
+    "meta": "입사 {joined} · 근속 {elapsed} · 상사 {parent} · {office}",
+    "instruction": "받은 지시", "timeline": "타임라인", "timelineCount": "50개 중 {n}개", "more": "더 보기", "moreStep": "50개씩",
+    "input": "입력", "result": "결과", "cut": "가운데 {size} 생략 · 앞뒤 2KB만 표시", "openRaw": "원본 열기",
+    "summary": "실적 요약", "readFiles": "읽은 파일", "editedFiles": "수정한 파일", "commands": "실행한 명령", "times": "{n}회",
+    "running": "진행 중 · {sec}초", "ok": "성공", "fail": "실패", "failTests": "실패 · 합격 {pass} / 반려 {fail}", "unknown": "결과 확인 불가"
+  },
+
+  "settings": {
+    "title": "설정",
+    "company": "회사", "scale": "회사 규모", "scaleHint": "바꾸면 사무실만 다시 배치하고 데이터는 다시 읽지 않아요.", "large": "대기업", "small": "중소기업",
+    "bossName": "사장님 이름", "bossNameHint": "비워 두면 “사장님”으로 불러요.", "bossNamePlaceholder": "사장님",
+    "screenSound": "화면과 소리", "sound": "소리", "soundHint": "키보드, 인터폰, 경광등, 무재해 리셋 소리",
+    "folders": "세션 폴더", "auto": "자동", "manual": "직접 지정", "removePath": "이 경로 빼기", "addFolder": "폴더 직접 지정",
+    "contextDefault": "컨텍스트 창 기본값", "contextDefaultHint": "요약 기록을 아직 못 본 세션의 화분 크기 계산에 써요.",
+    "contextOptions": ["200,000 토큰", "1,000,000 토큰"],
+    "diag": "진단", "rawDiag": "원문 진단", "rawDiagHint": "켜면 명령 원문 80자와 결과 앞 200자를 미대응 로그에 저장해요. 켜 둔 동안 간판에 경고 점이 떠요.",
+    "copyDiag": "진단 정보 복사", "openUnhandled": "미대응 로그 폴더 열기"
+  },
+
+  "onboarding": {
+    "title": "회사 규모를 골라주세요",
+    "body": "세션을 사무실에 어떻게 배치할지 정합니다. 보이는 데이터는 같아요.",
+    "large": { "title": "대기업", "line": "제품마다 동, 팀마다 사무실 하나", "fit": "세션을 여러 개 띄우고 서브에이전트를 많이 쓸 때" },
+    "small": { "title": "중소기업", "line": "제조사마다 한 층, 팀들이 함께 써요", "fit": "세션 1~3개, 서브에이전트는 가끔 쓸 때" },
+    "footnote": "설정에서 바꿀 수 있습니다"
+  },
+
+  "loading": {
+    "_rule": "단계마다 풀에서 하나. 말줄임표 점은 실제 시간에 맞춰 하나씩 (최대 3). 한 단계가 2초 넘으면 cause, 5초 넘으면 slow. 최소 1.2초 표시, 아무 키나 클릭으로 건너뜀.",
+    "skip": "아무 키나 누르면",
+    "skipKey": "건너뛰기",
+    "steps": [
+      { "pool": ["회사를 창설하는 중", "정관 쓰는 중", "도장 파는 중"], "done": "법인 등기 완료 (사명: Owlfice)" },
+      { "pool": ["부동산 둘러보는 중", "역세권 알아보는 중", "임장 다니는 중"], "done": "후보지 {n}곳 확인 ({hosts})" },
+      { "pool": ["회사 건물을 임대하는 중", "보증금 깎는 중", "건물주와 협상 중"], "done": "{buildings} 임대 계약 완료" },
+      { "pool": ["입주 신청서 받는 중", "명패 맞추는 중", "출입증 찍어내는 중"], "done": "불 켜진 팀 {n}곳" },
+      { "pool": ["직원 채용하는 중", "면접 보는 중", "연봉 협상하는 중"], "done": "{n}명 입사 (부장 {b}, 과장 {g}, 대리 {d}, 사원 {s})" },
+      { "pool": ["회사 사무실을 꾸미는 중", "러버덕 주문하는 중", "화분 들여놓는 중"], "done": "파티션 설치 완료" },
+      { "pool": ["출근 카드 찍는 중", "커피 내리는 중", "아침 조회 하는 중"], "done": "업무 개시" }
+    ],
+    "cause": { "files": "세션 파일 {total}개 확인 중 ({done}/{total})", "wsl": "WSL 공유 응답 대기 ({distro})" },
+    "slow": "건물주가 전화를 안 받네요...",
+    "wslOff": "{floor}층 소등 ({distro} 꺼짐)",
+    "wslFail": "{floor}층 임대 실패 (WSL {distro} 응답 없음)"
+  },
+
+  "empty": {
+    "noFoldersTitle": "임대할 건물이 없습니다",
+    "noFoldersBody": "아직 아무도 출근 안 했나 봐요. 아래 경로에서 세션 폴더를 찾지 못했습니다.",
+    "searchedPaths": "찾아본 경로",
+    "pathMissing": "없음",
+    "pathOff": "소등",
+    "pathOffBody": "배포판이 꺼져 있어 확인하지 않았습니다",
+    "pickFolder": "직접 지정",
+    "allOffTitle": "모두 퇴근했습니다",
+    "allOffBody": "Claude나 Codex 세션을 시작하면 불이 켜집니다.",
+    "officeOffSign": "퇴근했습니다",
+    "settingsBroken": "창립 서류가 찢어졌습니다. 새로 작성합니다.",
+    "lag": "통신 지연"
+  },
+
+  "canvas": {
+    "temp": "임시 책상", "full": "만석", "returned": "반송", "away": "외근 중", "awayTrip": "{domain} 출장",
+    "stackOverflow": "스택오버플로 출장", "safety": "무재해 {min}분 연속", "jokeSign": "커피 리필은 셀프",
+    "roomTooltipTitle": "{room} 최근 사건"
+  },
+
+  "units": { "sec": "{n}초", "min": "{n}분", "hourMin": "{h}시간 {m}분", "elapsed": "{value}째", "now": "방금" }
+}

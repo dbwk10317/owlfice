@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>팝업 · 설정</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.ow button,.ow input,.ow select{font:inherit;color:inherit}
+.ow button{background:none;border:0;padding:0;margin:0;cursor:pointer}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s{width:14px;height:14px}
+.ib{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;color:#52525B;flex:none}
+.ib:hover{background:#F4F4F5;color:#18181B}
+.ib.sm{width:28px;height:28px}
+.sec{display:flex;flex-direction:column;gap:2px;padding:16px 0;border-top:1px solid #F0F0F1}
+.sec h2{margin:0 0 6px;font-size:11.5px;font-weight:600;color:#71717A}
+.set{display:flex;align-items:center;gap:16px;padding:8px 0}
+.set .l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.set label,.set .lt{font-size:13.5px;font-weight:500}
+.hint{font-size:12px;color:#71717A}
+.seg{display:inline-flex;padding:3px;background:#F4F4F5;border-radius:9px;gap:2px}
+.seg button{height:30px;padding:0 14px;border-radius:7px;font-size:13px;font-weight:500;color:#52525B}
+.seg button[aria-pressed="true"]{background:#FFFFFF;color:#18181B;box-shadow:0 1px 2px rgba(24,24,27,.12)}
+.sw{width:38px;height:22px;border-radius:999px;background:#D4D4D8;position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#FFFFFF;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw[aria-checked="true"]{background:#18181B}
+.sw[aria-checked="true"]::after{left:19px}
+.inp{height:34px;width:200px;border:1px solid #D4D4D8;border-radius:8px;padding:0 10px;background:#FFFFFF;font-size:13px}
+.inp::placeholder{color:#71717A}
+.btn{height:34px;padding:0 12px;border-radius:8px;display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;border:1px solid #E4E4E7 !important;background:#FFFFFF !important;white-space:nowrap}
+.btn:hover{background:#F4F4F5 !important}
+.pathrow{display:flex;align-items:center;gap:10px;padding:7px 8px 7px 12px;border:1px solid #E4E4E7;border-radius:8px}
+.pathrow .mono{font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:11px;font-weight:500;color:#52525B;background:#F4F4F5;border-radius:4px;padding:0 5px;line-height:18px;white-space:nowrap}
+</style>
+</helmet>
+<div class="ow" style="width: 680px; height: 940px; background: #8E8E93; display: flex; align-items: center; justify-content: center">
+  <section role="dialog" aria-modal="true" aria-labelledby="st-title" style="width: 580px; background: #FFFFFF; border-radius: 16px; box-shadow: 0 24px 64px rgba(0,0,0,.24); display: flex; flex-direction: column; overflow: hidden">
+    <header style="height: 60px; padding: 0 16px 0 24px; display: flex; align-items: center; border-bottom: 1px solid #E4E4E7">
+      <h1 id="st-title" style="margin: 0; font-size: 17px; font-weight: 600; flex: 1">설정</h1>
+      <button class="ib" aria-label="닫기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+
+    <div style="padding: 4px 24px 20px">
+      <div class="sec" style="border-top: 0">
+        <h2>회사</h2>
+        <div class="set">
+          <div class="l"><span class="lt" id="lbl-scale">회사 규모</span><span class="hint">바꾸면 사무실만 다시 배치하고 데이터는 다시 읽지 않아요.</span></div>
+          <div class="seg" role="group" aria-labelledby="lbl-scale"><button aria-pressed="true">대기업</button><button aria-pressed="false">중소기업</button></div>
+        </div>
+        <div class="set">
+          <div class="l"><label for="boss-name">사장님 이름</label><span class="hint">비워 두면 “사장님”으로 불러요.</span></div>
+          <input id="boss-name" class="inp" type="text" placeholder="사장님">
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>화면과 소리</h2>
+        <div class="set">
+          <div class="l"><span class="lt" id="lbl-sound">소리</span><span class="hint">키보드, 인터폰, 경광등, 무재해 리셋 소리</span></div>
+          <button class="sw" role="switch" aria-checked="false" aria-labelledby="lbl-sound"></button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>세션 폴더</h2>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 4px 0 8px">
+          <div class="pathrow"><span class="tag">자동</span><span class="mono">C:\Users\dev\.claude\projects</span></div>
+          <div class="pathrow"><span class="tag">자동</span><span class="mono">\\wsl.localhost\Rocky-9\home\dev\.claude\projects</span></div>
+          <div class="pathrow"><span class="tag" style="background: #EFF4FF; color: #1D4ED8">직접 지정</span><span class="mono">D:\agents\.codex\sessions</span><button class="ib sm" aria-label="이 경로 빼기"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <button class="btn" style="align-self: flex-start; margin-top: 2px"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>폴더 직접 지정</button>
+        </div>
+        <div class="set">
+          <div class="l"><label for="ctx">컨텍스트 창 기본값</label><span class="hint">요약 기록을 아직 못 본 세션의 화분 크기 계산에 써요.</span></div>
+          <select id="ctx" class="inp" style="width: 140px"><option>200,000 토큰</option><option>1,000,000 토큰</option></select>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>진단</h2>
+        <div class="set">
+          <div class="l"><span class="lt" id="lbl-raw">원문 진단</span><span class="hint">켜면 명령 원문 80자와 결과 앞 200자를 미대응 로그에 저장해요. 켜 둔 동안 간판에 경고 점이 떠요.</span></div>
+          <button class="sw" role="switch" aria-checked="false" aria-labelledby="lbl-raw"></button>
+        </div>
+        <div style="display: flex; gap: 8px; padding-top: 6px">
+          <button class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>진단 정보 복사</button>
+          <button class="btn"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"/></svg>미대응 로그 폴더 열기</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":680,"height":940}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

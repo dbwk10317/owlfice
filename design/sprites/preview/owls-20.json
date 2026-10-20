@@ -1,0 +1,160 @@
+{
+ "cell": [
+  24,
+  28
+ ],
+ "cols": 4,
+ "labels": [
+  {
+   "species": "수리부엉이",
+   "rank": "부장",
+   "role": "백엔드",
+   "vendor": "Claude"
+  },
+  {
+   "species": "수리부엉이",
+   "rank": "과장",
+   "role": "데브옵스",
+   "vendor": "Claude"
+  },
+  {
+   "species": "수리부엉이",
+   "rank": "대리",
+   "role": "프론트",
+   "vendor": "Claude"
+  },
+  {
+   "species": "수리부엉이",
+   "rank": "사원",
+   "role": "수습",
+   "vendor": "Claude"
+  },
+  {
+   "species": "칡부엉이",
+   "rank": "부장",
+   "role": "QA",
+   "vendor": "Codex"
+  },
+  {
+   "species": "칡부엉이",
+   "rank": "과장",
+   "role": "백엔드",
+   "vendor": "Codex"
+  },
+  {
+   "species": "칡부엉이",
+   "rank": "대리",
+   "role": "테크라이터",
+   "vendor": "Codex"
+  },
+  {
+   "species": "칡부엉이",
+   "rank": "사원",
+   "role": "프론트",
+   "vendor": "Codex"
+  },
+  {
+   "species": "금눈쇠올빼미",
+   "rank": "부장",
+   "role": "프론트",
+   "vendor": "Gemini"
+  },
+  {
+   "species": "금눈쇠올빼미",
+   "rank": "과장",
+   "role": "QA",
+   "vendor": "Gemini"
+  },
+  {
+   "species": "금눈쇠올빼미",
+   "rank": "대리",
+   "role": "수습",
+   "vendor": "Gemini"
+  },
+  {
+   "species": "금눈쇠올빼미",
+   "rank": "사원",
+   "role": "테크라이터",
+   "vendor": "Gemini"
+  },
+  {
+   "species": "가면올빼미",
+   "rank": "부장",
+   "role": "데브옵스",
+   "vendor": "Claude"
+  },
+  {
+   "species": "가면올빼미",
+   "rank": "과장",
+   "role": "테크라이터",
+   "vendor": "Claude"
+  },
+  {
+   "species": "가면올빼미",
+   "rank": "대리",
+   "role": "QA",
+   "vendor": "Claude"
+  },
+  {
+   "species": "가면올빼미",
+   "rank": "사원",
+   "role": "백엔드",
+   "vendor": "Claude"
+  },
+  {
+   "species": "소쩍새",
+   "rank": "부장",
+   "role": "테크라이터",
+   "vendor": "Codex"
+  },
+  {
+   "species": "소쩍새",
+   "rank": "과장",
+   "role": "프론트",
+   "vendor": "Codex"
+  },
+  {
+   "species": "소쩍새",
+   "rank": "대리",
+   "role": "백엔드",
+   "vendor": "Codex"
+  },
+  {
+   "species": "소쩍새",
+   "rank": "사원",
+   "role": "QA",
+   "vendor": "Codex"
+  }
+ ],
+ "poses": [
+  "idle_f_0",
+  "idle_f_1",
+  "walk_f_0",
+  "walk_f_1",
+  "walk_f_2",
+  "walk_f_3",
+  "sit_f_0",
+  "type_f_0",
+  "type_f_1",
+  "read_f_0",
+  "read_f_1",
+  "sleep_f_0",
+  "sleep_f_1",
+  "jump_f_0",
+  "scratch_f_0",
+  "scratch_f_1",
+  "panic_f_0",
+  "panic_f_1",
+  "cheer_f_0",
+  "clap_f_0",
+  "clap_f_1",
+  "crouch_f_0",
+  "carry_f_0",
+  "idle_b_0",
+  "walk_b_0",
+  "walk_b_1",
+  "walk_b_2",
+  "walk_b_3",
+  "carry_b_0"
+ ]
+}

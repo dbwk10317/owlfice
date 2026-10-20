@@ -1,0 +1,38 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-20T04:10:00Z"},
+  "title": "야근불 · Owlfice 앱 디자인",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1600, "h": 960, "title": "메인 · 대기업 · 1600 (캔버스 2×)"},
+    "MainSmb.dc.html": {"x": 1680, "y": 0, "w": 1280, "h": 800, "title": "메인 · 중소기업 · 야근 모드 · 1280 (캔버스 1×)"},
+    "Onboarding.dc.html": {"x": 0, "y": 1380, "w": 1280, "h": 800, "title": "첫 실행 · 회사 규모 선택"},
+    "Loading.dc.html": {"x": 1360, "y": 1380, "w": 1280, "h": 800, "title": "로딩 · 5단계 진행 중"},
+    "Empty.dc.html": {"x": 2720, "y": 1380, "w": 1280, "h": 800, "title": "빈 상태 · 모두 퇴근"},
+    "NoFolders.dc.html": {"x": 4080, "y": 1380, "w": 1280, "h": 800, "title": "실패 · 세션 폴더 없음"},
+    "SessionDetail.dc.html": {"x": 0, "y": 2600, "w": 880, "h": 940, "title": "팝업 · 세션 상세"},
+    "EmployeeDetail.dc.html": {"x": 960, "y": 2600, "w": 1040, "h": 1000, "title": "팝업 · 직원 상세"},
+    "Settings.dc.html": {"x": 2080, "y": 2600, "w": 680, "h": 940, "title": "팝업 · 설정"},
+    "Medium.dc.html": {"x": 0, "y": 4020, "w": 960, "h": 720, "title": "반응형 · 960 · 현황판 드로어"},
+    "Narrow.dc.html": {"x": 1040, "y": 4020, "w": 800, "h": 600, "title": "반응형 · 800 · 아이콘 레일"},
+    "Tiny.dc.html": {"x": 1920, "y": 4020, "w": 480, "h": 400, "title": "반응형 · 480 · 최소 이하 (패닝)"},
+    "Components.dc.html": {"x": 0, "y": 5160, "w": 1760, "h": 2900, "title": "UI 키트"},
+    "Sprites.dc.html": {"x": 1840, "y": 5160, "w": 1760, "h": 4900, "title": "스프라이트 시트"}
+  },
+  "order": [
+    "Main.dc.html", "MainSmb.dc.html",
+    "Onboarding.dc.html", "Loading.dc.html", "Empty.dc.html", "NoFolders.dc.html",
+    "SessionDetail.dc.html", "EmployeeDetail.dc.html", "Settings.dc.html",
+    "Medium.dc.html", "Narrow.dc.html", "Tiny.dc.html",
+    "Components.dc.html", "Sprites.dc.html"
+  ],
+  "notes": {
+    "t1": {"x": 0, "y": -300, "text": "메인 화면", "kind": "title1", "maxW": 2960},
+    "t2": {"x": 0, "y": 1080, "text": "첫 실행 · 빈 상태 · 실패", "kind": "title1", "maxW": 5360},
+    "t3": {"x": 0, "y": 2300, "text": "팝업", "kind": "title1", "maxW": 2760},
+    "t4": {"x": 0, "y": 3720, "text": "반응형", "kind": "title1", "maxW": 2560},
+    "t5": {"x": 0, "y": 4860, "text": "UI 키트 · 스프라이트", "kind": "title1", "maxW": 3600}
+  },
+  "designSystems": []
+}

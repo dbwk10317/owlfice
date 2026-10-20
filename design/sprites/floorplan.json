@@ -1,0 +1,3909 @@
+{
+ "version": 1,
+ "canvas1x": {
+  "w": 520,
+  "h": 320
+ },
+ "origin": {
+  "x": 212,
+  "y": 60
+ },
+ "tile": {
+  "w": 24,
+  "h": 12
+ },
+ "grid": {
+  "cols": 24,
+  "rows": 16
+ },
+ "wallHeight": 48,
+ "iso": "x = origin.x + (gx - gy) * 12, y = origin.y + (gx + gy) * 6 - z (1x 픽셀). 소품의 x,y 는 이 값을 반올림한 것",
+ "depth": "깊이 = gx + w/2 + gy + d/2 (발자국 중심). 배치마다 depth 를 따로 적어 둔 것이 우선. 같은 깊이면 배열 순서",
+ "floorRule": "타일 (i,j)는 rooms 의 rect 로 방을 찾는다. 방 floor 가 'boss' 면 'boss_<테마>', 'incident' 면 장애 중 'incident_on' 아니면 'incident_off'. (i+j)%2==0 이면 /a 아니면 /b",
+ "rooms": {
+  "library": {
+   "name": "소스 서고",
+   "rect": [
+    0,
+    0,
+    6,
+    5
+   ],
+   "floor": "library",
+   "label": [
+    184,
+    92
+   ],
+   "entry": [
+    2.4,
+    5.0
+   ]
+  },
+  "build": {
+   "name": "빌드실",
+   "rect": [
+    6,
+    0,
+    11,
+    5
+   ],
+   "floor": "build",
+   "label": [
+    271,
+    133
+   ],
+   "entry": [
+    8.45,
+    5.0
+   ]
+  },
+  "test": {
+   "name": "테스트실",
+   "rect": [
+    11,
+    0,
+    16,
+    5
+   ],
+   "floor": "test",
+   "label": [
+    312,
+    161
+   ],
+   "entry": [
+    13.4,
+    5.0
+   ]
+  },
+  "boss": {
+   "name": "팀장실",
+   "rect": [
+    16,
+    0,
+    24,
+    6
+   ],
+   "floor": "boss",
+   "label": [
+    405,
+    215
+   ],
+   "entry": [
+    16.0,
+    4.9
+   ]
+  },
+  "dev": {
+   "name": "개발실",
+   "rect": [
+    0,
+    5,
+    16,
+    11
+   ],
+   "floor": "dev",
+   "label": [
+    260,
+    180
+   ],
+   "entry": [
+    13.5,
+    8.0
+   ]
+  },
+  "review": {
+   "name": "리뷰실",
+   "rect": [
+    16,
+    6,
+    24,
+    9
+   ],
+   "floor": "review",
+   "label": [
+    382,
+    234
+   ],
+   "entry": [
+    16.0,
+    7.9
+   ]
+  },
+  "incident": {
+   "name": "장애 상황실",
+   "rect": [
+    16,
+    9,
+    24,
+    12
+   ],
+   "floor": "incident",
+   "label": [
+    337,
+    250
+   ],
+   "entry": [
+    21.7,
+    9.0
+   ]
+  },
+  "meeting": {
+   "name": "거래처 미팅실",
+   "rect": [
+    16,
+    12,
+    24,
+    16
+   ],
+   "floor": "meeting",
+   "label": [
+    273,
+    269
+   ],
+   "entry": [
+    16.0,
+    14.4
+   ]
+  },
+  "entrance": {
+   "name": "출입문 · 출고장",
+   "rect": [
+    0,
+    11,
+    5,
+    16
+   ],
+   "floor": "entrance",
+   "label": [
+    75,
+    155
+   ],
+   "entry": [
+    2.0,
+    11.0
+   ]
+  },
+  "pantry": {
+   "name": "탕비실",
+   "rect": [
+    5,
+    11,
+    16,
+    16
+   ],
+   "floor": "pantry",
+   "label": [
+    134,
+    195
+   ],
+   "entry": [
+    7.75,
+    11.0
+   ]
+  }
+ },
+ "themes": {
+  "claude": {
+   "label": "Claude",
+   "cubicle": "#D6C4B0",
+   "uniform": "#D9773F",
+   "sofa": "#B05C3C",
+   "accent": "#D97745"
+  },
+  "codex": {
+   "label": "Codex",
+   "cubicle": "#CECECE",
+   "uniform": "#343438",
+   "sofa": "#46464A",
+   "accent": "#27272A"
+  },
+  "gemini": {
+   "label": "Gemini",
+   "cubicle": "#C4D0E6",
+   "uniform": "#3B6FE0",
+   "sofa": "#3C5AAA",
+   "accent": "#3D6FE0"
+  }
+ },
+ "teamTints": [
+  "#349696",
+  "#8062BE",
+  "#E2705C",
+  "#D6A028",
+  "#4682C8",
+  "#966E50"
+ ],
+ "nightTint": "#F2DEAD",
+ "lightTints": {
+  "night": "#F2DEAD",
+  "dim": "#B4B4BE",
+  "off": "#6E6E82",
+  "rule": "곱하기 색. night: 22–06시 활성. dim: 30분 조용하지만 프로세스 살아 있음(S58). off: 퇴근(S36). 창문 레이어에는 곱하지 않는다. 바뀔 때 1.5초에 걸쳐 보간"
+ },
+ "fx": {
+  "cloud_lag": [
+   8,
+   8
+  ],
+  "note": "cloud_lag 는 캔버스 1x 좌표 (8,8)에 기준점. sweat 는 머리 기준점 + (6,-2)"
+ },
+ "layouts": {
+  "large": {
+   "placements": [
+    {
+     "id": "window",
+     "sprite": "window_l",
+     "state": "day",
+     "gx": 19.2,
+     "gy": 0,
+     "z": 0,
+     "depth": 20.55,
+     "x": 442,
+     "y": 175,
+     "layer": "window",
+     "drive": "현지 시각: 06–17 day, 17–22 dusk, 22–06 night"
+    },
+    {
+     "id": "kanban",
+     "sprite": "kanban_l",
+     "state": "default",
+     "gx": 16.6,
+     "gy": 0,
+     "z": 0,
+     "depth": 17.7,
+     "x": 411,
+     "y": 160,
+     "layer": "wall",
+     "drive": "하이라이트 팀(없으면 최근 팀)의 할 일 목록"
+    },
+    {
+     "id": "rules_frame",
+     "sprite": "rules_frame",
+     "state": "default",
+     "gx": 22.2,
+     "gy": 0,
+     "z": 0,
+     "depth": 22.7,
+     "x": 478,
+     "y": 193,
+     "layer": "wall",
+     "drive": "세션 제목"
+    },
+    {
+     "id": "joke_sign",
+     "sprite": "joke_sign",
+     "state": "default",
+     "gx": 23.45,
+     "gy": 0,
+     "z": 0,
+     "depth": 23.675,
+     "x": 493,
+     "y": 201,
+     "layer": "wall"
+    },
+    {
+     "id": "clock",
+     "sprite": "clock",
+     "state": "default",
+     "gx": 16.0,
+     "gy": 0,
+     "z": 0,
+     "depth": 16.25,
+     "x": 404,
+     "y": 156,
+     "layer": "wall"
+    },
+    {
+     "id": "interphone",
+     "sprite": "interphone",
+     "state": "idle",
+     "gx": 18.8,
+     "gy": 0,
+     "z": 0,
+     "depth": 19.05,
+     "x": 438,
+     "y": 173,
+     "layer": "wall",
+     "drive": "사장님 등장 때 ring 1초"
+    },
+    {
+     "id": "ci_light",
+     "sprite": "ci_light",
+     "state": "off",
+     "gx": 10.0,
+     "gy": 0,
+     "z": 0,
+     "depth": 10.3,
+     "x": 332,
+     "y": 120,
+     "layer": "wall",
+     "drive": "SharedProps.ci: building→yellow, ok→green, fail→red"
+    },
+    {
+     "id": "test_board",
+     "sprite": "test_board",
+     "state": "pass",
+     "gx": 13.4,
+     "gy": 0,
+     "z": 0,
+     "depth": 14.3,
+     "x": 373,
+     "y": 140,
+     "layer": "wall",
+     "drive": "마지막 테스트 결과"
+    },
+    {
+     "id": "job_ticket",
+     "sprite": "job_ticket",
+     "state": "default",
+     "gx": 7.85,
+     "gy": 0,
+     "z": 0,
+     "depth": 8.225,
+     "x": 306,
+     "y": 107,
+     "layer": "wall",
+     "visible": false,
+     "drive": "백그라운드 명령이 있을 때만"
+    },
+    {
+     "id": "tv",
+     "sprite": "tv",
+     "state": "on",
+     "gx": 0,
+     "gy": 6.3,
+     "z": 0,
+     "depth": 7.45,
+     "x": 136,
+     "y": 98,
+     "layer": "wall",
+     "drive": "팀별 컨텍스트 사용량 선"
+    },
+    {
+     "id": "attendance",
+     "sprite": "attendance",
+     "state": "default",
+     "gx": 0,
+     "gy": 11.1,
+     "z": 0,
+     "depth": 11.775,
+     "x": 79,
+     "y": 127,
+     "layer": "wall",
+     "drive": "직원마다 자석 하나"
+    },
+    {
+     "id": "door",
+     "sprite": "door",
+     "state": "closed",
+     "gx": 0,
+     "gy": 12.6,
+     "z": 0,
+     "depth": 13.5,
+     "x": 61,
+     "y": 136,
+     "layer": "wall",
+     "drive": "누가 드나드는 1초 동안 open"
+    },
+    {
+     "id": "stats_board",
+     "sprite": "stats_board",
+     "state": "default",
+     "gx": 0,
+     "gy": 14.65,
+     "z": 0,
+     "depth": 15.25,
+     "x": 36,
+     "y": 148,
+     "layer": "wall"
+    },
+    {
+     "id": "doormat",
+     "sprite": "doormat",
+     "state": "default",
+     "gx": 0,
+     "gy": 12.7,
+     "z": 0,
+     "depth": 14.1,
+     "x": 60,
+     "y": 136,
+     "layer": "decal"
+    },
+    {
+     "id": "rug_review",
+     "sprite": "rug_review",
+     "state": "default",
+     "gx": 17.6,
+     "gy": 6.7,
+     "z": 0,
+     "depth": 27.75,
+     "x": 343,
+     "y": 206,
+     "layer": "decal"
+    },
+    {
+     "id": "wallseg_01",
+     "sprite": "wallseg_01",
+     "state": "default",
+     "gx": 5.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 7.8,
+     "x": 283,
+     "y": 95,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_02",
+     "sprite": "wallseg_02",
+     "state": "default",
+     "gx": 10.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 12.8,
+     "x": 343,
+     "y": 125,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_03",
+     "sprite": "wallseg_03",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 18.0,
+     "x": 403,
+     "y": 155,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_04",
+     "sprite": "wallseg_04",
+     "state": "default",
+     "gx": 0,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 5.8,
+     "x": 153,
+     "y": 89,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_05",
+     "sprite": "wallseg_05",
+     "state": "default",
+     "gx": 3.2,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 10.45,
+     "x": 192,
+     "y": 109,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_06",
+     "sprite": "wallseg_06",
+     "state": "default",
+     "gx": 9.2,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 15.9,
+     "x": 264,
+     "y": 145,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_07",
+     "sprite": "wallseg_07",
+     "state": "default",
+     "gx": 14.2,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 20.05,
+     "x": 324,
+     "y": 175,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_08",
+     "sprite": "wallseg_08",
+     "state": "default",
+     "gx": 16,
+     "gy": 5.9,
+     "z": 0,
+     "depth": 22.7,
+     "x": 333,
+     "y": 191,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_09",
+     "sprite": "wallseg_09",
+     "state": "default",
+     "gx": 19.4,
+     "gy": 5.9,
+     "z": 0,
+     "depth": 27.7,
+     "x": 374,
+     "y": 212,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_10",
+     "sprite": "wallseg_10",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 22.6,
+     "x": 331,
+     "y": 191,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_11",
+     "sprite": "wallseg_11",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 25.8,
+     "x": 300,
+     "y": 207,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_12",
+     "sprite": "wallseg_12",
+     "state": "default",
+     "gx": 16,
+     "gy": 8.9,
+     "z": 0,
+     "depth": 27.5,
+     "x": 297,
+     "y": 209,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_13",
+     "sprite": "wallseg_13",
+     "state": "default",
+     "gx": 22.4,
+     "gy": 8.9,
+     "z": 0,
+     "depth": 32.2,
+     "x": 374,
+     "y": 248,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_14",
+     "sprite": "wallseg_14",
+     "state": "default",
+     "gx": 16,
+     "gy": 11.9,
+     "z": 0,
+     "depth": 29.0,
+     "x": 261,
+     "y": 227,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_15",
+     "sprite": "wallseg_15",
+     "state": "default",
+     "gx": 19.4,
+     "gy": 11.9,
+     "z": 0,
+     "depth": 33.7,
+     "x": 302,
+     "y": 248,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_16",
+     "sprite": "wallseg_16",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 12.2,
+     "z": 0,
+     "depth": 29.0,
+     "x": 256,
+     "y": 229,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_17",
+     "sprite": "wallseg_17",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 15.0,
+     "z": 0,
+     "depth": 31.5,
+     "x": 223,
+     "y": 245,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_18",
+     "sprite": "wallseg_18",
+     "state": "default",
+     "gx": 0,
+     "gy": 10.9,
+     "z": 0,
+     "depth": 11.5,
+     "x": 81,
+     "y": 125,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_19",
+     "sprite": "wallseg_19",
+     "state": "default",
+     "gx": 3,
+     "gy": 10.9,
+     "z": 0,
+     "depth": 15.75,
+     "x": 117,
+     "y": 143,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_20",
+     "sprite": "wallseg_20",
+     "state": "default",
+     "gx": 9,
+     "gy": 10.9,
+     "z": 0,
+     "depth": 22.25,
+     "x": 189,
+     "y": 179,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_21",
+     "sprite": "wallseg_21",
+     "state": "default",
+     "gx": 4.9,
+     "gy": 11.4,
+     "z": 0,
+     "depth": 17.4,
+     "x": 134,
+     "y": 158,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_22",
+     "sprite": "wallseg_22",
+     "state": "default",
+     "gx": 4.9,
+     "gy": 15.0,
+     "z": 0,
+     "depth": 20.5,
+     "x": 91,
+     "y": 179,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_side_0",
+     "sprite": "cabinet_side",
+     "state": "default",
+     "gx": 0.15,
+     "gy": 0.4,
+     "z": 0,
+     "depth": 1.45,
+     "x": 209,
+     "y": 63,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_side_1",
+     "sprite": "cabinet_side",
+     "state": "default",
+     "gx": 0.15,
+     "gy": 1.5,
+     "z": 0,
+     "depth": 2.55,
+     "x": 196,
+     "y": 70,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_side_2",
+     "sprite": "cabinet_side",
+     "state": "default",
+     "gx": 0.15,
+     "gy": 2.6,
+     "z": 0,
+     "depth": 3.65,
+     "x": 183,
+     "y": 76,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_front_0",
+     "sprite": "cabinet_front",
+     "state": "closed",
+     "gx": 1.4,
+     "gy": 0.15,
+     "z": 0,
+     "depth": 2.45,
+     "x": 227,
+     "y": 69,
+     "layer": "world",
+     "drive": null
+    },
+    {
+     "id": "cabinet_front_1",
+     "sprite": "cabinet_front",
+     "state": "closed",
+     "gx": 2.5,
+     "gy": 0.15,
+     "z": 0,
+     "depth": 3.55,
+     "x": 240,
+     "y": 76,
+     "layer": "world",
+     "drive": "서류철 꺼낼 때 그 직원과 가장 가까운 것 open"
+    },
+    {
+     "id": "cabinet_front_2",
+     "sprite": "cabinet_front",
+     "state": "closed",
+     "gx": 3.6,
+     "gy": 0.15,
+     "z": 0,
+     "depth": 4.65,
+     "x": 253,
+     "y": 82,
+     "layer": "world",
+     "drive": null
+    },
+    {
+     "id": "lib_desk",
+     "sprite": "lib_desk",
+     "state": "default",
+     "gx": 3.2,
+     "gy": 3.0,
+     "z": 0,
+     "depth": 7.5,
+     "x": 214,
+     "y": 97,
+     "layer": "world"
+    },
+    {
+     "id": "rack_0",
+     "sprite": "rack",
+     "state": "led_0",
+     "gx": 6.4,
+     "gy": 0.3,
+     "z": 0,
+     "depth": 7.7,
+     "x": 285,
+     "y": 100,
+     "layer": "world",
+     "drive": "셸 명령 중 led_0/led_1 반복"
+    },
+    {
+     "id": "rack_1",
+     "sprite": "rack",
+     "state": "led_0",
+     "gx": 7.7,
+     "gy": 0.3,
+     "z": 0,
+     "depth": 9.0,
+     "x": 301,
+     "y": 108,
+     "layer": "world"
+    },
+    {
+     "id": "terminal",
+     "sprite": "terminal",
+     "state": "off",
+     "gx": 9.4,
+     "gy": 2.6,
+     "z": 0,
+     "depth": 12.7,
+     "x": 294,
+     "y": 132,
+     "layer": "world"
+    },
+    {
+     "id": "fan",
+     "sprite": "fan",
+     "state": "off",
+     "gx": 6.9,
+     "gy": 3.9,
+     "z": 0,
+     "depth": 10.9,
+     "x": 248,
+     "y": 125,
+     "layer": "world",
+     "drive": "명령이 평균 2배 넘으면 spin"
+    },
+    {
+     "id": "test_machine",
+     "sprite": "test_machine",
+     "state": "idle",
+     "gx": 11.8,
+     "gy": 0.6,
+     "z": 0,
+     "depth": 13.0,
+     "x": 346,
+     "y": 134,
+     "layer": "world",
+     "drive": "테스트 중 run_0/run_1"
+    },
+    {
+     "id": "stamp_table",
+     "sprite": "stamp_table",
+     "state": "default",
+     "gx": 14.6,
+     "gy": 2.9,
+     "z": 0,
+     "depth": 17.0,
+     "x": 352,
+     "y": 165,
+     "layer": "world"
+    },
+    {
+     "id": "boss_chair_0",
+     "sprite": "chair_boss",
+     "state": "default",
+     "gx": 20.900000000000002,
+     "gy": 2.0,
+     "z": 0,
+     "depth": 22.9,
+     "x": 439,
+     "y": 197,
+     "layer": "world"
+    },
+    {
+     "id": "boss_desk_0",
+     "sprite": "boss_desk_l",
+     "state": "default",
+     "gx": 18.6,
+     "gy": 2.6,
+     "z": 0,
+     "depth": 23.4,
+     "x": 404,
+     "y": 187,
+     "layer": "world"
+    },
+    {
+     "id": "boss_mon_0_0",
+     "sprite": "monitor_lg",
+     "state": "off",
+     "gx": 18.85,
+     "gy": 2.75,
+     "z": 10,
+     "depth": 23.41,
+     "x": 405,
+     "y": 180,
+     "layer": "world"
+    },
+    {
+     "id": "boss_mon_0_1",
+     "sprite": "monitor_lg",
+     "state": "off",
+     "gx": 19.900000000000002,
+     "gy": 2.75,
+     "z": 10,
+     "depth": 23.41,
+     "x": 418,
+     "y": 186,
+     "layer": "world"
+    },
+    {
+     "id": "mug_0",
+     "sprite": "mug",
+     "state": "still",
+     "gx": 21.3,
+     "gy": 3.4000000000000004,
+     "z": 10,
+     "depth": 23.44,
+     "x": 427,
+     "y": 198,
+     "layer": "world",
+     "drive": "응답 대기 중 steam"
+    },
+    {
+     "id": "duck_0",
+     "sprite": "duck_desk",
+     "state": "default",
+     "gx": 20.900000000000002,
+     "gy": 3.5,
+     "z": 10,
+     "depth": 23.44,
+     "x": 421,
+     "y": 196,
+     "layer": "world",
+     "drive": "부장이 집어 들면 숨김"
+    },
+    {
+     "id": "plant_boss_0",
+     "sprite": "plant",
+     "state": "s0",
+     "gx": 22.7,
+     "gy": 0.7,
+     "z": 0,
+     "depth": 23.9,
+     "x": 476,
+     "y": 200,
+     "layer": "world",
+     "drive": "부장 컨텍스트 사용률"
+    },
+    {
+     "id": "dev_part_0",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 5.8500000000000005,
+     "z": 0,
+     "depth": 8.4,
+     "x": 154,
+     "y": 101,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_0",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 2.5,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 8.7,
+     "x": 170,
+     "y": 111,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_0",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 6.4,
+     "z": 0,
+     "depth": 9.2,
+     "x": 147,
+     "y": 104,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_0_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.15,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 9.21,
+     "x": 147,
+     "y": 97,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_0_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.8,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 9.21,
+     "x": 155,
+     "y": 101,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_1",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 5.8500000000000005,
+     "z": 0,
+     "depth": 11.8,
+     "x": 195,
+     "y": 122,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_1",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 5.9,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 12.1,
+     "x": 211,
+     "y": 131,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_1",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 6.4,
+     "z": 0,
+     "depth": 12.6,
+     "x": 188,
+     "y": 125,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_1_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 4.550000000000001,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 12.61,
+     "x": 188,
+     "y": 118,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_1_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 5.2,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 12.61,
+     "x": 196,
+     "y": 122,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_2",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 5.8500000000000005,
+     "z": 0,
+     "depth": 15.2,
+     "x": 235,
+     "y": 142,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_2",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 9.3,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 15.5,
+     "x": 252,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_2",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 6.4,
+     "z": 0,
+     "depth": 16.0,
+     "x": 229,
+     "y": 145,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_2_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 7.95,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 16.01,
+     "x": 229,
+     "y": 138,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_2_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 8.6,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 16.01,
+     "x": 237,
+     "y": 142,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_3",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 8.45,
+     "z": 0,
+     "depth": 11.0,
+     "x": 123,
+     "y": 117,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_3",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 2.5,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 11.3,
+     "x": 139,
+     "y": 127,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_3",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 11.8,
+     "x": 116,
+     "y": 120,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_3_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.15,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 11.81,
+     "x": 116,
+     "y": 113,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_3_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.8,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 11.81,
+     "x": 124,
+     "y": 117,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_4",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 8.45,
+     "z": 0,
+     "depth": 14.4,
+     "x": 163,
+     "y": 137,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_4",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 5.9,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 14.7,
+     "x": 180,
+     "y": 147,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_4",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 15.2,
+     "x": 157,
+     "y": 140,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_4_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 4.550000000000001,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 15.21,
+     "x": 157,
+     "y": 133,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_4_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 5.2,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 15.21,
+     "x": 165,
+     "y": 137,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_5",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 8.45,
+     "z": 0,
+     "depth": 17.8,
+     "x": 204,
+     "y": 158,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_5",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 9.3,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 18.1,
+     "x": 220,
+     "y": 167,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_5",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 18.6,
+     "x": 198,
+     "y": 161,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_5_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 7.95,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 18.61,
+     "x": 198,
+     "y": 154,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_5_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 8.6,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 18.61,
+     "x": 205,
+     "y": 158,
+     "layer": "world"
+    },
+    {
+     "id": "temp_desk_0",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 11.3,
+     "gy": 6.6,
+     "z": 0,
+     "depth": 18.95,
+     "x": 268,
+     "y": 167,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "temp_desk_1",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 13.6,
+     "gy": 6.6,
+     "z": 0,
+     "depth": 21.25,
+     "x": 296,
+     "y": 181,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "temp_desk_2",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 11.3,
+     "gy": 8.8,
+     "z": 0,
+     "depth": 21.15,
+     "x": 242,
+     "y": 181,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "temp_desk_3",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 13.6,
+     "gy": 8.8,
+     "z": 0,
+     "depth": 23.45,
+     "x": 270,
+     "y": 194,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "note_temp",
+     "sprite": "note_temp",
+     "state": "default",
+     "gx": 11.5,
+     "gy": 6.5,
+     "z": 8,
+     "depth": 18.0,
+     "x": 272,
+     "y": 160,
+     "layer": "fx",
+     "visible": false
+    },
+    {
+     "id": "trash",
+     "sprite": "trash",
+     "state": "empty",
+     "gx": 14.9,
+     "gy": 10.1,
+     "z": 0,
+     "depth": 25.6,
+     "x": 270,
+     "y": 210,
+     "layer": "world",
+     "drive": "사고 수"
+    },
+    {
+     "id": "copier",
+     "sprite": "copier",
+     "state": "default",
+     "gx": 13.4,
+     "gy": 5.4,
+     "z": 0,
+     "depth": 19.4,
+     "x": 308,
+     "y": 173,
+     "layer": "world"
+    },
+    {
+     "id": "plant_dev",
+     "sprite": "plant",
+     "state": "s3",
+     "gx": 11.6,
+     "gy": 5.6,
+     "z": 0,
+     "depth": 17.2,
+     "x": 284,
+     "y": 163,
+     "layer": "world"
+    },
+    {
+     "id": "counter",
+     "sprite": "counter",
+     "state": "default",
+     "gx": 5.3,
+     "gy": 11.3,
+     "z": 0,
+     "depth": 17.3,
+     "x": 140,
+     "y": 160,
+     "layer": "world"
+    },
+    {
+     "id": "coffee",
+     "sprite": "coffee_machine",
+     "state": "idle",
+     "gx": 5.5,
+     "gy": 11.4,
+     "z": 12,
+     "depth": 17.31,
+     "x": 141,
+     "y": 149,
+     "layer": "world"
+    },
+    {
+     "id": "ramen",
+     "sprite": "ramen",
+     "state": "default",
+     "gx": 7.0,
+     "gy": 11.6,
+     "z": 12,
+     "depth": 17.32,
+     "x": 157,
+     "y": 160,
+     "layer": "world",
+     "visible": false,
+     "drive": "야근 모드"
+    },
+    {
+     "id": "fridge",
+     "sprite": "fridge",
+     "state": "default",
+     "gx": 8.2,
+     "gy": 11.25,
+     "z": 0,
+     "depth": 20.0,
+     "x": 175,
+     "y": 177,
+     "layer": "world"
+    },
+    {
+     "id": "tv_stand",
+     "sprite": "tv_stand",
+     "state": "default",
+     "gx": 12.4,
+     "gy": 11.25,
+     "z": 0,
+     "depth": 24.7,
+     "x": 226,
+     "y": 202,
+     "layer": "world"
+    },
+    {
+     "id": "game_tv",
+     "sprite": "game_tv",
+     "state": "off",
+     "gx": 12.5,
+     "gy": 11.3,
+     "z": 8,
+     "depth": 24.71,
+     "x": 226,
+     "y": 195,
+     "layer": "world",
+     "drive": "게임기 앞에 직원이 있으면 game"
+    },
+    {
+     "id": "sofa",
+     "sprite": "sofa_claude",
+     "state": "default",
+     "gx": 9.3,
+     "gy": 13.4,
+     "z": 0,
+     "depth": 24.4,
+     "x": 163,
+     "y": 196,
+     "layer": "world",
+     "themed": true
+    },
+    {
+     "id": "coffee_table",
+     "sprite": "coffee_table",
+     "state": "default",
+     "gx": 10.0,
+     "gy": 15.0,
+     "z": 0,
+     "depth": 26.2,
+     "x": 152,
+     "y": 210,
+     "layer": "world"
+    },
+    {
+     "id": "massage_chair",
+     "sprite": "massage_chair",
+     "state": "default",
+     "gx": 14.3,
+     "gy": 13.3,
+     "z": 0,
+     "depth": 28.2,
+     "x": 224,
+     "y": 226,
+     "layer": "world"
+    },
+    {
+     "id": "label_table",
+     "sprite": "label_table",
+     "state": "default",
+     "gx": 3.4,
+     "gy": 12.0,
+     "z": 0,
+     "depth": 16.4,
+     "x": 109,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "box_0",
+     "sprite": "box_lg",
+     "state": "default",
+     "gx": 2.2,
+     "gy": 14.4,
+     "z": 0,
+     "depth": 17.3,
+     "x": 66,
+     "y": 160,
+     "layer": "world"
+    },
+    {
+     "id": "box_1",
+     "sprite": "box_md",
+     "state": "default",
+     "gx": 3.1,
+     "gy": 14.6,
+     "z": 0,
+     "depth": 18.1,
+     "x": 74,
+     "y": 166,
+     "layer": "world"
+    },
+    {
+     "id": "box_2",
+     "sprite": "box_sm",
+     "state": "default",
+     "gx": 2.35,
+     "gy": 14.5,
+     "z": 9,
+     "depth": 17.31,
+     "x": 66,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "review_screen",
+     "sprite": "review_screen",
+     "state": "off",
+     "gx": 18.2,
+     "gy": 6.15,
+     "z": 0,
+     "depth": 26.0,
+     "x": 357,
+     "y": 206,
+     "layer": "world"
+    },
+    {
+     "id": "review_seat",
+     "sprite": "review_sofa_seat_claude",
+     "state": "default",
+     "gx": 18.0,
+     "gy": 7.6,
+     "z": 0,
+     "depth": 27.8,
+     "x": 337,
+     "y": 214,
+     "layer": "world",
+     "themed": true
+    },
+    {
+     "id": "review_back",
+     "sprite": "review_sofa_back_claude",
+     "state": "default",
+     "gx": 18.0,
+     "gy": 8.3,
+     "z": 0,
+     "depth": 28.3,
+     "x": 328,
+     "y": 218,
+     "layer": "world",
+     "themed": true
+    },
+    {
+     "id": "pen_cup",
+     "sprite": "pen_cup",
+     "state": "default",
+     "gx": 21.8,
+     "gy": 6.5,
+     "z": 0,
+     "depth": 28.45,
+     "x": 396,
+     "y": 230,
+     "layer": "world"
+    },
+    {
+     "id": "whiteboard",
+     "sprite": "whiteboard",
+     "state": "off",
+     "gx": 18.2,
+     "gy": 9.25,
+     "z": 0,
+     "depth": 28.85,
+     "x": 319,
+     "y": 225,
+     "layer": "world"
+    },
+    {
+     "id": "beacon",
+     "sprite": "beacon",
+     "state": "off",
+     "gx": 19.5,
+     "gy": 9.3,
+     "z": 24,
+     "depth": 28.87,
+     "x": 334,
+     "y": 209,
+     "layer": "world"
+    },
+    {
+     "id": "incident_table",
+     "sprite": "incident_table",
+     "state": "off",
+     "gx": 18.4,
+     "gy": 10.3,
+     "z": 0,
+     "depth": 30.2,
+     "x": 309,
+     "y": 232,
+     "layer": "world"
+    },
+    {
+     "id": "safety_board",
+     "sprite": "safety_board",
+     "state": "default",
+     "gx": 16.3,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 25.9,
+     "x": 304,
+     "y": 209,
+     "layer": "world",
+     "drive": "무재해 분: 팀 중 최솟값"
+    },
+    {
+     "id": "meeting_screen",
+     "sprite": "meeting_screen",
+     "state": "off",
+     "gx": 18.0,
+     "gy": 12.15,
+     "z": 0,
+     "depth": 31.4,
+     "x": 282,
+     "y": 241,
+     "layer": "world"
+    },
+    {
+     "id": "meeting_table",
+     "sprite": "meeting_table",
+     "state": "default",
+     "gx": 17.6,
+     "gy": 13.4,
+     "z": 0,
+     "depth": 33.75,
+     "x": 262,
+     "y": 246,
+     "layer": "world"
+    },
+    {
+     "id": "bookshelf",
+     "sprite": "bookshelf",
+     "state": "default",
+     "gx": 16.3,
+     "gy": 14.5,
+     "z": 0,
+     "depth": 32.0,
+     "x": 234,
+     "y": 245,
+     "layer": "world"
+    },
+    {
+     "id": "plant_meeting",
+     "sprite": "plant",
+     "state": "s4",
+     "gx": 23.4,
+     "gy": 15.4,
+     "z": 0,
+     "depth": 38.8,
+     "x": 308,
+     "y": 293,
+     "layer": "world"
+    },
+    {
+     "id": "glow_incident",
+     "sprite": "glow_incident",
+     "state": "default",
+     "gx": 16.0,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 30.5,
+     "x": 296,
+     "y": 210,
+     "layer": "overlay",
+     "visible": false,
+     "drive": "장애 판정 중"
+    }
+   ],
+   "seats": {
+    "dev": [
+     {
+      "id": "dev_0",
+      "gx": 2.75,
+      "gy": 6.25,
+      "depth": 8.9,
+      "desk": "dev_desk_0",
+      "monitors": [
+       "dev_mon_0_0",
+       "dev_mon_0_1"
+      ],
+      "partition": "dev_part_0"
+     },
+     {
+      "id": "dev_1",
+      "gx": 6.15,
+      "gy": 6.25,
+      "depth": 12.3,
+      "desk": "dev_desk_1",
+      "monitors": [
+       "dev_mon_1_0",
+       "dev_mon_1_1"
+      ],
+      "partition": "dev_part_1"
+     },
+     {
+      "id": "dev_2",
+      "gx": 9.55,
+      "gy": 6.25,
+      "depth": 15.7,
+      "desk": "dev_desk_2",
+      "monitors": [
+       "dev_mon_2_0",
+       "dev_mon_2_1"
+      ],
+      "partition": "dev_part_2"
+     },
+     {
+      "id": "dev_3",
+      "gx": 2.75,
+      "gy": 8.85,
+      "depth": 11.5,
+      "desk": "dev_desk_3",
+      "monitors": [
+       "dev_mon_3_0",
+       "dev_mon_3_1"
+      ],
+      "partition": "dev_part_3"
+     },
+     {
+      "id": "dev_4",
+      "gx": 6.15,
+      "gy": 8.85,
+      "depth": 14.9,
+      "desk": "dev_desk_4",
+      "monitors": [
+       "dev_mon_4_0",
+       "dev_mon_4_1"
+      ],
+      "partition": "dev_part_4"
+     },
+     {
+      "id": "dev_5",
+      "gx": 9.55,
+      "gy": 8.85,
+      "depth": 18.3,
+      "desk": "dev_desk_5",
+      "monitors": [
+       "dev_mon_5_0",
+       "dev_mon_5_1"
+      ],
+      "partition": "dev_part_5"
+     }
+    ],
+    "temp": [
+     {
+      "id": "temp_0",
+      "gx": 12.2,
+      "gy": 6.45,
+      "depth": 18.65,
+      "desk": "temp_desk_0"
+     },
+     {
+      "id": "temp_1",
+      "gx": 14.5,
+      "gy": 6.45,
+      "depth": 20.95,
+      "desk": "temp_desk_1"
+     },
+     {
+      "id": "temp_2",
+      "gx": 12.2,
+      "gy": 8.65,
+      "depth": 20.85,
+      "desk": "temp_desk_2"
+     },
+     {
+      "id": "temp_3",
+      "gx": 14.5,
+      "gy": 8.65,
+      "depth": 23.15,
+      "desk": "temp_desk_3"
+     }
+    ],
+    "boss": [
+     {
+      "id": "boss_0",
+      "gx": 20.9,
+      "gy": 2.15,
+      "depth": 23.0,
+      "desk": "boss_desk_0",
+      "monitors": [
+       "boss_mon_0_0",
+       "boss_mon_0_1"
+      ],
+      "plant": "plant_boss_0",
+      "mug": "mug_0",
+      "duck": "duck_0"
+     }
+    ],
+    "spare": []
+   }
+  },
+  "small": {
+   "placements": [
+    {
+     "id": "window",
+     "sprite": "window_xl",
+     "state": "day",
+     "gx": 18.6,
+     "gy": 0,
+     "z": 0,
+     "depth": 20.3,
+     "x": 435,
+     "y": 172,
+     "layer": "window",
+     "drive": "현지 시각: 06–17 day, 17–22 dusk, 22–06 night"
+    },
+    {
+     "id": "kanban",
+     "sprite": "kanban_s",
+     "state": "default",
+     "gx": 16.5,
+     "gy": 0,
+     "z": 0,
+     "depth": 17.4,
+     "x": 410,
+     "y": 159,
+     "layer": "wall",
+     "drive": "하이라이트 팀(없으면 최근 팀)의 할 일 목록"
+    },
+    {
+     "id": "rules_frame",
+     "sprite": "rules_frame",
+     "state": "default",
+     "gx": 22.3,
+     "gy": 0,
+     "z": 0,
+     "depth": 22.8,
+     "x": 480,
+     "y": 194,
+     "layer": "wall",
+     "drive": "세션 제목"
+    },
+    {
+     "id": "joke_sign",
+     "sprite": "joke_sign",
+     "state": "default",
+     "gx": 23.45,
+     "gy": 0,
+     "z": 0,
+     "depth": 23.675,
+     "x": 493,
+     "y": 201,
+     "layer": "wall"
+    },
+    {
+     "id": "clock",
+     "sprite": "clock",
+     "state": "default",
+     "gx": 16.0,
+     "gy": 0,
+     "z": 0,
+     "depth": 16.25,
+     "x": 404,
+     "y": 156,
+     "layer": "wall"
+    },
+    {
+     "id": "interphone",
+     "sprite": "interphone",
+     "state": "idle",
+     "gx": 18.2,
+     "gy": 0,
+     "z": 0,
+     "depth": 18.45,
+     "x": 430,
+     "y": 169,
+     "layer": "wall",
+     "drive": "사장님 등장 때 ring 1초"
+    },
+    {
+     "id": "ci_light",
+     "sprite": "ci_light",
+     "state": "off",
+     "gx": 10.0,
+     "gy": 0,
+     "z": 0,
+     "depth": 10.3,
+     "x": 332,
+     "y": 120,
+     "layer": "wall",
+     "drive": "SharedProps.ci: building→yellow, ok→green, fail→red"
+    },
+    {
+     "id": "test_board",
+     "sprite": "test_board",
+     "state": "pass",
+     "gx": 13.4,
+     "gy": 0,
+     "z": 0,
+     "depth": 14.3,
+     "x": 373,
+     "y": 140,
+     "layer": "wall",
+     "drive": "마지막 테스트 결과"
+    },
+    {
+     "id": "job_ticket",
+     "sprite": "job_ticket",
+     "state": "default",
+     "gx": 7.85,
+     "gy": 0,
+     "z": 0,
+     "depth": 8.225,
+     "x": 306,
+     "y": 107,
+     "layer": "wall",
+     "visible": false,
+     "drive": "백그라운드 명령이 있을 때만"
+    },
+    {
+     "id": "tv",
+     "sprite": "tv",
+     "state": "on",
+     "gx": 0,
+     "gy": 6.3,
+     "z": 0,
+     "depth": 7.45,
+     "x": 136,
+     "y": 98,
+     "layer": "wall",
+     "drive": "팀별 컨텍스트 사용량 선"
+    },
+    {
+     "id": "attendance",
+     "sprite": "attendance",
+     "state": "default",
+     "gx": 0,
+     "gy": 11.1,
+     "z": 0,
+     "depth": 11.775,
+     "x": 79,
+     "y": 127,
+     "layer": "wall",
+     "drive": "직원마다 자석 하나"
+    },
+    {
+     "id": "door",
+     "sprite": "door",
+     "state": "closed",
+     "gx": 0,
+     "gy": 12.6,
+     "z": 0,
+     "depth": 13.5,
+     "x": 61,
+     "y": 136,
+     "layer": "wall",
+     "drive": "누가 드나드는 1초 동안 open"
+    },
+    {
+     "id": "stats_board",
+     "sprite": "stats_board",
+     "state": "default",
+     "gx": 0,
+     "gy": 14.65,
+     "z": 0,
+     "depth": 15.25,
+     "x": 36,
+     "y": 148,
+     "layer": "wall"
+    },
+    {
+     "id": "doormat",
+     "sprite": "doormat",
+     "state": "default",
+     "gx": 0,
+     "gy": 12.7,
+     "z": 0,
+     "depth": 14.1,
+     "x": 60,
+     "y": 136,
+     "layer": "decal"
+    },
+    {
+     "id": "rug_review",
+     "sprite": "rug_review",
+     "state": "default",
+     "gx": 17.6,
+     "gy": 6.7,
+     "z": 0,
+     "depth": 27.75,
+     "x": 343,
+     "y": 206,
+     "layer": "decal"
+    },
+    {
+     "id": "wallseg_01",
+     "sprite": "wallseg_01",
+     "state": "default",
+     "gx": 5.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 7.8,
+     "x": 283,
+     "y": 95,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_02",
+     "sprite": "wallseg_02",
+     "state": "default",
+     "gx": 10.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 12.8,
+     "x": 343,
+     "y": 125,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_03",
+     "sprite": "wallseg_03",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 18.0,
+     "x": 403,
+     "y": 155,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_04",
+     "sprite": "wallseg_04",
+     "state": "default",
+     "gx": 0,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 5.8,
+     "x": 153,
+     "y": 89,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_05",
+     "sprite": "wallseg_05",
+     "state": "default",
+     "gx": 3.2,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 10.45,
+     "x": 192,
+     "y": 109,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_06",
+     "sprite": "wallseg_06",
+     "state": "default",
+     "gx": 9.2,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 15.9,
+     "x": 264,
+     "y": 145,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_07",
+     "sprite": "wallseg_07",
+     "state": "default",
+     "gx": 14.2,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 20.05,
+     "x": 324,
+     "y": 175,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_08",
+     "sprite": "wallseg_08",
+     "state": "default",
+     "gx": 16,
+     "gy": 5.9,
+     "z": 0,
+     "depth": 22.7,
+     "x": 333,
+     "y": 191,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_09",
+     "sprite": "wallseg_09",
+     "state": "default",
+     "gx": 19.4,
+     "gy": 5.9,
+     "z": 0,
+     "depth": 27.7,
+     "x": 374,
+     "y": 212,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_10",
+     "sprite": "wallseg_10",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 22.6,
+     "x": 331,
+     "y": 191,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_11",
+     "sprite": "wallseg_11",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 25.8,
+     "x": 300,
+     "y": 207,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_12",
+     "sprite": "wallseg_12",
+     "state": "default",
+     "gx": 16,
+     "gy": 8.9,
+     "z": 0,
+     "depth": 27.5,
+     "x": 297,
+     "y": 209,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_13",
+     "sprite": "wallseg_13",
+     "state": "default",
+     "gx": 22.4,
+     "gy": 8.9,
+     "z": 0,
+     "depth": 32.2,
+     "x": 374,
+     "y": 248,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_14",
+     "sprite": "wallseg_14",
+     "state": "default",
+     "gx": 16,
+     "gy": 11.9,
+     "z": 0,
+     "depth": 29.0,
+     "x": 261,
+     "y": 227,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_15",
+     "sprite": "wallseg_15",
+     "state": "default",
+     "gx": 19.4,
+     "gy": 11.9,
+     "z": 0,
+     "depth": 33.7,
+     "x": 302,
+     "y": 248,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_16",
+     "sprite": "wallseg_16",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 12.2,
+     "z": 0,
+     "depth": 29.0,
+     "x": 256,
+     "y": 229,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_17",
+     "sprite": "wallseg_17",
+     "state": "default",
+     "gx": 15.9,
+     "gy": 15.0,
+     "z": 0,
+     "depth": 31.5,
+     "x": 223,
+     "y": 245,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_18",
+     "sprite": "wallseg_18",
+     "state": "default",
+     "gx": 0,
+     "gy": 10.9,
+     "z": 0,
+     "depth": 11.5,
+     "x": 81,
+     "y": 125,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_19",
+     "sprite": "wallseg_19",
+     "state": "default",
+     "gx": 3,
+     "gy": 10.9,
+     "z": 0,
+     "depth": 15.75,
+     "x": 117,
+     "y": 143,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_20",
+     "sprite": "wallseg_20",
+     "state": "default",
+     "gx": 9,
+     "gy": 10.9,
+     "z": 0,
+     "depth": 22.25,
+     "x": 189,
+     "y": 179,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_21",
+     "sprite": "wallseg_21",
+     "state": "default",
+     "gx": 4.9,
+     "gy": 11.4,
+     "z": 0,
+     "depth": 17.4,
+     "x": 134,
+     "y": 158,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_22",
+     "sprite": "wallseg_22",
+     "state": "default",
+     "gx": 4.9,
+     "gy": 15.0,
+     "z": 0,
+     "depth": 20.5,
+     "x": 91,
+     "y": 179,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_side_0",
+     "sprite": "cabinet_side",
+     "state": "default",
+     "gx": 0.15,
+     "gy": 0.4,
+     "z": 0,
+     "depth": 1.45,
+     "x": 209,
+     "y": 63,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_side_1",
+     "sprite": "cabinet_side",
+     "state": "default",
+     "gx": 0.15,
+     "gy": 1.5,
+     "z": 0,
+     "depth": 2.55,
+     "x": 196,
+     "y": 70,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_side_2",
+     "sprite": "cabinet_side",
+     "state": "default",
+     "gx": 0.15,
+     "gy": 2.6,
+     "z": 0,
+     "depth": 3.65,
+     "x": 183,
+     "y": 76,
+     "layer": "world"
+    },
+    {
+     "id": "cabinet_front_0",
+     "sprite": "cabinet_front",
+     "state": "closed",
+     "gx": 1.4,
+     "gy": 0.15,
+     "z": 0,
+     "depth": 2.45,
+     "x": 227,
+     "y": 69,
+     "layer": "world",
+     "drive": null
+    },
+    {
+     "id": "cabinet_front_1",
+     "sprite": "cabinet_front",
+     "state": "closed",
+     "gx": 2.5,
+     "gy": 0.15,
+     "z": 0,
+     "depth": 3.55,
+     "x": 240,
+     "y": 76,
+     "layer": "world",
+     "drive": "서류철 꺼낼 때 그 직원과 가장 가까운 것 open"
+    },
+    {
+     "id": "cabinet_front_2",
+     "sprite": "cabinet_front",
+     "state": "closed",
+     "gx": 3.6,
+     "gy": 0.15,
+     "z": 0,
+     "depth": 4.65,
+     "x": 253,
+     "y": 82,
+     "layer": "world",
+     "drive": null
+    },
+    {
+     "id": "lib_desk",
+     "sprite": "lib_desk",
+     "state": "default",
+     "gx": 3.2,
+     "gy": 3.0,
+     "z": 0,
+     "depth": 7.5,
+     "x": 214,
+     "y": 97,
+     "layer": "world"
+    },
+    {
+     "id": "rack_0",
+     "sprite": "rack",
+     "state": "led_0",
+     "gx": 6.4,
+     "gy": 0.3,
+     "z": 0,
+     "depth": 7.7,
+     "x": 285,
+     "y": 100,
+     "layer": "world",
+     "drive": "셸 명령 중 led_0/led_1 반복"
+    },
+    {
+     "id": "rack_1",
+     "sprite": "rack",
+     "state": "led_0",
+     "gx": 7.7,
+     "gy": 0.3,
+     "z": 0,
+     "depth": 9.0,
+     "x": 301,
+     "y": 108,
+     "layer": "world"
+    },
+    {
+     "id": "terminal",
+     "sprite": "terminal",
+     "state": "off",
+     "gx": 9.4,
+     "gy": 2.6,
+     "z": 0,
+     "depth": 12.7,
+     "x": 294,
+     "y": 132,
+     "layer": "world"
+    },
+    {
+     "id": "fan",
+     "sprite": "fan",
+     "state": "off",
+     "gx": 6.9,
+     "gy": 3.9,
+     "z": 0,
+     "depth": 10.9,
+     "x": 248,
+     "y": 125,
+     "layer": "world",
+     "drive": "명령이 평균 2배 넘으면 spin"
+    },
+    {
+     "id": "test_machine",
+     "sprite": "test_machine",
+     "state": "idle",
+     "gx": 11.8,
+     "gy": 0.6,
+     "z": 0,
+     "depth": 13.0,
+     "x": 346,
+     "y": 134,
+     "layer": "world",
+     "drive": "테스트 중 run_0/run_1"
+    },
+    {
+     "id": "stamp_table",
+     "sprite": "stamp_table",
+     "state": "default",
+     "gx": 14.6,
+     "gy": 2.9,
+     "z": 0,
+     "depth": 17.0,
+     "x": 352,
+     "y": 165,
+     "layer": "world"
+    },
+    {
+     "id": "boss_chair_0",
+     "sprite": "chair_boss",
+     "state": "default",
+     "gx": 17.3,
+     "gy": 1.7999999999999998,
+     "z": 0,
+     "depth": 19.75,
+     "x": 398,
+     "y": 175,
+     "layer": "world"
+    },
+    {
+     "id": "boss_desk_0",
+     "sprite": "boss_desk_s",
+     "state": "default",
+     "gx": 16.5,
+     "gy": 2.4,
+     "z": 0,
+     "depth": 20.25,
+     "x": 381,
+     "y": 173,
+     "layer": "world"
+    },
+    {
+     "id": "boss_mon_0_0",
+     "sprite": "monitor_md",
+     "state": "off",
+     "gx": 16.65,
+     "gy": 2.55,
+     "z": 9,
+     "depth": 20.26,
+     "x": 381,
+     "y": 166,
+     "layer": "world"
+    },
+    {
+     "id": "plant_boss_0",
+     "sprite": "plant",
+     "state": "s0",
+     "gx": 17.3,
+     "gy": 0.6,
+     "z": 0,
+     "depth": 18.4,
+     "x": 412,
+     "y": 167,
+     "layer": "world",
+     "visible": false,
+     "drive": "이 자리 부장의 컨텍스트 사용률"
+    },
+    {
+     "id": "boss_chair_1",
+     "sprite": "chair_boss",
+     "state": "default",
+     "gx": 19.2,
+     "gy": 1.7999999999999998,
+     "z": 0,
+     "depth": 21.65,
+     "x": 421,
+     "y": 186,
+     "layer": "world"
+    },
+    {
+     "id": "boss_desk_1",
+     "sprite": "boss_desk_s",
+     "state": "default",
+     "gx": 18.4,
+     "gy": 2.4,
+     "z": 0,
+     "depth": 22.15,
+     "x": 404,
+     "y": 185,
+     "layer": "world"
+    },
+    {
+     "id": "boss_mon_1_0",
+     "sprite": "monitor_md",
+     "state": "off",
+     "gx": 18.549999999999997,
+     "gy": 2.55,
+     "z": 9,
+     "depth": 22.16,
+     "x": 404,
+     "y": 178,
+     "layer": "world"
+    },
+    {
+     "id": "plant_boss_1",
+     "sprite": "plant",
+     "state": "s0",
+     "gx": 19.2,
+     "gy": 0.6,
+     "z": 0,
+     "depth": 20.3,
+     "x": 435,
+     "y": 179,
+     "layer": "world",
+     "visible": false,
+     "drive": "이 자리 부장의 컨텍스트 사용률"
+    },
+    {
+     "id": "boss_chair_2",
+     "sprite": "chair_boss",
+     "state": "default",
+     "gx": 21.1,
+     "gy": 1.7999999999999998,
+     "z": 0,
+     "depth": 23.55,
+     "x": 444,
+     "y": 197,
+     "layer": "world"
+    },
+    {
+     "id": "boss_desk_2",
+     "sprite": "boss_desk_s",
+     "state": "default",
+     "gx": 20.3,
+     "gy": 2.4,
+     "z": 0,
+     "depth": 24.05,
+     "x": 427,
+     "y": 196,
+     "layer": "world"
+    },
+    {
+     "id": "boss_mon_2_0",
+     "sprite": "monitor_md",
+     "state": "off",
+     "gx": 20.45,
+     "gy": 2.55,
+     "z": 9,
+     "depth": 24.06,
+     "x": 427,
+     "y": 189,
+     "layer": "world"
+    },
+    {
+     "id": "plant_boss_2",
+     "sprite": "plant",
+     "state": "s0",
+     "gx": 21.1,
+     "gy": 0.6,
+     "z": 0,
+     "depth": 22.2,
+     "x": 458,
+     "y": 190,
+     "layer": "world",
+     "visible": false,
+     "drive": "이 자리 부장의 컨텍스트 사용률"
+    },
+    {
+     "id": "boss_chair_3",
+     "sprite": "chair_boss",
+     "state": "default",
+     "gx": 23.0,
+     "gy": 1.7999999999999998,
+     "z": 0,
+     "depth": 25.45,
+     "x": 466,
+     "y": 209,
+     "layer": "world"
+    },
+    {
+     "id": "boss_desk_3",
+     "sprite": "boss_desk_s",
+     "state": "default",
+     "gx": 22.2,
+     "gy": 2.4,
+     "z": 0,
+     "depth": 25.95,
+     "x": 450,
+     "y": 208,
+     "layer": "world"
+    },
+    {
+     "id": "boss_mon_3_0",
+     "sprite": "monitor_md",
+     "state": "off",
+     "gx": 22.349999999999998,
+     "gy": 2.55,
+     "z": 9,
+     "depth": 25.96,
+     "x": 450,
+     "y": 200,
+     "layer": "world"
+    },
+    {
+     "id": "plant_boss_3",
+     "sprite": "plant",
+     "state": "s0",
+     "gx": 23.0,
+     "gy": 0.6,
+     "z": 0,
+     "depth": 24.1,
+     "x": 481,
+     "y": 202,
+     "layer": "world",
+     "visible": false,
+     "drive": "이 자리 부장의 컨텍스트 사용률"
+    },
+    {
+     "id": "dev_part_0",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 5.8500000000000005,
+     "z": 0,
+     "depth": 8.4,
+     "x": 154,
+     "y": 101,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_0",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 2.5,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 8.7,
+     "x": 170,
+     "y": 111,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_0",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 6.4,
+     "z": 0,
+     "depth": 9.2,
+     "x": 147,
+     "y": 104,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_0_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.15,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 9.21,
+     "x": 147,
+     "y": 97,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_0_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.8,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 9.21,
+     "x": 155,
+     "y": 101,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_1",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 5.8500000000000005,
+     "z": 0,
+     "depth": 11.8,
+     "x": 195,
+     "y": 122,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_1",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 5.9,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 12.1,
+     "x": 211,
+     "y": 131,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_1",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 6.4,
+     "z": 0,
+     "depth": 12.6,
+     "x": 188,
+     "y": 125,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_1_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 4.550000000000001,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 12.61,
+     "x": 188,
+     "y": 118,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_1_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 5.2,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 12.61,
+     "x": 196,
+     "y": 122,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_2",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 5.8500000000000005,
+     "z": 0,
+     "depth": 15.2,
+     "x": 235,
+     "y": 142,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_2",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 9.3,
+     "gy": 6.0,
+     "z": 0,
+     "depth": 15.5,
+     "x": 252,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_2",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 6.4,
+     "z": 0,
+     "depth": 16.0,
+     "x": 229,
+     "y": 145,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_2_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 7.95,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 16.01,
+     "x": 229,
+     "y": 138,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_2_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 8.6,
+     "gy": 6.550000000000001,
+     "z": 9,
+     "depth": 16.01,
+     "x": 237,
+     "y": 142,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_3",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 8.45,
+     "z": 0,
+     "depth": 11.0,
+     "x": 123,
+     "y": 117,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_3",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 2.5,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 11.3,
+     "x": 139,
+     "y": 127,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_3",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 11.8,
+     "x": 116,
+     "y": 120,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_3_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.15,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 11.81,
+     "x": 116,
+     "y": 113,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_3_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 1.8,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 11.81,
+     "x": 124,
+     "y": 117,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_4",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 8.45,
+     "z": 0,
+     "depth": 14.4,
+     "x": 163,
+     "y": 137,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_4",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 5.9,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 14.7,
+     "x": 180,
+     "y": 147,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_4",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 4.4,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 15.2,
+     "x": 157,
+     "y": 140,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_4_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 4.550000000000001,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 15.21,
+     "x": 157,
+     "y": 133,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_4_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 5.2,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 15.21,
+     "x": 165,
+     "y": 137,
+     "layer": "world"
+    },
+    {
+     "id": "dev_part_5",
+     "sprite": "partition",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 8.45,
+     "z": 0,
+     "depth": 17.8,
+     "x": 204,
+     "y": 158,
+     "layer": "world",
+     "tint": null,
+     "drive": "대기업: 테마 cubicle 색. 중소기업: 앉은 직원의 팀 색"
+    },
+    {
+     "id": "dev_chair_5",
+     "sprite": "chair",
+     "state": "default",
+     "gx": 9.3,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 18.1,
+     "x": 220,
+     "y": 167,
+     "layer": "world"
+    },
+    {
+     "id": "dev_desk_5",
+     "sprite": "dev_desk",
+     "state": "default",
+     "gx": 7.8,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 18.6,
+     "x": 198,
+     "y": 161,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_5_0",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 7.95,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 18.61,
+     "x": 198,
+     "y": 154,
+     "layer": "world"
+    },
+    {
+     "id": "dev_mon_5_1",
+     "sprite": "monitor_sm",
+     "state": "off",
+     "gx": 8.6,
+     "gy": 9.15,
+     "z": 9,
+     "depth": 18.61,
+     "x": 205,
+     "y": 158,
+     "layer": "world"
+    },
+    {
+     "id": "temp_desk_0",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 11.3,
+     "gy": 6.6,
+     "z": 0,
+     "depth": 18.95,
+     "x": 268,
+     "y": 167,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "temp_desk_1",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 13.6,
+     "gy": 6.6,
+     "z": 0,
+     "depth": 21.25,
+     "x": 296,
+     "y": 181,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "temp_desk_2",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 11.3,
+     "gy": 8.8,
+     "z": 0,
+     "depth": 21.15,
+     "x": 242,
+     "y": 181,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "temp_desk_3",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 13.6,
+     "gy": 8.8,
+     "z": 0,
+     "depth": 23.45,
+     "x": 270,
+     "y": 194,
+     "layer": "world",
+     "visible": false,
+     "drive": "서브 7명째부터 펼친다"
+    },
+    {
+     "id": "note_temp",
+     "sprite": "note_temp",
+     "state": "default",
+     "gx": 11.5,
+     "gy": 6.5,
+     "z": 8,
+     "depth": 18.0,
+     "x": 272,
+     "y": 160,
+     "layer": "fx",
+     "visible": false
+    },
+    {
+     "id": "trash",
+     "sprite": "trash",
+     "state": "empty",
+     "gx": 14.9,
+     "gy": 10.1,
+     "z": 0,
+     "depth": 25.6,
+     "x": 270,
+     "y": 210,
+     "layer": "world",
+     "drive": "사고 수"
+    },
+    {
+     "id": "copier",
+     "sprite": "copier",
+     "state": "default",
+     "gx": 13.4,
+     "gy": 5.4,
+     "z": 0,
+     "depth": 19.4,
+     "x": 308,
+     "y": 173,
+     "layer": "world"
+    },
+    {
+     "id": "plant_dev",
+     "sprite": "plant",
+     "state": "s3",
+     "gx": 11.6,
+     "gy": 5.6,
+     "z": 0,
+     "depth": 17.2,
+     "x": 284,
+     "y": 163,
+     "layer": "world"
+    },
+    {
+     "id": "counter",
+     "sprite": "counter",
+     "state": "default",
+     "gx": 5.3,
+     "gy": 11.3,
+     "z": 0,
+     "depth": 17.3,
+     "x": 140,
+     "y": 160,
+     "layer": "world"
+    },
+    {
+     "id": "coffee",
+     "sprite": "coffee_machine",
+     "state": "idle",
+     "gx": 5.5,
+     "gy": 11.4,
+     "z": 12,
+     "depth": 17.31,
+     "x": 141,
+     "y": 149,
+     "layer": "world"
+    },
+    {
+     "id": "ramen",
+     "sprite": "ramen",
+     "state": "default",
+     "gx": 7.0,
+     "gy": 11.6,
+     "z": 12,
+     "depth": 17.32,
+     "x": 157,
+     "y": 160,
+     "layer": "world",
+     "visible": false,
+     "drive": "야근 모드"
+    },
+    {
+     "id": "fridge",
+     "sprite": "fridge",
+     "state": "default",
+     "gx": 8.2,
+     "gy": 11.25,
+     "z": 0,
+     "depth": 20.0,
+     "x": 175,
+     "y": 177,
+     "layer": "world"
+    },
+    {
+     "id": "tv_stand",
+     "sprite": "tv_stand",
+     "state": "default",
+     "gx": 12.4,
+     "gy": 11.25,
+     "z": 0,
+     "depth": 24.7,
+     "x": 226,
+     "y": 202,
+     "layer": "world"
+    },
+    {
+     "id": "game_tv",
+     "sprite": "game_tv",
+     "state": "off",
+     "gx": 12.5,
+     "gy": 11.3,
+     "z": 8,
+     "depth": 24.71,
+     "x": 226,
+     "y": 195,
+     "layer": "world",
+     "drive": "게임기 앞에 직원이 있으면 game"
+    },
+    {
+     "id": "sofa",
+     "sprite": "sofa_claude",
+     "state": "default",
+     "gx": 9.3,
+     "gy": 13.4,
+     "z": 0,
+     "depth": 24.4,
+     "x": 163,
+     "y": 196,
+     "layer": "world",
+     "themed": true
+    },
+    {
+     "id": "coffee_table",
+     "sprite": "coffee_table",
+     "state": "default",
+     "gx": 10.0,
+     "gy": 15.0,
+     "z": 0,
+     "depth": 26.2,
+     "x": 152,
+     "y": 210,
+     "layer": "world"
+    },
+    {
+     "id": "massage_chair",
+     "sprite": "massage_chair",
+     "state": "default",
+     "gx": 14.3,
+     "gy": 13.3,
+     "z": 0,
+     "depth": 28.2,
+     "x": 224,
+     "y": 226,
+     "layer": "world"
+    },
+    {
+     "id": "label_table",
+     "sprite": "label_table",
+     "state": "default",
+     "gx": 3.4,
+     "gy": 12.0,
+     "z": 0,
+     "depth": 16.4,
+     "x": 109,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "box_0",
+     "sprite": "box_lg",
+     "state": "default",
+     "gx": 2.2,
+     "gy": 14.4,
+     "z": 0,
+     "depth": 17.3,
+     "x": 66,
+     "y": 160,
+     "layer": "world"
+    },
+    {
+     "id": "box_1",
+     "sprite": "box_md",
+     "state": "default",
+     "gx": 3.1,
+     "gy": 14.6,
+     "z": 0,
+     "depth": 18.1,
+     "x": 74,
+     "y": 166,
+     "layer": "world"
+    },
+    {
+     "id": "box_2",
+     "sprite": "box_sm",
+     "state": "default",
+     "gx": 2.35,
+     "gy": 14.5,
+     "z": 9,
+     "depth": 17.31,
+     "x": 66,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "review_screen",
+     "sprite": "review_screen",
+     "state": "off",
+     "gx": 18.2,
+     "gy": 6.15,
+     "z": 0,
+     "depth": 26.0,
+     "x": 357,
+     "y": 206,
+     "layer": "world"
+    },
+    {
+     "id": "review_seat",
+     "sprite": "review_sofa_seat_claude",
+     "state": "default",
+     "gx": 18.0,
+     "gy": 7.6,
+     "z": 0,
+     "depth": 27.8,
+     "x": 337,
+     "y": 214,
+     "layer": "world",
+     "themed": true
+    },
+    {
+     "id": "review_back",
+     "sprite": "review_sofa_back_claude",
+     "state": "default",
+     "gx": 18.0,
+     "gy": 8.3,
+     "z": 0,
+     "depth": 28.3,
+     "x": 328,
+     "y": 218,
+     "layer": "world",
+     "themed": true
+    },
+    {
+     "id": "pen_cup",
+     "sprite": "pen_cup",
+     "state": "default",
+     "gx": 21.8,
+     "gy": 6.5,
+     "z": 0,
+     "depth": 28.45,
+     "x": 396,
+     "y": 230,
+     "layer": "world"
+    },
+    {
+     "id": "spare_desk_0",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 22.1,
+     "gy": 6.6,
+     "z": 0,
+     "depth": 29.75,
+     "x": 398,
+     "y": 232,
+     "layer": "world",
+     "visible": false,
+     "drive": "중소기업 5팀째부터 간이 책상"
+    },
+    {
+     "id": "spare_desk_1",
+     "sprite": "folding_desk",
+     "state": "default",
+     "gx": 22.1,
+     "gy": 7.8,
+     "z": 0,
+     "depth": 30.95,
+     "x": 384,
+     "y": 239,
+     "layer": "world",
+     "visible": false,
+     "drive": "중소기업 5팀째부터 간이 책상"
+    },
+    {
+     "id": "whiteboard",
+     "sprite": "whiteboard",
+     "state": "off",
+     "gx": 18.2,
+     "gy": 9.25,
+     "z": 0,
+     "depth": 28.85,
+     "x": 319,
+     "y": 225,
+     "layer": "world"
+    },
+    {
+     "id": "beacon",
+     "sprite": "beacon",
+     "state": "off",
+     "gx": 19.5,
+     "gy": 9.3,
+     "z": 24,
+     "depth": 28.87,
+     "x": 334,
+     "y": 209,
+     "layer": "world"
+    },
+    {
+     "id": "incident_table",
+     "sprite": "incident_table",
+     "state": "off",
+     "gx": 18.4,
+     "gy": 10.3,
+     "z": 0,
+     "depth": 30.2,
+     "x": 309,
+     "y": 232,
+     "layer": "world"
+    },
+    {
+     "id": "safety_board",
+     "sprite": "safety_board",
+     "state": "default",
+     "gx": 16.3,
+     "gy": 8.6,
+     "z": 0,
+     "depth": 25.9,
+     "x": 304,
+     "y": 209,
+     "layer": "world",
+     "drive": "무재해 분: 팀 중 최솟값"
+    },
+    {
+     "id": "meeting_screen",
+     "sprite": "meeting_screen",
+     "state": "off",
+     "gx": 18.0,
+     "gy": 12.15,
+     "z": 0,
+     "depth": 31.4,
+     "x": 282,
+     "y": 241,
+     "layer": "world"
+    },
+    {
+     "id": "meeting_table",
+     "sprite": "meeting_table",
+     "state": "default",
+     "gx": 17.6,
+     "gy": 13.4,
+     "z": 0,
+     "depth": 33.75,
+     "x": 262,
+     "y": 246,
+     "layer": "world"
+    },
+    {
+     "id": "bookshelf",
+     "sprite": "bookshelf",
+     "state": "default",
+     "gx": 16.3,
+     "gy": 14.5,
+     "z": 0,
+     "depth": 32.0,
+     "x": 234,
+     "y": 245,
+     "layer": "world"
+    },
+    {
+     "id": "plant_meeting",
+     "sprite": "plant",
+     "state": "s4",
+     "gx": 23.4,
+     "gy": 15.4,
+     "z": 0,
+     "depth": 38.8,
+     "x": 308,
+     "y": 293,
+     "layer": "world"
+    },
+    {
+     "id": "glow_incident",
+     "sprite": "glow_incident",
+     "state": "default",
+     "gx": 16.0,
+     "gy": 9.0,
+     "z": 0,
+     "depth": 30.5,
+     "x": 296,
+     "y": 210,
+     "layer": "overlay",
+     "visible": false,
+     "drive": "장애 판정 중"
+    }
+   ],
+   "seats": {
+    "dev": [
+     {
+      "id": "dev_0",
+      "gx": 2.75,
+      "gy": 6.25,
+      "depth": 8.9,
+      "desk": "dev_desk_0",
+      "monitors": [
+       "dev_mon_0_0",
+       "dev_mon_0_1"
+      ],
+      "partition": "dev_part_0"
+     },
+     {
+      "id": "dev_1",
+      "gx": 6.15,
+      "gy": 6.25,
+      "depth": 12.3,
+      "desk": "dev_desk_1",
+      "monitors": [
+       "dev_mon_1_0",
+       "dev_mon_1_1"
+      ],
+      "partition": "dev_part_1"
+     },
+     {
+      "id": "dev_2",
+      "gx": 9.55,
+      "gy": 6.25,
+      "depth": 15.7,
+      "desk": "dev_desk_2",
+      "monitors": [
+       "dev_mon_2_0",
+       "dev_mon_2_1"
+      ],
+      "partition": "dev_part_2"
+     },
+     {
+      "id": "dev_3",
+      "gx": 2.75,
+      "gy": 8.85,
+      "depth": 11.5,
+      "desk": "dev_desk_3",
+      "monitors": [
+       "dev_mon_3_0",
+       "dev_mon_3_1"
+      ],
+      "partition": "dev_part_3"
+     },
+     {
+      "id": "dev_4",
+      "gx": 6.15,
+      "gy": 8.85,
+      "depth": 14.9,
+      "desk": "dev_desk_4",
+      "monitors": [
+       "dev_mon_4_0",
+       "dev_mon_4_1"
+      ],
+      "partition": "dev_part_4"
+     },
+     {
+      "id": "dev_5",
+      "gx": 9.55,
+      "gy": 8.85,
+      "depth": 18.3,
+      "desk": "dev_desk_5",
+      "monitors": [
+       "dev_mon_5_0",
+       "dev_mon_5_1"
+      ],
+      "partition": "dev_part_5"
+     }
+    ],
+    "temp": [
+     {
+      "id": "temp_0",
+      "gx": 12.2,
+      "gy": 6.45,
+      "depth": 18.65,
+      "desk": "temp_desk_0"
+     },
+     {
+      "id": "temp_1",
+      "gx": 14.5,
+      "gy": 6.45,
+      "depth": 20.95,
+      "desk": "temp_desk_1"
+     },
+     {
+      "id": "temp_2",
+      "gx": 12.2,
+      "gy": 8.65,
+      "depth": 20.85,
+      "desk": "temp_desk_2"
+     },
+     {
+      "id": "temp_3",
+      "gx": 14.5,
+      "gy": 8.65,
+      "depth": 23.15,
+      "desk": "temp_desk_3"
+     }
+    ],
+    "boss": [
+     {
+      "id": "boss_0",
+      "gx": 17.7,
+      "gy": 2.2,
+      "depth": 19.95,
+      "desk": "boss_desk_0",
+      "monitors": [
+       "boss_mon_0_0"
+      ],
+      "plant": "plant_boss_0"
+     },
+     {
+      "id": "boss_1",
+      "gx": 19.6,
+      "gy": 2.2,
+      "depth": 21.85,
+      "desk": "boss_desk_1",
+      "monitors": [
+       "boss_mon_1_0"
+      ],
+      "plant": "plant_boss_1"
+     },
+     {
+      "id": "boss_2",
+      "gx": 21.5,
+      "gy": 2.2,
+      "depth": 23.75,
+      "desk": "boss_desk_2",
+      "monitors": [
+       "boss_mon_2_0"
+      ],
+      "plant": "plant_boss_2"
+     },
+     {
+      "id": "boss_3",
+      "gx": 23.4,
+      "gy": 2.2,
+      "depth": 25.65,
+      "desk": "boss_desk_3",
+      "monitors": [
+       "boss_mon_3_0"
+      ],
+      "plant": "plant_boss_3"
+     }
+    ],
+    "spare": [
+     {
+      "id": "spare_0",
+      "gx": 22.9,
+      "gy": 6.45,
+      "depth": 29.45,
+      "desk": "spare_desk_0"
+     },
+     {
+      "id": "spare_1",
+      "gx": 22.9,
+      "gy": 7.65,
+      "depth": 30.65,
+      "desk": "spare_desk_1"
+     }
+    ]
+   }
+  }
+ },
+ "stands": {
+  "library": [
+   [
+    2.2,
+    2.0
+   ],
+   [
+    1.5,
+    3.5
+   ],
+   [
+    4.7,
+    1.6
+   ]
+  ],
+  "librarian": [
+   [
+    4.0,
+    2.75
+   ]
+  ],
+  "build_terminal": [
+   [
+    9.8,
+    3.7
+   ]
+  ],
+  "build": [
+   [
+    8.2,
+    2.4
+   ],
+   [
+    7.0,
+    2.4
+   ]
+  ],
+  "test": [
+   [
+    13.3,
+    2.75
+   ],
+   [
+    12.4,
+    2.8
+   ],
+   [
+    15.0,
+    3.9
+   ]
+  ],
+  "review_sofa": [
+   [
+    18.8,
+    7.95
+   ],
+   [
+    19.8,
+    7.95
+   ],
+   [
+    20.8,
+    7.95
+   ]
+  ],
+  "incident": [
+   [
+    19.6,
+    9.95
+   ],
+   [
+    21.8,
+    10.8
+   ],
+   [
+    22.8,
+    10.3
+   ],
+   [
+    17.4,
+    10.7
+   ],
+   [
+    18.2,
+    11.6
+   ],
+   [
+    21.0,
+    11.6
+   ]
+  ],
+  "meeting": [
+   [
+    18.4,
+    13.15
+   ],
+   [
+    19.6,
+    13.15
+   ],
+   [
+    20.8,
+    13.15
+   ],
+   [
+    18.6,
+    15.1
+   ],
+   [
+    20.2,
+    15.1
+   ]
+  ],
+  "pantry_console": [
+   [
+    13.3,
+    12.6
+   ]
+  ],
+  "pantry_massage": [
+   [
+    14.8,
+    13.9,
+    6
+   ]
+  ],
+  "pantry_sofa": [
+   [
+    10.3,
+    14.0,
+    4
+   ],
+   [
+    11.4,
+    14.0,
+    4
+   ]
+  ],
+  "pantry": [
+   [
+    6.6,
+    12.6
+   ],
+   [
+    7.4,
+    13.4
+   ]
+  ],
+  "door": [
+   [
+    0.9,
+    13.5
+   ]
+  ],
+  "door_wait": [
+   [
+    1.7,
+    12.4
+   ]
+  ],
+  "shipping": [
+   [
+    2.9,
+    13.6
+   ],
+   [
+    3.8,
+    13.2
+   ]
+  ],
+  "boss_window": [
+   [
+    20.3,
+    1.3
+   ]
+  ],
+  "boss_pace": [
+   [
+    18.9,
+    4.4
+   ],
+   [
+    21.6,
+    4.4
+   ]
+  ],
+  "dev_center": [
+   [
+    6.6,
+    8.0
+   ]
+  ],
+  "exit": [
+   [
+    0.2,
+    13.5
+   ]
+  ]
+ },
+ "path": "이동: 현재 위치 → 현재 방 entry → (방이 다르면) dev entry → 목표 방 entry → 목표. 직선 구간, 0.5–1.5초",
+ "cast": {
+  "owlAnchor": [
+   8,
+   23
+  ],
+  "frame": [
+   16,
+   24
+  ],
+  "dir": "걸어가는 방향의 화면 y가 커지면(아래로) f, 작아지면 b. 화면 x가 작아지면(왼쪽) scale.x = -1"
+ }
+}

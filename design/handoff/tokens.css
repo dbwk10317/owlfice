@@ -1,0 +1,362 @@
+/* Owlfice 디자인 토큰과 기본 컴포넌트 스타일.
+ * 캔버스 시안(design/project/*.dc.html)과 같은 값이다. 앱은 이 파일을 그대로 가져다 쓴다.
+ * 픽셀아트는 사무실 캔버스 안에서만. 나머지 UI는 흰 바탕의 차분한 웹 UI.
+ * 글꼴은 앱에 함께 묶는다 (외부 서버에 연결하지 않는 앱이다, PLAN 1.3):
+ *   fonts/IBMPlexSansKR-{Regular,Medium,SemiBold,Bold}.woff2, fonts/IBMPlexMono-{Regular,Medium,SemiBold}.woff2 (OFL)
+ *   fonts/Galmuri11.woff2 (OFL) — 사무실 캔버스 위 말풍선·이름표 전용
+ */
+
+@font-face { font-family: "IBM Plex Sans KR"; font-weight: 400; src: url("../fonts/IBMPlexSansKR-Regular.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "IBM Plex Sans KR"; font-weight: 500; src: url("../fonts/IBMPlexSansKR-Medium.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "IBM Plex Sans KR"; font-weight: 600; src: url("../fonts/IBMPlexSansKR-SemiBold.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "IBM Plex Sans KR"; font-weight: 700; src: url("../fonts/IBMPlexSansKR-Bold.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; src: url("../fonts/IBMPlexMono-Regular.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 500; src: url("../fonts/IBMPlexMono-Medium.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 600; src: url("../fonts/IBMPlexMono-SemiBold.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "Galmuri11"; font-weight: 400; src: url("../fonts/Galmuri11.woff2") format("woff2"); font-display: block; }
+
+:root {
+  /* 글꼴 */
+  --ow-font-sans: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --ow-font-mono: "IBM Plex Mono", Consolas, monospace;
+  --ow-font-pixel: "Galmuri11", "IBM Plex Sans KR", monospace;
+
+  /* 글자 크기 / 줄 높이 */
+  --ow-text-display: 600 26px/1.3 var(--ow-font-sans);   /* 규모 선택 제목 */
+  --ow-text-title: 600 20px/1.35 var(--ow-font-sans);    /* 팝업 제목 */
+  --ow-text-heading: 600 16px/1.4 var(--ow-font-sans);   /* 가운데 머리말 사무실 이름 */
+  --ow-text-card-name: 600 14px/1.45 var(--ow-font-sans);
+  --ow-text-body: 400 13px/1.45 var(--ow-font-sans);
+  --ow-text-now: 500 13px/1.5 var(--ow-font-sans);       /* 지금 하는 일 */
+  --ow-text-small: 400 12px/1.45 var(--ow-font-sans);
+  --ow-text-label: 600 11px/1.45 var(--ow-font-sans);    /* 섹션 라벨 */
+  --ow-text-mono-sm: 400 11px/1.45 var(--ow-font-mono);
+  --ow-text-bubble: 400 11px/14px var(--ow-font-pixel);   /* 캔버스 배율과 무관하게 고정 */
+  --ow-letter-tight: -0.01em;
+
+  /* 바탕과 글자 */
+  --ow-bg: #FFFFFF;
+  --ow-panel: #FAFAFA;            /* 사이드바, 현황판, 팝업 바닥 띠 */
+  --ow-stage: #F1F1EE;            /* 캔버스 둘레 무대 */
+  --ow-stage-dot: #D9D8D3;        /* 무대 점 격자, 16px 간격 */
+  --ow-line: #E4E4E7;
+  --ow-line-soft: #F0F0F1;
+  --ow-fill: #F4F4F5;             /* 칩, 마우스 올림, 코드 조각 */
+  --ow-fill-2: #F0F0F1;           /* 오늘의 업무 칩 */
+  --ow-quote: #F7F7F6;
+  --ow-ink: #18181B;              /* 대비 17.9:1 */
+  --ow-ink-2: #52525B;            /* 7.7:1 */
+  --ow-ink-2b: #3F3F46;           /* 칩 글자, 세션 제목 */
+  --ow-ink-3: #71717A;            /* 4.8:1. 이보다 흐린 회색 글자는 쓰지 않는다 */
+  --ow-ink-4: #A1A1AA;            /* 장식선, 꺼진 점. 글자에 쓰지 않는다 */
+  --ow-backdrop: rgba(24, 24, 27, 0.45);
+
+  /* 제조사 (동·층 색) */
+  --ow-claude: #D97745;
+  --ow-codex: #27272A;
+  --ow-gemini: #3D6FE0;
+  --ow-claude-tint: #FBEDE4;      /* 카드 아바타 바탕 */
+  --ow-codex-tint: #EEEEEF;
+  --ow-gemini-tint: #E8EFFC;
+
+  /* 상태 */
+  --ow-ok: #16A34A;               /* 근무 중 */
+  --ow-sleep: #CA8A04;            /* 졸음 */
+  --ow-fail: #DC2626;             /* 장애, 사고 */
+  --ow-off: #A1A1AA;              /* 퇴근 */
+  --ow-ring-run: #EAB308;         /* 빌드·테스트 진행 중 테 */
+  --ow-ring-fail: #EF4444;        /* 마지막 빌드·테스트 실패 테 */
+  --ow-ring-lag: #71717A;         /* 통신 지연 점선 테 */
+  --ow-ask: #B45309;              /* 허가 대기 결재판, 경고 글자 */
+  --ow-ask-ink: #92400E;
+  --ow-ask-bg: #FFFBEB;
+  --ow-warn-bg: #FEF3C7;
+  --ow-bad-ink: #B91C1C;
+  --ow-bad-bg: #FEF2F2;
+  --ow-bad-line: #FCA5A5;
+  --ow-ok-ink: #15803D;
+  --ow-ok-bg: #DCFCE7;
+  --ow-host-ink: #1D4ED8;         /* WSL 배지 */
+  --ow-host-bg: #EFF4FF;
+  --ow-boss-gold: #D4A72C;        /* 부장 카드 테두리 */
+  --ow-over-a: #D97706;           /* 평균 초과 진행 막대 줄무늬 */
+  --ow-over-b: #FBBF24;
+
+  /* 중소기업 팀 색 (파티션 tint, 팀 묶음 머리글 사각형, 근태판 자석) */
+  --ow-team-1: #349696;
+  --ow-team-2: #8062BE;
+  --ow-team-3: #E2705C;
+  --ow-team-4: #D6A028;
+  --ow-team-5: #4682C8;
+  --ow-team-6: #966E50;
+
+  /* 말풍선 */
+  --ow-bubble-ink: #2A1E1A;
+  --ow-bubble-bg: #FFFFFF;
+  --ow-bubble-shadow: 2px 2px 0 rgba(42, 30, 26, 0.2);
+
+  /* 간격 */
+  --ow-space-1: 2px;
+  --ow-space-2: 4px;
+  --ow-space-3: 6px;
+  --ow-space-4: 8px;
+  --ow-space-5: 10px;
+  --ow-space-6: 12px;
+  --ow-space-7: 14px;
+  --ow-space-8: 16px;
+  --ow-space-10: 20px;
+  --ow-space-12: 24px;
+  --ow-space-16: 32px;
+
+  /* 모서리 */
+  --ow-radius-xs: 4px;   /* 코드 조각, 오늘의 업무 칩 */
+  --ow-radius-sm: 6px;   /* 칩, 상태 칩 */
+  --ow-radius-md: 8px;   /* 아이콘 버튼, 토스트, 입력 */
+  --ow-radius-lg: 10px;  /* 사이드바 행, 아바타 */
+  --ow-radius-xl: 12px;  /* 카드 */
+  --ow-radius-2xl: 16px; /* 팝업 */
+  --ow-radius-full: 999px;
+
+  /* 그림자 */
+  --ow-shadow-row: 0 0 0 1px var(--ow-line), 0 1px 3px rgba(24, 24, 27, 0.06);
+  --ow-shadow-pop: 0 6px 20px rgba(24, 24, 27, 0.12), 0 0 0 1px var(--ow-line);
+  --ow-shadow-drawer: -12px 0 32px rgba(24, 24, 27, 0.12);
+  --ow-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.24);
+  --ow-shadow-tip: 0 6px 16px rgba(0, 0, 0, 0.18);
+
+  /* 레이아웃 */
+  --ow-sidebar-w: 240px;
+  --ow-rail-w: 48px;
+  --ow-panel-w: 320px;
+  --ow-header-h: 56px;
+  --ow-brand-h: 60px;
+  --ow-footer-h: 44px;
+  --ow-ticker-h: 40px;
+  --ow-band-h: 52px;     /* 900 미만 상단 띠 */
+  --ow-band-sm-h: 48px;  /* 720 미만 상단 띠 */
+
+  /* 움직임 */
+  --ow-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ow-dur-1: 120ms;     /* 마우스 올림 */
+  --ow-dur-2: 200ms;     /* 사이드바 접기·펼치기, 드로어 */
+  --ow-dur-3: 300ms;     /* 사무실 전환 페이드, 규모 변경 페이드 */
+  --ow-dur-toast: 3000ms;
+  --ow-dur-shake: 1000ms;
+  --ow-blink: 1.1s;      /* 결재·응답 대기 점 깜빡임 */
+  --ow-ticker-speed: 40; /* px/s. JS 에서 읽는다 */
+
+  /* 쌓임 순서 */
+  --ow-z-overlay: 10;    /* 캔버스 위 DOM: 말풍선, 이름표 */
+  --ow-z-drawer: 20;
+  --ow-z-rail-pop: 30;
+  --ow-z-modal: 40;
+  --ow-z-toast: 50;
+}
+
+/* ---------- 바탕 ---------- */
+.ow-app { font: var(--ow-text-body); color: var(--ow-ink); background: var(--ow-bg); -webkit-font-smoothing: antialiased; display: flex; height: 100vh; overflow: hidden; }
+.ow-app button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left; }
+.ow-app :focus-visible { outline: 2px solid var(--ow-ink); outline-offset: 2px; border-radius: var(--ow-radius-sm); }
+.ow-mono { font-family: var(--ow-font-mono); }
+.ow-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ow-px { image-rendering: pixelated; display: block; }
+.ow-icon { width: 16px; height: 16px; flex: none; }
+.ow-icon--sm { width: 14px; height: 14px; }
+
+/* ---------- 아이콘 버튼 ---------- */
+.ow-iconbtn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--ow-radius-md); color: var(--ow-ink-2); flex: none; transition: background var(--ow-dur-1) var(--ow-ease), color var(--ow-dur-1) var(--ow-ease); }
+.ow-iconbtn:hover { background: var(--ow-fill); color: var(--ow-ink); }
+.ow-iconbtn[aria-pressed="true"] { background: var(--ow-fill); color: var(--ow-ink); }
+.ow-iconbtn--sm { width: 28px; height: 28px; }
+.ow-iconbtn--solid[aria-expanded="true"] { background: var(--ow-ink); color: #fff; }
+
+/* ---------- 칩 ---------- */
+.ow-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--ow-radius-sm); font-size: 12px; font-weight: 500; background: var(--ow-fill); color: var(--ow-ink-2b); white-space: nowrap; flex: none; }
+.ow-worktype { font-size: 11px; color: var(--ow-ink-2); background: var(--ow-fill-2); border-radius: var(--ow-radius-xs); padding: 0 5px; line-height: 18px; white-space: nowrap; }
+.ow-host { font: 600 10px/16px var(--ow-font-mono); color: var(--ow-host-ink); background: var(--ow-host-bg); border-radius: var(--ow-radius-xs); padding: 0 4px; }
+.ow-est-tag { font-size: 10.5px; font-weight: 500; color: var(--ow-ink-2); border: 1px dashed var(--ow-ink-4); border-radius: var(--ow-radius-xs); padding: 0 4px; line-height: 16px; }
+.ow-code { font-family: var(--ow-font-mono); font-size: 0.92em; background: var(--ow-fill); border-radius: var(--ow-radius-xs); padding: 0 4px; color: var(--ow-ink); }
+.ow-kbd { font: 11px var(--ow-font-mono); border: 1px solid #D4D4D8; border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; color: var(--ow-ink-2b); background: #fff; }
+
+/* ---------- 상태 점 ---------- */
+.ow-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ow-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ow-dot-color, var(--ow-off)); }
+.ow-dot[data-state="working"] { --ow-dot-color: var(--ow-ok); }
+.ow-dot[data-state="waiting"] { --ow-dot-color: var(--ow-ok); }
+.ow-dot[data-state="waiting"]::before { animation: ow-blink var(--ow-blink) steps(2, start) infinite; }
+.ow-dot[data-state="sleepy"], .ow-dot[data-state="idle-alive"] { --ow-dot-color: var(--ow-sleep); }
+.ow-dot[data-state="incident"] { --ow-dot-color: var(--ow-fail); }
+.ow-dot[data-state="off"] { --ow-dot-color: var(--ow-off); }
+.ow-dot[data-ring="run"] { box-shadow: inset 0 0 0 2px var(--ow-ring-run); }
+.ow-dot[data-ring="fail"] { box-shadow: inset 0 0 0 2px var(--ow-ring-fail); }
+.ow-dot[data-ring="lag"] { border: 1.5px dashed var(--ow-ring-lag); }
+@keyframes ow-blink { 50% { opacity: 0.2; } }
+
+/* ---------- 왼쪽 사이드바 ---------- */
+.ow-sidebar { width: var(--ow-sidebar-w); flex: none; display: flex; flex-direction: column; background: var(--ow-panel); border-right: 1px solid var(--ow-line); }
+.ow-brand { height: var(--ow-brand-h); display: flex; align-items: center; gap: 10px; padding: 0 16px; flex: none; }
+.ow-brand__logo { width: 32px; height: 26px; }
+.ow-brand__name { font: 700 15px/1.2 var(--ow-font-sans); letter-spacing: var(--ow-letter-tight); }
+.ow-brand__sub { font-size: 11px; line-height: 1.2; color: var(--ow-ink-3); }
+.ow-brand__warn { width: 8px; height: 8px; border-radius: 50%; background: var(--ow-ask); } /* 원문 진단 켜짐 */
+.ow-toast { margin: 0 12px 10px; height: 32px; border-radius: var(--ow-radius-md); background: var(--ow-ink); color: #fff; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 12px; flex: none; animation: ow-toast-in var(--ow-dur-2) var(--ow-ease); }
+@keyframes ow-toast-in { from { opacity: 0; transform: translateY(-6px); } }
+.ow-section-label { font: var(--ow-text-label); color: var(--ow-ink-3); padding: 6px 8px 4px; display: flex; }
+.ow-count { margin-left: auto; font: 11px var(--ow-font-mono); color: var(--ow-ink-3); }
+.ow-group { display: flex; align-items: center; gap: 7px; width: 100%; height: 30px; padding: 0 8px; border-radius: var(--ow-radius-md); font-size: 12px; color: var(--ow-ink-2); }
+.ow-group:hover { background: var(--ow-fill); }
+.ow-group b { color: var(--ow-ink); font-weight: 600; }
+.ow-square { width: 8px; height: 8px; border-radius: 2px; flex: none; background: var(--ow-square, var(--ow-ink-4)); }
+.ow-row { position: relative; display: flex; align-items: flex-start; gap: 2px; border-radius: var(--ow-radius-lg); padding: 0 4px 0 0; transition: background var(--ow-dur-1) var(--ow-ease); }
+.ow-row:hover { background: var(--ow-fill); }
+.ow-row[aria-current="true"], .ow-row.is-selected { background: #fff; box-shadow: var(--ow-shadow-row); }
+.ow-row.is-selected::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--ow-row-accent, var(--ow-ink)); }
+.ow-row.is-off { opacity: 0.6; }
+.ow-row.is-team .ow-row__main { padding-left: 30px; }
+.ow-row.is-team .ow-row__name { font-weight: 500; }
+.ow-row__main { flex: 1; min-width: 0; display: flex; gap: 9px; padding: 9px 0 9px 12px; }
+.ow-row__name { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.ow-row__meta { display: block; font-size: 12px; color: var(--ow-ink-3); margin-top: 2px; }
+.ow-row .ow-iconbtn { margin-top: 6px; }
+.ow-sidebar__footer { height: var(--ow-footer-h); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-top: 1px solid var(--ow-line); font-size: 12px; color: var(--ow-ink-3); }
+
+/* 아이콘 레일 (창 너비 720–899) */
+.ow-rail { width: var(--ow-rail-w); flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; background: var(--ow-panel); border-right: 1px solid var(--ow-line); }
+.ow-rail__item { position: relative; width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
+.ow-rail__item:hover { background: var(--ow-fill-2); }
+.ow-rail__item[aria-current="true"] { background: #fff; box-shadow: var(--ow-shadow-row); }
+.ow-rail__letter { width: 20px; height: 20px; border-radius: 5px; color: #fff; font: 700 11px/20px var(--ow-font-sans); text-align: center; background: var(--ow-square); }
+.ow-rail__state { position: absolute; right: 3px; bottom: 3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ow-panel); background: var(--ow-dot-color, var(--ow-off)); }
+
+/* ---------- 가운데 ---------- */
+.ow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.ow-header { height: var(--ow-header-h); flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--ow-line); background: #fff; }
+.ow-header__square { width: 10px; height: 10px; border-radius: 3px; background: var(--ow-square); flex: none; }
+.ow-header__title { margin: 0; font: var(--ow-text-heading); white-space: nowrap; }
+.ow-header__divider { width: 1px; height: 20px; background: var(--ow-line); flex: none; }
+.ow-stage { flex: 1; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: var(--ow-stage); background-image: radial-gradient(var(--ow-stage-dot) 1px, transparent 1.3px); background-size: 16px 16px; }
+.ow-stage.is-panning { cursor: grab; }
+.ow-stage.is-panning:active { cursor: grabbing; }
+.ow-canvas-wrap { position: relative; flex: none; }   /* 크기 = 1x 크기 × 배율 / DPR (CSS px) */
+.ow-canvas-wrap > canvas { display: block; image-rendering: pixelated; width: 100%; height: 100%; }
+.ow-overlay { position: absolute; inset: 0; pointer-events: none; z-index: var(--ow-z-overlay); }
+
+/* 캔버스 위 DOM 요소 */
+.ow-bubble { position: absolute; transform: translate(-12px, -100%); margin-top: -9px; background: var(--ow-bubble-bg); border: 2px solid var(--ow-bubble-ink); padding: 2px 6px 3px; font: var(--ow-text-bubble); color: var(--ow-bubble-ink); white-space: nowrap; box-shadow: var(--ow-bubble-shadow); max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.ow-bubble::after { content: ""; position: absolute; left: 8px; bottom: -8px; width: 8px; height: 6px; background: var(--ow-bubble-bg); clip-path: polygon(0 0, 100% 0, 25% 100%); }
+.ow-bubble.is-estimate { border-style: dashed; }
+.ow-bubble.is-incident { background: var(--ow-bad-bg); border-color: #7F1D1D; color: #7F1D1D; }
+.ow-bubble.is-ask { background: var(--ow-ask-bg); }
+.ow-nametag { position: absolute; transform: translate(-50%, calc(-100% - 6px)); background: var(--ow-ink); color: #fff; border-radius: var(--ow-radius-md); padding: 7px 10px; font-size: 12px; line-height: 17px; box-shadow: var(--ow-shadow-tip); white-space: nowrap; }
+.ow-nametag b { font-weight: 600; }
+.ow-nametag span { color: #D4D4D8; }
+.ow-roomlabel { position: absolute; transform: translate(-50%, -50%); background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(24, 24, 27, 0.08); border-radius: var(--ow-radius-full); padding: 1px 8px; font-size: 11px; font-weight: 500; color: var(--ow-ink-2b); white-space: nowrap; }
+.ow-parallel { position: absolute; background: var(--ow-ink); color: #fff; font: 600 10px/1 var(--ow-font-mono); padding: 3px 5px; border-radius: 5px; }
+.ow-zz { position: absolute; font: 600 11px var(--ow-font-mono); color: var(--ow-ink-2b); letter-spacing: 1px; }
+.ow-minimap { position: absolute; right: 10px; bottom: 10px; padding: 4px; border-radius: var(--ow-radius-lg); background: #fff; box-shadow: var(--ow-shadow-pop); }
+.ow-minimap__view { position: absolute; border: 2px solid var(--ow-ink); border-radius: 3px; background: rgba(24, 24, 27, 0.06); }
+.ow-panhint { position: absolute; left: 10px; bottom: 10px; height: 28px; padding: 0 10px; border-radius: var(--ow-radius-md); background: rgba(24, 24, 27, 0.82); color: #fff; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+
+/* ---------- 오른쪽 현황판 ---------- */
+.ow-panel { width: var(--ow-panel-w); flex: none; display: flex; flex-direction: column; background: var(--ow-panel); border-left: 1px solid var(--ow-line); }
+.ow-panel.is-drawer { position: absolute; top: var(--ow-header-h); right: 0; bottom: 0; z-index: var(--ow-z-drawer); box-shadow: var(--ow-shadow-drawer); animation: ow-drawer-in var(--ow-dur-2) var(--ow-ease); }
+@keyframes ow-drawer-in { from { transform: translateX(24px); opacity: 0; } }
+.ow-panel__head { height: var(--ow-header-h); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--ow-line); background: #fff; }
+.ow-panel__list { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ow-teamhead { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ow-ink-2); padding: 4px 2px 0; }
+.ow-teamhead b { color: var(--ow-ink); font-weight: 600; }
+
+.ow-card { background: #fff; border: 1px solid var(--ow-line); border-radius: var(--ow-radius-xl); padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; flex: none; text-align: left; width: 100%; transition: opacity var(--ow-dur-3) var(--ow-ease); }
+.ow-card:hover { border-color: #D4D4D8; }
+.ow-card.is-boss { border-color: var(--ow-boss-gold); box-shadow: inset 0 0 0 1px var(--ow-boss-gold); }
+.ow-card.is-idle { opacity: 0.55; }
+.ow-card.is-highlight { box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.12); }
+.ow-card.is-hit { border-color: var(--ow-bad-line); box-shadow: 0 0 0 3px var(--ow-bad-bg); animation: ow-shake var(--ow-dur-shake) linear; }
+.ow-card.is-new { animation: ow-slide-in 240ms var(--ow-ease); }
+@keyframes ow-shake { 0%, 100% { transform: none; } 10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); } 20%, 40%, 60%, 80% { transform: translateX(3px); } }
+@keyframes ow-slide-in { from { transform: translateY(-12px); opacity: 0; } }
+.ow-card__head { display: flex; gap: 10px; align-items: center; }
+.ow-avatar { width: 44px; height: 44px; border-radius: var(--ow-radius-lg); display: flex; align-items: flex-end; justify-content: center; flex: none; overflow: hidden; background: var(--ow-avatar-bg, var(--ow-fill)); }
+.ow-avatar canvas, .ow-avatar img { width: 40px; height: 44px; image-rendering: pixelated; }
+.ow-card__name { font: var(--ow-text-card-name); }
+.ow-card__rank { font-size: 12px; color: var(--ow-ink-2); font-weight: 500; margin-left: 4px; }
+.ow-card__sub { font-size: 12px; color: var(--ow-ink-3); }
+.ow-card__meta { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
+.ow-model { font: 11px/18px var(--ow-font-mono); color: var(--ow-ink-2); border: 1px solid var(--ow-line); border-radius: 5px; padding: 0 5px; white-space: nowrap; }
+.ow-ctx { display: inline-flex; align-items: center; gap: 2px; }
+.ow-ctx i { width: 5px; height: 4px; border-radius: 1px; background: var(--ow-line); display: block; }
+.ow-ctx i.is-on { background: var(--ow-ink-3); }
+.ow-ctx.is-high i.is-on { background: var(--ow-over-a); }
+.ow-ctx b { font: 500 10px var(--ow-font-mono); color: var(--ow-ink-3); margin-left: 4px; }
+.ow-ctx.is-high b { color: var(--ow-ask); }
+.ow-status { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--ow-radius-sm); font-size: 12px; font-weight: 500; background: var(--ow-fill); color: #27272A; align-self: flex-start; }
+.ow-status.is-estimate { background: #fff; border: 1px dashed var(--ow-ink-4); }
+.ow-status.is-bad { background: var(--ow-bad-bg); color: var(--ow-bad-ink); }
+.ow-status.is-ask { background: var(--ow-ask-bg); color: var(--ow-ask-ink); }
+.ow-status small { font-size: 10.5px; color: var(--ow-ink-3); font-weight: 500; }
+.ow-now { font: var(--ow-text-now); }
+.ow-progress { display: flex; flex-direction: column; gap: 4px; }
+.ow-progress__track { height: 4px; border-radius: 2px; background: var(--ow-line-soft); overflow: hidden; }
+.ow-progress__bar { display: block; height: 100%; border-radius: 2px; background: var(--ow-ink); }
+.ow-progress.is-over .ow-progress__bar { background: repeating-linear-gradient(-45deg, var(--ow-over-a) 0 4px, var(--ow-over-b) 4px 8px); }
+.ow-progress__caption { display: flex; justify-content: space-between; font: var(--ow-text-mono-sm); color: var(--ow-ink-3); }
+.ow-progress__long { font-family: var(--ow-font-sans); color: var(--ow-ask); font-weight: 500; }
+.ow-trail { display: flex; flex-direction: column; gap: 1px; font-size: 12px; color: var(--ow-ink-2); }
+.ow-trail__time { font: var(--ow-text-mono-sm); color: var(--ow-ink-3); margin-right: 6px; }
+.ow-stats { display: flex; justify-content: space-between; font-size: 12px; color: var(--ow-ink-2); padding-top: 8px; border-top: 1px solid var(--ow-line-soft); }
+.ow-stats span { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.ow-quote { font-size: 12px; color: var(--ow-ink-2b); background: var(--ow-quote); border-radius: var(--ow-radius-md); padding: 6px 10px; }
+.ow-card.is-compact { gap: 7px; padding: 10px 12px; }
+.ow-card.is-compact .ow-avatar { width: 36px; height: 36px; border-radius: var(--ow-radius-md); }
+.ow-card.is-compact .ow-avatar img, .ow-card.is-compact .ow-avatar canvas { width: 20px; height: 22px; }
+
+.ow-ticker { height: var(--ow-ticker-h); flex: none; display: flex; align-items: center; gap: 10px; padding-left: 12px; border-top: 1px solid var(--ow-line); background: #fff; overflow: hidden; }
+.ow-ticker__label { background: var(--ow-ink); color: #fff; height: 20px; font-size: 11px; }
+.ow-ticker__track { display: flex; gap: 24px; width: max-content; white-space: nowrap; font-size: 12px; color: var(--ow-ink-2b); }
+
+/* ---------- 컨트롤 ---------- */
+.ow-btn { height: 36px; padding: 0 14px; border-radius: 9px; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; border: 1px solid var(--ow-line) !important; background: #fff !important; white-space: nowrap; }
+.ow-btn:hover { background: var(--ow-fill) !important; }
+.ow-btn.is-primary { background: var(--ow-ink) !important; color: #fff; border-color: var(--ow-ink) !important; height: 40px; padding: 0 16px; border-radius: var(--ow-radius-lg); font-size: 14px; }
+.ow-btn.is-primary:hover { background: #27272A !important; }
+.ow-btn:disabled { opacity: 0.4; cursor: default; }
+.ow-seg { display: inline-flex; padding: 3px; background: var(--ow-fill); border-radius: 9px; gap: 2px; }
+.ow-seg button { height: 30px; padding: 0 14px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--ow-ink-2); text-align: center; }
+.ow-seg button[aria-pressed="true"] { background: #fff; color: var(--ow-ink); box-shadow: 0 1px 2px rgba(24, 24, 27, 0.12); }
+.ow-switch { width: 38px; height: 22px; border-radius: var(--ow-radius-full); background: #D4D4D8; position: relative; flex: none; transition: background var(--ow-dur-2) var(--ow-ease); }
+.ow-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: left var(--ow-dur-2) var(--ow-ease); }
+.ow-switch[aria-checked="true"] { background: var(--ow-ink); }
+.ow-switch[aria-checked="true"]::after { left: 19px; }
+.ow-input { height: 34px; border: 1px solid #D4D4D8; border-radius: var(--ow-radius-md); padding: 0 10px; background: #fff; font-size: 13px; }
+.ow-input::placeholder { color: var(--ow-ink-3); }
+.ow-select { height: 32px; border: 1px solid #D4D4D8; border-radius: var(--ow-radius-md); padding: 0 10px; background: #fff; font-size: 13px; font-weight: 500; }
+
+/* ---------- 팝업 ---------- */
+.ow-backdrop { position: fixed; inset: 0; background: var(--ow-backdrop); display: flex; align-items: center; justify-content: center; z-index: var(--ow-z-modal); animation: ow-fade var(--ow-dur-2) var(--ow-ease); }
+.ow-modal { background: #fff; border-radius: var(--ow-radius-2xl); box-shadow: var(--ow-shadow-modal); max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+.ow-modal__body { overflow-y: auto; }
+.ow-modal__foot { padding: 14px 24px; border-top: 1px solid var(--ow-line); display: flex; justify-content: flex-end; gap: 8px; background: var(--ow-panel); }
+@media (max-width: 719px) { .ow-modal { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; } }
+@keyframes ow-fade { from { opacity: 0; } }
+
+/* ---------- 첫 실행 · 로딩 ---------- */
+.ow-option { width: 320px; display: flex; flex-direction: column; gap: 14px; padding: 14px 14px 18px; border-radius: var(--ow-radius-2xl); background: #fff; border: 1.5px solid var(--ow-line) !important; box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04); }
+.ow-option:hover, .ow-option:focus-visible { border-color: var(--ow-ink) !important; box-shadow: 0 6px 20px rgba(24, 24, 27, 0.08); }
+.ow-option__preview { height: 150px; border-radius: var(--ow-radius-lg); background: #F4F4F2; display: flex; align-items: center; justify-content: center; }
+.ow-step { display: flex; align-items: flex-start; gap: 12px; padding: 7px 0; }
+.ow-step__mark { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; }
+.ow-step.is-done .ow-step__mark { background: var(--ow-ok-bg); color: var(--ow-ok-ink); }
+.ow-step.is-warn .ow-step__mark { background: var(--ow-warn-bg); color: var(--ow-ask); }
+.ow-step.is-warn { color: var(--ow-ask-ink); }
+.ow-step.is-todo { color: var(--ow-ink-3); }
+.ow-step.is-todo .ow-step__mark { border: 1.5px solid #D4D4D8; }
+.ow-step.is-now .ow-step__mark { border: 2px solid var(--ow-line); border-top-color: var(--ow-ink); animation: ow-spin 0.8s linear infinite; }
+.ow-step__cause { font: 12px var(--ow-font-mono); color: var(--ow-ink-3); }
+@keyframes ow-spin { to { transform: rotate(360deg); } }
+
+/* ---------- 움직임 줄이기 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ow-dot[data-state="waiting"]::before { animation: none; box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--ow-ok); }
+  .ow-card.is-hit, .ow-card.is-new, .ow-toast, .ow-panel.is-drawer, .ow-backdrop { animation: none; }
+  .ow-step.is-now .ow-step__mark { animation-duration: 2.4s; }
+}

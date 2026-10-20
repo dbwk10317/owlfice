@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>반응형 · 800 · 아이콘 레일</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.ow button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ib{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;color:#52525B;flex:none}
+.ib:hover{background:#F4F4F5;color:#18181B}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:500;background:#F4F4F5;color:#3F3F46;white-space:nowrap;flex:none}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px}
+.ri{position:relative;width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+.ri:hover{background:#F0F0F1}
+.ri.sel{background:#FFFFFF;box-shadow:0 0 0 1px #E4E4E7,0 1px 3px rgba(24,24,27,.08)}
+.ri .b{width:20px;height:20px;border-radius:5px;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.ri .s{position:absolute;right:3px;bottom:3px;width:10px;height:10px;border-radius:50%;border:2px solid #FAFAFA}
+.g{background:#16A34A}.y{background:#CA8A04}.r{background:#DC2626}
+.blink{animation:blink 1.1s steps(2,start) infinite}
+@keyframes blink{50%{opacity:.2}}
+.bub{position:absolute;background:#fff;border:2px solid #2A1E1A;padding:1px 6px 2px;font-size:11px;font-weight:600;line-height:15px;color:#2A1E1A;white-space:nowrap;box-shadow:2px 2px 0 rgba(42,30,26,.2)}
+.bub.est{border-style:dashed}
+.bub svg{position:absolute;left:8px;bottom:-8px;width:8px;height:7px;overflow:visible}
+</style>
+</helmet>
+<div class="ow" style="width: 800px; height: 600px; display: flex; background: #FFFFFF; overflow: hidden">
+
+<nav aria-label="사무실 목록" style="width: 48px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; background: #FAFAFA; border-right: 1px solid #E4E4E7">
+  <button aria-label="설정 열기" style="width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px"><img class="px" src="/_blob/149ffb362ce868ea5cdfd88d99218a25" alt="" style="width: 32px; height: 26px"></button>
+  <button class="ri" aria-label="A동 102호 · 결재 대기"><span class="b" style="background: #D97745">A</span><span class="s g blink"></span></button>
+  <button class="ri sel" aria-label="B동 203호 · 근무 중" aria-current="true"><span class="b" style="background: #D97745">B</span><span class="s g" style="box-shadow: 0 0 0 2px #EAB308"></span></button>
+  <button class="ri" aria-label="B동 204호 · 근무 중"><span class="b" style="background: #D97745">B</span><span class="s g"></span></button>
+  <button class="ri" aria-label="B동 101호 · 졸음"><span class="b" style="background: #D97745">B</span><span class="s y"></span></button>
+  <button class="ri" aria-label="C동 105호 · 장애"><span class="b" style="background: #27272A">C</span><span class="s r"></span></button>
+  <button class="ri" aria-label="D동 201호 · 허가 대기"><span class="b" style="background: #27272A">D</span><span class="s" style="background: #B45309"></span></button>
+  <button class="ib" aria-label="사무실 목록 펼치기" style="margin-top: auto"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+</nav>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+  <header style="height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 16px; border-bottom: 1px solid #E4E4E7; background: #FFFFFF">
+    <span style="width: 10px; height: 10px; border-radius: 3px; background: #D97745; flex: none"></span>
+    <h1 style="margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap">B동 203호</h1>
+    <span class="chip">오늘의 업무 · 버그 수정</span>
+    <span style="flex: 1"></span>
+    <button class="ib" aria-label="소리 켜기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg></button>
+    <button class="ib" aria-label="직원 현황판 열기" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+  </header>
+  <div class="stage" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden">
+    <div style="position: relative; width: 520px; height: 320px; flex: none">
+      <img class="px" src="/_blob/76d20744ec1ea645d4949de55c50fefe" alt="B동 203호 사무실 전경" style="width: 520px; height: 320px">
+      <div class="bub est" style="left: 425px; top: 150px">…그러니까 이게…<svg viewBox="0 0 8 7" aria-hidden="true" shape-rendering="crispEdges"><path d="M0 0h8L2 7z" fill="#FFFFFF"/><path d="M0 0L2 7 8 0" fill="none" stroke="#2A1E1A" stroke-width="2" stroke-dasharray="2 2"/></svg></div>
+    </div>
+  </div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":800,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,374 @@
+{
+ "frames": {
+  "building/base": {
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "w": 160,
+    "h": 150
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 160,
+    "h": 150
+   },
+   "sourceSize": {
+    "w": 160,
+    "h": 150
+   },
+   "anchor": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "anchorPx": [
+    0,
+    0
+   ]
+  },
+  "building/sign_on": {
+   "frame": {
+    "x": 427,
+    "y": 0,
+    "w": 49,
+    "h": 19
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 49,
+    "h": 19
+   },
+   "sourceSize": {
+    "w": 49,
+    "h": 19
+   },
+   "anchor": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "anchorPx": [
+    0,
+    0
+   ]
+  },
+  "building/window_eyes": {
+   "frame": {
+    "x": 494,
+    "y": 0,
+    "w": 10,
+    "h": 9
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 10,
+    "h": 9
+   },
+   "sourceSize": {
+    "w": 10,
+    "h": 9
+   },
+   "anchor": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "anchorPx": [
+    0,
+    0
+   ]
+  },
+  "building/window_lit": {
+   "frame": {
+    "x": 0,
+    "y": 151,
+    "w": 10,
+    "h": 9
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 10,
+    "h": 9
+   },
+   "sourceSize": {
+    "w": 10,
+    "h": 9
+   },
+   "anchor": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "anchorPx": [
+    0,
+    0
+   ]
+  },
+  "logo/default": {
+   "frame": {
+    "x": 477,
+    "y": 0,
+    "w": 16,
+    "h": 13
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 16,
+    "h": 13
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 13
+   },
+   "anchor": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "anchorPx": [
+    0,
+    0
+   ]
+  },
+  "preview/large": {
+   "frame": {
+    "x": 161,
+    "y": 0,
+    "w": 132,
+    "h": 72
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 132,
+    "h": 72
+   },
+   "sourceSize": {
+    "w": 132,
+    "h": 72
+   },
+   "anchor": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "anchorPx": [
+    0,
+    0
+   ]
+  },
+  "preview/small": {
+   "frame": {
+    "x": 294,
+    "y": 0,
+    "w": 132,
+    "h": 72
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 132,
+    "h": 72
+   },
+   "sourceSize": {
+    "w": 132,
+    "h": 72
+   },
+   "anchor": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "anchorPx": [
+    0,
+    0
+   ]
+  }
+ },
+ "animations": {},
+ "meta": {
+  "app": "design/tools/owlfice_art.py",
+  "version": "1",
+  "image": "ui.png",
+  "format": "RGBA8888",
+  "size": {
+   "w": 512,
+   "h": 256
+  },
+  "scale": "1"
+ },
+ "owlfice": {
+  "building": {
+   "size": [
+    160,
+    150
+   ],
+   "windows": [
+    [
+     37,
+     42
+    ],
+    [
+     56,
+     42
+    ],
+    [
+     75,
+     42
+    ],
+    [
+     94,
+     42
+    ],
+    [
+     113,
+     42
+    ],
+    [
+     37,
+     57
+    ],
+    [
+     56,
+     57
+    ],
+    [
+     75,
+     57
+    ],
+    [
+     94,
+     57
+    ],
+    [
+     113,
+     57
+    ],
+    [
+     37,
+     72
+    ],
+    [
+     56,
+     72
+    ],
+    [
+     75,
+     72
+    ],
+    [
+     94,
+     72
+    ],
+    [
+     113,
+     72
+    ],
+    [
+     37,
+     87
+    ],
+    [
+     56,
+     87
+    ],
+    [
+     75,
+     87
+    ],
+    [
+     94,
+     87
+    ],
+    [
+     113,
+     87
+    ],
+    [
+     37,
+     102
+    ],
+    [
+     56,
+     102
+    ],
+    [
+     75,
+     102
+    ],
+    [
+     94,
+     102
+    ],
+    [
+     113,
+     102
+    ],
+    [
+     37,
+     117
+    ],
+    [
+     56,
+     117
+    ],
+    [
+     94,
+     117
+    ],
+    [
+     113,
+     117
+    ]
+   ],
+   "lightOrder": [
+    0,
+    19,
+    27,
+    4,
+    13,
+    22,
+    7,
+    16,
+    25,
+    1,
+    10,
+    28,
+    14,
+    23,
+    8,
+    17,
+    26,
+    2,
+    11,
+    20,
+    5,
+    24,
+    9,
+    18,
+    3,
+    12,
+    21,
+    6,
+    15
+   ],
+   "signOffset": [
+    56,
+    10
+   ],
+   "rule": "로딩 단계 n/7 마다 lightOrder 앞에서부터 창 불을 켠다 (window_lit). 켜지지 않은 창 중 앞의 몇 개에 올빼미 눈 (window_eyes). 7단계가 끝나면 sign_on"
+  }
+ }
+}

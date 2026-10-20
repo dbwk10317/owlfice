@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>스프라이트 시트</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px}
+section.k{display:flex;flex-direction:column;gap:18px}
+section.k>h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-0.01em}
+section.k>p{margin:-10px 0 0;font-size:13px;color:#52525B;max-width:900px}
+.cap{font-size:12px;color:#71717A}
+.o20{width:96px;height:112px;image-rendering:pixelated;background-image:url(/_blob/15e4f28da8412388ae9ef7fff648df7f);background-size:384px 560px;background-repeat:no-repeat}
+.pose{width:96px;height:112px;image-rendering:pixelated;background-image:url(/_blob/0a3102aa22bc6aecd58ee4f7057b9962);background-size:1152px 336px;background-repeat:no-repeat}
+.layer{width:144px;height:168px;image-rendering:pixelated;background-image:url(/_blob/f69815693f16f67e7fec9bd21cc97bee);background-size:576px 168px;background-repeat:no-repeat}
+.cell{display:flex;flex-direction:column;align-items:center;gap:6px}
+.lab{font-size:12px;font-weight:600;text-align:center}
+.sub{font-size:11.5px;color:#71717A;text-align:center}
+.sp{display:flex;flex-direction:column;gap:2px}
+.sp b{font-size:15px;font-weight:600}
+.file{display:flex;align-items:baseline;gap:12px;padding:8px 0;border-top:1px solid #F0F0F1}
+.file .mono{font-size:12.5px;width:300px;flex:none}
+</style>
+</helmet>
+<div class="ow" style="width: 1760px; background: #FFFFFF; padding: 64px; display: flex; flex-direction: column; gap: 64px">
+
+  <header style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 28px; border-bottom: 1px solid #E4E4E7">
+    <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.02em">스프라이트 시트</h1>
+    <p style="margin: 0; font-size: 14px; color: #52525B; max-width: 980px">올빼미와 사무실 소품을 부품 단위로 나눈 PixiJS 시트입니다. 캔버스의 사무실 그림은 모두 이 시트와 평면도 데이터만으로 다시 그린 참조 렌더라서, 앱 렌더러가 같은 상태를 넣으면 픽셀 단위로 같은 그림이 나와야 합니다.</p>
+  </header>
+
+  <section class="k">
+    <h2>올빼미 20종</h2>
+    <p>5종 × 4직급. 담당 소품 6가지와 제조사 유니폼 3색이 겹쳐 수백 가지 조합이 나옵니다. 직원의 종은 agent_id 해시로 정하고, 흰올빼미는 사장님 전용입니다.</p>
+    <div style="display: grid; grid-template-columns: 200px repeat(4, 150px); gap: 12px 24px; align-items: center">
+      <span></span><span class="lab">부장 · 넥타이, 안경</span><span class="lab">과장 · 조끼</span><span class="lab">대리 · 소매 걷음</span><span class="lab">사원 · 사원증</span>
+
+      <div class="sp"><b>수리부엉이</b><span class="mono cap">eagle · Claude 유니폼</span></div>
+      <div class="cell"><div class="o20" style="background-position: 0px 0px" role="img" aria-label="수리부엉이 부장"></div><span class="sub">담당 백엔드</span></div>
+      <div class="cell"><div class="o20" style="background-position: -96px 0px" role="img" aria-label="수리부엉이 과장"></div><span class="sub">담당 데브옵스</span></div>
+      <div class="cell"><div class="o20" style="background-position: -192px 0px" role="img" aria-label="수리부엉이 대리"></div><span class="sub">담당 프론트</span></div>
+      <div class="cell"><div class="o20" style="background-position: -288px 0px" role="img" aria-label="수리부엉이 사원"></div><span class="sub">담당 수습</span></div>
+
+      <div class="sp"><b>칡부엉이</b><span class="mono cap">longeared · Codex 유니폼</span></div>
+      <div class="cell"><div class="o20" style="background-position: 0px -112px" role="img" aria-label="칡부엉이 부장"></div><span class="sub">담당 QA</span></div>
+      <div class="cell"><div class="o20" style="background-position: -96px -112px" role="img" aria-label="칡부엉이 과장"></div><span class="sub">담당 백엔드</span></div>
+      <div class="cell"><div class="o20" style="background-position: -192px -112px" role="img" aria-label="칡부엉이 대리"></div><span class="sub">담당 테크라이터</span></div>
+      <div class="cell"><div class="o20" style="background-position: -288px -112px" role="img" aria-label="칡부엉이 사원"></div><span class="sub">담당 프론트</span></div>
+
+      <div class="sp"><b>금눈쇠올빼미</b><span class="mono cap">little · Gemini 유니폼</span></div>
+      <div class="cell"><div class="o20" style="background-position: 0px -224px" role="img" aria-label="금눈쇠올빼미 부장"></div><span class="sub">담당 프론트</span></div>
+      <div class="cell"><div class="o20" style="background-position: -96px -224px" role="img" aria-label="금눈쇠올빼미 과장"></div><span class="sub">담당 QA</span></div>
+      <div class="cell"><div class="o20" style="background-position: -192px -224px" role="img" aria-label="금눈쇠올빼미 대리"></div><span class="sub">담당 수습</span></div>
+      <div class="cell"><div class="o20" style="background-position: -288px -224px" role="img" aria-label="금눈쇠올빼미 사원"></div><span class="sub">담당 테크라이터</span></div>
+
+      <div class="sp"><b>가면올빼미</b><span class="mono cap">barn · Claude 유니폼</span></div>
+      <div class="cell"><div class="o20" style="background-position: 0px -336px" role="img" aria-label="가면올빼미 부장"></div><span class="sub">담당 데브옵스</span></div>
+      <div class="cell"><div class="o20" style="background-position: -96px -336px" role="img" aria-label="가면올빼미 과장"></div><span class="sub">담당 테크라이터</span></div>
+      <div class="cell"><div class="o20" style="background-position: -192px -336px" role="img" aria-label="가면올빼미 대리"></div><span class="sub">담당 QA</span></div>
+      <div class="cell"><div class="o20" style="background-position: -288px -336px" role="img" aria-label="가면올빼미 사원"></div><span class="sub">담당 백엔드</span></div>
+
+      <div class="sp"><b>소쩍새</b><span class="mono cap">scops · Codex 유니폼</span></div>
+      <div class="cell"><div class="o20" style="background-position: 0px -448px" role="img" aria-label="소쩍새 부장"></div><span class="sub">담당 테크라이터</span></div>
+      <div class="cell"><div class="o20" style="background-position: -96px -448px" role="img" aria-label="소쩍새 과장"></div><span class="sub">담당 프론트</span></div>
+      <div class="cell"><div class="o20" style="background-position: -192px -448px" role="img" aria-label="소쩍새 대리"></div><span class="sub">담당 백엔드</span></div>
+      <div class="cell"><div class="o20" style="background-position: -288px -448px" role="img" aria-label="소쩍새 사원"></div><span class="sub">담당 QA</span></div>
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>레이어 구조</h2>
+    <p>세 장을 같은 발 위치(16×24 프레임의 8, 23)에 겹칩니다. 손에 드는 물건은 네 번째로, 자세마다 정해진 손 기준점에 붙입니다.</p>
+    <div style="display: flex; gap: 32px; align-items: flex-end">
+      <div class="cell"><div class="layer" style="background-position: 0px 0px" role="img" aria-label="몸통 레이어"></div><span class="lab mono">body/barn</span><span class="sub">종: 깃털, 얼굴, 눈</span></div>
+      <span style="font-size: 24px; color: #A1A1AA; padding-bottom: 56px">+</span>
+      <div class="cell"><div class="layer" style="background-position: -144px 0px" role="img" aria-label="옷 레이어"></div><span class="lab mono">outfit/gwajang-claude</span><span class="sub">직급 × 제조사</span></div>
+      <span style="font-size: 24px; color: #A1A1AA; padding-bottom: 56px">+</span>
+      <div class="cell"><div class="layer" style="background-position: -288px 0px" role="img" aria-label="담당 소품 레이어"></div><span class="lab mono">role/qa</span><span class="sub">담당 소품. 수습은 없음</span></div>
+      <span style="font-size: 24px; color: #A1A1AA; padding-bottom: 56px">=</span>
+      <div class="cell"><div class="layer" style="background-position: -432px 0px" role="img" aria-label="세 레이어를 합친 가면올빼미 과장"></div><span class="lab">가면올빼미 과장, QA</span><span class="sub">화면에 보이는 모습</span></div>
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>자세와 프레임</h2>
+    <p>정면(f) 23프레임, 뒷모습(b) 6프레임. 화면 왼쪽으로 움직일 때는 좌우 반전합니다. 들기(carry)는 결재판을 든 예시입니다.</p>
+    <div style="display: grid; grid-template-columns: repeat(12, 104px); gap: 16px 8px">
+      <div class="cell"><div class="pose" style="background-position: 0px 0px" role="img" aria-label="idle_f_0"></div><span class="mono sub">idle_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -96px 0px" role="img" aria-label="idle_f_1"></div><span class="mono sub">idle_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -192px 0px" role="img" aria-label="walk_f_0"></div><span class="mono sub">walk_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -288px 0px" role="img" aria-label="walk_f_1"></div><span class="mono sub">walk_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -384px 0px" role="img" aria-label="walk_f_2"></div><span class="mono sub">walk_f_2</span></div>
+      <div class="cell"><div class="pose" style="background-position: -480px 0px" role="img" aria-label="walk_f_3"></div><span class="mono sub">walk_f_3</span></div>
+      <div class="cell"><div class="pose" style="background-position: -576px 0px" role="img" aria-label="sit_f_0"></div><span class="mono sub">sit_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -672px 0px" role="img" aria-label="type_f_0"></div><span class="mono sub">type_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -768px 0px" role="img" aria-label="type_f_1"></div><span class="mono sub">type_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -864px 0px" role="img" aria-label="read_f_0"></div><span class="mono sub">read_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -960px 0px" role="img" aria-label="read_f_1"></div><span class="mono sub">read_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -1056px 0px" role="img" aria-label="sleep_f_0"></div><span class="mono sub">sleep_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: 0px -112px" role="img" aria-label="sleep_f_1"></div><span class="mono sub">sleep_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -96px -112px" role="img" aria-label="jump_f_0"></div><span class="mono sub">jump_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -192px -112px" role="img" aria-label="scratch_f_0"></div><span class="mono sub">scratch_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -288px -112px" role="img" aria-label="scratch_f_1"></div><span class="mono sub">scratch_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -384px -112px" role="img" aria-label="panic_f_0"></div><span class="mono sub">panic_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -480px -112px" role="img" aria-label="panic_f_1"></div><span class="mono sub">panic_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -576px -112px" role="img" aria-label="cheer_f_0"></div><span class="mono sub">cheer_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -672px -112px" role="img" aria-label="clap_f_0"></div><span class="mono sub">clap_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -768px -112px" role="img" aria-label="clap_f_1"></div><span class="mono sub">clap_f_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -864px -112px" role="img" aria-label="crouch_f_0"></div><span class="mono sub">crouch_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -960px -112px" role="img" aria-label="carry_f_0"></div><span class="mono sub">carry_f_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -1056px -112px" role="img" aria-label="idle_b_0"></div><span class="mono sub">idle_b_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: 0px -224px" role="img" aria-label="walk_b_0"></div><span class="mono sub">walk_b_0</span></div>
+      <div class="cell"><div class="pose" style="background-position: -96px -224px" role="img" aria-label="walk_b_1"></div><span class="mono sub">walk_b_1</span></div>
+      <div class="cell"><div class="pose" style="background-position: -192px -224px" role="img" aria-label="walk_b_2"></div><span class="mono sub">walk_b_2</span></div>
+      <div class="cell"><div class="pose" style="background-position: -288px -224px" role="img" aria-label="walk_b_3"></div><span class="mono sub">walk_b_3</span></div>
+      <div class="cell"><div class="pose" style="background-position: -384px -224px" role="img" aria-label="carry_b_0"></div><span class="mono sub">carry_b_0</span></div>
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>사무실 소품</h2>
+    <p>소품 125종, 상태를 포함해 233프레임입니다. 벽, 바닥 타일, 칸막이는 아래 목록에서 뺐습니다. 이름은 office.json 의 프레임 키 &lt;소품&gt;/&lt;상태&gt; 이고, 아래는 3배로 키운 그림입니다.</p>
+    <div class="stage" style="border-radius: 14px; padding: 16px; overflow: hidden">
+      <img class="px" src="/_blob/5bb43aff4cabfd76bb686177c6ec406b" alt="사무실 소품 스프라이트 전체 목록. 소품마다 상태별 그림과 프레임 이름이 적혀 있다." style="width: 1600px; height: 2371px">
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>파일</h2>
+    <div style="display: flex; flex-direction: column; max-width: 1100px">
+      <div class="file"><span class="mono">design/HANDOFF.md</span><span>구현 규칙과 수치, 상태별 화면 대응, 검수 체크리스트</span></div>
+      <div class="file"><span class="mono">design/handoff/tokens.css</span><span>디자인 토큰과 ow- 컴포넌트 클래스</span></div>
+      <div class="file"><span class="mono">design/handoff/phrases.ko.json</span><span>화면 문구와 문장 틀</span></div>
+      <div class="file"><span class="mono">design/handoff/icons/*.svg</span><span>선 아이콘 41개</span></div>
+      <div class="file"><span class="mono">design/sprites/owls.png · owls.json</span><span>올빼미 693프레임, 자세별 애니메이션, 손·머리 기준점</span></div>
+      <div class="file"><span class="mono">design/sprites/office.png · office.json</span><span>벽·바닥·가구·소품·효과와 소품 메타데이터</span></div>
+      <div class="file"><span class="mono">design/sprites/ui.png · ui.json</span><span>로고, 로딩 건물 부품, 규모 미리보기</span></div>
+      <div class="file"><span class="mono">design/sprites/floorplan.json</span><span>방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색</span></div>
+      <div class="file"><span class="mono">design/tools/owlfice_art.py</span><span>위 그림과 데이터를 모두 다시 만드는 생성기와 검사</span></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":4900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

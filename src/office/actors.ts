@@ -2,6 +2,7 @@
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
 import type { Bubble, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
+import { fill, fillElapsed } from "../text.ts";
 import { gridToScreen, themeOf, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
 import { placeSprite } from "./sprites.ts";
 
@@ -273,30 +274,6 @@ export function owlFrameKeys(
   return keys.map((k) => (k && textures[k] ? k : null));
 }
 
-// ---------- 문장 ----------
-
-const fill = (tpl: string, vars: Record<string, string | number>) =>
-  tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
-
-function durationText(sec: number): string {
-  const u = phrases.units;
-  if (!(sec >= 60)) return fill(u.sec, { n: Math.max(0, Math.floor(sec) || 0) });
-  const min = Math.floor(sec / 60);
-  if (min >= 60) return fill(u.hourMin, { h: Math.floor(min / 60), m: min % 60 });
-  const rest = Math.floor(sec) % 60;
-  return rest ? `${fill(u.min, { n: min })} ${fill(u.sec, { n: rest })}` : fill(u.min, { n: min });
-}
-
-/** 문장의 `{elapsed}` 를 since 부터 지금까지로 채운다. 백틱 코드 조각 안은 그대로 둔다 (PLAN 4.8). */
-export function fillElapsed(sentence: string, sinceIso: string, now: number): string {
-  if (!sentence.includes("{elapsed}")) return sentence;
-  const text = durationText((now - Date.parse(sinceIso)) / 1000);
-  return sentence
-    .split("`")
-    .map((part, i) => (i % 2 === 0 ? part.split("{elapsed}").join(text) : part))
-    .join("`");
-}
-
 // ---------- 말풍선 문구 (PLAN 3.6, 4.8) ----------
 
 const warned = new Set<string>();
@@ -507,7 +484,7 @@ export class ActorLayer {
     if (!a) return;
     const act = a.emp.activity;
     // {elapsed} 는 백엔드가 둔 자리일 때만 채운다. 에이전트가 쓴 글 속 같은 글자는 그대로 둔다
-    const text = act.elapsed ? fillElapsed(act.sentence, act.since, now) : act.sentence;
+    const text = fillElapsed(act.sentence, (now - Date.parse(act.since)) / 1000, act.elapsed);
     if (this.nametagText.textContent !== text) this.nametagText.textContent = text;
   }
 

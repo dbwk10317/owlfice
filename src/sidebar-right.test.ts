@@ -142,6 +142,7 @@ test("{elapsed} 는 1초마다 채우고 코드 조각 안은 그대로, 평균�
             sentence: "`cargo {elapsed}` 돌리는 중 · {elapsed}째 (평소 40초)",
             since: new Date(NOW.getTime() - sec * 1000).toISOString(),
             expectedSecs: 40,
+            elapsed: true,
           }),
         }),
       ]),

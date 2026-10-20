@@ -18,7 +18,6 @@ import type {
 import {
   ActorLayer,
   bubbleText,
-  fillElapsed,
   fnv1a64,
   layoutActors,
   owlFrameKeys,
@@ -471,22 +470,6 @@ test("아틀라스가 없으면 대체 몸체", () => {
   const { layer } = newLayer({ owls: null });
   layer.sync(office([team("t", [boss()])]), "large", NOW);
   expect(layer.rootOf("boss")!.children[0]).toBeInstanceOf(Graphics);
-});
-
-// ---------- 문장 ----------
-
-test("{elapsed}: 초 → 분 초 → 시간 분, 백틱 안은 그대로", () => {
-  const t0 = Date.parse(SINCE);
-  expect(fillElapsed("· {elapsed}째", SINCE, t0 + 12_000)).toBe("· 12초째");
-  expect(fillElapsed("({elapsed})", SINCE, t0 + 160_000)).toBe("(2분 40초)");
-  expect(fillElapsed("자리 비움 {elapsed}", SINCE, t0 + 120_000)).toBe("자리 비움 2분");
-  expect(fillElapsed("{elapsed}", SINCE, t0 + 3_900_000)).toBe("1시간 5분");
-  // 시계가 어긋나 음수여도 0초
-  expect(fillElapsed("{elapsed}", SINCE, t0 - 5_000)).toBe("0초");
-  expect(fillElapsed("`echo {elapsed}` · {elapsed}", SINCE, t0 + 1_000)).toBe(
-    "`echo {elapsed}` · 1초",
-  );
-  expect(fillElapsed("그대로", SINCE, t0)).toBe("그대로");
 });
 
 // ---------- 말풍선 ----------

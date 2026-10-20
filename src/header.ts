@@ -5,6 +5,7 @@ import nightSvg from "../design/handoff/icons/night.svg?raw";
 import panelSvg from "../design/handoff/icons/panel.svg?raw";
 import roomLabelsSvg from "../design/handoff/icons/room-labels.svg?raw";
 import { BUILDING_PRODUCT, DOT_STATE, FLOOR_PRODUCT, ringOf, WORK_TYPES } from "./sidebar-left.ts";
+import { durationText, fill, hhmm } from "./text.ts";
 import { windowViewport, type Viewport } from "./sidebar-right.ts";
 import type { OfficeDto, OfficeListDto, TeamSummaryDto } from "./types/ipc.ts";
 
@@ -17,22 +18,10 @@ export function layoutOf(width: number): Layout {
   return width >= 1100 ? "wide" : width >= 900 ? "drawer" : width >= 720 ? "rail" : "select";
 }
 
-const fill = (tpl: string, vars: Record<string, string | number>) =>
-  tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
-
 // "근무 중 · {elapsed}째" 의 elapsed. 1분 미만도 1분으로 센다
 function elapsedText(startedMs: number, now: number): string {
-  const min = Math.max(1, Math.floor((now - startedMs) / 60_000));
-  const u = phrases.units;
-  return min < 60
-    ? fill(u.min, { n: min })
-    : fill(u.hourMin, { h: Math.floor(min / 60), m: min % 60 });
+  return durationText(Math.max(60, (now - startedMs) / 1000), false);
 }
-
-const clock = (ms: number) => {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
 
 export interface HeaderStore {
   state: { list: OfficeListDto | null; selectedId: string | null; office: OfficeDto | null };
@@ -163,9 +152,9 @@ export function mountHeader(
     if (sel && office) {
       const started = Math.min(...live.map((x) => Date.parse(x.started)));
       statusMsg = off
-        ? fill(H.allOff, { time: clock(t) })
+        ? fill(H.allOff, { time: hhmm(t) })
         : night
-          ? fill(H.night, { time: clock(t) })
+          ? fill(H.night, { time: hhmm(t) })
           : Number.isFinite(started)
             ? fill(H.working, { elapsed: elapsedText(started, t) })
             : "";

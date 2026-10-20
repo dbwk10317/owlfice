@@ -1,5 +1,6 @@
 // 사내 방송 티커 (PLAN 3.5, HANDOFF 4.5). 직원 행적(recent)에서 새로 생긴 줄을 사건으로 모아 시간순으로 흘린다.
 import phrases from "../design/handoff/phrases.ko.json";
+import { fill, hhmm } from "./text.ts";
 import type { OfficeDto, Rank, TeamDto } from "./types/ipc.ts";
 
 /** 오래된 사건은 버린다. 흐르는 줄이 끝없이 길어지지 않게 */
@@ -21,19 +22,10 @@ const RANK_LABEL: Record<Rank, string> = {
 };
 export const rankLabel = (r: Rank): string => RANK_LABEL[r];
 
-export function fill(tpl: string, vars: Record<string, string | number>): string {
-  return tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
-}
-
 /** "{boss} 부장 팀". 부장은 team.employees[0] */
 export function teamName(team: TeamDto): string {
   const boss = team.employees[0];
   return boss ? fill(phrases.sidebar.teamName, { boss: boss.name }) : team.title;
-}
-
-export function hhmm(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /**

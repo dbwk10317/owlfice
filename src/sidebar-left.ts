@@ -2,6 +2,7 @@
 import "../design/handoff/tokens.css";
 import "./styles/sidebar.css";
 import phrases from "../design/handoff/phrases.ko.json";
+import { durationText, fill } from "./text.ts";
 import approvalSvg from "../design/handoff/icons/approval.svg?raw";
 import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
 import evictedSvg from "../design/handoff/icons/evicted.svg?raw";
@@ -76,21 +77,11 @@ const color = (product: string) => `var(--ow-${product})`;
 
 // ---------- 문구 ----------
 
-const fill = (tpl: string, vars: Record<string, string | number>) =>
-  tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
-
 function elapsedText(startedIso: string, now: number): string {
   const sec = Math.floor((now - Date.parse(startedIso)) / 1000);
   const u = phrases.units;
   if (!(sec >= 60)) return u.now; // 시계가 어긋나 음수이거나 날짜를 못 읽어도 "방금"
-  const min = Math.floor(sec / 60);
-  const value =
-    min < 60
-      ? fill(u.min, { n: min })
-      : min % 60 === 0
-        ? `${min / 60}시간`
-        : fill(u.hourMin, { h: Math.floor(min / 60), m: min % 60 });
-  return fill(u.elapsed, { value });
+  return fill(u.elapsed, { value: durationText(sec, false) });
 }
 
 // ---------- DOM 도구 ----------

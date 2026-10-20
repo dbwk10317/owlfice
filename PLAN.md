@@ -1240,7 +1240,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | 순서 | 토큰 | 직급 |
 |---|---|---|
 | 1 | `haiku`, `mini`, `nano`, `lite`, 모델 없음 | 사원 |
-| 2 | `opus`, `fable`, `mythos`, `o3`, (`gemini` 와 `pro` 둘 다 포함), (연속 토큰 `gpt`,`5` 이고 effort `high`) | 과장 |
+| 2 | `opus`, `fable`, `mythos`, `o3`, (`gemini` 와 `pro` 둘 다 포함), (연속 토큰 `gpt`,`5` 이고 effort `high` 이상. `xhigh` 포함) | 과장 |
 | 3 | `sonnet`, (연속 토큰 `gpt`,`5`), (연속 토큰 `gpt`,`4`,`1`), (`gemini` 와 `flash` 둘 다 포함) | 대리 |
 | 4 | 그 외 | 대리 |
 

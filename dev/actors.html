@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>직원 액터 확인</title>
+    <style>
+      body {
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        margin: 16px;
+        background: #f1f1ee;
+      }
+      .ow-stage {
+        width: 1100px;
+        height: 680px;
+        margin-bottom: 24px;
+      }
+    </style>
+    <link rel="stylesheet" href="../design/handoff/tokens.css" />
+    <script type="module" src="./actors.ts"></script>
+  </head>
+  <body>
+    <h1>직원 액터 확인 (T20)</h1>
+    <p>고정 스냅샷 두 개. 직원에 마우스를 올리면 이름표가 뜬다.</p>
+    <h2>대기업 · Claude</h2>
+    <div class="ow-stage" id="large"></div>
+    <h2>중소기업 · Codex</h2>
+    <div class="ow-stage" id="small"></div>
+  </body>
+</html>

@@ -34,6 +34,9 @@ const ESCALATION_WAIT: Duration = Duration::seconds(35);
 const REPEAT_EDIT_WINDOW: Duration = Duration::seconds(60);
 const REPEAT_EDITS: usize = 3;
 const PIZZA_AFTER: Duration = Duration::hours(2);
+/// 이 시간 안에 이만큼 읽으면 연속 읽기라 서고로 간다 (4.7.1)
+const READ_WINDOW: Duration = Duration::seconds(10);
+const READ_BURST: usize = 3;
 
 impl Activity {
     fn new(
@@ -50,7 +53,14 @@ impl Activity {
             pose: Pose::Sit,
             confidence,
             extra: 0,
+            elapsed: false,
         }
+    }
+
+    /// 문장에 우리 틀의 `{elapsed}` 자리가 있다
+    fn timed(mut self) -> Self {
+        self.elapsed = true;
+        self
     }
 }
 
@@ -104,6 +114,10 @@ impl Employee {
             logged: false,
             greeted: false,
             unknown_tools: HashSet::new(),
+            script_said: false,
+            reads: VecDeque::new(),
+            ducked: None,
+            spawn_logged: false,
             too_long: None,
         }
     }
@@ -114,17 +128,17 @@ impl Employee {
         self.logged = false;
     }
 
-    /// 끝난 일 (완료, 사고, 반려, 보고 등). 바로 행적 맨 앞에 넣어 티커가 그때 흘린다.
-    /// 이미 넣은 같은 일을 다시 쓰는 것이면 한 번만
+    /// 끝난 일 (완료, 사고, 반려, 보고 등). 바로 행적 맨 앞에 넣어 티커가 그때 흘린다
     fn log_activity(&mut self, a: Activity) {
-        let same =
-            self.logged && a.sentence == self.activity.sentence && a.room == self.activity.room;
-        if !same {
-            self.recent.push_front(a.clone());
-            self.recent.truncate(RECENT);
-        }
+        self.log_past(a.clone());
         self.activity = a;
         self.logged = true;
+    }
+
+    /// 지금 활동은 그대로 두고 행적에만 넣는다
+    fn log_past(&mut self, a: Activity) {
+        self.recent.push_front(a);
+        self.recent.truncate(RECENT);
     }
 
     fn is_boss(&self) -> bool {
@@ -132,15 +146,20 @@ impl Employee {
     }
 
     /// 일 말풍선. 사장님 손이 필요한 직원은 작업 중·농담 풀을 쓰지 않는다 (3.6)
-    fn say(&mut self, at: DateTime<Utc>, say: BubbleSay) {
-        if !needs_boss(self, at) {
-            self.bubble = Some(Bubble { at, say });
-        }
+    /// 냈으면 true. "처음 한 번" 알림은 낸 뒤에만 소비한다
+    fn say(&mut self, at: DateTime<Utc>, say: BubbleSay) -> bool {
+        !needs_boss(self, at) && self.say_waiting(at, say)
     }
 
-    /// 대기용 말풍선 (허가 대기 질문, 계획 결재, 러버덕). 사장님 손이 필요해도 낸다
-    fn say_waiting(&mut self, at: DateTime<Utc>, say: BubbleSay) {
+    /// 대기용 말풍선 (허가 대기 질문, 계획 결재, 러버덕, 부장 응답 원문). 사장님 손이 필요해도 낸다.
+    /// 지금 말풍선보다 오래됐거나 같은 시각이면 덮지 않는다. 틱과 이벤트의 순서가 달라도
+    /// (실시간 대 재구성) 같은 말풍선이 남게
+    fn say_waiting(&mut self, at: DateTime<Utc>, say: BubbleSay) -> bool {
+        if self.bubble.as_ref().is_some_and(|b| b.at >= at) {
+            return false;
+        }
         self.bubble = Some(Bubble { at, say });
+        true
     }
 }
 
@@ -325,8 +344,9 @@ impl Team {
                     });
                 }
                 let e = &mut self.employees[i];
+                // 응답 원문은 풀이 아니다. 반려 직후 4초에도 낸다 (3.6)
                 if e.is_boss() {
-                    e.say(
+                    e.say_waiting(
                         ts,
                         BubbleSay::Say {
                             text: sentence::cut(text, sentence::LINE),
@@ -368,11 +388,18 @@ impl Team {
                 {
                     e.edits.entry(p.clone()).or_default().push(ts);
                 }
+                let big_read = *tool == ToolKind::FileRead && {
+                    e.reads.push_back(ts);
+                    e.reads.retain(|&t| ts - t <= READ_WINDOW);
+                    summary.range.is_none()
+                        || e.reads.iter().filter(|&&t| t <= ts).count() >= READ_BURST
+                };
                 e.pending.push(PendingCall {
                     call_id: call_id.clone(),
                     tool: tool.clone(),
                     summary: summary.clone(),
                     started: ts,
+                    big_read,
                 });
                 if *tool == ToolKind::Spawn {
                     cues.push(Cue::Clap {
@@ -399,51 +426,55 @@ impl Team {
                 depth,
             } => {
                 let parent = ev.agent_id.clone();
-                let (rank, desc) = match self.employees.iter_mut().find(|e| &e.id == child_id) {
-                    Some(e) => {
-                        // 앞선 ts 의 중복 Spawn(meta.json 선발견, Codex 중복 started)은 재출근이 아니다
-                        if rehires(e, ev.ts) {
-                            e.retired_at = None;
-                            cues.push(Cue::Rehire {
+                let (rank, desc, fresh) =
+                    match self.employees.iter_mut().find(|e| &e.id == child_id) {
+                        Some(e) => {
+                            // 앞선 ts 의 중복 Spawn(meta.json 선발견, Codex 중복 started)은 재출근이 아니다
+                            if rehires(e, ev.ts) {
+                                e.retired_at = None;
+                                e.spawn_logged = false;
+                                cues.push(Cue::Rehire {
+                                    agent: e.id.clone(),
+                                });
+                            }
+                            // 임시 직원이었으면 이제야 직급을 안다
+                            if e.confidence == Confidence::Inferred || model.is_some() {
+                                e.rank = rank_of(model.as_deref(), effort.as_deref());
+                            }
+                            e.confidence = Confidence::Confirmed;
+                            e.model = model.clone().or(e.model.take());
+                            e.description = description.clone().or(e.description.take());
+                            e.parent = Some(parent);
+                            let fresh = !std::mem::replace(&mut e.spawn_logged, true);
+                            (e.rank, e.description.clone(), fresh)
+                        }
+                        None => {
+                            let mut e = Employee::new(
+                                child_id,
+                                rank_of(model.as_deref(), effort.as_deref()),
+                                Some(parent),
+                                *depth,
+                                ts,
+                                Confidence::Confirmed,
+                            );
+                            e.model = model.clone();
+                            e.description = description.clone();
+                            e.spawn_logged = true;
+                            cues.push(Cue::Enter {
                                 agent: e.id.clone(),
                             });
+                            let r = (e.rank, e.description.clone(), true);
+                            self.employees.push(e);
+                            r
                         }
-                        // 임시 직원이었으면 이제야 직급을 안다
-                        if e.confidence == Confidence::Inferred || model.is_some() {
-                            e.rank = rank_of(model.as_deref(), effort.as_deref());
-                        }
-                        e.confidence = Confidence::Confirmed;
-                        e.model = model.clone().or(e.model.take());
-                        e.description = description.clone().or(e.description.take());
-                        e.parent = Some(parent);
-                        (e.rank, e.description.clone())
-                    }
-                    None => {
-                        let mut e = Employee::new(
-                            child_id,
-                            rank_of(model.as_deref(), effort.as_deref()),
-                            Some(parent),
-                            *depth,
-                            ts,
-                            Confidence::Confirmed,
-                        );
-                        e.model = model.clone();
-                        e.description = description.clone();
-                        cues.push(Cue::Enter {
-                            agent: e.id.clone(),
-                        });
-                        let r = (e.rank, e.description.clone());
-                        self.employees.push(e);
-                        r
-                    }
-                };
+                    };
                 // 이름은 world 가 붙여서 여기선 직급과 지시 내용으로 쓴다.
                 // 허가 대기나 다른 진행 중 호출이 있으면 그쪽이 앞선다 (2.5)
                 let e = &mut self.employees[i];
                 let busy = e.asking.is_some()
                     || e.pending.last().is_some_and(|c| c.tool != ToolKind::Spawn);
-                if !busy {
-                    let room = room_for(&ToolKind::Spawn, e.is_boss());
+                if !busy && fresh {
+                    let room = room_for(&ToolKind::Spawn, e.is_boss(), false);
                     e.log_activity(Activity::new(
                         sentence::spawn(rank, desc.as_deref().unwrap_or(prompt)),
                         room,
@@ -470,17 +501,12 @@ impl Team {
                 };
                 self.employees[i].asking = Some(q);
                 self.refresh(i, ts);
-                let say = if *plan {
-                    Some(BubbleSay::PlanApproval)
-                } else {
-                    Some(question.trim())
-                        .filter(|q| !q.is_empty())
-                        .map(|q| BubbleSay::Say {
-                            text: sentence::cut(q, sentence::QUOTE),
-                        })
-                };
-                if let Some(say) = say {
-                    self.employees[i].say_waiting(ts, say);
+                let question = question.trim();
+                if *plan {
+                    self.employees[i].say_waiting(ts, BubbleSay::PlanApproval);
+                } else if !question.is_empty() {
+                    let text = sentence::cut(question, sentence::QUOTE);
+                    self.employees[i].say_waiting(ts, BubbleSay::Say { text });
                 }
             }
             EventKind::ContextCompaction {
@@ -576,7 +602,7 @@ impl Team {
             {
                 let call = self.employees[i].pending.remove(k);
                 let at = call.started + CALL_GIVE_UP;
-                self.give_up(i, call, at);
+                self.give_up(i, call, at, true);
             }
         }
         // 직원 전이(응답 대기 만료, 서브 종료 추정)는 팀이 졸기 전에 일어났다
@@ -649,13 +675,17 @@ impl Team {
         }
         cues.push(Cue::Siren { on: false });
         let boss = &mut self.employees[0];
+        let over = Activity::new(
+            sentence::INCIDENT_OVER,
+            Room::TeamLead,
+            at,
+            Confidence::Confirmed,
+        );
+        // 부장이 직접 테스트로 푼 것이든 시간이 지나 풀린 것이든 행적에는 남는다. 자리만 옮긴다
         if boss.activity.room == Room::Incident {
-            boss.log_activity(Activity::new(
-                sentence::INCIDENT_OVER,
-                Room::TeamLead,
-                at,
-                Confidence::Confirmed,
-            ));
+            boss.log_activity(over);
+        } else {
+            boss.log_past(over);
         }
     }
 
@@ -738,7 +768,7 @@ impl Team {
                 e.background.push(call.clone());
                 cues.push(Cue::Paper { agent, on: true });
                 let n = e.background.len();
-                e.set_activity(Activity::new(
+                e.log_activity(Activity::new(
                     sentence::background(&call, n),
                     home,
                     ts,
@@ -855,18 +885,13 @@ impl Team {
                 } else if let Some(inc) = &mut self.incident {
                     inc.last_error = ts;
                 }
-                let calm = self.incident.is_none();
-                let e = &mut self.employees[i];
-                e.log_activity(Activity::new(
+                // 사고 1건은 말풍선이 없다 (HANDOFF 5절). 장애는 상황실 문구가 맡는다
+                self.employees[i].log_activity(Activity::new(
                     sentence::accident(&call, preview),
                     home,
                     ts,
                     Confidence::Confirmed,
                 ));
-                // 장애 중 사고는 상황실 문구가 맡는다
-                if calm {
-                    e.say(ts, BubbleSay::Joke);
-                }
             }
             ToolOutcome::Rejected => {
                 e.rejected_at = Some(ts);
@@ -919,11 +944,12 @@ impl Team {
             let extra = e.pending.len() - 1;
             let a = Activity {
                 expected_secs: expected,
-                pose: pose_for(&call.tool),
-                extra: u32::try_from(extra).unwrap_or(u32::MAX),
+                pose: pose_for(call),
+                extra: extra as u32,
+                elapsed: sentence::call_timed(call, e),
                 ..Activity::new(
                     sentence::call(call, extra, e, expected),
-                    room_for(&call.tool, boss),
+                    room_for(&call.tool, boss, call.big_read),
                     call.started,
                     Confidence::Confirmed,
                 )
@@ -935,41 +961,50 @@ impl Team {
     }
 
     /// 호출 하나에 붙는 말풍선 (3.4, 3.6, HANDOFF 5절 "말풍선" 열). 서브의 첫 일이면 직급 말투가
-    /// 앞서되, 한 번뿐인 "처음 본 것" 알림은 그대로 낸다
+    /// 앞서되, 한 번뿐인 "처음 본 것" 알림은 그대로 낸다. "처음 한 번" 표시는 말풍선이 실제로
+    /// 나간 뒤에만 한다. 막힌 알림을 소비하면 영영 못 낸다
     fn call_bubble(&mut self, i: usize, tool: &ToolKind, s: &ToolSummary, ts: DateTime<Utc>) {
+        /// 낸 뒤에 표시할 처음 한 번 알림
+        enum Once {
+            Vendor(String),
+            Skill(String),
+            Tool(String),
+            Script,
+        }
         let e = &mut self.employees[i];
         let quote = |t: &str| BubbleSay::Say {
             text: sentence::cut(t, sentence::QUOTE),
         };
-        let mut first_sight = false;
+        let mut once = None;
         let say = match tool {
             ToolKind::FileSearch => s.pattern.as_deref().or(s.command.as_deref()).map(quote),
             ToolKind::Shell => s.command.as_deref().map(quote),
             ToolKind::WebSearch => s.pattern.as_deref().map(quote),
-            ToolKind::Mcp { server, tool } => {
-                first_sight = self.seen_vendors.insert(server.clone());
-                Some(if first_sight {
-                    BubbleSay::NewVendor {
-                        server: server.clone(),
-                    }
-                } else {
-                    BubbleSay::Mcp {
-                        server: server.clone(),
-                        tool: tool.clone(),
-                    }
-                })
-            }
-            ToolKind::Skill { name } => {
-                first_sight = self.seen_skills.insert(name.clone());
-                first_sight.then(|| BubbleSay::NewSkill {
+            ToolKind::Mcp { server, tool } => Some(if self.seen_vendors.contains(server) {
+                BubbleSay::Mcp {
+                    server: server.clone(),
+                    tool: tool.clone(),
+                }
+            } else {
+                once = Some(Once::Vendor(server.clone()));
+                BubbleSay::NewVendor {
+                    server: server.clone(),
+                }
+            }),
+            ToolKind::Skill { name } if !self.seen_skills.contains(name) => {
+                once = Some(Once::Skill(name.clone()));
+                Some(BubbleSay::NewSkill {
                     skill: name.clone(),
                 })
             }
-            ToolKind::Other(name) => {
-                first_sight = e.unknown_tools.insert(name.clone());
-                first_sight.then_some(BubbleSay::UnknownTool)
+            ToolKind::Other(name) if !e.unknown_tools.contains(name) => {
+                once = Some(Once::Tool(name.clone()));
+                Some(BubbleSay::UnknownTool)
             }
-            ToolKind::Script => Some(BubbleSay::ScriptFallback),
+            ToolKind::Script if !e.script_said => {
+                once = Some(Once::Script);
+                Some(BubbleSay::ScriptFallback)
+            }
             ToolKind::FileEdit => s.path.as_ref().and_then(|p| {
                 let recent = e.edits.get(p)?.iter();
                 let n = recent
@@ -979,14 +1014,32 @@ impl Team {
             }),
             _ => None,
         };
-        let greet = !e.is_boss() && !std::mem::replace(&mut e.greeted, true);
-        let say = if greet && !first_sight {
+        // 질문은 직급 인사를 받지 않는다. 결재판을 든 채 인사가 남는다
+        let greet = !e.is_boss() && !e.greeted && *tool != ToolKind::Ask;
+        let say = if greet && once.is_none() {
             Some(BubbleSay::Rank)
         } else {
             say
         };
-        if let Some(say) = say {
-            e.say(ts, say);
+        let Some(say) = say else {
+            return;
+        };
+        if !e.say(ts, say) {
+            return;
+        }
+        e.greeted |= greet;
+        match once {
+            Some(Once::Vendor(v)) => {
+                self.seen_vendors.insert(v);
+            }
+            Some(Once::Skill(k)) => {
+                self.seen_skills.insert(k);
+            }
+            Some(Once::Tool(t)) => {
+                e.unknown_tools.insert(t);
+            }
+            Some(Once::Script) => e.script_said = true,
+            None => {}
         }
     }
 
@@ -1004,7 +1057,7 @@ impl Team {
     }
 
     /// 결과가 영영 오지 않는 호출을 Unknown 으로 정리한다 (4.7.2). 실적·평균은 건드리지 않는다
-    fn give_up(&mut self, i: usize, call: PendingCall, at: DateTime<Utc>) {
+    fn give_up(&mut self, i: usize, call: PendingCall, at: DateTime<Utc>, bubble: bool) {
         if call.tool == ToolKind::Ask {
             self.employees[i].asking = None;
         }
@@ -1017,7 +1070,10 @@ impl Team {
             at,
             Confidence::Inferred,
         ));
-        e.say(at, BubbleSay::UnknownResult);
+        // 퇴근·서브 retire 의 뒷정리는 말풍선이 없다 (HANDOFF 5절). 30분 포기만 낸다
+        if bubble {
+            e.say(at, BubbleSay::UnknownResult);
+        }
         self.refresh(i, at);
     }
 
@@ -1033,7 +1089,7 @@ impl Team {
             calls.push(c);
         }
         for call in calls {
-            self.give_up(i, call, at);
+            self.give_up(i, call, at, false);
         }
     }
 
@@ -1088,17 +1144,24 @@ impl Team {
                 e.too_long = Some(id.clone());
                 e.say(*at, BubbleSay::TooLong);
             }
-            // 장기 실행은 함께 도는 호출 중 가장 오래된 것으로 말한다. 경과도 그 호출부터 센다
+            // 장기 실행은 함께 도는 호출 중 가장 오래된 것으로 말한다. 경과도 평균도 그 호출 것이다
             let long = e
                 .pending
                 .iter()
                 .find(|c| now - c.started > LONG_RUN)
                 .cloned();
             if let Some(c) = &long
-                && let Some(s) = sentence::long_run(c)
+                && let Some(s) = sentence::long_run(c, e.activity.extra as usize)
             {
                 e.activity.sentence = s;
                 e.activity.since = c.started;
+                e.activity.expected_secs = c
+                    .summary
+                    .command_key
+                    .as_ref()
+                    .and_then(|k| avg.get(k))
+                    .copied();
+                e.activity.elapsed = true;
             }
             if slow.is_some() || long.is_some() {
                 e.activity.pose = Pose::Squat;
@@ -1112,12 +1175,18 @@ impl Team {
             .waiting_user_since
             .filter(|&t| working && now - t >= WAIT_USER_AFTER)
         {
-            e.set_activity(Activity::new(
-                sentence::WAITING_USER,
-                Room::TeamLead,
-                t,
-                Confidence::Inferred,
-            ));
+            e.set_activity(
+                Activity {
+                    pose: Pose::Pace,
+                    ..Activity::new(
+                        sentence::WAITING_USER,
+                        Room::TeamLead,
+                        t,
+                        Confidence::Inferred,
+                    )
+                }
+                .timed(),
+            );
             return;
         }
         // 장애 중 부장은 상황실에 있다 (3.4, S26). 사장님 손이 필요한 상태가 먼저다
@@ -1144,12 +1213,18 @@ impl Team {
                     (sentence::THINK, Pose::Think)
                 };
                 let room = home_room(e);
-                let to_duck = pose == Pose::Duck && e.activity.pose != Pose::Duck;
-                e.set_activity(Activity {
-                    pose,
-                    ..Activity::new(sentence, room, t, Confidence::Inferred)
-                });
+                // 러버덕 연출은 부장의 것이다. 한 침묵(quiet_since)에 한 번만. 자세가 아니라
+                // 침묵으로 가려야 활동은 그대로 두고 침묵만 다시 세우는 이벤트 뒤에도 실시간과 재구성이 같다
+                let to_duck = e.is_boss() && pose == Pose::Duck && e.ducked != Some(t);
+                e.set_activity(
+                    Activity {
+                        pose,
+                        ..Activity::new(sentence, room, t, Confidence::Inferred)
+                    }
+                    .timed(),
+                );
                 if to_duck {
+                    e.ducked = Some(t);
                     e.say_waiting(t + DUCK_AFTER, BubbleSay::ThinkingDuck);
                 }
                 if quiet <= THINK_GIVE_UP {
@@ -1269,10 +1344,12 @@ fn home_room(e: &Employee) -> Room {
     }
 }
 
-fn room_for(tool: &ToolKind, boss: bool) -> Room {
+fn room_for(tool: &ToolKind, boss: bool, big_read: bool) -> Room {
     match tool {
-        ToolKind::FileRead | ToolKind::FileSearch | ToolKind::GitQuery => Room::Archive,
-        ToolKind::FileWrite
+        ToolKind::FileSearch | ToolKind::GitQuery => Room::Archive,
+        ToolKind::FileRead if big_read => Room::Archive,
+        ToolKind::FileRead
+        | ToolKind::FileWrite
         | ToolKind::FileEdit
         | ToolKind::Spawn
         | ToolKind::Todo
@@ -1296,8 +1373,9 @@ fn room_for(tool: &ToolKind, boss: bool) -> Room {
     }
 }
 
-fn pose_for(tool: &ToolKind) -> Pose {
-    match tool {
+fn pose_for(call: &PendingCall) -> Pose {
+    match call.tool {
+        ToolKind::FileRead if !call.big_read => Pose::Read,
         ToolKind::FileWrite | ToolKind::FileEdit => Pose::Type,
         _ => Pose::Sit,
     }
@@ -1434,11 +1512,13 @@ mod sentence {
     pub const REPOT: &str = "분갈이 중 (서류 정리)";
     pub const REPOT_SAY: &str = "분갈이";
 
+    /// 내용 속 백틱은 닮은 글자(ˋ)로 바꿔 코드 조각의 짝이 뒤집히지 않게 한다
     fn code(s: &str) -> String {
-        format!("`{s}`")
+        format!("`{}`", s.replace('`', "\u{02CB}"))
     }
 
     /// 첫 줄을 `n` 자로. 뒤에 더 있으면 "…"
+    // ponytail: char 단위라 ZWJ 이모지·NFD 자모가 경계에서 갈릴 수 있다, 신고가 오면 grapheme 단위로
     pub fn cut(text: &str, n: usize) -> String {
         let trimmed = text.trim();
         let line = trimmed.lines().next().unwrap_or_default();
@@ -1605,10 +1685,29 @@ mod sentence {
             ToolKind::Todo => "칸반 보드 정리 중".to_string(),
             ToolKind::Other(name) => format!("처음 보는 업무: {}", code(name)),
         };
+        more(base, extra)
+    }
+
+    /// 함께 도는 호출이 있으면 " (외 n건)"
+    fn more(base: String, extra: usize) -> String {
         if extra > 0 {
             format!("{base} (외 {extra}건)")
         } else {
             base
+        }
+    }
+
+    /// `call` 이 `{elapsed}` 자리를 둔 호출인가. `call` 의 틀과 짝이다
+    pub fn call_timed(call: &PendingCall, e: &Employee) -> bool {
+        match call.tool {
+            ToolKind::Script
+            | ToolKind::Shell
+            | ToolKind::GitQuery
+            | ToolKind::GitPush
+            | ToolKind::PrCreate
+            | ToolKind::Release => true,
+            ToolKind::Test => e.red.is_none(),
+            _ => false,
         }
     }
 
@@ -1707,11 +1806,11 @@ mod sentence {
         format!("결과 확인 불가: {}", subject(call))
     }
     /// 셸 2분 초과. 명령 없는 호출(편집 허가 대기 등)은 문장을 그대로 둔다
-    pub fn long_run(call: &PendingCall) -> Option<String> {
+    pub fn long_run(call: &PendingCall, extra: usize) -> Option<String> {
         let c = call.summary.command.as_deref()?;
-        Some(format!(
-            "서버실에서 땀 흘리는 중 ({} · {{elapsed}})",
-            code(c)
+        Some(more(
+            format!("서버실에서 땀 흘리는 중 ({} · {{elapsed}})", code(c)),
+            extra,
         ))
     }
     pub fn asking(q: &str) -> String {

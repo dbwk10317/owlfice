@@ -1,6 +1,14 @@
 // 사무실 캔버스: PixiJS 초기화, 정수 배율, 그리기 순서, 패닝·미니맵, 방 이름표 (HANDOFF 6.1, 6.2, 4.4, 2.2).
-import { Application, Container, TextureStyle, UPDATE_PRIORITY } from "pixi.js";
+import {
+  Application,
+  Container,
+  TextureStyle,
+  UPDATE_PRIORITY,
+  type Sprite,
+  type Texture,
+} from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
+import { ActorLayer, seatProps } from "./actors.ts";
 import type { OfficeDto, OfficeListDto } from "../types/ipc.ts";
 import {
   CANVAS_H,
@@ -15,7 +23,13 @@ import {
   type LightName,
   type Theme,
 } from "./floorplan.ts";
-import { loadOfficeAssets, placeSprite, tintedTexture, type OfficeAssets } from "./sprites.ts";
+import {
+  loadOfficeAssets,
+  loadOwls,
+  placeSprite,
+  tintedTexture,
+  type OfficeAssets,
+} from "./sprites.ts";
 
 const MINI_W = 120;
 const MINI_H = 74;
@@ -83,7 +97,14 @@ export interface Scene {
   root: Container;
   /** 조명 색을 곱하는 컨테이너. 창문과 장애 빛은 빠진다 (HANDOFF 6.2 7번) */
   lit: Container[];
+  /** depth 로 정렬하는 월드. 직원 액터가 여기 들어간다 */
+  world: Container;
+  /** 평면도가 숨겨 둔 채 짓고 좌석 사용에 따라 켜는 소품 (임시·간이 책상, 쪽지) */
+  toggled: Map<string, Sprite>;
 }
+
+// 평면도에서 visible:false 이고 직원이 앉으면 보이는 소품 (HANDOFF 6.5)
+const SEAT_PROP = /^(temp_desk_|spare_desk_)\d+$|^note_temp$/;
 
 /** render_scene 의 그리기 순서 그대로. 소품은 평면도의 기본 상태 (상태 반영은 T23). */
 export function buildScene(
@@ -109,32 +130,42 @@ export function buildScene(
 
   // 장애 빛은 평면도 기본이 숨김이고 장애 중에만 보인다 (참조 make_canvas_images 와 같다)
   const placements = fp.layouts[kind].placements.filter(
-    (pl) => pl.visible !== false || (incident && pl.id === "glow_incident"),
+    (pl) =>
+      pl.visible !== false || (incident && pl.id === "glow_incident") || SEAT_PROP.test(pl.id),
   );
+  const toggled = new Map<string, Sprite>();
   // 깔개·벽 소품은 바닥 위에 배열 순서로, 월드는 depth 로 (render_scene 3·4단계)
   placements.forEach((pl, seq) => {
     const key = `${spriteName(pl, theme)}/${pl.state}`;
-    // ponytail: 중소기업 좌석의 팀 색은 직원을 앉히는 T20 에서 넣는다, 지금은 빈자리 색(테마 cubicle)만
+    // ponytail: 중소기업 파티션은 빈자리 색(테마 cubicle)만, 앉은 팀의 색은 T29 에서 넣는다
     const tint = pl.id.startsWith("dev_part_") ? fp.themes[theme].cubicle : undefined;
-    const s = placeSprite(
-      sheet,
-      key,
-      pl.x,
-      pl.y,
-      tint ? tintedTexture(sheet, key, tint) : undefined,
-    );
-    if (pl.layer === "decal" || pl.layer === "wall") base.addChild(s);
-    else if (pl.layer === "window") win.addChild(s);
-    else if (pl.layer === "overlay") over.addChild(s);
-    else {
-      s.zIndex = zIndexOf(pl.depth, seq);
-      world.addChild(s);
+    const place = (k: string, texture?: Texture) => {
+      const s = placeSprite(sheet, k, pl.x, pl.y, texture);
+      if (pl.layer === "decal" || pl.layer === "wall") base.addChild(s);
+      else if (pl.layer === "window") win.addChild(s);
+      else if (pl.layer === "overlay") over.addChild(s);
+      else {
+        s.zIndex = zIndexOf(pl.depth, seq);
+        world.addChild(s);
+      }
+      return s;
+    };
+    const s = place(key, tint ? tintedTexture(sheet, key, tint) : undefined);
+    if (SEAT_PROP.test(pl.id)) {
+      s.visible = false;
+      toggled.set(pl.id, s);
+    }
+    // 만석 쪽지는 임시 책상 쪽지 자리에 놓고 그것을 대신한다 (평면도에 따로 없다)
+    if (pl.id === "note_temp") {
+      const full = place("note_full/default");
+      full.visible = false;
+      toggled.set("note_full", full);
     }
   });
 
   const root = new Container();
   root.addChild(base, win, world, over);
-  return { root, lit: [base, world] };
+  return { root, lit: [base, world], world, toggled };
 }
 
 /** store 에서 렌더러가 읽는 부분만. */
@@ -160,12 +191,20 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   const app = await createOfficeApp();
   const assets = await loadOfficeAssets();
   const fp = assets.floorplan;
+  const owls = await loadOwls().catch((e) => {
+    console.error("owls.json 을 못 읽어 대체 몸체로 그린다", e);
+    return null;
+  });
 
   const wrap = document.createElement("div");
   wrap.className = "ow-canvas-wrap";
   const overlay = document.createElement("div");
   overlay.className = "ow-overlay";
-  wrap.append(app.canvas, overlay);
+  // 직원 이름표·Zzz 는 방 이름표 위, 장면을 새로 지어도 지워지지 않게 따로 둔다
+  const actorOverlay = document.createElement("div");
+  actorOverlay.className = "ow-overlay";
+  wrap.append(app.canvas, overlay, actorOverlay);
+  const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay);
   const minimap = document.createElement("div");
   minimap.className = "ow-minimap";
   minimap.hidden = true;
@@ -236,6 +275,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
     if (key !== sceneKey) {
       // 새 장면을 다 지은 뒤에 옛것을 지운다. 짓다 던져도 화면은 옛 장면이 남는다
       const next = buildScene(assets, kind, theme, incident);
+      actors.attach(next.world);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);
@@ -243,6 +283,9 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
       buildLabels(kind);
     }
     officeId = office?.officeId ?? "";
+    const placed = actors.sync(office, kind, Date.now());
+    const props = seatProps(fp, kind, placed);
+    for (const [id, s] of scene?.toggled ?? []) s.visible = props.has(id);
     // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
     const off = !office || office.teams.every((t) => t.phase === "Off");
     setLight(off ? "off" : office.shared.night ? "night" : null, switched);
@@ -286,6 +329,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
       el.style.height = `${fit.cssH}px`;
     }
     placeLabels();
+    actors.placeOverlay((x, y) => toCss(x, y, fit.scale, dpr));
     const lim = panLimits(fit.backingW, fit.backingH, avail.w, avail.h, dpr);
     pan.maxX = lim.maxX;
     pan.maxY = lim.maxY;
@@ -367,6 +411,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
         }
       }
       if (lightT < 1) stepLight(t.deltaMS);
+      actors.update(Date.now());
     },
     undefined,
     UPDATE_PRIORITY.HIGH,

@@ -11,3 +11,6 @@
 - `claude/reject/13f4d27c-e1d7-fa23-0b0e-05ad838d1b68.jsonl` → 사용자 반려(Bash). 실제 세션 발췌
 - `claude/internal-tool-failure/e52d1abf-7516-aeb5-e401-2f94e956374d.jsonl` → 내부 도구(`mcp__ccd_pr__bind_pr`)의 `is_error` 결과. 실제 세션 발췌
 - `codex/codex-app/rollout-2026-03-02T09-00-00-a3c002ef-5a35-668d-d178-1e8241413423.jsonl` → Codex Desktop, `custom_tool_call` exec, 한 턴. 실제 세션 발췌
+- `claude/bg-fail-reject-compact/dcc68dd7-8ab5-ede5-fb28-c09de28115be.jsonl` → 실패한 백그라운드 작업의 `<task-notification>`(`status: failed`, exit code 2), 사용자 반려(Bash), 수동 `/compact`(`trigger: manual`, 슬래시 명령 흔적 셋), 압축 뒤 턴. 실제 세션 발췌
+- `codex/ask-reject-compact/rollout-2026-03-02T09-00-00-a9e19951-4ff7-996b-7dfa-2cfe04d16f10.jsonl` → `request_user_input_async` 질문과 `<send_user_message_question_reply>` 답, exec 거부(`Rejected(...)`), `/compact`(`compacted`, `ContextCompaction`). 실제 세션 발췌
+- `codex/aborted/rollout-2026-03-02T09-00-00-fbeee44f-138a-8f82-87fd-61f01dfc0cca.jsonl` → 중단된 턴(`turn_aborted`, `reason: interrupted`). 실제 세션 발췌

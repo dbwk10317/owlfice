@@ -7,7 +7,7 @@ pub mod stats;
 pub mod work;
 pub mod world;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -58,7 +58,8 @@ pub enum Pose {
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Activity {
-    /// 경과 시간("· 12초째")은 넣지 않는다. 프론트가 `since` 로 붙여야 매초 상태를 다시 보내지 않는다
+    /// 시간이 흐르며 바뀌는 문장은 경과 대신 `{elapsed}` 자리를 둔다. 프론트가 `since` 로 채워야
+    /// 매초 상태를 다시 보내지 않는다 (4.8)
     pub sentence: String,
     pub room: Room,
     pub since: DateTime<Utc>,
@@ -66,6 +67,49 @@ pub struct Activity {
     pub expected_secs: Option<f32>,
     pub pose: Pose,
     pub confidence: Confidence,
+    /// 함께 도는 호출 수. `+n` 배지와 문장의 "(외 n건)"
+    pub extra: u32,
+}
+
+/// 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (4.8)
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Bubble {
+    /// 그 사건의 시각. 프론트는 4초 안일 때만 그린다
+    pub at: DateTime<Utc>,
+    pub say: BubbleSay,
+}
+
+/// 말풍선 종류와 재료. 이름이 `phrases.ko.json` 의 `bubble` 풀과 짝이다
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(tag = "kind")]
+pub enum BubbleSay {
+    /// 재료 글을 그대로 (검색어, 명령, 허가 대기 질문, 부장 응답)
+    Say {
+        text: String,
+    },
+    Mcp {
+        server: String,
+        tool: String,
+    },
+    NewVendor {
+        server: String,
+    },
+    NewSkill {
+        skill: String,
+    },
+    Rank,
+    Joke,
+    Incident,
+    AllGreen,
+    TooLong,
+    ThinkingDuck,
+    PlanApproval,
+    Scratch,
+    Compaction,
+    UnknownTool,
+    ScriptFallback,
+    UnknownResult,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -134,6 +178,15 @@ pub struct Employee {
     pub red: Option<(String, u32)>,
     /// 리뷰실에 들어온 뒤 응답에서 센 `파일:줄` 지적 수 (빨간펜)
     pub review_pens: u32,
+    pub bubble: Option<Bubble>,
+    /// 지금 활동이 이미 행적에 들어갔나 (끝난 일)
+    logged: bool,
+    /// 서브가 첫 일을 받아 직급 말풍선을 냈나
+    greeted: bool,
+    /// 말풍선을 낸 모르는 도구 이름. 같은 도구는 처음 한 번만 (3.6)
+    unknown_tools: HashSet<String>,
+    /// "왜 이렇게 오래 걸려" 를 이미 낸 호출
+    too_long: Option<String>,
 }
 
 /// 선언 순서가 활발한 순서다. 사무실 단계는 팀 중 최솟값
@@ -255,6 +308,9 @@ pub struct Team {
     /// 마지막으로 퇴근에서 깨어난 때와 그때의 피자 수 (4.7.2 피자)
     awake_since: DateTime<Utc>,
     pizza_at_wake: u32,
+    /// 처음 본 거래처·스킬 말풍선용 (3.6)
+    seen_vendors: HashSet<String>,
+    seen_skills: HashSet<String>,
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use super::*;
 use crate::discover::windows_host;
 use crate::office::classify::rebuild;
 use crate::office::names::NameBook;
-use crate::office::{PendingCall, Pose, Room};
+use crate::office::{BubbleSay, PendingCall, Pose, Room};
 use crate::parse::{
     Compound, Event, EventKind, RawRef, TestResult, TodoStatus, ToolKind, ToolOutcome, ToolSummary,
 };
@@ -793,6 +793,8 @@ fn bindings() -> String {
         EmployeeDto,
         SharedPropsDto,
         Activity,
+        Bubble,
+        BubbleSay,
         Counters,
         TeamProps,
         Incident,

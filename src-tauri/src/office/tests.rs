@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Duration, FixedOffset, Utc};
 
 use super::classify::{SubMeta, merge, rebuild, replay};
-use super::{Cue, Employee, Light, Pose, Rank, Room, Team, TeamPhase};
+use super::{Bubble, BubbleSay, Cue, Employee, Light, Pose, Rank, Room, Team, TeamPhase};
 use crate::discover::Product;
 use crate::parse::claude::ClaudeParser;
 use crate::parse::codex::CodexParser;
@@ -724,7 +724,7 @@ fn every_pending_call_counts_for_give_up_and_squat() {
     is(
         s.boss(),
         Room::Build,
-        "서버실에서 땀 흘리는 중 (`ls -R`)",
+        "서버실에서 땀 흘리는 중 (`ls -R` · {elapsed})",
         Confirmed,
     );
 
@@ -746,7 +746,7 @@ fn long_run_is_told_by_the_oldest_call() {
         .tick(130);
     assert_eq!(
         s.boss().activity.sentence,
-        "서버실에서 땀 흘리는 중 (`cargo run`)"
+        "서버실에서 땀 흘리는 중 (`cargo run` · {elapsed})"
     );
     assert_eq!(s.boss().activity.pose, Pose::Squat);
 }
@@ -797,7 +797,12 @@ fn completion_after_turn_end_is_not_waiting_for_the_boss() {
         .on(MAIN, 2, text("돌려 둘게요"))
         .on(MAIN, 30, result("bg", ToolOutcome::Ok))
         .tick(33);
-    is(s.boss(), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    is(
+        s.boss(),
+        Room::TeamLead,
+        "턱 괴고 고민 중인 듯 ({elapsed})",
+        Inferred,
+    );
     assert!(!s.team.needs_boss(s.boss(), at(33)));
 
     let mut s = Sim::new();
@@ -811,7 +816,12 @@ fn completion_after_turn_end_is_not_waiting_for_the_boss() {
             },
         )
         .tick(33);
-    is(s.boss(), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    is(
+        s.boss(),
+        Room::TeamLead,
+        "턱 괴고 고민 중인 듯 ({elapsed})",
+        Inferred,
+    );
     assert!(!s.team.needs_boss(s.boss(), at(33)));
 }
 
@@ -868,13 +878,23 @@ fn messages_do_not_hide_a_question_or_a_running_call() {
     let mut s = Sim::new();
     s.on(MAIN, 0, call("c", ToolKind::Shell, cmd("make")))
         .on(MAIN, 1, text("빌드 중입니다"));
-    is(s.boss(), Room::Build, "`make` 실행 중", Confirmed);
+    is(
+        s.boss(),
+        Room::Build,
+        "`make` 실행 중 · {elapsed}째",
+        Confirmed,
+    );
     let compaction = EventKind::ContextCompaction {
         pre_tokens: Some(150_000),
         post_tokens: Some(20_000),
     };
     s.on(MAIN, 2, compaction);
-    is(s.boss(), Room::Build, "`make` 실행 중", Confirmed);
+    is(
+        s.boss(),
+        Room::Build,
+        "`make` 실행 중 · {elapsed}째",
+        Confirmed,
+    );
 }
 
 #[test]
@@ -1123,9 +1143,19 @@ fn snapshot_parallel_reversed() {
     assert!(boss(&t).pending.is_empty());
     is(boss(&t), Room::TeamLead, "`dir3/file4.md` 열람", Confirmed);
     let t = c.at("2026-03-02T09:00:23.829Z", 3);
-    is(boss(&t), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "턱 괴고 고민 중인 듯 ({elapsed})",
+        Inferred,
+    );
     let t = c.at("2026-03-02T09:00:23.829Z", 11);
-    is(boss(&t), Room::TeamLead, "러버덕과 상담 중인 듯", Inferred);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "러버덕과 상담 중인 듯 ({elapsed})",
+        Inferred,
+    );
 }
 
 #[test]
@@ -1150,7 +1180,12 @@ fn snapshot_reject_holds_four_seconds() {
     assert!(t.needs_boss(boss(&t), ts("2026-03-02T09:01:57.802Z")));
     // 사장님이 답하면 반려 직후가 끝나고 응답 대기다
     let t = c.at("2026-03-02T09:01:54.874Z", 3);
-    is(boss(&t), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "턱 괴고 고민 중인 듯 ({elapsed})",
+        Inferred,
+    );
     assert!(!t.needs_boss(boss(&t), ts("2026-03-02T09:01:57.874Z")));
 }
 
@@ -1231,7 +1266,12 @@ fn snapshot_async_subagent() {
         Confirmed,
     );
     let t = c.at("2026-03-02T09:01:30.259Z", 3);
-    is(boss(&t), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "턱 괴고 고민 중인 듯 ({elapsed})",
+        Inferred,
+    );
     assert!(!t.needs_boss(boss(&t), ts("2026-03-02T09:01:33.259Z")));
 
     let t = c.at("2026-03-02T09:03:16.532Z", 0);
@@ -1257,7 +1297,7 @@ fn snapshot_async_subagent() {
     is(
         emp(&t, ASYNC_SUB),
         Room::Dev,
-        "턱 괴고 고민 중인 듯",
+        "턱 괴고 고민 중인 듯 ({elapsed})",
         Inferred,
     );
 }
@@ -1343,7 +1383,12 @@ fn snapshot_bg_fail_reject_compact() {
     assert_eq!(t.props.plant, Some(0.0));
     assert_eq!(t.props.trash, 1);
     let t = c.at("2026-03-02T09:02:19.284Z", 3);
-    is(boss(&t), Room::TeamLead, "요구사항 대기 중인 듯", Inferred);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "요구사항 대기 중인 듯 · 사장님 자리 비움 {elapsed}",
+        Inferred,
+    );
 }
 
 #[test]
@@ -1359,7 +1404,7 @@ fn snapshot_codex_ask_reject_compact() {
     is(
         boss(&t),
         Room::Build,
-        "`prog1 arg2 arg3 arg4 'C:\\file2.txt'` 실행 중",
+        "`prog1 arg2 arg3 arg4 'C:\\file2.txt'` 실행 중 · {elapsed}째",
         Confirmed,
     );
     let t = c.at("2026-03-02T09:00:39.925Z", 0);
@@ -1388,7 +1433,12 @@ fn snapshot_codex_aborted() {
     let t = c.at("2026-03-02T09:00:00.633Z", 0);
     is(boss(&t), Room::TeamLead, "요구사항 접수", Confirmed);
     let t = c.at("2026-03-02T09:00:04.054Z", 3);
-    is(boss(&t), Room::TeamLead, "요구사항 대기 중인 듯", Inferred);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "요구사항 대기 중인 듯 · 사장님 자리 비움 {elapsed}",
+        Inferred,
+    );
     assert!(boss(&t).pending.is_empty());
     let t = c.at("2026-03-02T09:00:04.054Z", 181);
     assert_eq!(t.phase, TeamPhase::Dozing);
@@ -1971,4 +2021,414 @@ fn work_counts_only_boss_calls() {
     }
     s.on(MAIN, 30, call("m1", GitDiff, summary()));
     assert_eq!(s.team.work_type, WorkType::CodeReview);
+}
+
+// ---------- 말풍선·경과 자리·행적 (4.8) ----------
+
+fn bubble(at_secs: i64, say: BubbleSay) -> Option<Bubble> {
+    Some(Bubble {
+        at: at(at_secs),
+        say,
+    })
+}
+
+fn quote(t: &str) -> BubbleSay {
+    BubbleSay::Say { text: t.into() }
+}
+
+fn search(p: &str) -> ToolSummary {
+    ToolSummary {
+        pattern: Some(p.into()),
+        ..summary()
+    }
+}
+
+#[test]
+fn bubble_quotes_search_shell_web_and_boss_reply() {
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("g", ToolKind::FileSearch, search("fn poll")));
+    assert_eq!(s.boss().bubble, bubble(1, quote("fn poll")));
+    s.on(
+        MAIN,
+        2,
+        call("c", ToolKind::Shell, cmd("cargo fmt --check")),
+    );
+    assert_eq!(s.boss().bubble, bubble(2, quote("cargo fmt --check")));
+    // 30자에서 자른다 (HANDOFF 4.4)
+    let long = "a".repeat(35);
+    s.on(MAIN, 3, call("w", ToolKind::WebSearch, search(&long)));
+    let cut = format!("{}…", "a".repeat(30));
+    assert_eq!(s.boss().bubble, bubble(3, quote(&cut)));
+    // 부장 응답은 40자
+    s.on(MAIN, 4, text(&"가".repeat(45)));
+    let cut = format!("{}…", "가".repeat(40));
+    assert_eq!(s.boss().bubble, bubble(4, quote(&cut)));
+    // 서브의 응답은 말풍선이 아니다
+    spawn_sub(&mut s, 5, "claude-sonnet-4-5", None);
+    s.on(SUB, 6, text("보고"));
+    assert_eq!(s.sub().bubble, None);
+}
+
+#[test]
+fn bubble_for_questions_and_plan_approval() {
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("q", ToolKind::Ask, summary()))
+        .on(MAIN, 1, ask("테스트 돌릴까요?", false));
+    assert!(s.team.needs_boss(s.boss(), at(1)));
+    assert_eq!(s.boss().bubble, bubble(1, quote("테스트 돌릴까요?")));
+    s.on(MAIN, 2, result("q", ToolOutcome::Ok))
+        .on(MAIN, 3, call("p", ToolKind::Ask, summary()))
+        .on(MAIN, 3, ask("긴 계획 본문", true));
+    assert_eq!(s.boss().bubble, bubble(3, BubbleSay::PlanApproval));
+}
+
+#[test]
+fn bubble_new_vendor_then_meeting_and_new_skill_once() {
+    let mcp = |tool: &str| ToolKind::Mcp {
+        server: "figma".into(),
+        tool: tool.into(),
+    };
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("m1", mcp("get_file"), summary()));
+    assert_eq!(
+        s.boss().bubble,
+        bubble(
+            1,
+            BubbleSay::NewVendor {
+                server: "figma".into()
+            }
+        )
+    );
+    s.on(MAIN, 2, result("m1", ToolOutcome::Ok)).on(
+        MAIN,
+        3,
+        call("m2", mcp("get_node"), summary()),
+    );
+    assert_eq!(
+        s.boss().bubble,
+        bubble(
+            3,
+            BubbleSay::Mcp {
+                server: "figma".into(),
+                tool: "get_node".into()
+            }
+        )
+    );
+    // 처음 본 거래처는 팀 단위다: 서브가 같은 거래처를 만나도 Mcp
+    spawn_sub(&mut s, 4, "claude-sonnet-4-5", None);
+    s.on(SUB, 5, call("x", ToolKind::FileRead, file("a.rs")))
+        .on(SUB, 6, call("m3", mcp("get_file"), summary()));
+    assert!(matches!(
+        s.sub().bubble.as_ref().map(|b| &b.say),
+        Some(BubbleSay::Mcp { .. })
+    ));
+
+    let skill = || ToolKind::Skill { name: "pdf".into() };
+    s.on(MAIN, 10, call("k1", skill(), summary()));
+    assert_eq!(
+        s.boss().bubble,
+        bubble(
+            10,
+            BubbleSay::NewSkill {
+                skill: "pdf".into()
+            }
+        )
+    );
+    s.on(MAIN, 11, result("k1", ToolOutcome::Ok))
+        .on(MAIN, 12, call("k2", skill(), summary()));
+    assert_eq!(s.boss().bubble.as_ref().unwrap().at, at(10));
+}
+
+#[test]
+fn bubble_rank_on_a_subs_first_job_only() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-sonnet-4-5", None);
+    assert_eq!(s.sub().bubble, None);
+    s.on(SUB, 1, call("a", ToolKind::Shell, cmd("ls")));
+    assert_eq!(s.sub().bubble, bubble(1, BubbleSay::Rank));
+    s.on(SUB, 2, result("a", ToolOutcome::Ok))
+        .on(SUB, 3, call("b", ToolKind::Shell, cmd("pwd")));
+    assert_eq!(s.sub().bubble, bubble(3, quote("pwd")));
+    // 부장은 직급 말풍선이 없다
+    s.on(MAIN, 4, call("m", ToolKind::FileRead, file("a.rs")));
+    assert_eq!(s.boss().bubble, None);
+}
+
+#[test]
+fn bubble_first_sight_beats_rank() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-sonnet-4-5", None);
+    s.on(
+        SUB,
+        1,
+        call("a", ToolKind::Other("Frobnicate".into()), summary()),
+    );
+    assert_eq!(s.sub().bubble, bubble(1, BubbleSay::UnknownTool));
+}
+
+#[test]
+fn bubble_unknown_tool_once_per_employee_and_tool() {
+    let other = |n: &str| ToolKind::Other(n.into());
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("a", other("Frobnicate"), summary()))
+        .on(MAIN, 2, result("a", ToolOutcome::Ok))
+        .on(MAIN, 3, call("b", other("Frobnicate"), summary()));
+    assert_eq!(s.boss().bubble, bubble(1, BubbleSay::UnknownTool));
+    s.on(MAIN, 4, result("b", ToolOutcome::Ok))
+        .on(MAIN, 5, call("c", other("Twiddle"), summary()));
+    assert_eq!(s.boss().bubble, bubble(5, BubbleSay::UnknownTool));
+}
+
+#[test]
+fn bubble_script_fallback_and_unknown_result() {
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("a", ToolKind::Script, summary()));
+    assert_eq!(s.boss().bubble, bubble(1, BubbleSay::ScriptFallback));
+    s.on(MAIN, 2, result("a", ToolOutcome::Unknown));
+    assert_eq!(s.boss().bubble, bubble(2, BubbleSay::UnknownResult));
+}
+
+#[test]
+fn bubble_joke_then_incident_room() {
+    let mut s = Sim::new();
+    fail(&mut s, "a", 1, "cargo build");
+    assert_eq!(s.boss().bubble, bubble(1, BubbleSay::Joke));
+    fail(&mut s, "b", 2, "npm test");
+    // 세 번째 사고로 장애가 시작된다. 농담 대신 상황실에 들어갈 때 장애 문구
+    fail(&mut s, "c", 3, "make");
+    assert!(s.team.incident.is_some());
+    assert_eq!(s.boss().bubble, bubble(3, quote("make")));
+    s.tick(4);
+    assert_eq!(s.boss().activity.room, Room::Incident);
+    assert_eq!(s.boss().bubble, bubble(3, BubbleSay::Incident));
+    // 상황실에 머무는 동안은 다시 내지 않는다
+    s.tick(10);
+    assert_eq!(s.boss().bubble, bubble(3, BubbleSay::Incident));
+    // 장애 중 사고는 농담이 아니다
+    fail(&mut s, "d", 20, "make");
+    assert_eq!(s.boss().bubble, bubble(20, quote("make")));
+}
+
+#[test]
+fn bubble_all_green_and_scratch_and_compaction() {
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("t", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 5, with_tests("t", ToolOutcome::Ok, 4, 0));
+    assert_eq!(s.boss().bubble, bubble(5, BubbleSay::AllGreen));
+
+    let mut s = Sim::new();
+    for (k, secs) in [10, 20, 30].into_iter().enumerate() {
+        let id = format!("e{k}");
+        s.on(MAIN, secs, call(&id, ToolKind::FileEdit, file("a.rs")));
+        if k < 2 {
+            assert_eq!(s.boss().bubble, None, "{k}번째 수정");
+        }
+        s.on(MAIN, secs + 1, result(&id, ToolOutcome::Ok));
+    }
+    assert_eq!(s.boss().bubble, bubble(30, BubbleSay::Scratch));
+
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-sonnet-4-5", None);
+    let compact = EventKind::ContextCompaction {
+        pre_tokens: Some(150_000),
+        post_tokens: Some(10_000),
+    };
+    s.on(SUB, 7, compact);
+    assert_eq!(s.sub().bubble, bubble(7, BubbleSay::Compaction));
+}
+
+#[test]
+fn bubble_too_long_once_at_the_threshold() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("w", ToolKind::Build, cmd("cargo build")))
+        .on(MAIN, 10, result("w", ToolOutcome::Ok))
+        .on(MAIN, 100, call("b", ToolKind::Build, cmd("cargo build")))
+        .tick(115);
+    // 빌드 사이의 고민이 러버덕까지 갔다
+    assert_eq!(s.boss().bubble, bubble(20, BubbleSay::ThinkingDuck));
+    s.tick(125);
+    assert_eq!(s.boss().bubble, bubble(120, BubbleSay::TooLong));
+    s.on(MAIN, 126, call("l", ToolKind::FileRead, file("a.rs")))
+        .tick(127);
+    assert_eq!(s.boss().bubble.as_ref().unwrap().at, at(120));
+}
+
+#[test]
+fn bubble_thinking_duck_once() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::FileRead, file("a.rs")))
+        .on(MAIN, 0, result("a", ToolOutcome::Ok))
+        .tick(5);
+    assert_eq!(s.boss().bubble, None);
+    s.tick(12);
+    assert_eq!(s.boss().bubble, bubble(10, BubbleSay::ThinkingDuck));
+    s.tick(20);
+    assert_eq!(s.boss().bubble, bubble(10, BubbleSay::ThinkingDuck));
+}
+
+#[test]
+fn bubble_needs_boss_gets_only_waiting_bubbles() {
+    // 질문한 서브의 첫 일: 직급 말풍선 대신 질문이 남는다
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-sonnet-4-5", None);
+    s.on(SUB, 1, ask("이 파일 지워도 되나요?", false)).on(
+        SUB,
+        2,
+        call("a", ToolKind::Shell, cmd("ls")),
+    );
+    assert_eq!(s.sub().bubble, bubble(1, quote("이 파일 지워도 되나요?")));
+    // 질문 중인 부장의 사고는 농담이 아니다
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("q", ToolKind::Ask, summary()))
+        .on(MAIN, 1, ask("배포할까요?", false));
+    fail(&mut s, "x", 2, "cargo build");
+    assert_eq!(s.boss().bubble, bubble(1, quote("배포할까요?")));
+    // 반려 직후 4초도 같다
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("r", ToolKind::Shell, cmd("rm -rf dist")))
+        .on(MAIN, 1, call("y", ToolKind::Shell, cmd("cargo build")))
+        .on(MAIN, 2, result("r", ToolOutcome::Rejected))
+        .on(MAIN, 3, result("y", ToolOutcome::Err));
+    assert_eq!(s.boss().bubble, bubble(1, quote("cargo build")));
+}
+
+#[test]
+fn elapsed_slot_only_in_the_current_activity() {
+    let mut s = Sim::new();
+    let mut seen = Vec::new();
+    let mut look = |s: &Sim| seen.push(s.boss().activity.sentence.clone());
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("cargo run")));
+    look(&s);
+    s.on(MAIN, 1, call("t", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 2, result("t", ToolOutcome::Ok))
+        .tick(130);
+    look(&s);
+    s.on(MAIN, 131, result("a", ToolOutcome::Ok)).tick(134);
+    look(&s);
+    s.tick(145);
+    look(&s);
+    s.on(MAIN, 150, call("s", ToolKind::Script, summary()));
+    look(&s);
+    s.on(MAIN, 151, result("s", ToolOutcome::Ok))
+        .on(MAIN, 152, text("끝"))
+        .tick(160);
+    look(&s);
+    assert_eq!(
+        seen,
+        [
+            "`cargo run` 실행 중 · {elapsed}째",
+            "서버실에서 땀 흘리는 중 (`cargo run` · {elapsed})",
+            "턱 괴고 고민 중인 듯 ({elapsed})",
+            "러버덕과 상담 중인 듯 ({elapsed})",
+            "스크립트 돌리는 중 · {elapsed}째",
+            "요구사항 대기 중인 듯 · 사장님 자리 비움 {elapsed}",
+        ]
+    );
+    assert!(
+        s.boss()
+            .recent
+            .iter()
+            .all(|a| !a.sentence.contains("{elapsed}"))
+    );
+}
+
+#[test]
+fn elapsed_sweat_counts_from_the_long_call_and_test_shows_usual() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("cargo run")))
+        .on(MAIN, 100, call("b", ToolKind::FileRead, file("a.rs")))
+        .tick(130);
+    assert_eq!(s.boss().activity.since, at(0));
+    assert_eq!(s.boss().activity.extra, 1);
+
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("t1", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 20, result("t1", ToolOutcome::Ok))
+        .on(MAIN, 30, call("t2", ToolKind::Test, cmd("cargo test")));
+    assert_eq!(
+        s.boss().activity.sentence,
+        "`cargo test` 돌리는 중 · {elapsed}째 (평소 20초)"
+    );
+    assert_eq!(s.boss().activity.since, at(30));
+}
+
+#[test]
+fn recent_keeps_only_finished_work() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("ls")));
+    assert!(s.boss().recent.is_empty());
+    s.on(MAIN, 1, result("a", ToolOutcome::Ok));
+    let recent: Vec<_> = s
+        .boss()
+        .recent
+        .iter()
+        .map(|a| a.sentence.as_str())
+        .collect();
+    assert_eq!(recent, ["`ls` 완료"]);
+    // 대기·고민도 행적이 아니다
+    s.tick(15);
+    assert_eq!(s.boss().recent.len(), 1);
+
+    // 병렬 호출: 진행형 대표 작업과 "(외 n건)" 은 들어가지 않는다
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::FileRead, file("a.rs")))
+        .on(MAIN, 0, call("b", ToolKind::FileRead, file("b.rs")));
+    assert_eq!(s.boss().activity.extra, 1);
+    s.on(MAIN, 1, result("b", ToolOutcome::Ok))
+        .on(MAIN, 2, result("a", ToolOutcome::Ok));
+    let recent: Vec<_> = s
+        .boss()
+        .recent
+        .iter()
+        .map(|a| a.sentence.as_str())
+        .collect();
+    assert_eq!(recent, ["`a.rs` 열람", "`b.rs` 열람"]);
+    assert_eq!(s.boss().activity.extra, 0);
+}
+
+/// 재구성(이벤트 ts 로만 tick)과 1초마다 tick 한 것의 말풍선이 같다
+#[test]
+fn bubble_at_is_the_same_when_rebuilt() {
+    let events = [
+        ev(MAIN, 0, call("w", ToolKind::Build, cmd("cargo build"))),
+        ev(MAIN, 10, result("w", ToolOutcome::Ok)),
+        ev(MAIN, 100, call("b", ToolKind::Build, cmd("cargo build"))),
+        ev(MAIN, 140, result("b", ToolOutcome::Ok)),
+    ];
+    let a = replayed(MAIN, &events, at(200));
+    let b = stepwise(MAIN, &events, at(200));
+    assert_eq!(boss(&a).bubble, bubble(150, BubbleSay::ThinkingDuck));
+    assert_eq!(boss(&a).bubble, boss(&b).bubble);
+
+    let claude = [
+        "async-subagent",
+        "bg-fail-reject-compact",
+        "compaction",
+        "internal-tool-failure",
+        "parallel-reversed",
+        "reject",
+        "rewrite-shrink",
+        "sync-subagent",
+        "test-fail-fix-pass",
+    ]
+    .map(Case::claude);
+    let codex = ["aborted", "ask-reject-compact", "codex-app"].map(Case::codex);
+    for c in claude.iter().chain(&codex) {
+        let events = merge(c.files.clone());
+        let last = events.iter().filter_map(|e| e.ts).max().unwrap();
+        for end in [last, last + Duration::minutes(40)] {
+            let bubbles = |t: &Team| {
+                t.employees
+                    .iter()
+                    .map(|e| e.bubble.clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                bubbles(&replayed(&c.id, &events, end)),
+                bubbles(&stepwise(&c.id, &events, end)),
+                "{} {end}",
+                c.id
+            );
+        }
+    }
 }

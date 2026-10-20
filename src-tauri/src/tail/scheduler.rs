@@ -22,6 +22,7 @@ use crate::office::{Cue, TeamPhase};
 use crate::parse::claude::ClaudeParser;
 use crate::parse::codex::CodexParser;
 use crate::parse::{Event, EventKind, Parser, RawRef, Unhandled};
+use crate::startup::ScanWatch;
 
 const HOT: Duration = Duration::milliseconds(200);
 const WARM: Duration = Duration::seconds(2);
@@ -201,6 +202,8 @@ pub struct HostLoop {
     project_dirs: Vec<PathBuf>,
     /// 경로로 한 접근(나열, 열기, verify_path, stat) 수. WSL 에서는 Probe 직후 틱 밖에서 늘면 안 된다
     pub path_ops: u64,
+    /// 로딩 화면(3.8)에 첫 Scan 의 나열·읽기 진행을 알린다. 첫 Scan 이 끝나면 비운다
+    pub watch: Option<Arc<ScanWatch>>,
 }
 
 impl HostLoop {
@@ -233,6 +236,7 @@ impl HostLoop {
             last_await: None,
             project_dirs: Vec::new(),
             path_ops: 0,
+            watch: None,
         }
     }
 
@@ -300,6 +304,10 @@ impl HostLoop {
                     continue;
                 }
                 self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new(), quiet);
+            }
+            // 나열이 막혀 일찍 끝나도 알린다. 안 알리면 로딩 화면이 이 호스트를 끝없이 기다린다
+            if let Some(w) = self.watch.take() {
+                w.finished(&self.host.id);
             }
         }
         self.poll_teams(now, path_ok);
@@ -855,6 +863,15 @@ impl HostLoop {
             }
         }
         self.project_dirs = project_dirs;
+        if let Some(w) = &self.watch {
+            // 팀마다 메인 파일 하나. 서브만 있는 팀은 아무 파일이나
+            let mains = found
+                .values()
+                .filter_map(|ps| ps.iter().find(|p| !is_subagent(p)).or(ps.first()))
+                .cloned()
+                .collect();
+            w.listed(&self.host.id, seen.len(), mains);
+        }
 
         let tiers = self.tiers();
         let mut gone_teams = BTreeSet::new();
@@ -957,6 +974,9 @@ impl HostLoop {
                 self.revive(key, p);
             }
             self.try_rebuild(key, now, new, &BTreeSet::new(), false);
+            if let Some(w) = &self.watch {
+                w.read(new.len());
+            }
         }
         for key in rebuild {
             if self.suspect() {
@@ -1083,6 +1103,7 @@ pub struct Prober {
     world: Arc<Mutex<OfficeWorld>>,
     clock: Arc<dyn Clock>,
     diag: Arc<Mutex<Diag>>,
+    watch: Option<Arc<ScanWatch>>,
     threads: Vec<(Arc<Heartbeat>, thread::JoinHandle<()>)>,
 }
 
@@ -1096,6 +1117,7 @@ impl Prober {
             world: windows.world.clone(),
             clock: windows.clock.clone(),
             diag: windows.diag.clone(),
+            watch: windows.watch.clone(),
             threads: Vec::new(),
         }
     }
@@ -1131,13 +1153,14 @@ impl Prober {
                     None => {}
                 }
             } else if d.running == Some(true) && !d.sites.is_empty() {
-                let h = HostLoop::new(
+                let mut h = HostLoop::new(
                     d.host.clone(),
                     Vec::new(),
                     self.world.clone(),
                     self.clock.clone(),
                     self.diag.clone(),
                 );
+                h.watch = self.watch.clone();
                 *h.heartbeat.probed.lock().unwrap_or_else(|e| e.into_inner()) = Some(d.sites);
                 let hb = h.heartbeat.clone();
                 self.remotes

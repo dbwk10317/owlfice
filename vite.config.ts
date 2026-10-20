@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => ({
     strictPort: true,
     watch: {
       ignored: ["**/src-tauri/**"],
-      // WSL 폴백(BUILD.md)에서는 Windows 쪽 편집이 /mnt/c의 inotify로 오지 않는다
+      // WSL 폴백(docs/BUILD.md)에서는 Windows 쪽 편집이 /mnt/c의 inotify로 오지 않는다
       usePolling: loadEnv(mode, ".", "").WSL_DISTRO_NAME !== undefined,
     },
   },

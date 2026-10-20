@@ -633,7 +633,7 @@
 | 레지스트리 | `winreg` 크레이트 | `reg query` 자식 프로세스보다 깔끔 |
 | 해시 | `xxhash-rust` 또는 std `DefaultHasher` | 이름·방 번호 결정용. 암호학적일 필요 없음 |
 
-**C 런타임 (기본 경로)**: MSVC 빌드가 `vcruntime140.dll` 에 의존하면 VC++ 재배포 패키지가 없는 PC에서 실행되지 않는다. Tauri 2의 `tauri-build` 가 VC 런타임을 정적으로 링크한다고 가정한다 (미확인, 6부). 그래서 T01의 완료 기준은 "빈 창이 뜬다"가 아니라 "빌드 → NSIS 설치 파일 → 개발 도구가 없는 Windows 11에서 설치·실행"이다. 의존 DLL은 `dumpbin /dependents owlfice.exe` 로 확인해 Windows 시스템 DLL뿐임을 `BUILD.md`에 기록한다.
+**C 런타임 (기본 경로)**: MSVC 빌드가 `vcruntime140.dll` 에 의존하면 VC++ 재배포 패키지가 없는 PC에서 실행되지 않는다. Tauri 2의 `tauri-build` 가 VC 런타임을 정적으로 링크한다고 가정한다 (미확인, 6부). 그래서 T01의 완료 기준은 "빈 창이 뜬다"가 아니라 "빌드 → NSIS 설치 파일 → 개발 도구가 없는 Windows 11에서 설치·실행"이다. 의존 DLL은 `dumpbin /dependents owlfice.exe` 로 확인해 Windows 시스템 DLL뿐임을 `docs/BUILD.md`에 기록한다.
 
 **GNU 폴백 (Visual Studio를 쓸 수 없는 PC)**: `x86_64-pc-windows-gnu` + MSYS2 GCC로 같은 앱을 빌드한다. 저장소는 이 경로도 계속 지원한다. GNU 타깃은 Tauri 공식 지원 범위 밖이다. `.cargo/config.toml`:
 ```toml
@@ -644,7 +644,7 @@ MSYS2의 `libgcc_s`, `libwinpthread` DLL에 의존하지 않게 정적 링크한
 
 **WSL 크로스 빌드 (GNU 폴백의 폴백. 로컬 링크가 막힌 PC에서만)**: 회사 보안 소프트웨어가 Windows에서 링크한 exe를 전부 격리하는 PC가 있다 (확인됨: Symantec Endpoint Protection `Heur.AdvML.B`, 2026-10-20. 경로·release·정적 링크와 무관하고 예외 등록은 정책상 불가). 이런 PC에서는 WSL 배포판에서 GNU 타깃으로 크로스 빌드한다. 크로스 빌드한 exe와 NSIS 설치 파일은 격리되지 않는다 (확인됨). 필요한 것: rustup + `rustup target add x86_64-pc-windows-gnu`, 배포판의 mingw64 gcc·binutils(`x86_64-w64-mingw32-gcc`, `-windres`), WSL에서 `npm ci` 한 리눅스용 `node_modules`(tauri-cli도 여기 들어 있다), `makensis`(배포판 패키지가 없으면 NSIS 소스에서 컴파일러만 빌드하고 Stubs·Include·Plugins·Contrib는 같은 버전의 Windows 배포본에서 복사). `cargo test --target x86_64-pc-windows-gnu`는 WSL interop이 exe를 Windows 프로세스로 띄우므로 레지스트리·환경변수 테스트도 WSL에서 돌릴 수 있다 (확인됨). Tauri 앱 전체의 크로스 번들과 `tauri dev`(Vite 서버는 WSL, 앱은 Windows 프로세스)도 동작한다 (확인됨, T01). 소스는 Windows 쪽에 두고 빌드 산출물(`CARGO_TARGET_DIR`)만 WSL 디스크에 둔다. `/mnt/c` 위의 target은 느리다.
 
-세 경로 모두 저장소 파일은 같고, PC별 선택은 `BUILD.md` 절차로만 가른다. 정확한 버전과 명령도 `BUILD.md`에 적는다.
+세 경로 모두 저장소 파일은 같고, PC별 선택은 `docs/BUILD.md` 절차로만 가른다. 명령도 거기에 적는다.
 
 `tauri.conf.json`의 `bundle.targets`는 `["nsis"]`.
 
@@ -653,7 +653,7 @@ MSYS2의 `libgcc_s`, `libwinpthread` DLL에 의존하지 않게 정적 링크한
 ```
 owlfice/
 ├── PLAN.md                      ← 이 문서
-├── BUILD.md                     ← 툴체인 버전, 의존 DLL 확인 절차 (T01)
+├── docs/BUILD.md                ← 설치·빌드·테스트 명령, 의존 DLL 확인 절차 (T01)
 ├── build-gnu.sh                 ← GNU 폴백 릴리스 빌드 + 의존 DLL 검사. MSYS2·WSL 공용 (T01)
 ├── src-tauri/                   ← Rust 백엔드
 │   ├── Cargo.toml
@@ -1358,7 +1358,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 
 | 티켓 | 내용 | 난이도 | 선행 | 완료 기준 |
 |---|---|---|---|---|
-| T01 | 저장소 초기화. Tauri 2 템플릿, MSVC 빌드(기본)와 GNU 폴백 빌드, `.cargo/config.toml`, NSIS 설정, `build-gnu.sh`, `BUILD.md` | 상 | 없음 | Visual Studio Build Tools로 `npm run tauri build` → NSIS 설치 파일 → 개발 도구가 없는 Windows 11 VM에서 설치·실행·빈 창. `dumpbin /dependents` 로 의존 DLL이 시스템 DLL뿐. Rust·Tauri·Visual Studio 버전과 검증 명령을 `BUILD.md` 에 기록. 폴백 경로(4.1)를 쓴 PC면 그 버전과 절차, `tauri dev` 동작 여부도 함께 |
+| T01 | 저장소 초기화. Tauri 2 템플릿, MSVC 빌드(기본)와 GNU 폴백 빌드, `.cargo/config.toml`, NSIS 설정, `build-gnu.sh`, `docs/BUILD.md` | 상 | 없음 | Visual Studio Build Tools로 `npm run tauri build` → NSIS 설치 파일 → 개발 도구가 없는 Windows 11 VM에서 설치·실행·빈 창. `dumpbin /dependents` 로 의존 DLL이 시스템 DLL뿐. Rust·Tauri·Visual Studio 버전과 검증 명령을 `docs/BUILD.md` 에 기록. 폴백 경로(4.1)를 쓴 PC면 그 버전과 절차, `tauri dev` 동작 여부도 함께 |
 | T02 | `discover/windows.rs` + `registry.rs`: 환경변수와 홈에서 Site 목록, 세션 등록부 읽기 | 하 | T01 | 개발 PC에서 Claude·Codex Site 반환. 등록부에서 살아 있는 세션 목록. 단위 테스트에 가짜 홈 폴더 |
 | T03 | `discover/wsl.rs`: 레지스트리 → 켜진 배포판 → passwd → 홈 → Site | 중 | T01 | 개발 PC에서 Rocky-9 Site 반환. 레지스트리 없을 때 빈 목록. 꺼진 배포판은 UNC를 건드리지 않음 (프로세스 목록으로 검증). 감시 중 `wsl --terminate` 로 배포판을 끄면 다음 Hot·Scan 뒤에도 꺼진 상태가 유지됨 (핸들·의심 상태, 4.4.2). 핸들 모드에서 같은 경로의 파일을 바꿔치기하면 다음 Scan에서 Reset. I/O를 멈추게 하면(공유 끊기) 감시자가 2초 안에 의심으로 전환하고, 재개 뒤 멈춘 동안 append된 줄이 하나도 빠지지 않음(2단계 commit). 경로 접근이 꺼진 배포판을 재시작하는지 결과를 6부에 기록 |
 | T04 | `tail/mod.rs` TailReader | 하 | T01 | 4.12의 TailReader 단위 테스트 전부 |

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GNU 폴백 릴리스 빌드: NSIS 설치 파일을 만들고, exe가 Windows 시스템 밖 DLL에 기대지 않는지 검사한다.
-# MSYS2와 WSL 크로스 빌드에서 같이 돈다. 기본 경로(MSVC)는 BUILD.md.
+# MSYS2와 WSL 크로스 빌드에서 같이 돈다. 기본 경로(MSVC)는 docs/BUILD.md.
 set -euo pipefail
 cd "$(dirname "$0")"
 

@@ -4,7 +4,13 @@ import { createStore, type ListMsg, type StateMsg } from "./store.ts";
 type L = ListMsg & { offices: string[] };
 type S = StateMsg & { tag: string };
 
-const list = (listSeq: number, ...offices: string[]): L => ({ listSeq, offices });
+// 기본은 스냅샷의 선택(A)을 그대로 두는 목록
+const list = (listSeq: number, ...offices: string[]): L => ({
+  listSeq,
+  offices,
+  selectedId: "A",
+  selectRequest: 0,
+});
 const st = (officeId: string, stateSeq: number, tag = ""): S => ({ officeId, stateSeq, tag });
 
 function started(selected: S | null = st("A", 1, "a1")) {
@@ -40,7 +46,7 @@ test("state: 작은 seq 는 버리고 같은 seq 는 적용한다", () => {
 test("A→B→A, 중간 변경 없음: 같은 seq 응답으로 A 가 다시 그려진다", () => {
   const s = started();
   s.selectOffice("B");
-  s.applySelectResponse({ ...st("B", 3, "b"), requestId: "r1" });
+  s.applySelectResponse({ ...st("B", 3, "b"), requestId: 1 });
   const id = s.selectOffice("A");
   expect(s.state.office).toBeNull();
   s.applySelectResponse({ ...st("A", 1, "a1"), requestId: id });
@@ -68,7 +74,7 @@ test("선택과 다른 사무실의 이벤트는 응답 없이도 버린다", ()
 test("select 응답: 옛 requestId 는 버린다", () => {
   const s = started();
   s.selectOffice("A");
-  s.applySelectResponse({ ...st("A", 2, "x"), requestId: "r0" });
+  s.applySelectResponse({ ...st("A", 2, "x"), requestId: 0 });
   expect(s.state.office).toBeNull();
 });
 
@@ -106,4 +112,36 @@ test("구독자는 적용될 때만 불리고 해제하면 안 불린다", () =>
   off();
   s.applyList(list(7, "ok2"));
   expect(fn).toHaveBeenCalledTimes(1);
+});
+
+test("목록: 백엔드가 바꾼 선택(규모 변경)을 따르고 그 사무실 상태를 받는다", () => {
+  const s = started();
+  s.applyList({ ...list(6), selectedId: "vendor/claude" });
+  expect(s.state.selectedId).toBe("vendor/claude");
+  expect(s.state.office).toBeNull();
+  s.applyOfficeState(st("vendor/claude", 1, "v"));
+  expect(s.state.office?.tag).toBe("v");
+});
+
+test("목록: 백엔드가 선택을 풀면(팀 퇴장) 선택이 빈다", () => {
+  const s = started();
+  s.applyList({ ...list(6), selectedId: null });
+  expect(s.state.selectedId).toBeNull();
+  expect(s.state.office).toBeNull();
+});
+
+test("목록: 더 새 요청을 보낸 뒤의 옛 선택은 사용자 선택을 덮지 않는다", () => {
+  const s = started();
+  const id = s.selectOffice("B");
+  s.applyList({ ...list(6), selectedId: "A", selectRequest: id - 1 });
+  expect(s.state.selectedId).toBe("B");
+  s.applySelectResponse({ ...st("B", 3, "b"), requestId: id });
+  s.applyList({ ...list(7), selectedId: "B", selectRequest: id });
+  expect(s.state.office?.tag).toBe("b");
+});
+
+test("다시 불러온 WebView 는 스냅샷의 요청 번호부터 이어 센다", () => {
+  const s = createStore<L, S>();
+  s.applyWorld({ ...list(5, "A"), selectRequest: 7, selected: st("A", 1) });
+  expect(s.selectOffice("B")).toBe(8);
 });

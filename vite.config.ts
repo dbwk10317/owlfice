@@ -16,6 +16,8 @@ export default defineConfig(({ mode }) => ({
       "dist/**",
       "package-lock.json",
       "fixtures/**",
+      // ts-rs 가 만든다 (docs/BUILD.md)
+      "src/types/**",
     ],
   },
   // Rust 에러가 Vite 출력에 가려지지 않게

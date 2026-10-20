@@ -72,7 +72,7 @@ pub enum Unhandled {
 }
 
 /// 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum Confidence {
     Confirmed,
     Inferred,
@@ -222,13 +222,13 @@ pub struct TestResult {
     pub failed: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct TodoItem {
     pub content: String,
     pub status: TodoStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum TodoStatus {
     Pending,
     InProgress,

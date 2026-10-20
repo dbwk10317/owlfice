@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{Host, HostKind, ReadMode, Site, Vendor};
 
-fn windows_host() -> Host {
+pub fn windows_host() -> Host {
     Host {
         id: "windows".into(),
         kind: HostKind::Windows,

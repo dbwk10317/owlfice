@@ -7,17 +7,17 @@
 
 값이 서로 다르면 위에 있는 것이 이긴다.
 
-| 순서 | 파일 | 내용 | 앱에서 갈 곳 |
+| 순서 | 파일 | 내용 | 앱이 쓰는 법 (복사하지 않는다) |
 |---|---|---|---|
-| 1 | `design/HANDOFF.md` | 이 문서. 규칙과 수치 | 저장소 `docs/` |
-| 2 | `design/handoff/tokens.css` | 디자인 토큰과 컴포넌트 클래스 (`ow-` 접두사) | `src/styles/tokens.css` |
-| 3 | `design/sprites/owls.png` `owls.json` | 올빼미 부품 시트 (PixiJS 스프라이트 시트 형식) | `assets/sprites/` |
-| 3 | `design/sprites/office.png` `office.json` | 벽·바닥·가구·소품·효과 시트 | `assets/sprites/` |
-| 3 | `design/sprites/ui.png` `ui.json` | 로고, 로딩 건물 부품, 규모 미리보기 | `assets/sprites/` |
-| 3 | `design/sprites/floorplan.json` | 평면도: 방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색 | `assets/` |
-| 4 | `design/handoff/phrases.ko.json` | 화면에 보이는 모든 문구와 문장 틀 | `src/phrases.ko.json` |
-| 4 | `design/handoff/icons/*.svg` | 선 아이콘 41개 (24 격자, 선 1.75, `currentColor`) | `src/icons/` |
-| 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | `tokens.css` 기준 `../fonts/` |
+| 1 | `design/HANDOFF.md` | 이 문서. 규칙과 수치 | 그대로 |
+| 2 | `design/handoff/tokens.css` | 디자인 토큰과 컴포넌트 클래스 (`ow-` 접두사) | `import` (글꼴 상대 경로 `../fonts/` 가 그대로 맞는다) |
+| 3 | `design/sprites/owls.png` `owls.json` | 올빼미 부품 시트 (PixiJS 스프라이트 시트 형식) | Vite `publicDir` 라 `/owls.json` 으로 읽는다 |
+| 3 | `design/sprites/office.png` `office.json` | 벽·바닥·가구·소품·효과 시트 | `/office.json` |
+| 3 | `design/sprites/ui.png` `ui.json` | 로고, 로딩 건물 부품, 규모 미리보기 | `/ui.json` |
+| 3 | `design/sprites/floorplan.json` | 평면도: 방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색 | `/floorplan.json` |
+| 4 | `design/handoff/phrases.ko.json` | 화면에 보이는 모든 문구와 문장 틀 | `import` |
+| 4 | `design/handoff/icons/*.svg` | 선 아이콘 41개 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
+| 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | tokens.css 가 가리킨다 |
 | 5 | `design/assets/office-*.png` | 참조 렌더. 위 시트와 평면도만으로 그린 정답 그림 | 테스트 고정 자료 |
 | 6 | 캔버스 시안 | 13장. 화면 구성과 상태 | 시각 참조 |
 

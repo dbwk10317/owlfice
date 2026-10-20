@@ -22,6 +22,8 @@ export default defineConfig(({ mode }) => ({
   },
   // Rust 에러가 Vite 출력에 가려지지 않게
   clearScreen: false,
+  // 스프라이트 시트·평면도는 design/ 이 원본이다. 앱 쪽에 복사하면 둘이 갈라진다 (AGENTS 7절)
+  publicDir: "design/sprites",
   server: {
     // tauri.conf.json의 devUrl과 같은 포트. 비어 있지 않으면 실패한다
     port: 1420,

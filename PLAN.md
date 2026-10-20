@@ -658,6 +658,7 @@ owlfice/
 ├── src-tauri/                   ← Rust 백엔드
 │   ├── Cargo.toml
 │   ├── tauri.conf.json
+│   ├── tests/                   ← Rust 통합 테스트 (Cargo는 Cargo.toml 옆의 tests/만 찾는다)
 │   └── src/
 │       ├── main.rs              ← lib의 run()만 부른다
 │       ├── lib.rs               ← 모듈 선언, Tauri 진입, 커맨드·이벤트 등록. bin/이 같은 모듈을 쓰려면 라이브러리여야 한다
@@ -710,11 +711,10 @@ owlfice/
 ├── assets/                      ← 스프라이트 시트, 타일, 폰트
 ├── tools/
 │   └── anonymize.py             ← 실제 세션 파일 → fixture 익명화
-├── fixtures/                    ← 테스트용 세션 파일 샘플 (익명화)
-│   ├── claude/
-│   ├── codex/
-│   └── gemini/
-└── tests/                       ← Rust 통합 테스트
+└── fixtures/                    ← 테스트용 세션 파일 샘플 (익명화)
+    ├── claude/
+    ├── codex/
+    └── gemini/
 ```
 
 ### 4.3 프로세스 구조와 데이터 흐름

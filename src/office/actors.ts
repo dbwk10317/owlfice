@@ -466,7 +466,7 @@ export class ActorLayer {
         this.setFrame(a, frame);
       }
     for (const a of this.actors.values())
-      if (a.bubble) a.bubble.hidden = !(now - a.bubbleAt < BUBBLE_MS);
+      if (a.bubble) a.bubble.hidden = !(Math.abs(now - a.bubbleAt) < BUBBLE_MS);
     this.fillNametag(now);
   }
 
@@ -627,8 +627,9 @@ export class ActorLayer {
   private setBubble(a: Actor, now: number): void {
     const b = a.emp.bubble;
     a.bubbleAt = b ? Date.parse(b.at) : Number.NaN;
-    // 옛 말풍선(재구성·다시 불러오기 뒤)은 만들지도 않는다
-    const text = b && now - a.bubbleAt < BUBBLE_MS ? bubbleText(a.id, a.emp.rank, b) : null;
+    // 옛 말풍선(재구성·다시 불러오기 뒤)은 만들지도 않는다. at 이 4초 넘게 앞서도(WSL 시계가 앞섬) 안 그린다
+    const text =
+      b && Math.abs(now - a.bubbleAt) < BUBBLE_MS ? bubbleText(a.id, a.emp.rank, b) : null;
     if (text === null) {
       a.bubble?.remove();
       a.bubble = null;
@@ -643,9 +644,9 @@ export class ActorLayer {
     const act = a.emp.activity;
     a.bubble.className = "ow-bubble";
     a.bubble.classList.toggle("is-estimate", act.confidence === "Inferred");
-    a.bubble.classList.toggle("is-incident", act.room === "Incident");
+    a.bubble.classList.toggle("is-incident", b?.say.kind === "Incident");
     a.bubble.classList.toggle("is-ask", act.room === "Door");
-    if (a.bubble.textContent !== text) a.bubble.textContent = text;
+    a.bubble.textContent = text;
   }
 
   private head(a: Actor): { x: number; y: number } {

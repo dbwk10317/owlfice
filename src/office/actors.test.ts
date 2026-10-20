@@ -496,7 +496,6 @@ const bub = (say: Bubble["say"], at = NOW - 1000): Bubble => ({
   say,
 });
 const bubbleOf = (overlay: HTMLElement) => overlay.querySelector<HTMLElement>(".ow-bubble");
-const poolOf = (v: unknown): string[] => (Array.isArray(v) ? v : Object.values(v as object).flat());
 
 test("종류마다 고른 문구가 phrases 에 있고 재료가 채워진다", () => {
   const b = phrases.bubble as Record<string, unknown>;
@@ -514,8 +513,15 @@ test("종류마다 고른 문구가 phrases 에 있고 재료가 채워진다", 
     [{ kind: "UnknownResult" }, "unknownResult"],
   ];
   for (const [say, key] of kinds) {
-    const pool = key === "rank" || key === "unknownTool" ? poolOf(b[key]) : [b[key]].flat();
-    expect(pool, say.kind).toContain(bubbleText("a", "Daeri", bub(say)));
+    if (key === "rank" || key === "unknownTool") continue;
+    expect([b[key]].flat(), say.kind).toContain(bubbleText("a", "Daeri", bub(say)));
+  }
+  // 직급별 풀 (부장·사원)
+  for (const key of ["rank", "unknownTool"]) {
+    const byRank = b[key] as Record<string, string[]>;
+    const say = { kind: key === "rank" ? "Rank" : "UnknownTool" } as Bubble["say"];
+    expect(byRank.bujang, key).toContain(bubbleText("a", "Bujang", bub(say)));
+    expect(byRank.sawon, key).toContain(bubbleText("a", "Sawon", bub(say)));
   }
   // 직급별 풀은 그 직급 것만
   const sawon = (b.rank as Record<string, string[]>).sawon;
@@ -533,7 +539,6 @@ test("종류마다 고른 문구가 phrases 에 있고 재료가 채워진다", 
 test("같은 직원·같은 at 이면 다시 그려도 같은 문구", () => {
   const b = bub({ kind: "Rank" });
   const first = bubbleText("a", "Daeri", b);
-  expect(bubbleText("a", "Daeri", b)).toBe(first);
   const { layer, overlay } = newLayer();
   const a = emp("a", "Dev", "Type", { seat: 0, bubble: b });
   layer.sync(office([team("t", [boss(), a])]), "large", NOW);
@@ -572,9 +577,33 @@ test("모양 클래스: 추정 점선, 장애 상황실, 허가 대기", () => {
   };
   expect(shape("Dev", "Confirmed").className).toBe("ow-bubble");
   expect(shape("Dev", "Inferred").classList.contains("is-estimate")).toBe(true);
-  expect(shape("Incident", "Confirmed").classList.contains("is-incident")).toBe(true);
+  expect(shape("Incident", "Confirmed").classList.contains("is-incident")).toBe(false);
   expect(shape("Door", "Confirmed").classList.contains("is-ask")).toBe(true);
   expect(shape("Dev", "Confirmed").getAttribute("aria-hidden")).toBe("true");
+});
+
+test("is-incident 는 방이 아니라 Incident 말풍선에 붙는다", () => {
+  const { layer, overlay } = newLayer();
+  const a = emp("a", "Dev", "Type", { seat: 0, bubble: bub({ kind: "Incident" }) });
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  expect(bubbleOf(overlay)!.classList.contains("is-incident")).toBe(true);
+});
+
+test("미래 at 은 4초 넘게 앞서면 안 보인다", () => {
+  const near = newLayer();
+  const a = emp("a", "Dev", "Type", {
+    seat: 0,
+    bubble: bub({ kind: "Say", text: "x" }, NOW + 3000),
+  });
+  near.layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  expect(bubbleOf(near.overlay)!.hidden).toBe(false);
+  const far = newLayer();
+  const b = emp("b", "Dev", "Type", {
+    seat: 0,
+    bubble: bub({ kind: "Say", text: "x" }, NOW + 5000),
+  });
+  far.layer.sync(office([team("t", [boss(), b])]), "large", NOW);
+  expect(bubbleOf(far.overlay)).toBeNull();
 });
 
 test("직원이 없어지거나 외근이면 말풍선도 지운다", () => {

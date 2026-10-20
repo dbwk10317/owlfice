@@ -60,8 +60,9 @@ fn main() -> ExitCode {
     }
 }
 
-/// 원본의 파일 하나: 대상 안 상대 경로와 줄들 (개행 포함)
+/// 원본의 파일 하나: 원본 경로, 대상 안 상대 경로, jsonl 이면 줄들 (개행 포함)
 struct Src {
+    path: PathBuf,
     rel: PathBuf,
     lines: Vec<Vec<u8>>,
 }
@@ -134,9 +135,16 @@ fn collect(src: &Path) -> io::Result<Vec<Src>> {
     let mut files = Vec::new();
     for p in found {
         let rel = p.strip_prefix(&root).unwrap_or(&p).to_path_buf();
+        // jsonl 이 아닌 파일은 줄을 안 읽고 replay 가 그대로 복사한다
+        let lines = if is_jsonl(&rel) {
+            split_lines(&fs::read(&p)?)
+        } else {
+            Vec::new()
+        };
         files.push(Src {
+            path: p,
             rel,
-            lines: split_lines(&fs::read(&p)?),
+            lines,
         });
     }
     files.sort_by_key(|f| (is_subagent(&f.rel), f.rel.clone()));
@@ -162,13 +170,20 @@ fn is_jsonl(rel: &Path) -> bool {
 }
 
 fn replay(src: &Path, dst: &Path, speed: f64, shift: bool) -> io::Result<()> {
+    // 기존 파일 뒤에 append 하면 두 번 돌릴 때 줄이 겹친다
+    if fs::read_dir(dst).is_ok_and(|mut d| d.next().is_some()) {
+        return Err(io::Error::other(format!(
+            "대상 폴더가 비어 있지 않습니다: {}",
+            dst.display()
+        )));
+    }
     let all = collect(src)?;
     fs::create_dir_all(dst)?;
     let (jsonl, others): (Vec<Src>, Vec<Src>) = all.into_iter().partition(|f| is_jsonl(&f.rel));
     for f in &others {
         let to = dst.join(&f.rel);
         fs::create_dir_all(to.parent().unwrap_or(dst))?;
-        fs::write(to, f.lines.concat())?;
+        fs::copy(&f.path, to)?;
     }
     let steps = plan(&jsonl);
     // ponytail: Codex 파일 이름 속 시각은 옮기지 않는다, 이름의 시각을 읽는 쪽이 생기면 이름도 바꾼다
@@ -198,18 +213,19 @@ fn replay(src: &Path, dst: &Path, speed: f64, shift: bool) -> io::Result<()> {
         } else {
             out.write_all(raw)?;
         }
-        out.flush()?;
     }
     Ok(())
 }
 
-/// 파싱되지 않는 줄은 그대로 둔다
+/// 파싱되지 않는 줄은 그대로 둔다.
+/// 다시 직렬화하니 키 순서가 바뀔 수 있지만 파서는 순서에 기대지 않아 그대로 둔다
 fn shifted(line: &[u8], delta_ms: i64) -> Vec<u8> {
     let Ok(mut v) = serde_json::from_slice::<Value>(line) else {
         return line.to_vec();
     };
     shift_value(None, &mut v, delta_ms);
-    let mut out = serde_json::to_vec(&v).unwrap_or_else(|_| line.to_vec());
+    // Value 직렬화는 실패하지 않는다
+    let mut out = serde_json::to_vec(&v).expect("Value 직렬화");
     out.push(b'\n');
     out
 }
@@ -265,8 +281,16 @@ mod tests {
         assert!(src.len() >= 3, "메인 + 서브 + meta.json");
         for f in src {
             let got = fs::read(tmp.path().join(&f.rel)).unwrap();
-            assert_eq!(got, f.lines.concat(), "{}", f.rel.display());
+            assert_eq!(got, fs::read(&f.path).unwrap(), "{}", f.rel.display());
         }
+    }
+
+    #[test]
+    fn 대상_폴더가_비어_있지_않으면_멈춘다() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("old.txt"), "x").unwrap();
+        assert!(replay(&fixture(), tmp.path(), 1e9, false).is_err());
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
     }
 
     fn all_ts(root: &Path) -> Vec<i64> {
@@ -292,27 +316,63 @@ mod tests {
     }
 
     #[test]
-    fn 병합은_시각_순이고_동률은_메인_먼저다() {
-        let files: Vec<Src> = collect(&fixture())
-            .unwrap()
-            .into_iter()
-            .filter(|f| is_jsonl(&f.rel))
-            .collect();
-        assert!(!is_subagent(&files[0].rel), "메인이 앞 번호");
-        assert!(files.iter().any(|f| is_subagent(&f.rel)));
-        let steps = plan(&files);
-        assert_eq!(
-            steps.len(),
-            files.iter().map(|f| f.lines.len()).sum::<usize>()
-        );
-        for w in steps.windows(2) {
-            assert!(
-                (w[0].ts, w[0].file, w[0].line) <= (w[1].ts, w[1].file, w[1].line),
-                "{w:?}"
-            );
+    fn shift_to_now_는_started_at_ms_도_같은_만큼_옮긴다() {
+        let codex = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/codex/codex-app");
+        // 줄 안 어디에 있든 첫 started_at_ms 를 찾는다
+        fn dig(v: &Value) -> Option<i64> {
+            match v {
+                Value::Object(m) => m
+                    .get("started_at_ms")
+                    .and_then(Value::as_i64)
+                    .or_else(|| m.values().find_map(dig)),
+                Value::Array(a) => a.iter().find_map(dig),
+                _ => None,
+            }
         }
-        // 서브 줄이 메인 줄 사이에 섞여야 병합이다
-        let first_sub = steps.iter().position(|s| s.file != 0).unwrap();
-        assert!(steps[first_sub..].iter().any(|s| s.file == 0));
+        let find = |root: &Path| -> i64 {
+            collect(root)
+                .unwrap()
+                .iter()
+                .flat_map(|f| f.lines.iter())
+                .find_map(|l| dig(&serde_json::from_slice(l).ok()?))
+                .expect("started_at_ms 가 든 줄")
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        replay(&codex, tmp.path(), 1e9, true).unwrap();
+        let (o, g) = (all_ts(&codex), all_ts(tmp.path()));
+        assert_eq!(find(tmp.path()) - find(&codex), g[0] - o[0]);
+    }
+
+    #[test]
+    fn 병합은_시각_순이고_동률은_메인_먼저다() {
+        let tmp = tempfile::tempdir().unwrap();
+        let line = |t: &str, id: &str| {
+            format!(
+                "{{\"timestamp\":\"{t}\",\"id\":\"{id}\"}}
+"
+            )
+        };
+        let sub = tmp.path().join("subagents");
+        fs::create_dir(&sub).unwrap();
+        // 서브가 이름순으로 앞서도 동률이면 메인이 먼저여야 한다
+        fs::write(
+            tmp.path().join("main.jsonl"),
+            line("2026-01-01T00:00:01Z", "m1") + &line("2026-01-01T00:00:03Z", "m2"),
+        )
+        .unwrap();
+        fs::write(
+            sub.join("a.jsonl"),
+            line("2026-01-01T00:00:01Z", "s1") + &line("2026-01-01T00:00:02Z", "s2"),
+        )
+        .unwrap();
+        let files = collect(tmp.path()).unwrap();
+        let ids: Vec<String> = plan(&files)
+            .iter()
+            .map(|s| {
+                let v: Value = serde_json::from_slice(&files[s.file].lines[s.line]).unwrap();
+                v["id"].as_str().unwrap().to_owned()
+            })
+            .collect();
+        assert_eq!(ids, ["m1", "s1", "s2", "m2"]);
     }
 }

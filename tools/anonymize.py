@@ -244,7 +244,7 @@ LITERAL_PHRASES = [
 TEST_SUMMARY = (
     r"test result: (?:ok|FAILED)\. \d+ passed; \d+ failed(?:; \d+ ignored)?(?:; \d+ measured)?"
     r"(?:; \d+ filtered out)?|Tests:\s+\d+ failed, \d+ passed(?:, \d+ total)?|\d+ passed|\d+ failed|"
-    r"[Ee]xit code \d+|Output too large \([^)]*\)"
+    r"[Ee]xit code \d+|Output too large \(\d+(?:\.\d+)? ?(?:B|KB|MB|GB)\)"
 )
 STRUCT_RE = re.compile(
     rf"(?P<kv><(?P<ktag>task-id|tool-use-id|output-file|status|subagent_tokens|tool_uses|duration_ms|worktreePath)>"

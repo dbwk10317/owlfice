@@ -805,17 +805,17 @@ Codex·Antigravity는 등록부가 없어 세션 파일의 길이와 마지막 �
 AI 없이 기계적으로 따라가는 체인이다. 1번은 개발 PC에서 확인됐다.
 
 1. 레지스트리 `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` 아래 GUID 키를 모두 연다. 키마다 `DistributionName`, `DefaultUid`, `BasePath`, `State`, `Flags` 가 있다. 루트 키의 `DefaultDistribution` 값이 기본 배포판 GUID. (확인됨: Rocky-9, DefaultUid 1000)
-2. **켜진 배포판만 다룬다.** Probe 주기(30초)마다 `wsl.exe -l --running -q` 를 한 번 실행해(약 100ms) 켜진 목록을 얻는다. 3초 Scan에서는 프로세스를 띄우지 않는다. 꺼진 배포판은 "소등"으로 표시하고 UNC를 건드리지 않는다. UNC 첫 접근은 VM을 부팅시키기 때문이다 (1.3).
+2. **켜진 배포판만 다룬다.** Probe 주기(30초)마다 `wsl.exe -l --running -q` 를 한 번 실행해(약 100ms) 켜진 목록을 얻는다. 출력은 UTF-16LE이고, 켜진 배포판이 없으면 빈 출력에 종료 코드 0이다 (확인됨). 실행이 실패하면 "모름"으로 두고 UNC를 건드리지 않는다. 3초 Scan에서는 프로세스를 띄우지 않는다. 꺼진 배포판은 "소등"으로 표시하고 UNC를 건드리지 않는다. UNC 첫 접근은 VM을 부팅시키기 때문이다 (1.3).
 3. 배포판 루트는 `\\wsl.localhost\<DistributionName>\`. `BasePath` 의 vhdx는 열지 않는다. 구버전 호환으로 `\\wsl$\<이름>\` 도 시도한다.
 4. `\\wsl.localhost\<이름>\etc\passwd` 를 읽어 세 번째 필드가 `DefaultUid` 와 같은 줄의 여섯 번째 필드가 홈 디렉터리.
 5. 홈 아래 `.claude/projects`, `.codex/sessions`, `.gemini/antigravity-cli/brain` 존재 확인. CLI 폴더만 본다 (4.4.1 "호스트마다 찾는 제품").
-6. 못 찾으면 폴백: `wsl.exe -d <이름> -- printenv HOME CLAUDE_CONFIG_DIR CODEX_HOME` 을 한 번 실행한다. 로그인 셸(`sh -lc`)은 느리고 프로필 출력이 섞이므로 쓰지 않는다. 그래도 없으면 설정의 수동 경로.
+6. 못 찾으면 폴백: `wsl.exe -d <이름> -- printenv` 를 한 번 실행해 `HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` 의 `KEY=VALUE` 줄만 고른다. 변수 이름을 인자로 주면 값만 찍혀서 하나가 빠졌을 때 어느 줄이 어느 변수인지 모른다. 로그인 셸(`sh -lc`)은 느리고 프로필 출력이 섞이므로 쓰지 않는다. 그래도 없으면 설정의 수동 경로.
 
 **깨우지 않기의 한계와 완화.** 경로 기반 UNC 접근은 어떤 주기로 켜짐을 확인해도 "확인 직후 종료"의 창이 남는다. 그래서:
 1. Hot·Warm은 파일을 한 번 열어 핸들을 유지하고, stat(`GetFileInformationByHandle`)과 읽기를 핸들로 한다. 핸들은 경로를 다시 풀지 않아 배포판을 깨우지 않고, 배포판이 꺼지면 에러가 난다. 핸들은 옛 파일을 계속 가리키므로 같은 경로에 새 파일이 생겨도 모른다. 그래서 경로 접근이 허용되는 시점(WSL은 Probe 직후 Scan, 로컬은 매 Scan)에 경로의 파일 ID와 핸들의 파일 ID를 대조하고, 다르면 다시 열고 `Reset` 한다.
 2. 핸들 에러가 나거나 감시자(4.5)가 2초 넘는 정지를 보면 그 호스트를 "의심"으로 바꾸고, Probe가 켜짐을 다시 확인할 때까지 그 호스트의 모든 UNC 접근(나열 포함)을 멈춘다. 사이드바에는 "통신 지연" 점선(S46). 멈춘 I/O 안의 스레드는 자기 지연을 잴 수 없으므로 감시는 다른 스레드가 한다.
 3. 디렉터리 나열은 경로 기반이라 WSL 호스트의 Scan은 Probe 직후에만 한 번 돈다. WSL의 새 세션 발견은 3초가 아니라 30초다.
-4. 경로 접근이 꺼진 배포판을 실제로 재시작하는지는 T03에서 확인한다 (6부). 재시작하지 않는다면 3을 되돌려 WSL도 3초 Scan으로 간다.
+4. 경로 접근은 꺼진 배포판을 재시작한다 (확인됨: Stopped 상태에서 `\\wsl.localhost\<이름>\` 을 한 번 나열하자 약 0.7초 뒤 Running). 그래서 3을 유지한다.
 
 레지스트리 키가 없으면 WSL 미설치로 보고 건너뛴다. 실패해도 다른 호스트를 막지 않는다 (호스트별 스레드, 4.3). 층 번호는 호스트를 처음 본 순서로 매겨 `%APPDATA%\Owlfice\rooms.json` 에 함께 저장한다. 이름순이면 새 배포판이 앞에 끼어들 때 기존 층 번호와 저장된 방 번호가 어긋난다.
 
@@ -1481,7 +1481,6 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 세션 등록부 허가 대기 `status` | `idle`·`busy` 확인. 허가 창이 떠 있을 때의 값은 미확인 | 허가 창을 띄운 채 등록부 보기 | T02, T11 |
 | WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T03, T12 |
 | Claude 알림의 실패 모양 | 알림 `status` 는 `completed` 만 봤다. 실패한 백그라운드 작업의 status·summary 미확인 | 실패하는 백그라운드 명령 하나 | T07 |
-| UNC 경로 접근이 꺼진 WSL 배포판을 재시작하는가 | 한다고 가정 (핸들·의심 상태·Probe 묶인 Scan으로 완화) | 배포판을 끈 뒤 `\\wsl.localhost\<이름>\` 디렉터리를 한 번 나열하고 `wsl -l --running` 확인 | T03, T13 |
 | 컨텍스트 윈도우 | Claude는 compaction `preTokens` 로 학습 (이 PC 표본 967k → 1M). 못 봤으면 설정값 200k + "?" 표시. Codex는 `model_context_window` 확인됨 | 200k 세션과 1M 세션을 하나씩 돌려 화분 곡선 확인 | T11, T23 |
 | 할 일 도구 | Claude Desktop·CLI(2.1.299·2.1.304)와 Codex 0.163 표본에는 할 일 도구가 없었다 (모델이 todo 파일로 대신). Antigravity는 `task.md` (4.6.3). 칸반(S40)을 무엇으로 움직일지 미정 | 할 일 도구가 있는 빌드·설정이 있는지 보기. 없으면 칸반 신호를 바꾼다 | T07, T23 |
 | Codex 거부 기록 | Claude는 `toolDenialKind`, Antigravity 앱은 `ERROR` + `permission check failed` 로 확인. Codex는 표본에서 허가 창이 안 떴거나 허용됐다 | 허가 창에서 거부 | T08 |

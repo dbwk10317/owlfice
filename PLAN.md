@@ -1105,7 +1105,7 @@ outcome: 구조 필드가 없다. `run_command` 결과 첫 줄 `Command exited w
 | `gh pr view`, `gh pr diff`, `gh pr list` | PrView |
 | `gh pr create` | PrCreate |
 | `git tag <이름>`, `git tag -a`, `gh release create` | Release |
-| `cat`, `head`, `tail`, `sed -n` (`-i` 없을 때), `less` | FileRead (경로 추출) |
+| `cat`, `head`, `tail`, `sed -n` (`-i` 없을 때), `less` | FileRead (경로 추출). 표준 출력 리다이렉트(`>`, `>>`)가 있으면 쓰기라 Shell (`cat > a.md <<EOF` 는 열람이 아니다) |
 | `grep`, `rg`, `find`, `fd` | FileSearch |
 | `git branch <이름>` 등 그 외 git, 그 외 명령 | Shell |
 
@@ -1227,7 +1227,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | (팀) `> 30분` 이고 `!alive_in_registry` | phase=Off. 등록부에 살아 있으면 Dozing 유지, 조명만 어둡게 (S58) | |
 | (직원) `pending` 중 하나의 경과 > `avg[command_key] × 2` | pose=Squat, 선풍기 | |
 | (직원) `pending` 경과 > 120초 | 땀, "장기 실행". 졸음으로 가지 않는다 | |
-| (직원) `pending` 경과 > 30분, 또는 팀이 Off로 바뀜 | 그 호출을 `Unknown` 으로 정리. 결과가 영영 오지 않는 호출(프로세스 종료, 연결 단절)의 뒷정리 | |
+| (직원) `pending` 경과 > 30분, 또는 팀이 Off로 바뀜 | 그 호출을 `Unknown` 으로 정리. 결과가 영영 오지 않는 호출(프로세스 종료, 연결 단절)의 뒷정리. 단 사장님 결정을 기다리는 호출(Ask, Codex `escalated`)은 30분으로 포기하지 않는다. 자리를 비운 사장님을 30분 넘게 기다리는 것이 정상이고, 죽은 세션은 팀 Off 가 정리한다 | |
 | (직원) `background` 작업 | 시간 제한 없음. 완료 알림(Ok/Err 규칙 적용), `TaskStop` 의 성공 결과(Unknown), 팀 Off(Unknown) 중 먼저 오는 것으로 정리하고 작업표를 뗀다. 작업표에는 경과 시간만 | |
 | (서브) 완료 기록(4.6.1~4.6.3)을 못 본 채 `pending`·`background` 비어 있고, 마지막 레코드가 tool_use 없는 assistant이고, 60초 무변경 | SubagentDone | 추정 |
 | 현지 22~06시 | props.night = true | |

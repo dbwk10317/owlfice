@@ -1,0 +1,224 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
+import { layoutOf, mountHeader } from "./header.ts";
+import { mountPanel, type Viewport } from "./sidebar-right.ts";
+import { createStore } from "./store.ts";
+import { emp, office, team } from "./test-office.ts";
+import type { OfficeDto, OfficeListDto, OfficeSummaryDto, Scale } from "./types/ipc.ts";
+
+// 2026-01-01 22:47 (로컬). 팀 시작은 12분 전
+const NOW = new Date(2026, 0, 1, 22, 47, 0);
+const STARTED = new Date(NOW.getTime() - 12 * 60_000).toISOString();
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+afterEach(() => {
+  vi.useRealTimers();
+  document.body.innerHTML = "";
+});
+
+const summary = (over: Partial<OfficeSummaryDto> = {}): OfficeSummaryDto => ({
+  officeId: "o",
+  building: "B",
+  floor: 2,
+  room: 203,
+  label: "B동 203호",
+  phase: "Working",
+  dot: "Working",
+  asking: false,
+  border: "Plain",
+  delayed: false,
+  teams: [
+    {
+      teamId: "t",
+      bossName: "김하늘",
+      title: "t",
+      folder: "f",
+      others: 2,
+      started: STARTED,
+      phase: "Working",
+      dot: "Working",
+      asking: false,
+      border: "Plain",
+      delayed: false,
+      hostBadge: "WSL",
+      workType: "BugFix",
+    },
+  ],
+  ...over,
+});
+
+function setup(
+  o: OfficeSummaryDto,
+  scale: Scale = "Large",
+  over: Partial<OfficeDto> = {},
+  bandSlot?: () => HTMLElement | null,
+) {
+  const store = createStore<OfficeListDto, OfficeDto>();
+  const sel = {
+    ...office(o.officeId, 1, [team("t", [emp("a")], { title: "로그인 버그 고치기" })]),
+    ...over,
+  };
+  store.applyWorld({
+    listSeq: 1,
+    rebuilt: false,
+    scale,
+    offices: [o],
+    selectedId: o.officeId,
+    selectRequest: 0,
+    selected: sel,
+  });
+  let size = { w: 1280, h: 800 };
+  const cbs = new Set<() => void>();
+  const vp: Viewport & { set(w: number): void } = {
+    size: () => size,
+    subscribe: (cb) => (cbs.add(cb), () => cbs.delete(cb)),
+    set(w) {
+      size = { w, h: 800 };
+      cbs.forEach((cb) => cb());
+    },
+  };
+  const app = document.createElement("div");
+  const header = document.createElement("header");
+  const panelHost = document.createElement("div");
+  app.append(header, panelHost);
+  document.body.append(app);
+  const setRoomLabels = vi.fn();
+  let handle: ReturnType<typeof mountHeader> | null = null;
+  const panel = mountPanel(panelHost, store, {
+    viewport: vp,
+    onDrawerChange: (open) => handle?.setDrawerOpen(open),
+  });
+  handle = mountHeader(app, header, store, {
+    viewport: vp,
+    bandSlot,
+    togglePanel: () => panel.toggleDrawer(),
+    setRoomLabels,
+  });
+  const q = (sel: string) => header.querySelector<HTMLElement>(sel)!;
+  return { store, app, header, vp, setRoomLabels, handle, q, panelHost };
+}
+
+test("3.2 표의 너비 경계", () => {
+  expect([1600, 1100, 1099, 900, 899, 720, 719].map(layoutOf)).toEqual([
+    "wide",
+    "wide",
+    "drawer",
+    "drawer",
+    "rail",
+    "rail",
+    "select",
+  ]);
+});
+
+test("대기업: 이름, 제품·호스트, 세션 제목, 근무 중 경과", () => {
+  const s = setup(summary());
+  expect(s.q(".ow-header__title").textContent).toBe("B동 203호");
+  expect(s.q(".ow-header__sub").textContent).toBe("Claude Code CLI · WSL");
+  expect(s.q(".ow-header__session").textContent).toBe("로그인 버그 고치기");
+  expect(s.q(".ow-header__status").textContent).toBe("근무 중 · 12분째");
+});
+
+test("중소기업: 팀·직원 수, 세션 제목 없음", () => {
+  const s = setup(summary({ building: null, label: "2층 Codex 사무실" }), "Small");
+  expect(s.q(".ow-header__title").textContent).toBe("2층 Codex 사무실");
+  expect(s.q(".ow-header__sub").textContent).toBe("팀 1 · 직원 3명");
+  expect(s.q(".ow-header__session").hidden).toBe(true);
+});
+
+test("야근이면 야근 모드와 시각, 모두 퇴근이면 퇴근 문구", () => {
+  const night = setup(summary(), "Large", {
+    shared: { ...office("o", 1, []).shared, night: true },
+  });
+  expect(night.q(".ow-header__status").textContent).toBe("야근 모드 · 22:47");
+  document.body.innerHTML = "";
+  const off = setup(summary({ phase: "Off", teams: [{ ...summary().teams[0], phase: "Off" }] }));
+  expect(off.q(".ow-header__status").textContent).toBe("모두 퇴근 · 22:47");
+});
+
+test("방 이름표 토글은 aria-pressed 를 바꾸고 렌더러에 알린다", () => {
+  const s = setup(summary());
+  const btn = s.q("[aria-pressed]");
+  expect(btn.getAttribute("aria-pressed")).toBe("true");
+  btn.click();
+  expect(btn.getAttribute("aria-pressed")).toBe("false");
+  expect(s.setRoomLabels).toHaveBeenLastCalledWith(false);
+  btn.click();
+  expect(s.setRoomLabels).toHaveBeenLastCalledWith(true);
+});
+
+test("panel 버튼은 1100 미만에서 보이고 드로어 상태와 맞는다", () => {
+  const s = setup(summary());
+  const btn = s.q(".ow-header__panel");
+  expect(btn.hidden).toBe(true);
+  s.vp.set(1000);
+  expect(s.app.dataset.layout).toBe("drawer");
+  expect(btn.hidden).toBe(false);
+  expect(btn.getAttribute("aria-expanded")).toBe("false");
+  btn.click();
+  expect(btn.getAttribute("aria-expanded")).toBe("true");
+  expect(s.panelHost.querySelector(".ow-panel")?.classList.contains("is-drawer")).toBe(true);
+  btn.click();
+  expect(btn.getAttribute("aria-expanded")).toBe("false");
+  btn.click();
+  s.vp.set(1200); // 넓어지면 드로어가 닫히고 버튼이 사라진다
+  expect(btn.getAttribute("aria-expanded")).toBe("false");
+  expect(btn.hidden).toBe(true);
+});
+
+test("720 미만에서는 panel 버튼이 사이드바 띠로 옮겨 가고, 구간이 바뀌어도 드로어와 맞는다", () => {
+  const band = document.createElement("div");
+  const s = setup(summary(), "Large", {}, () => band);
+  const btn = s.q(".ow-header__panel");
+  s.vp.set(800); // 52 띠: 머리말 안
+  expect(btn.hidden).toBe(false);
+  expect(btn.parentElement).toBe(s.header);
+  btn.click();
+  s.vp.set(600);
+  expect(btn.parentElement).toBe(band);
+  expect(btn.hidden).toBe(false);
+  expect(btn.getAttribute("aria-expanded")).toBe("true");
+  btn.click();
+  expect(btn.getAttribute("aria-expanded")).toBe("false");
+  s.vp.set(1000);
+  expect(btn.parentElement).toBe(s.header);
+});
+
+test("상태 칩 점은 사이드바와 같은 판정: 장애·졸음·테두리", () => {
+  const dot = (o: Partial<OfficeSummaryDto>) => setup(summary(o)).q(".ow-dot") as HTMLElement;
+  expect(dot({ dot: "Incident" }).dataset.state).toBe("incident");
+  expect(dot({ dot: "Dozing" }).dataset.state).toBe("sleepy");
+  expect(dot({ border: "Failed" }).dataset.ring).toBe("fail");
+  expect(dot({ delayed: true }).dataset.ring).toBe("lag");
+  expect(dot({}).dataset.ring).toBeUndefined();
+});
+
+test("office 가 아직 없거나 시작 시각을 못 읽으면 상태 칩을 숨기고, 경과 시간은 시간·분", () => {
+  const s = setup(summary());
+  expect(s.q(".ow-header__status").parentElement!.hidden).toBe(false);
+  s.store.selectOffice("o"); // office 를 비운다
+  expect(s.q(".ow-header__status").parentElement!.hidden).toBe(true);
+  document.body.innerHTML = "";
+  const bad = setup(summary({ teams: [{ ...summary().teams[0], started: "x" }] }));
+  expect(bad.q(".ow-header__status").parentElement!.hidden).toBe(true);
+  document.body.innerHTML = "";
+  const long = new Date(NOW.getTime() - (13 * 60 + 20) * 60_000).toISOString();
+  const l = setup(summary({ teams: [{ ...summary().teams[0], started: long }] }));
+  expect(l.q(".ow-header__status").textContent).toBe("근무 중 · 13시간 20분째");
+});
+
+test("창 너비 구간마다 배치: 띠는 레일에서, 머리말은 select 에서 숨는다", () => {
+  const s = setup(summary());
+  const at = (w: number) => {
+    s.vp.set(w);
+    return [s.app.dataset.layout, s.header.hidden, s.header.classList.contains("ow-header--strip")];
+  };
+  expect(at(1600)).toEqual(["wide", false, false]);
+  expect(at(1000)).toEqual(["drawer", false, false]);
+  expect(at(800)).toEqual(["rail", false, true]);
+  expect(at(600)).toEqual(["select", true, false]);
+  s.vp.set(800);
+  expect(s.q(".ow-header__work").textContent).toBe("오늘의 업무 · 버그 수정");
+});

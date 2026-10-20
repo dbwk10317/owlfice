@@ -100,6 +100,26 @@ export interface Viewport {
   subscribe(cb: () => void): () => void;
 }
 
+/** 창 크기 출처: window 크기와 resize(100ms 디바운스). window 가 없으면 고정 크기 */
+export function windowViewport(win: Window | null): Viewport {
+  if (!win) return { size: () => ({ w: 1280, h: 800 }), subscribe: () => () => {} };
+  return {
+    size: () => ({ w: win.innerWidth, h: win.innerHeight }),
+    subscribe(cb) {
+      let t: ReturnType<typeof setTimeout> | undefined;
+      const on = () => {
+        clearTimeout(t);
+        t = setTimeout(cb, 100);
+      };
+      win.addEventListener("resize", on);
+      return () => {
+        clearTimeout(t);
+        win.removeEventListener("resize", on);
+      };
+    },
+  };
+}
+
 export interface PanelOptions {
   /** 창 크기 출처. 기본은 window 크기와 resize(100ms 디바운스) */
   viewport?: Viewport;
@@ -738,26 +758,7 @@ export function mountPanel(
 
   // ---- 창 크기 ----
 
-  const win = doc.defaultView;
-  const viewport: Viewport =
-    opts.viewport ??
-    (win
-      ? {
-          size: () => ({ w: win.innerWidth, h: win.innerHeight }),
-          subscribe(cb) {
-            let t: ReturnType<typeof setTimeout> | undefined;
-            const on = () => {
-              clearTimeout(t);
-              t = setTimeout(cb, 100);
-            };
-            win.addEventListener("resize", on);
-            return () => {
-              clearTimeout(t);
-              win.removeEventListener("resize", on);
-            };
-          },
-        }
-      : { size: () => ({ w: 1280, h: 800 }), subscribe: () => () => {} });
+  const viewport: Viewport = opts.viewport ?? windowViewport(doc.defaultView);
 
   function setDrawer(open: boolean): void {
     const next = narrow && open;

@@ -117,6 +117,8 @@ pub enum EventKind {
     /// 확인됨: AskUserQuestion / ExitPlanMode / Codex request_user_input_async / Antigravity ask_question
     PermissionRequest {
         question: String,
+        /// Claude ExitPlanMode
+        plan: bool,
     },
     ContextCompaction {
         pre_tokens: Option<u64>,
@@ -574,7 +576,8 @@ fn classify_segment(toks: &[String]) -> SegClass {
             ("pr", "create") => ToolKind::PrCreate,
             _ => ToolKind::Shell,
         },
-        "cat" | "head" | "tail" | "less" => {
+        // `cat > f <<EOF` 처럼 표준 출력을 파일로 보내면 쓰기다
+        "cat" | "head" | "tail" | "less" if !args.iter().any(|a| redirects_stdout(a)) => {
             path = file_arg(&args, false);
             ToolKind::FileRead
         }
@@ -611,6 +614,12 @@ fn classify_segment(toks: &[String]) -> SegClass {
         path,
         msg,
     }
+}
+
+/// 표준 출력 리다이렉트 `>`, `>>`, `1>`, `&>`, `>f`. `2>`, `2>&1`, `>&2` 는 아니다
+fn redirects_stdout(a: &str) -> bool {
+    let r = a.strip_prefix(['1', '&']).unwrap_or(a);
+    r.starts_with('>') && !r.trim_start_matches('>').starts_with('&')
 }
 
 /// `-i`, `-i.bak`, `-ni`, `--in-place[=x]`
@@ -1029,6 +1038,21 @@ mod tests {
         let c = classify_command("cat <<-\"X\"\n\tcargo test\n\tX\ngit push");
         assert_eq!(c.kind, GitPush);
         assert_eq!(c.compound, Compound::Mixed);
+    }
+
+    #[test]
+    fn stdout_redirect_turns_a_read_into_a_write() {
+        for cmd in [
+            "cat > a.md <<EOF\nhi\nEOF",
+            "head a > b",
+            "cat a >>b",
+            "tail a 1>b",
+        ] {
+            assert_eq!(classify_command(cmd).kind, Shell, "{cmd}");
+        }
+        for cmd in ["cat a 2>/dev/null", "cat a 2>&1", "cat a >&2"] {
+            assert_eq!(classify_command(cmd).kind, FileRead, "{cmd}");
+        }
     }
 
     #[test]

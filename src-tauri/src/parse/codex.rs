@@ -325,6 +325,7 @@ impl CodexParser {
         if ask {
             out.push(EventKind::PermissionRequest {
                 question: scan.question.clone().unwrap_or_default(),
+                plan: false,
             });
         }
         let stop_session = scan
@@ -495,6 +496,7 @@ impl CodexParser {
                 .unwrap_or_default();
             out.push(EventKind::PermissionRequest {
                 question: question.to_string(),
+                plan: false,
             });
         }
         self.pending.push(Pending {
@@ -2165,7 +2167,8 @@ mod tests {
                     summary: empty_summary(),
                 },
                 EventKind::PermissionRequest {
-                    question: "Pick?".into()
+                    question: "Pick?".into(),
+                    plan: false,
                 },
                 result("q1".into(), ToolOutcome::Ok, String::new()),
                 EventKind::UserMessage {
@@ -2177,7 +2180,8 @@ mod tests {
                     summary: empty_summary(),
                 },
                 EventKind::PermissionRequest {
-                    question: "Proceed?".into()
+                    question: "Proceed?".into(),
+                    plan: false,
                 },
             ]
         );

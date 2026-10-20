@@ -1079,11 +1079,11 @@ outcome: 구조 필드가 없다. `run_command` 결과 첫 줄 `Command exited w
 
 #### 4.6.4 명령 분류 (`classify_command`)
 
-1. 명령을 개행, `|`, `&&`, `||`, `;` 로 나눈다. 따옴표(`'`, `"`) 안과 `\` 뒤의 구분자는 자르지 않는다 (간단한 따옴표 상태 머신). 세그먼트 끝의 단독 `&`(`&&` 아님)는 비동기 실행이다. 셸이 즉시 0을 돌려주므로 그 호출의 결과는 `Unknown` 으로 본다 (`git push &` 가 출고 성공이 되면 안 된다). 서브셸 `( )`, `$( )`, heredoc, `for`/`while`/`if`, `{ }` 가 들어 있으면 분석하지 않고 `compound = Mixed` 로 둔다. 분석하지 못하는 구문은 개별 명령의 성공을 보증하지 않는 쪽으로 처리한다.
+1. 명령을 개행, `|`, `&&`, `||`, `;` 로 나눈다. 따옴표(`'`, `"`) 안과 `\` 뒤의 구분자는 자르지 않는다 (간단한 따옴표 상태 머신). 세그먼트 끝의 단독 `&`(`&&` 아님)는 비동기 실행이다. 셸이 즉시 0을 돌려주므로 그 호출의 결과는 `Unknown` 으로 본다 (`git push &` 가 출고 성공이 되면 안 된다). 세그먼트 첫 토큰의 `&` 는 PowerShell 호출 연산자라 비동기가 아니다. 벗기고 다음 토큰을 프로그램으로 본다. 서브셸 `( )`, `$( )`, heredoc, `for`/`while`/`if`, `{ }` 가 들어 있으면 분석하지 않고 `compound = Mixed` 로 둔다. heredoc 본문 줄은 세그먼트로 나누지 않는다. 분석하지 못하는 구문은 개별 명령의 성공을 보증하지 않는 쪽으로 처리한다.
 2. 각 세그먼트를 아래 표로 분류한다.
 3. **우선순위가 가장 높은 것**을 대표로 고른다. 마지막 명령 기준이 아니다. `cargo test 2>&1 | tail -20` 은 Test, `cd x && npm test | head` 도 Test다. 우선순위: Release > PrCreate > GitPush > GitCommit > Test > Build > GitDiff > PrView > GitQuery > FileSearch > FileRead > Shell. 대표 분류는 **방과 문장**(화면 위치)을 정하는 데 쓴다.
 4. `compound`: 세그먼트가 하나면 `Single`, 결합이 `&&` 뿐이면 `AndOnly`, 파이프·`||`·`;`·개행·단독 `&`·분석 불가 구문이 하나라도 있으면 `Mixed`. 파이프는 pipefail이 없으면 마지막 명령의 종료 코드만 남아 `cargo test | tail` 이 테스트 실패에도 0을 돌려준다. Claude Code의 Bash와 Codex의 bash는 pipefail이 꺼져 있다 (확인됨, `false | true` 가 성공).
-5. 키 두 개를 뽑는다. `command_key` 는 대표 세그먼트의 첫 토큰 + 서브커맨드 (`cargo build`, `npm test`, `git push`)로 **평균 소요**의 키다. `command_norm` 은 공백을 정규화한 원문 전체로 **"같은 명령 3회 연속 실패"**의 키다. `pytest a.py` 와 `pytest b.py` 는 평균은 같이 세고 장애는 따로 센다. 표시용 `command` 는 원문 40자.
+5. 키 두 개를 뽑는다. `command_key` 는 대표 세그먼트의 첫 토큰 + 서브커맨드 (`cargo build`, `npm test`, `git push`. `npm run build`, `gh pr create` 처럼 두 단어인 것은 둘 다. `git -C <경로>`, `cargo +<툴체인>` 같은 앞 옵션은 건너뛴다)로 **평균 소요**의 키다. `command_norm` 은 공백을 정규화한 원문 전체로 **"같은 명령 3회 연속 실패"**의 키다. `pytest a.py` 와 `pytest b.py` 는 평균은 같이 세고 장애는 따로 센다. 표시용 `command` 는 원문 40자.
 
 | 패턴 | ToolKind |
 |---|---|
@@ -1091,12 +1091,12 @@ outcome: 구조 필드가 없다. `run_command` 결과 첫 줄 `Command exited w
 | `cargo build`, `cargo check`, `npm run build`, `make`, `go build`, `tsc`, `gradle`, `mvn` | Build |
 | `git status`, `git log`, `git show`, `git branch` (인자 없음 또는 `-a`/`--list`), `git tag` (인자 없음 또는 `-l`), `gh release list/view` | GitQuery |
 | `git diff` | GitDiff |
-| `git commit` | GitCommit (메시지 `-m` 값 추출) |
+| `git commit` | GitCommit (메시지 `-m` 값 추출. `"$(cat <<'EOF' …)"` 꼴이면 본문 첫 줄) |
 | `git push` | GitPush |
 | `gh pr view`, `gh pr diff`, `gh pr list` | PrView |
 | `gh pr create` | PrCreate |
 | `git tag <이름>`, `git tag -a`, `gh release create` | Release |
-| `cat`, `head`, `tail`, `sed -n`, `less` | FileRead (경로 추출) |
+| `cat`, `head`, `tail`, `sed -n` (`-i` 없을 때), `less` | FileRead (경로 추출) |
 | `grep`, `rg`, `find`, `fd` | FileSearch |
 | `git branch <이름>` 등 그 외 git, 그 외 명령 | Shell |
 

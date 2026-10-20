@@ -8,7 +8,15 @@ export default defineConfig(({ mode }) => ({
     ignorePatterns: ["design/**", "src-tauri/**", "dist/**"],
   },
   fmt: {
-    ignorePatterns: ["design/**", "**/*.md", "src-tauri/**", "dist/**", "package-lock.json"],
+    // fixtures는 실제 세션 파일의 모양(한 줄 JSON) 그대로여야 한다
+    ignorePatterns: [
+      "design/**",
+      "**/*.md",
+      "src-tauri/**",
+      "dist/**",
+      "package-lock.json",
+      "fixtures/**",
+    ],
   },
   // Rust 에러가 Vite 출력에 가려지지 않게
   clearScreen: false,

@@ -1,6 +1,6 @@
 //! 이벤트 → 방·행동·문장 (PLAN 4.7.1), 시간 전이 (4.7.2)
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Duration, FixedOffset, Timelike, Utc};
@@ -9,8 +9,8 @@ use super::rank::rank_of;
 use super::stats::TeamStats;
 use super::work::{Role, Touched, WorkTally, WorkType, touches_file};
 use super::{
-    Activity, Counters, Cue, Employee, Incident, Light, PendingCall, Pose, Rank, Room, Team,
-    TeamPhase, TeamProps,
+    Activity, Bubble, BubbleSay, Counters, Cue, Employee, Incident, Light, PendingCall, Pose, Rank,
+    Room, Team, TeamPhase, TeamProps,
 };
 use crate::discover::Product;
 use crate::parse::{
@@ -49,6 +49,7 @@ impl Activity {
             expected_secs: None,
             pose: Pose::Sit,
             confidence,
+            extra: 0,
         }
     }
 }
@@ -99,21 +100,47 @@ impl Employee {
             edits: HashMap::new(),
             red: None,
             review_pens: 0,
+            bubble: None,
+            logged: false,
+            greeted: false,
+            unknown_tools: HashSet::new(),
+            too_long: None,
         }
     }
 
+    /// 진행 중이거나 머무는 상태 (호출 대표 작업, 대기, 졸음 등). 행적은 끝난 일이라 넣지 않는다 (3.5)
     fn set_activity(&mut self, a: Activity) {
-        if a.sentence != self.activity.sentence || a.room != self.activity.room {
-            let old = std::mem::replace(&mut self.activity, a);
-            self.recent.push_front(old);
+        self.activity = a;
+        self.logged = false;
+    }
+
+    /// 끝난 일 (완료, 사고, 반려, 보고 등). 바로 행적 맨 앞에 넣어 티커가 그때 흘린다.
+    /// 이미 넣은 같은 일을 다시 쓰는 것이면 한 번만
+    fn log_activity(&mut self, a: Activity) {
+        let same =
+            self.logged && a.sentence == self.activity.sentence && a.room == self.activity.room;
+        if !same {
+            self.recent.push_front(a.clone());
             self.recent.truncate(RECENT);
-        } else {
-            self.activity = a;
         }
+        self.activity = a;
+        self.logged = true;
     }
 
     fn is_boss(&self) -> bool {
         self.rank == Rank::Bujang
+    }
+
+    /// 일 말풍선. 사장님 손이 필요한 직원은 작업 중·농담 풀을 쓰지 않는다 (3.6)
+    fn say(&mut self, at: DateTime<Utc>, say: BubbleSay) {
+        if !needs_boss(self, at) {
+            self.bubble = Some(Bubble { at, say });
+        }
+    }
+
+    /// 대기용 말풍선 (허가 대기 질문, 계획 결재, 러버덕). 사장님 손이 필요해도 낸다
+    fn say_waiting(&mut self, at: DateTime<Utc>, say: BubbleSay) {
+        self.bubble = Some(Bubble { at, say });
     }
 }
 
@@ -160,6 +187,8 @@ impl Team {
             light_at_before: started,
             awake_since: started,
             pizza_at_wake: 0,
+            seen_vendors: HashSet::new(),
+            seen_skills: HashSet::new(),
         }
     }
 
@@ -260,7 +289,7 @@ impl Team {
                     self.sync_work();
                 }
                 if !self.refresh(i, ts) && boss {
-                    self.employees[i].set_activity(Activity::new(
+                    self.employees[i].log_activity(Activity::new(
                         sentence::REQUEST,
                         Room::TeamLead,
                         ts,
@@ -290,10 +319,19 @@ impl Team {
                     (sentence::report(text), home_room(e))
                 };
                 if !self.refresh(i, ts) {
-                    self.employees[i].set_activity(Activity {
+                    self.employees[i].log_activity(Activity {
                         pose: Pose::Type,
                         ..Activity::new(sentence, room, ts, Confidence::Confirmed)
                     });
+                }
+                let e = &mut self.employees[i];
+                if e.is_boss() {
+                    e.say(
+                        ts,
+                        BubbleSay::Say {
+                            text: sentence::cut(text, sentence::LINE),
+                        },
+                    );
                 }
             }
             EventKind::ToolCall {
@@ -343,6 +381,7 @@ impl Team {
                 }
                 self.refresh(i, ts);
                 self.sync_work();
+                self.call_bubble(i, tool, summary, ts);
             }
             EventKind::ToolResult {
                 call_id, outcome, ..
@@ -405,7 +444,7 @@ impl Team {
                     || e.pending.last().is_some_and(|c| c.tool != ToolKind::Spawn);
                 if !busy {
                     let room = room_for(&ToolKind::Spawn, e.is_boss());
-                    e.set_activity(Activity::new(
+                    e.log_activity(Activity::new(
                         sentence::spawn(rank, desc.as_deref().unwrap_or(prompt)),
                         room,
                         ts,
@@ -431,6 +470,18 @@ impl Team {
                 };
                 self.employees[i].asking = Some(q);
                 self.refresh(i, ts);
+                let say = if *plan {
+                    Some(BubbleSay::PlanApproval)
+                } else {
+                    Some(question.trim())
+                        .filter(|q| !q.is_empty())
+                        .map(|q| BubbleSay::Say {
+                            text: sentence::cut(q, sentence::QUOTE),
+                        })
+                };
+                if let Some(say) = say {
+                    self.employees[i].say_waiting(ts, say);
+                }
             }
             EventKind::ContextCompaction {
                 pre_tokens,
@@ -452,13 +503,14 @@ impl Team {
                     e.last_say = Some(sentence::REPOT_SAY.to_string());
                 }
                 if !self.refresh(i, ts) && boss {
-                    self.employees[i].set_activity(Activity::new(
+                    self.employees[i].log_activity(Activity::new(
                         sentence::REPOT,
                         Room::TeamLead,
                         ts,
                         Confidence::Confirmed,
                     ));
                 }
+                self.employees[i].say(ts, BubbleSay::Compaction);
             }
             EventKind::TitleChanged { title } => {
                 // 같은 제목이 턴마다 다시 쓰인다 (4.6.1). 바뀔 때만 액자를 간다
@@ -587,11 +639,7 @@ impl Team {
     /// 사장님 손이 필요한 상태: 허가 대기, 결재 대기, 반려 직후 (4.7.2 끝 문단).
     /// 말풍선·토스트·장애 판정·탕비실 연출 금지가 모두 이것을 쓴다
     pub fn needs_boss(&self, e: &Employee, now: DateTime<Utc>) -> bool {
-        e.asking.is_some()
-            || escalation_wait(e, now)
-            || e.waiting_user_since
-                .is_some_and(|t| now - t >= WAIT_USER_AFTER)
-            || e.rejected_at.is_some_and(|t| now - t < REJECT_HOLD)
+        needs_boss(e, now)
     }
 
     /// 장애 해제 (4.7.3). 상황실에 있던 부장은 자리로 돌아간다 (S27)
@@ -602,7 +650,7 @@ impl Team {
         cues.push(Cue::Siren { on: false });
         let boss = &mut self.employees[0];
         if boss.activity.room == Room::Incident {
-            boss.set_activity(Activity::new(
+            boss.log_activity(Activity::new(
                 sentence::INCIDENT_OVER,
                 Room::TeamLead,
                 at,
@@ -753,13 +801,14 @@ impl Team {
                 } else {
                     home
                 };
-                e.set_activity(Activity::new(
+                e.log_activity(Activity::new(
                     sentence::done(&call, declares, test_result, e.review_pens),
                     room,
                     ts,
                     Confidence::Confirmed,
                 ));
                 if all_pass {
+                    e.say(ts, BubbleSay::AllGreen);
                     self.end_incident(ts, cues);
                 }
             }
@@ -806,18 +855,23 @@ impl Team {
                 } else if let Some(inc) = &mut self.incident {
                     inc.last_error = ts;
                 }
+                let calm = self.incident.is_none();
                 let e = &mut self.employees[i];
-                e.set_activity(Activity::new(
+                e.log_activity(Activity::new(
                     sentence::accident(&call, preview),
                     home,
                     ts,
                     Confidence::Confirmed,
                 ));
+                // 장애 중 사고는 상황실 문구가 맡는다
+                if calm {
+                    e.say(ts, BubbleSay::Joke);
+                }
             }
             ToolOutcome::Rejected => {
                 e.rejected_at = Some(ts);
                 cues.push(Cue::Reject { agent });
-                e.set_activity(Activity::new(
+                e.log_activity(Activity::new(
                     sentence::rejected(&call),
                     home,
                     ts,
@@ -827,12 +881,13 @@ impl Team {
             }
             // Unknown, 또는 본문으로 짐작한 Ok/Err. 신호등·무재해·출고·평균을 건드리지 않는다 (S59)
             _ => {
-                e.set_activity(Activity::new(
+                e.log_activity(Activity::new(
                     sentence::unknown(&call),
                     home,
                     ts,
                     Confidence::Inferred,
                 ));
+                e.say(ts, BubbleSay::UnknownResult);
                 self.restore_light(&call);
             }
         }
@@ -861,11 +916,13 @@ impl Team {
             return true;
         }
         if let Some(call) = e.pending.last() {
+            let extra = e.pending.len() - 1;
             let a = Activity {
                 expected_secs: expected,
                 pose: pose_for(&call.tool),
+                extra: u32::try_from(extra).unwrap_or(u32::MAX),
                 ..Activity::new(
-                    sentence::call(call, e.pending.len() - 1, e),
+                    sentence::call(call, extra, e, expected),
                     room_for(&call.tool, boss),
                     call.started,
                     Confidence::Confirmed,
@@ -875,6 +932,62 @@ impl Team {
             return true;
         }
         false
+    }
+
+    /// 호출 하나에 붙는 말풍선 (3.4, 3.6, HANDOFF 5절 "말풍선" 열). 서브의 첫 일이면 직급 말투가
+    /// 앞서되, 한 번뿐인 "처음 본 것" 알림은 그대로 낸다
+    fn call_bubble(&mut self, i: usize, tool: &ToolKind, s: &ToolSummary, ts: DateTime<Utc>) {
+        let e = &mut self.employees[i];
+        let quote = |t: &str| BubbleSay::Say {
+            text: sentence::cut(t, sentence::QUOTE),
+        };
+        let mut first_sight = false;
+        let say = match tool {
+            ToolKind::FileSearch => s.pattern.as_deref().or(s.command.as_deref()).map(quote),
+            ToolKind::Shell => s.command.as_deref().map(quote),
+            ToolKind::WebSearch => s.pattern.as_deref().map(quote),
+            ToolKind::Mcp { server, tool } => {
+                first_sight = self.seen_vendors.insert(server.clone());
+                Some(if first_sight {
+                    BubbleSay::NewVendor {
+                        server: server.clone(),
+                    }
+                } else {
+                    BubbleSay::Mcp {
+                        server: server.clone(),
+                        tool: tool.clone(),
+                    }
+                })
+            }
+            ToolKind::Skill { name } => {
+                first_sight = self.seen_skills.insert(name.clone());
+                first_sight.then(|| BubbleSay::NewSkill {
+                    skill: name.clone(),
+                })
+            }
+            ToolKind::Other(name) => {
+                first_sight = e.unknown_tools.insert(name.clone());
+                first_sight.then_some(BubbleSay::UnknownTool)
+            }
+            ToolKind::Script => Some(BubbleSay::ScriptFallback),
+            ToolKind::FileEdit => s.path.as_ref().and_then(|p| {
+                let recent = e.edits.get(p)?.iter();
+                let n = recent
+                    .filter(|&&t| t <= ts && ts - t <= REPEAT_EDIT_WINDOW)
+                    .count();
+                (n == REPEAT_EDITS).then_some(BubbleSay::Scratch)
+            }),
+            _ => None,
+        };
+        let greet = !e.is_boss() && !std::mem::replace(&mut e.greeted, true);
+        let say = if greet && !first_sight {
+            Some(BubbleSay::Rank)
+        } else {
+            say
+        };
+        if let Some(say) = say {
+            e.say(ts, say);
+        }
     }
 
     /// 확정 결과 없이 끝난 호출이 켠 노랑은 켜기 전 색으로 돌린다. 함께 도는 빌드·테스트가 있으면 둔다
@@ -898,12 +1011,13 @@ impl Team {
         self.restore_light(&call);
         let e = &mut self.employees[i];
         let room = home_room(e);
-        e.set_activity(Activity::new(
+        e.log_activity(Activity::new(
             sentence::unknown(&call),
             room,
             at,
             Confidence::Inferred,
         ));
+        e.say(at, BubbleSay::UnknownResult);
         self.refresh(i, at);
     }
 
@@ -960,26 +1074,33 @@ impl Team {
                 ));
                 return;
             }
-            // 함께 도는 호출 하나만 평균 2배를 넘어도 쪼그린다 (4.7.2)
-            let slow = e.pending.iter().any(|c| {
-                c.summary
-                    .command_key
-                    .as_ref()
-                    .and_then(|k| avg.get(k))
-                    .is_some_and(|&a| {
-                        (now - c.started).num_milliseconds() as f32 / 1000.0 > a * 2.0
-                    })
+            // 함께 도는 호출 하나만 평균 2배를 넘어도 쪼그린다 (4.7.2). 말풍선은 넘은 문턱 시각에
+            let slow = e.pending.iter().find_map(|c| {
+                let a = *c.summary.command_key.as_ref().and_then(|k| avg.get(k))?;
+                ((now - c.started).num_milliseconds() as f32 / 1000.0 > a * 2.0).then(|| {
+                    let at = c.started + Duration::milliseconds((a * 2000.0) as i64);
+                    (c.call_id.clone(), at)
+                })
             });
-            // 장기 실행은 함께 도는 호출 중 가장 오래된 것으로 말한다
+            if let Some((id, at)) = &slow
+                && e.too_long.as_ref() != Some(id)
+            {
+                e.too_long = Some(id.clone());
+                e.say(*at, BubbleSay::TooLong);
+            }
+            // 장기 실행은 함께 도는 호출 중 가장 오래된 것으로 말한다. 경과도 그 호출부터 센다
             let long = e
                 .pending
                 .iter()
                 .find(|c| now - c.started > LONG_RUN)
                 .cloned();
-            if let Some(s) = long.as_ref().and_then(sentence::long_run) {
+            if let Some(c) = &long
+                && let Some(s) = sentence::long_run(c)
+            {
                 e.activity.sentence = s;
+                e.activity.since = c.started;
             }
-            if slow || long.is_some() {
+            if slow.is_some() || long.is_some() {
                 e.activity.pose = Pose::Squat;
             }
             return;
@@ -1001,12 +1122,17 @@ impl Team {
         }
         // 장애 중 부장은 상황실에 있다 (3.4, S26). 사장님 손이 필요한 상태가 먼저다
         if let Some(since) = incident.filter(|_| working && e.is_boss()) {
+            // 들어가는 때는 장애 시작과 앞 일이 끝난 때 중 늦은 쪽
+            let entered = (e.activity.room != Room::Incident).then(|| since.max(e.activity.since));
             e.set_activity(Activity::new(
                 sentence::INCIDENT,
                 Room::Incident,
                 since,
                 Confidence::Confirmed,
             ));
+            if let Some(at) = entered {
+                e.say(at, BubbleSay::Incident);
+            }
             return;
         }
         if let Some(t) = e.quiet_since.filter(|_| working) {
@@ -1018,10 +1144,14 @@ impl Team {
                     (sentence::THINK, Pose::Think)
                 };
                 let room = home_room(e);
+                let to_duck = pose == Pose::Duck && e.activity.pose != Pose::Duck;
                 e.set_activity(Activity {
                     pose,
                     ..Activity::new(sentence, room, t, Confidence::Inferred)
                 });
+                if to_duck {
+                    e.say_waiting(t + DUCK_AFTER, BubbleSay::ThinkingDuck);
+                }
                 if quiet <= THINK_GIVE_UP {
                     return;
                 }
@@ -1071,6 +1201,15 @@ fn waits_for_boss(c: &PendingCall) -> bool {
 /// 신호등을 노랑으로 켜는 호출. Mixed 는 결과를 보증하지 못해 신호등을 건드리지 않는다 (4.6.4)
 fn lights(tool: &ToolKind, s: &ToolSummary) -> bool {
     matches!(tool, ToolKind::Build | ToolKind::Test) && s.compound != Compound::Mixed
+}
+
+/// `Team::needs_boss` 의 몸. 팀 상태를 보지 않아 직원 말풍선도 이것을 쓴다
+fn needs_boss(e: &Employee, now: DateTime<Utc>) -> bool {
+    e.asking.is_some()
+        || escalation_wait(e, now)
+        || e.waiting_user_since
+            .is_some_and(|t| now - t >= WAIT_USER_AFTER)
+        || e.rejected_at.is_some_and(|t| now - t < REJECT_HOLD)
 }
 
 /// Codex 승인 창 추정 (4.7.2): 대표 호출이 escalated 이고 결과 없이 35초
@@ -1269,7 +1408,7 @@ fn window_from_model(model: Option<&str>, input_total: u64) -> u64 {
     }
 }
 
-/// "지금 하는 일" 문장 (3.5 표). 경과 시간과 "(평소 n초)"는 프론트가 붙인다.
+/// "지금 하는 일" 문장 (3.5 표). 경과 시간은 `{elapsed}` 자리만 두고 프론트가 채운다 (4.8).
 /// 경로·명령·패턴은 백틱으로 감싼다. 명령은 파서가 이미 40자로 잘랐다
 mod sentence {
     use super::{
@@ -1277,8 +1416,8 @@ mod sentence {
         ToolKind, is_review,
     };
 
-    const QUOTE: usize = 30;
-    const LINE: usize = 40;
+    pub const QUOTE: usize = 30;
+    pub const LINE: usize = 40;
 
     pub const ARRIVAL_BOSS: &str = "출근 중";
     pub const ARRIVAL: &str = "출근 중 · 자리 찾는 중";
@@ -1288,9 +1427,9 @@ mod sentence {
     pub const PLAN: &str = "계획 결재 올립니다";
     pub const INCIDENT: &str = "장애 상황실 소집, 무재해 기록 0분";
     pub const INCIDENT_OVER: &str = "장애 해제";
-    pub const THINK: &str = "턱 괴고 고민 중인 듯";
-    pub const DUCK: &str = "러버덕과 상담 중인 듯";
-    pub const WAITING_USER: &str = "요구사항 대기 중인 듯";
+    pub const THINK: &str = "턱 괴고 고민 중인 듯 ({elapsed})";
+    pub const DUCK: &str = "러버덕과 상담 중인 듯 ({elapsed})";
+    pub const WAITING_USER: &str = "요구사항 대기 중인 듯 · 사장님 자리 비움 {elapsed}";
     pub const DOZING: &str = "졸음";
     pub const REPOT: &str = "분갈이 중 (서류 정리)";
     pub const REPOT_SAY: &str = "분갈이";
@@ -1300,7 +1439,7 @@ mod sentence {
     }
 
     /// 첫 줄을 `n` 자로. 뒤에 더 있으면 "…"
-    fn cut(text: &str, n: usize) -> String {
+    pub fn cut(text: &str, n: usize) -> String {
         let trimmed = text.trim();
         let line = trimmed.lines().next().unwrap_or_default();
         let head: String = line.chars().take(n).collect();
@@ -1374,6 +1513,18 @@ mod sentence {
             .map_or_else(|| "서류".to_string(), code)
     }
 
+    /// 평균을 알면 " (평소 n초)". 이 호출 동안 바뀌지 않아 고정 글자로 붙인다
+    fn usual(expected: Option<f32>) -> String {
+        let Some(secs) = expected.map(|s| s.round() as u64) else {
+            return String::new();
+        };
+        match (secs / 60, secs % 60) {
+            (0, s) => format!(" (평소 {s}초)"),
+            (m, 0) => format!(" (평소 {m}분)"),
+            (m, s) => format!(" (평소 {m}분 {s}초)"),
+        }
+    }
+
     fn red(r: &(String, u32)) -> String {
         format!("빨간불 끄는 중: {} {}번째 시도", code(&r.0), r.1 + 1)
     }
@@ -1385,8 +1536,8 @@ mod sentence {
         format!("PR 리뷰 중 · 빨간펜 {pens}개")
     }
 
-    /// 진행 중 호출 (대표 작업). `extra` 는 함께 도는 호출 수
-    pub fn call(call: &PendingCall, extra: usize, e: &Employee) -> String {
+    /// 진행 중 호출 (대표 작업). `extra` 는 함께 도는 호출 수, `expected` 는 이 명령의 평균 소요
+    pub fn call(call: &PendingCall, extra: usize, e: &Employee, expected: Option<f32>) -> String {
         let s = &call.summary;
         let base = match &call.tool {
             ToolKind::FileRead => {
@@ -1422,15 +1573,19 @@ mod sentence {
             },
             ToolKind::Test => match &e.red {
                 Some(r) => red(r),
-                None => format!("{} 돌리는 중", command(call, "테스트")),
+                None => format!(
+                    "{} 돌리는 중 · {{elapsed}}째{}",
+                    command(call, "테스트"),
+                    usual(expected)
+                ),
             },
             ToolKind::Build => "빌드 서버 돌리는 중, 선풍기 가동".to_string(),
-            ToolKind::Script => "스크립트 돌리는 중".to_string(),
+            ToolKind::Script => "스크립트 돌리는 중 · {elapsed}째".to_string(),
             ToolKind::Shell
             | ToolKind::GitQuery
             | ToolKind::GitPush
             | ToolKind::PrCreate
-            | ToolKind::Release => format!("{} 실행 중", command(call, "셸 명령")),
+            | ToolKind::Release => format!("{} 실행 중 · {{elapsed}}째", command(call, "셸 명령")),
             ToolKind::GitDiff | ToolKind::PrView => review(e.review_pens),
             ToolKind::Skill { .. } if is_review(&call.tool) => review(e.review_pens),
             ToolKind::Skill { name } => format!("외주 매뉴얼 {} 펼쳐보는 중", code(name)),
@@ -1554,7 +1709,10 @@ mod sentence {
     /// 셸 2분 초과. 명령 없는 호출(편집 허가 대기 등)은 문장을 그대로 둔다
     pub fn long_run(call: &PendingCall) -> Option<String> {
         let c = call.summary.command.as_deref()?;
-        Some(format!("서버실에서 땀 흘리는 중 ({})", code(c)))
+        Some(format!(
+            "서버실에서 땀 흘리는 중 ({} · {{elapsed}})",
+            code(c)
+        ))
     }
     pub fn asking(q: &str) -> String {
         if q.trim().is_empty() {

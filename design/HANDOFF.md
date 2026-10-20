@@ -299,7 +299,7 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 2. 바닥 타일 24×16장. 규칙은 `floorplan.floorRule`.
 3. `layer: decal` 과 `layer: wall` 배치. 그 위에 코드가 그리는 벽 요소: 칸반 포스트잇, 근태판 자석, TV 그래프 선.
 4. `layer: window` (창문). **조명 색을 곱하지 않는 컨테이너.**
-5. 월드: `layer: world`·`fx` 배치 + 직원 + 휴지통 종이 + 피자 상자를 `depth` 오름차순으로. 같으면 배치 배열 순서 → 직원 순서. Pixi `sortableChildren`, `zIndex = depth × 1000 + 순번`.
+5. 월드: `layer: world`·`fx` 배치 + 직원 + 휴지통 종이 + 피자 상자를 `depth` 오름차순으로. 같으면 배치 배열 순서 → 직원 순서. Pixi `sortableChildren`, `zIndex` 는 (depth, 순번) 순서를 지키는 정수 (`src/office/floorplan.ts` 의 `zIndexOf`).
 6. `layer: overlay` (장애 빛).
 7. 조명 색 곱하기 (`floorplan.lightTints`): 1·2·3·5 컨테이너에 `tint`. 창문(4)과 빛(6)은 제외. 바뀔 때 1.5초 보간.
 8. DOM 오버레이 (4.4절).
@@ -371,7 +371,7 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 
 ### 6.7 참조 렌더로 검수하기
 
-`design/assets/office-claude-day.png`, `office-codex-night-smb.png`, `office-codex-day.png`, `office-gemini-day.png` 는 `make_canvas_images()` 의 고정 상태(직원 배치, 소품 상태, 칸반, 자석, 전광판)로 그린 그림이다. 앱 렌더러에 같은 상태를 넣고 1× 로 `renderer.extract` 한 결과가 **픽셀 단위로 같아야** 한다. 반투명 픽셀(장애 빛, 김)은 채널당 ±2 를 허용한다. 이 비교를 T18·T23 완료 기준에 넣기를 권한다.
+`design/assets/office-claude-day.png`, `office-codex-night-smb.png`, `office-codex-day.png`, `office-gemini-day.png` 는 `make_canvas_images()` 의 고정 상태(직원 배치, 소품 상태, 칸반, 자석, 전광판)로 그린 그림이다. 앱 렌더러에 같은 상태를 넣고 1× 로 `renderer.extract` 한 결과가 **픽셀 단위로 같아야** 한다. 반투명 픽셀(장애 빛, 김)은 채널당 ±2 를 허용한다. 조명(야간·소등)을 곱한 장면은 GPU 가 반올림하고 참조가 내림이라 불투명 픽셀도 채널당 ±1 을 허용한다. 이 비교를 T18·T23 완료 기준에 넣기를 권한다.
 
 ## 7. 움직임
 

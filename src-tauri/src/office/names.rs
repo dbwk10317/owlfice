@@ -65,7 +65,7 @@ pub fn fnv1a64(s: &str) -> u64 {
 }
 
 /// 임시 파일에 쓴 뒤 이름을 바꾼다. 쓰다 끊겨도 기존 파일이 깨지지 않는다.
-fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -85,7 +85,7 @@ fn load_json<T: Default + for<'a> Deserialize<'a>>(path: &Path) -> (T, bool) {
     }
 }
 
-fn unwritable(path: &Path) -> io::Error {
+pub(crate) fn unwritable(path: &Path) -> io::Error {
     io::Error::other(format!("{} 을 읽지 못해 쓰지 않음", path.display()))
 }
 

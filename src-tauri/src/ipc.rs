@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use ts_rs::TS;
 
@@ -18,6 +18,7 @@ use crate::office::{
     Activity, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
 };
 use crate::parse::{Confidence, TodoItem};
+use crate::settings::SettingsBook;
 
 /// 최대 5회/초 (4.8)
 const PUBLISH_EVERY: StdDuration = StdDuration::from_millis(200);
@@ -35,6 +36,15 @@ pub struct OfficeListDto {
     pub selected_id: Option<String>,
     /// 그 선택을 만든 마지막 `select_office` 요청 번호. store 는 자기 마지막 요청 이상일 때만 선택을 따른다
     pub select_request: u64,
+}
+
+/// `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
+/// 나머지 설정 칸은 T30 이 여기에 더한다
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDto {
+    /// 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
+    pub scale: Option<Scale>,
 }
 
 /// `get_world_snapshot` 반환. 목록 필드를 그대로 품어 store 가 목록처럼 받는다
@@ -689,6 +699,36 @@ impl Ipc {
 #[tauri::command]
 pub fn get_world_snapshot(ipc: State<'_, Arc<Ipc>>) -> WorldDto {
     ipc.snapshot(Utc::now())
+}
+
+/// 저장이 실패해도 이번 실행의 설정은 바뀐다. 에러는 저장 실패를 알린다.
+/// 규모가 바뀌면 world 가 재배치하고(4.7.9) 발행기가 rebuilt 로 낸다
+pub fn apply_settings(ipc: &Ipc, book: &SettingsBook, dto: SettingsDto) -> Result<(), String> {
+    let Some(scale) = dto.scale else {
+        return Ok(());
+    };
+    // 동시에 두 번 불려도 파일과 실행 중 world 가 같은 값이 되게 world 락 안에서 함께 한다 (락 순서 world → settings)
+    let mut world = lock(&ipc.world);
+    let saved = book.set_scale(scale);
+    world.set_scale(scale);
+    drop(world);
+    saved.map_err(|e| format!("설정을 저장하지 못했습니다: {e}"))
+}
+
+#[tauri::command]
+pub fn get_settings(settings: State<'_, Arc<SettingsBook>>) -> SettingsDto {
+    SettingsDto {
+        scale: settings.scale(),
+    }
+}
+
+#[tauri::command]
+pub fn set_settings(
+    ipc: State<'_, Arc<Ipc>>,
+    settings: State<'_, Arc<SettingsBook>>,
+    dto: SettingsDto,
+) -> Result<(), String> {
+    apply_settings(&ipc, &settings, dto)
 }
 
 #[tauri::command]

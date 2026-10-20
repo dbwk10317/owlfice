@@ -29,7 +29,15 @@
     "offAgo": "{folder} · {ago} 퇴근",
     "idleAlive": "대기 중",
     "emptyTitle": "불 켜진 사무실이 없어요",
-    "emptyBody": "세션을 시작하면 여기에 나타납니다."
+    "emptyBody": "세션을 시작하면 여기에 나타납니다.",
+    "stateIncident": "장애",
+    "stateWorking": "근무 중",
+    "stateWaiting": "결재·응답 대기",
+    "stateSleepy": "졸음",
+    "stateOff": "퇴근",
+    "asking": "허가 대기",
+    "sectionHqFloors": "본사 건물 · 3개 층",
+    "floorName": "{n}층 {product} 사무실"
   },
 
   "toast": {
@@ -159,6 +167,7 @@
     "scratch": "이게 왜 안 되지",
     "tooLong": "왜 이렇게 오래 걸려",
     "compaction": "분갈이",
+    "allGreen": "전부 초록불입니다!",
     "mcp": "{server}와 {tool} 건으로",
     "unknownTool": {
       "bujang": ["이건 나도 처음 보는데", "요즘은 이런 것도 쓰나"],
@@ -176,6 +185,7 @@
     "label": "사내 방송",
     "item": "{time} {name} {rank}, {event}",
     "itemTeam": "{time} [{team}] {event}",
+    "itemTeamPerson": "{time} [{team}] {name} {rank}, {event}",
     "unknownRecord": ["{time} 총무팀: 처음 보는 서류 양식 접수 ({kind})", "{time} 총무팀: 양식 미상 서류, 일단 보관 ({kind})"],
     "quiet": "조용한 밤입니다"
   },

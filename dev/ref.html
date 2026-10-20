@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>참조 렌더 비교</title>
+    <style>
+      body {
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        margin: 16px;
+        background: #f1f1ee;
+      }
+      section {
+        margin-bottom: 24px;
+      }
+      canvas {
+        image-rendering: pixelated;
+        width: 520px;
+        height: 320px;
+        background: #fff;
+        margin-right: 8px;
+        vertical-align: top;
+      }
+      .bad {
+        color: #b91c1c;
+        font-weight: 600;
+      }
+    </style>
+    <script type="module" src="./ref.ts"></script>
+  </head>
+  <body>
+    <h1>참조 렌더 비교 (HANDOFF 6.7)</h1>
+    <p>
+      왼쪽부터 참조(tools/ref_render.py) · 렌더러 1× · 다른 픽셀(빨강). 참조를 다시 만들려면
+      <code>uv run tools/ref_render.py</code>.
+    </p>
+    <div id="out"></div>
+  </body>
+</html>

@@ -187,8 +187,7 @@ pub struct HostLoop {
     pub heartbeat: Arc<Heartbeat>,
     diag: Arc<Mutex<Diag>>,
     last_scan: Option<DateTime<Utc>>,
-    /// 이번 틱에 난 연출 신호
-    // ponytail: 틱마다 비운다, IPC(T14)가 생기면 office-state 와 함께 보낸다
+    /// 이번 틱에 난 연출 신호. `spawn` 이 틱마다 world 의 outbox 로 넘긴다
     pub cues: Vec<(OfficeId, Cue)>,
     /// 다시 만들어야 하는데 아직 못 만든 팀. 경로 접근이 되는 다음 Scan 에서 만든다. 그동안 기존 리더는 계속 읽는다
     rebuild_due: BTreeSet<TeamKey>,
@@ -1196,6 +1195,10 @@ pub fn spawn(mut host: HostLoop) -> thread::JoinHandle<()> {
         while !host.heartbeat.stop.load(Ordering::Relaxed) {
             let start = Instant::now();
             host.tick();
+            if !host.cues.is_empty() {
+                let cues = std::mem::take(&mut host.cues);
+                host.lock_world().outbox.extend(cues);
+            }
             let spent = start.elapsed();
             if spent > TICK {
                 eprintln!("{} 틱 {}ms", host.host.id, spent.as_millis());

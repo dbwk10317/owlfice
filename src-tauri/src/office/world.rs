@@ -15,7 +15,7 @@ const SEATS: u8 = 10;
 const DESKS: u8 = 4;
 const SPARES: u8 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum Scale {
     Large,
     Small,
@@ -56,6 +56,12 @@ pub struct OfficeWorld {
     pub suspect_hosts: BTreeSet<String>,
     /// 야근 판정 시간대 (4.7.2)
     pub local: FixedOffset,
+    /// 아직 프론트에 보내지 않은 연출 신호. 호스트 스레드가 틱마다 넣고 발행기가 비운다 (4.8)
+    pub outbox: Vec<(OfficeId, Cue)>,
+    /// 조용히 다시 만들었거나 규모를 바꾼 뒤 아직 발행하지 않은 사무실. 다음 office-state 가 rebuilt 로 나간다 (4.3, 4.7.9)
+    pub rebuilt: HashSet<OfficeId>,
+    /// 규모를 바꾼 뒤 아직 발행하지 않은 목록 (4.7.9 5번)
+    pub list_rebuilt: bool,
     names: NameBook,
 }
 
@@ -81,6 +87,9 @@ impl OfficeWorld {
             state_seq: HashMap::new(),
             suspect_hosts: BTreeSet::new(),
             local,
+            outbox: Vec::new(),
+            rebuilt: HashSet::new(),
+            list_rebuilt: false,
             names,
         }
     }
@@ -115,6 +124,7 @@ impl OfficeWorld {
         self.name_employees(&key, now);
         self.seat(&self.office_of(&key));
         self.bump(&key, true);
+        self.rebuilt.insert(self.office_of(&key));
     }
 
     pub fn remove_team(&mut self, key: &TeamKey) {
@@ -206,7 +216,7 @@ impl OfficeWorld {
     }
 
     /// 규모 변경 (4.7.9 1~3번). 팀 상태는 그대로 두고 배치만 다시 한다.
-    /// anim-queue 비우기와 rebuilt 발행(4·5번)은 IPC(T14)가 이 뒤에 한다
+    /// 4·5번(연출 비우기, rebuilt 발행)은 outbox·rebuilt 를 보고 발행기가 한다
     pub fn set_scale(&mut self, scale: Scale) {
         if scale == self.scale {
             return;
@@ -244,6 +254,10 @@ impl OfficeWorld {
             *self.state_seq.entry(office.clone()).or_default() += 1;
         }
         self.list_seq += 1;
+        // 이전 배치를 향한 연출은 버린다 (4.7.9 4번)
+        self.outbox.clear();
+        self.rebuilt.extend(offices);
+        self.list_rebuilt = true;
     }
 
     /// 시간 전이 (4.7.2). `host` 의 팀만 돌린다. 다른 호스트의 팀은 그 스레드가 돌리고,

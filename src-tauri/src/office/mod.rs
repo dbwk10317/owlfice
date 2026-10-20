@@ -10,12 +10,14 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
+use serde::Serialize;
+use ts_rs::TS;
 
 use crate::discover::Product;
 use crate::parse::{Confidence, TodoItem, ToolKind, ToolSummary};
 
 /// 직원 직급 (PLAN 4.7.4). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub enum Rank {
     Bujang,
     Gwajang,
@@ -24,7 +26,7 @@ pub enum Rank {
 }
 
 /// 사무실 안 구역 (PLAN 2.3)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub enum Room {
     TeamLead,
     Dev,
@@ -41,7 +43,7 @@ pub enum Room {
 }
 
 /// 상태가 정하는 자세. 어떤 스프라이트로 그릴지는 프론트가 정한다 (design/HANDOFF.md 5절)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub enum Pose {
     Sit,
     Type,
@@ -51,7 +53,8 @@ pub enum Pose {
     Sleep,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct Activity {
     /// 경과 시간("· 12초째")은 넣지 않는다. 프론트가 `since` 로 붙여야 매초 상태를 다시 보내지 않는다
     pub sentence: String,
@@ -72,7 +75,7 @@ pub struct PendingCall {
 }
 
 /// 오늘 실적 (3.5 카드의 여섯 칸)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 pub struct Counters {
     pub read: u32,
     pub edit: u32,
@@ -128,14 +131,14 @@ pub struct Employee {
     pub review_pens: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub enum TeamPhase {
     Working,
     Dozing,
     Off,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub enum Light {
     Off,
     Yellow,
@@ -143,7 +146,8 @@ pub enum Light {
     Red,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct TeamProps {
     pub boss_visit: Option<String>,
     /// 화분 성장도 = 부장 컨텍스트 사용률 (0~1). 분갈이 직후 0
@@ -158,14 +162,17 @@ pub struct TeamProps {
     pub pr: Option<(u32, String)>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct Incident {
     pub since: DateTime<Utc>,
     pub last_error: DateTime<Utc>,
 }
 
 /// 프론트 연출 힌트 (4.8 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(tag = "kind")]
+#[ts(rename = "AnimCue")]
 pub enum Cue {
     BossVisit {
         text: String,

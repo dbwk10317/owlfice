@@ -540,6 +540,18 @@ impl Team {
         }
     }
 
+    /// 결재 대기 또는 응답 대기 (3.3 상태 점 초록 깜빡임)
+    pub fn awaiting(&self, e: &Employee, now: DateTime<Utc>) -> bool {
+        thinking(e, now)
+            || e.waiting_user_since
+                .is_some_and(|t| now - t >= WAIT_USER_AFTER)
+    }
+
+    /// 허가 대기: 질문했거나 Codex 승인 창으로 짐작한다 (3.3 결재판 아이콘)
+    pub fn asking(&self, e: &Employee, now: DateTime<Utc>) -> bool {
+        e.asking.is_some() || escalation_wait(e, now)
+    }
+
     /// 사장님 손이 필요한 상태: 허가 대기, 결재 대기, 반려 직후 (4.7.2 끝 문단).
     /// 말풍선·토스트·장애 판정·탕비실 연출 금지가 모두 이것을 쓴다
     pub fn needs_boss(&self, e: &Employee, now: DateTime<Utc>) -> bool {

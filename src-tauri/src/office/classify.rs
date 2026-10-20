@@ -317,9 +317,11 @@ impl Team {
                 if touches_file(tool)
                     && let Some(p) = &summary.path
                 {
-                    e.role = e.touched.touch(p);
+                    e.role = e.touched.touch(p, &self.cwd);
                 }
-                self.work.call(call_id, tool, summary.path.as_deref());
+                if e.is_boss() {
+                    self.work.call(call_id, tool, summary.path.as_deref());
+                }
                 if is_review(tool) && e.activity.room != Room::Review {
                     e.review_pens = 0;
                 }

@@ -1755,10 +1755,33 @@ fn work_tool_patterns() {
         kind_of(None, &[(Tst, None, Some(Bad)), (Ed, Some("a.rs"), None)]),
         WorkType::BugFix
     );
-    // 첫 Test 가 성공이면 뒤의 실패는 "먼저"가 아니다
+    // 첫 쓰기 전이면 앞선 Test 가 성공이었어도 실패는 "먼저"다
     assert_eq!(
         kind_of(None, &[(Tst, None, Some(Good)), (Tst, None, Some(Bad))]),
+        WorkType::BugFix
+    );
+    // 쓰기 뒤의 Test 실패는 버그 수정 근거가 아니다
+    assert_eq!(
+        kind_of(
+            None,
+            &[
+                (Ed, Some("a.rs"), None),
+                (Ed, Some("b.rs"), None),
+                (Tst, None, Some(Bad))
+            ]
+        ),
         WorkType::NewDev
+    );
+    // 반려된 Test 는 실패도 통과도 아니라서 뒤의 실제 실패가 센다
+    assert_eq!(
+        kind_of(
+            None,
+            &[
+                (Tst, None, Some(ToolOutcome::Rejected)),
+                (Tst, None, Some(Bad))
+            ]
+        ),
+        WorkType::BugFix
     );
     // 리팩터링: 편집이 절반 이상이고 테스트가 계속 통과
     let refactor: Vec<Step> = vec![
@@ -1871,4 +1894,81 @@ fn work_and_role_from_fixture_match_hand_expectation() {
         s.apply(&e, &mut Vec::new());
     }
     assert_eq!((s.work_type, boss(&s).role), (t.work_type, boss(&t).role));
+}
+
+#[test]
+fn role_ignores_outer_folders_of_absolute_paths() {
+    let run = |cwd: &str, paths: &[&str]| {
+        let mut s = Sim::new();
+        s.team.cwd = cwd.into();
+        for (i, p) in paths.iter().enumerate() {
+            let id = format!("c{i}");
+            s.on(MAIN, i as i64 + 1, call(&id, ToolKind::FileRead, file(p)));
+        }
+        s.boss().role
+    };
+    // cwd 안은 상대 경로로 본다: 바깥 `test`·`ci` 폴더는 무시
+    let inside = [
+        "C:/Users/test/proj/src/a.rs",
+        r"C:\Users\Test\proj\src\b.rs",
+        "c:/users/test/proj/c.rs",
+        "C:/Users/test/proj/d.rs",
+        "C:/Users/test/proj/e.rs",
+    ];
+    assert_eq!(run(r"C:\Users\test\proj", &inside), Role::Backend);
+    // cwd 밖 절대 경로는 파일 이름만 본다
+    let outside = [
+        "D:/work/ci/app/a.rs",
+        "D:/work/ci/app/b.rs",
+        "/home/test/c.rs",
+        "/home/test/d.rs",
+        "/home/test/e.rs",
+    ];
+    assert_eq!(run("C:/proj", &outside), Role::Backend);
+    // cwd 안의 `tests/` 는 QA
+    let qa = [
+        "tests/a.rs",
+        "tests/b.rs",
+        "tests/c.rs",
+        "tests/d.rs",
+        "tests/e.rs",
+    ];
+    assert_eq!(run("C:/proj", &qa), Role::Qa);
+}
+
+#[test]
+fn role_counts_only_classified_files_with_normalized_keys() {
+    // 구분자·대소문자만 다른 같은 파일은 하나
+    assert_eq!(
+        touch(&["a/B.rs", r"a\b.rs", "A/b.RS", "c.rs", "d.rs", "e.rs"]),
+        Role::Trainee
+    );
+    // 폴더·패턴(FileSearch)처럼 분류가 안 되는 경로는 문턱에 들어가지 않는다
+    let mut calls: Vec<Step> = vec![
+        (ToolKind::FileSearch, Some("src"), None),
+        (ToolKind::FileSearch, Some("TODO"), None),
+        (ToolKind::FileSearch, Some("lib"), None),
+        (ToolKind::FileSearch, Some("docs"), None),
+        (ToolKind::FileSearch, Some("x"), None),
+    ];
+    calls.extend([(Rd, Some("a.rs"), None), (Rd, Some("b.rs"), None)]);
+    assert_eq!(work_sim(None, &calls).boss().role, Role::Trainee);
+}
+
+#[test]
+fn work_counts_only_boss_calls() {
+    let mut s = Sim::new();
+    for i in 0..25 {
+        let id = format!("s{i}");
+        s.on(SUB, i + 1, call(&id, Ed, file("a.rs")));
+    }
+    assert_eq!(s.team.work_type, WorkType::NewDev);
+    // 서브가 20번 넘게 쏴도 부장의 첫 호출들로 정해진다
+    let mut s = Sim::new();
+    for i in 0..25 {
+        let id = format!("s{i}");
+        s.on(SUB, i + 1, call(&id, Ed, file("a.rs")));
+    }
+    s.on(MAIN, 30, call("m1", GitDiff, summary()));
+    assert_eq!(s.team.work_type, WorkType::CodeReview);
 }

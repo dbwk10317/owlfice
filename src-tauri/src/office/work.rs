@@ -1,6 +1,7 @@
 //! 담당 (PLAN 4.7.5)과 오늘의 업무 (4.7.6). 이벤트 순서만 보고 정해서 재구성과 실행 중 적용이 같다
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use serde::Serialize;
 use ts_rs::TS;
@@ -26,10 +27,9 @@ const CATEGORIES: [Role; 5] = [
     Role::Writer,
 ];
 
-/// 이 수 미만의 서로 다른 파일을 만졌으면 수습 (PLAN 에 기준이 없어 경로 기준으로 정했다)
+/// 이 수 미만의 분류되는 파일(서로 다른 경로)을 만졌으면 수습. PLAN 에 기준이 없어 정했다
 const TRAINEE_BELOW: usize = 5;
 
-/// 직원이 만진 서로 다른 파일과 분류별 수
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Touched {
     seen: HashSet<String>,
@@ -37,11 +37,13 @@ pub struct Touched {
 }
 
 impl Touched {
-    pub fn touch(&mut self, path: &str) -> Role {
-        if self.seen.insert(path.to_string())
-            && let Some(c) = category(path)
+    pub fn touch(&mut self, path: &str, cwd: &Path) -> Role {
+        let key = norm(path);
+        let rel = relative(&key, &norm(&cwd.to_string_lossy()));
+        if let Some(c) = category(rel)
+            && self.seen.insert(key)
         {
-            self.counts[CATEGORIES.iter().position(|r| *r == c).unwrap()] += 1;
+            self.counts[c as usize] += 1;
         }
         self.role()
     }
@@ -50,10 +52,12 @@ impl Touched {
         if self.seen.len() < TRAINEE_BELOW {
             return Role::Trainee;
         }
+        // ponytail: 동률은 4.7.5 나열 순서(백엔드부터)로 정한다, 다른 순서가 필요해지면 올린다
         let mut best = (0, Role::Trainee);
-        for (i, &n) in self.counts.iter().enumerate() {
+        for r in CATEGORIES {
+            let n = self.counts[r as usize];
             if n > best.0 {
-                best = (n, CATEGORIES[i]);
+                best = (n, r);
             }
         }
         best.1
@@ -67,11 +71,41 @@ pub fn touches_file(tool: &ToolKind) -> bool {
     )
 }
 
+fn norm(p: &str) -> String {
+    p.replace('\\', "/").to_lowercase()
+}
+
+/// 바깥 폴더 이름(`C:/Users/test/...`)이 분류를 정하지 않게 cwd 아래는 상대 경로로,
+/// cwd 밖 절대 경로는 파일 이름만 남긴다
+fn relative<'a>(key: &'a str, cwd: &str) -> &'a str {
+    let cwd = cwd.trim_end_matches('/');
+    if !cwd.is_empty()
+        && let Some(rest) = key.strip_prefix(cwd)
+        && let Some(rest) = rest.strip_prefix('/')
+    {
+        return rest;
+    }
+    let drive = key.as_bytes().get(1) == Some(&b':');
+    if key.starts_with('/') || drive {
+        return key.rsplit('/').next().unwrap_or(key);
+    }
+    key
+}
+
+fn ext_of(norm_path: &str) -> &str {
+    let name = norm_path.rsplit('/').next().unwrap_or("");
+    name.rsplit_once('.').map_or("", |(_, e)| e)
+}
+
+/// 테크라이터 확장자. 담당과 문서 작업 판정이 같이 쓴다
+pub fn is_doc_ext(ext: &str) -> bool {
+    matches!(ext, "md" | "mdx" | "rst" | "txt")
+}
+
 /// 경로·확장자 → 분류. 경로 규칙(데브옵스·QA)이 확장자보다 앞선다
-fn category(path: &str) -> Option<Role> {
-    let p = path.replace('\\', "/").to_ascii_lowercase();
+fn category(p: &str) -> Option<Role> {
     let name = p.rsplit('/').next().unwrap_or("");
-    let ext = name.rsplit_once('.').map_or("", |(_, e)| e);
+    let ext = ext_of(p);
     // 단어 단위로 본다. `ci` 가 `decision` 에, `api` 가 `rapid` 에 걸리면 안 된다
     let has = |words: &[&str]| {
         p.split(|c: char| !c.is_alphanumeric())
@@ -80,6 +114,7 @@ fn category(path: &str) -> Option<Role> {
     if p.split('/').any(|c| c == ".github") || has(&["ci"]) {
         return Some(Role::DevOps);
     }
+    // ponytail: 파일 이름 속 test·spec(`a_test.rs`)도 QA 로 본다, 오분류가 잦으면 폴더만 보게 줄인다
     if has(&["test", "tests", "spec", "specs", "fixtures"]) {
         return Some(Role::Qa);
     }
@@ -92,7 +127,7 @@ fn category(path: &str) -> Option<Role> {
         }
         "tsx" | "jsx" | "vue" | "svelte" | "css" | "scss" | "html" => Some(Role::Frontend),
         "yml" | "yaml" | "toml" | "sh" | "ps1" => Some(Role::DevOps),
-        "md" | "mdx" | "rst" | "txt" => Some(Role::Writer),
+        e if is_doc_ext(e) => Some(Role::Writer),
         "ts" | "js" => Some(if p.contains("src/server") || has(&["api", "backend"]) {
             Role::Backend
         } else {
@@ -119,7 +154,8 @@ const WINDOW: u32 = 20;
 const REFACTOR_MIN_EDITS: u32 = 3;
 const RESEARCH_MIN_CALLS: u32 = 3;
 
-/// 표 순서대로 다섯 행. 신규 개발은 "그 외"라 키워드가 없다
+/// 표 순서대로 다섯 행. 신규 개발은 "그 외"라 키워드가 없다.
+// ponytail: 부분 문자열 일치라 "prefix" 의 fix 에도 걸린다. 한글은 단어 경계가 어려워 그대로 둔다, 오판이 잦으면 영어만 단어 경계로 올린다
 const KEYWORDS: [&[&str]; 5] = [
     &["리뷰", "review"],
     &["버그", "오류", "에러", "fix", "안 돼"],
@@ -136,14 +172,13 @@ pub struct WorkTally {
     writes: u32,
     md_writes: u32,
     reads: u32,
-    /// 쓰기 전에 GitDiff·PrView 가 나왔다
     review_first: bool,
-    /// 첫 Test 결과가 실패였나
-    first_test_failed: Option<bool>,
+    /// 첫 쓰기 전에 Test 가 실패했다
+    fail_first: bool,
     test_failed: bool,
     test_ok: bool,
-    /// 창 안의 Test 호출. 결과가 20번째 호출 뒤에 와도 센다
-    open_tests: HashSet<String>,
+    /// 창 안의 Test 호출과 첫 쓰기 전이었나. 결과가 20번째 호출 뒤에 와도 센다
+    open_tests: HashMap<String, bool>,
 }
 
 impl WorkTally {
@@ -167,16 +202,14 @@ impl WorkTally {
         match tool {
             ToolKind::FileEdit | ToolKind::FileWrite => {
                 self.writes += 1;
-                let ext = path
-                    .and_then(|p| p.rsplit_once('.'))
-                    .map_or(String::new(), |(_, e)| e.to_ascii_lowercase());
-                if matches!(ext.as_str(), "md" | "mdx" | "rst" | "txt") {
+                if path.is_some_and(|p| is_doc_ext(ext_of(&norm(p)))) {
                     self.md_writes += 1;
                 }
             }
             ToolKind::GitDiff | ToolKind::PrView if self.writes == 0 => self.review_first = true,
             ToolKind::Test => {
-                self.open_tests.insert(call_id.to_string());
+                self.open_tests
+                    .insert(call_id.to_string(), self.writes == 0);
             }
             ToolKind::FileRead
             | ToolKind::FileSearch
@@ -187,15 +220,20 @@ impl WorkTally {
     }
 
     pub fn result(&mut self, call_id: &str, outcome: ToolOutcome) {
-        if matches!(outcome, ToolOutcome::Started) || !self.open_tests.remove(call_id) {
+        if outcome == ToolOutcome::Started {
             return;
         }
-        let failed = outcome == ToolOutcome::Err;
-        self.first_test_failed.get_or_insert(failed);
-        if failed {
-            self.test_failed = true;
-        } else if outcome == ToolOutcome::Ok {
-            self.test_ok = true;
+        let Some(before_write) = self.open_tests.remove(call_id) else {
+            return;
+        };
+        // 반려·Unknown 은 통과도 실패도 아니다
+        match outcome {
+            ToolOutcome::Ok => self.test_ok = true,
+            ToolOutcome::Err => {
+                self.test_failed = true;
+                self.fail_first |= before_write;
+            }
+            _ => {}
         }
     }
 
@@ -214,7 +252,7 @@ impl WorkTally {
             self.writes == 0 && self.calls >= RESEARCH_MIN_CALLS && self.reads * 2 >= self.calls;
         Some(if kw[0] || self.review_first {
             WorkType::CodeReview
-        } else if kw[1] || self.first_test_failed == Some(true) {
+        } else if kw[1] || self.fail_first {
             WorkType::BugFix
         } else if kw[2] || refactor {
             WorkType::Refactor

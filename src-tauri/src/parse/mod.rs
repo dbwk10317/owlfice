@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 
 use crate::discover::Product;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Event {
     /// 메타 레코드(custom-title 등)에는 없다. None이면 상태 기계가 직전 이벤트 시각을 쓴다
     pub ts: Option<DateTime<Utc>>,
@@ -23,7 +23,7 @@ pub struct Event {
 }
 
 /// `generation` 은 파일 세대 (4.5)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RawRef {
     pub path: PathBuf,
     pub generation: u64,
@@ -44,7 +44,7 @@ pub trait Parser {
 
 /// 원본 레코드를 보는 파서만 아는 미대응 재료 (4.11). 원문 값은 담지 않는다.
 /// 이벤트에서 알 수 있는 kind(`command`·`mcp_server`·`skill` 등)와 집계·저장은 diag 몫이다
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Unhandled {
     /// 모르는 최상위 `type`, Codex `payload.type`. `keys` 는 최상위 키 이름
     RecordType {
@@ -72,13 +72,13 @@ pub enum Unhandled {
 }
 
 /// 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Confidence {
     Confirmed,
     Inferred,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum EventKind {
     UserMessage {
         text: String,
@@ -148,7 +148,7 @@ pub enum EventKind {
     Reset,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum ToolOutcome {
     /// 구조 필드(is_error=false, exit_code=0)로 확인된 성공
     Ok,
@@ -162,7 +162,7 @@ pub enum ToolOutcome {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ToolKind {
     FileRead,
     FileSearch,
@@ -190,7 +190,7 @@ pub enum ToolKind {
 }
 
 /// 문장 생성에 필요한 최소 정보
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ToolSummary {
     /// 상대 경로
     pub path: Option<String>,
@@ -214,19 +214,19 @@ pub struct ToolSummary {
 }
 
 /// 합격·반려 숫자. 종료 코드가 아니라 결과 본문에서 온다
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct TestResult {
     pub passed: u32,
     pub failed: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TodoItem {
     pub content: String,
     pub status: TodoStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum TodoStatus {
     Pending,
     InProgress,
@@ -234,7 +234,7 @@ pub enum TodoStatus {
 }
 
 /// 파이프(pipefail 꺼짐)·`||`·`;`·개행·단독 `&`·분석 불가 구문은 개별 명령의 성공을 보증하지 못해 Mixed (4.6.4)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Compound {
     Single,
     /// `&&` 만

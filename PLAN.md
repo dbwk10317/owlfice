@@ -506,7 +506,7 @@
 - 셸 폴백, 처음 본 거래처·스킬, 결과 미확인에도 말풍선 문구를 하나씩 둔다.
 - 보이는 것은 도구 이름 같은 구조 정보뿐이다. 인자·결과 본문은 보이지 않는다 (4.11과 같은 기준). 도구를 쓴 것은 확인된 사실이라 추정 점선은 붙이지 않는다.
 - 직원 행동이 아닌 처음 보는 레코드 종류(`record_type`, `system_subtype`)는 앱을 켠 동안 종류마다 한 번 사내 방송 티커에 낸다 ("총무팀: 처음 보는 서류 양식 접수"). `state_conflict`·`scenario_gap` 은 화면에 내지 않는다.
-- 문구는 `design/handoff/phrases.ko.json` 에 더한다 (아직 없다).
+- 문구는 `design/handoff/phrases.ko.json` 의 `bubble.unknownTool`·`scriptFallback`·`newVendor`·`newSkill`·`unknownResult`, `ticker.unknownRecord`.
 
 ### 3.7 팝업 두 종류
 

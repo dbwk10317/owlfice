@@ -310,6 +310,7 @@ impl ClaudeParser {
                     .unwrap_or_default();
                 extra = Some(EventKind::PermissionRequest {
                     question: question.to_string(),
+                    plan: name == "ExitPlanMode",
                 });
                 ToolKind::Ask
             }
@@ -1487,7 +1488,8 @@ mod tests {
         assert_eq!(
             at(&r, 4)[1],
             EventKind::PermissionRequest {
-                question: "Q?".into()
+                question: "Q?".into(),
+                plan: false,
             }
         );
         let (_, _, s) = call_at(&r, 8);
@@ -1501,6 +1503,18 @@ mod tests {
                 name: "FrobTool".into(),
                 input_keys: vec!["a".into()]
             }]
+        );
+    }
+
+    #[test]
+    fn exit_plan_mode_is_a_plan_request() {
+        let r = feed(&[tool_use("toolu_fake01", "ExitPlanMode", r#"{"plan":"P"}"#)]);
+        assert_eq!(
+            at(&r, 1)[1],
+            EventKind::PermissionRequest {
+                question: "P".into(),
+                plan: true,
+            }
         );
     }
 

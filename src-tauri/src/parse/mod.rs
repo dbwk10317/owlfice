@@ -117,6 +117,8 @@ pub enum EventKind {
     /// 확인됨: AskUserQuestion / ExitPlanMode / Codex request_user_input_async / Antigravity ask_question
     PermissionRequest {
         question: String,
+        /// Claude ExitPlanMode
+        plan: bool,
     },
     ContextCompaction {
         pre_tokens: Option<u64>,

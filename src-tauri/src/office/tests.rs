@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, FixedOffset, Utc};
 
-use super::classify::{SubMeta, merge, rebuild};
-use super::{Cue, Employee, Light, Rank, Room, Team, TeamPhase};
+use super::classify::{SubMeta, merge, rebuild, replay};
+use super::{Cue, Employee, Light, Pose, Rank, Room, Team, TeamPhase};
 use crate::discover::Product;
 use crate::parse::claude::ClaudeParser;
 use crate::parse::codex::CodexParser;
@@ -99,7 +99,7 @@ fn result(id: &str, outcome: ToolOutcome) -> EventKind {
     }
 }
 
-/// 이벤트마다 그 ts 로 tick 한다 (재구성과 같은 시계)
+/// 이벤트마다 적용하기 전에 그 ts 로 tick 한다 (재구성과 같은 시계)
 struct Sim {
     team: Team,
     cues: Vec<Cue>,
@@ -114,8 +114,9 @@ impl Sim {
     }
 
     fn on(&mut self, agent: &str, secs: i64, kind: EventKind) -> &mut Self {
+        self.tick(secs);
         self.team.apply(&ev(agent, secs, kind), &mut self.cues);
-        self.tick(secs)
+        self
     }
 
     fn tick(&mut self, secs: i64) -> &mut Self {
@@ -349,7 +350,7 @@ fn mixed_success_sends_no_truck_and_no_light() {
     )
     .on(MAIN, 5, tested);
     assert!(!s.cues.contains(&Cue::Truck));
-    assert_ne!(s.team.props.light, Light::Green);
+    assert_eq!(s.team.props.light, Light::Off);
     assert!(s.cues.contains(&Cue::Stamp {
         passed: 3,
         failed: 1,
@@ -523,6 +524,416 @@ fn review_pens_and_repeated_edits() {
     );
 }
 
+fn text(t: &str) -> EventKind {
+    EventKind::AssistantText { text: t.into() }
+}
+
+fn with_tests(id: &str, outcome: ToolOutcome, passed: u32, failed: u32) -> EventKind {
+    EventKind::ToolResult {
+        call_id: id.into(),
+        outcome,
+        outcome_confidence: Confirmed,
+        preview: String::new(),
+        test_result: Some(TestResult { passed, failed }),
+    }
+}
+
+fn in_file(mut e: Event, path: &str) -> Event {
+    e.raw_ref.path = path.into();
+    e
+}
+
+fn ask(question: &str, plan: bool) -> EventKind {
+    EventKind::PermissionRequest {
+        question: question.into(),
+        plan,
+    }
+}
+
+#[test]
+fn rebuild_ticks_before_each_event() {
+    // 백그라운드는 40분 뒤 메시지보다 먼저 팀 Off 로 정리된다
+    let bg = [
+        ev(MAIN, 0, call("bg", ToolKind::Shell, cmd("npm run dev"))),
+        ev(MAIN, 1, result("bg", ToolOutcome::Started)),
+        ev(
+            MAIN,
+            40 * 60,
+            EventKind::UserMessage {
+                text: "다시".into(),
+            },
+        ),
+    ];
+    // 30분 넘게 결과가 없어 포기한 호출이라 늦은 실패는 짝이 없다
+    let build = [
+        ev(MAIN, 0, call("b", ToolKind::Build, cmd("cargo build"))),
+        ev(MAIN, 31 * 60, result("b", ToolOutcome::Err)),
+    ];
+    for events in [&bg[..], &build[..]] {
+        let end = events.last().unwrap().ts.unwrap();
+        let t = replayed(MAIN, events, end);
+        assert_eq!(final_state(&t), final_state(&stepwise(MAIN, events, end)));
+        assert!(boss(&t).background.is_empty());
+        assert_eq!(t.props.trash, 0);
+    }
+    // 포기한 뒤 졸음을 거쳐 퇴근했다
+    let t = replayed(MAIN, &build, at(31 * 60));
+    let given_up = &boss(&t).recent[0];
+    assert_eq!(given_up.sentence, "결과 확인 불가: `cargo build`");
+    assert_eq!(given_up.since, at(30 * 60));
+    assert_eq!(t.props.light, Light::Off);
+}
+
+#[test]
+fn merge_keeps_line_order_within_a_file() {
+    // 결과 줄의 ts 가 호출보다 이르다 (표본의 queued_command 처럼)
+    let main = vec![
+        ev(MAIN, 10, call("c", ToolKind::Shell, cmd("ls"))),
+        ev(MAIN, 9, result("c", ToolOutcome::Ok)),
+    ];
+    let sub = vec![ev(SUB, 9, EventKind::Thinking)];
+    let order = merge(vec![main.clone(), sub.clone()]);
+    assert_eq!(order, [sub[0].clone(), main[0].clone(), main[1].clone()]);
+    let t = rebuild(MAIN, Product::ClaudeCli, &[], vec![main, sub], utc());
+    assert!(boss(&t).pending.is_empty());
+    is(boss(&t), Room::TeamLead, "`ls` 완료", Confirmed);
+    assert_eq!(
+        final_state(&replayed(MAIN, &order, at(20))),
+        final_state(&stepwise(MAIN, &order, at(20)))
+    );
+}
+
+#[test]
+fn retired_sub_rehires_only_for_later_events() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    s.on(SUB, 5, text("끝")).on(
+        MAIN,
+        10,
+        EventKind::SubagentDone {
+            child_id: SUB.into(),
+        },
+    );
+    s.cues.clear();
+    // 서브 파일의 마지막 줄을 부모의 Done 보다 늦게 읽었다
+    s.on(SUB, 6, text("끝"));
+    let untimed = Event {
+        ts: None,
+        ..ev(SUB, 0, EventKind::Thinking)
+    };
+    s.team.apply(&untimed, &mut s.cues);
+    // meta.json 선발견처럼 앞선 ts 의 중복 Spawn
+    spawn_sub(&mut s, 3, "claude-haiku-4-5", None);
+    s.tick(200);
+    assert_eq!(s.sub().retired_at, Some(at(10)));
+    assert!(!s.cues.iter().any(|c| matches!(c, Cue::Rehire { .. })));
+    s.on(SUB, 201, EventKind::Thinking);
+    assert!(s.sub().retired_at.is_none());
+    assert!(s.cues.contains(&Cue::Rehire { agent: SUB.into() }));
+}
+
+#[test]
+fn untimed_events_use_their_own_file_clock() {
+    let untimed = |agent: &str, path: &str| Event {
+        ts: None,
+        ..in_file(ev(agent, 0, EventKind::Thinking), path)
+    };
+    let apply = |s: &mut Sim, e: Event| s.team.apply(&e, &mut s.cues);
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    apply(
+        &mut s,
+        in_file(ev(SUB, 5, EventKind::Thinking), "sub.jsonl"),
+    );
+    apply(
+        &mut s,
+        in_file(ev(MAIN, 100, EventKind::Thinking), "main.jsonl"),
+    );
+    apply(&mut s, untimed(SUB, "sub.jsonl"));
+    assert_eq!(s.sub().last_event, at(5));
+    // 조는 팀은 ts 없는 줄이나 늦게 읽힌 옛 줄로 깨지 않는다
+    s.tick(100 + 4 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Dozing);
+    apply(&mut s, untimed(MAIN, "main.jsonl"));
+    apply(
+        &mut s,
+        in_file(ev(SUB, 50, EventKind::Thinking), "sub.jsonl"),
+    );
+    assert_eq!(s.team.phase, TeamPhase::Dozing);
+    apply(
+        &mut s,
+        in_file(ev(SUB, 400, EventKind::Thinking), "sub.jsonl"),
+    );
+    assert_eq!(s.team.phase, TeamPhase::Working);
+}
+
+#[test]
+fn retiring_settles_calls_so_the_team_can_doze() {
+    let mut s = Sim::new();
+    s.team.alive_in_registry = true;
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    s.on(SUB, 1, call("x", ToolKind::Shell, cmd("sleep 999")))
+        .on(
+            MAIN,
+            2,
+            EventKind::SubagentDone {
+                child_id: SUB.into(),
+            },
+        )
+        .tick(2 * 3600);
+    assert!(s.sub().pending.is_empty());
+    assert_eq!(s.sub().recent[0].sentence, "결과 확인 불가: `sleep 999`");
+    assert_eq!(s.team.phase, TeamPhase::Dozing);
+}
+
+#[test]
+fn late_call_give_up_keeps_background_jobs() {
+    let mut s = Sim::new();
+    s.team.alive_in_registry = true;
+    s.on(MAIN, 0, call("bg", ToolKind::Shell, cmd("npm run dev")))
+        .on(MAIN, 1, result("bg", ToolOutcome::Started))
+        .on(MAIN, 2, call("p", ToolKind::Shell, cmd("sleep 9999")))
+        .tick(2 + 31 * 60);
+    assert!(s.boss().pending.is_empty());
+    assert_eq!(s.boss().background.len(), 1);
+    is(
+        s.boss(),
+        Room::TeamLead,
+        "결과 확인 불가: `sleep 9999`",
+        Inferred,
+    );
+    assert_eq!(s.boss().activity.since, at(2 + 30 * 60));
+}
+
+#[test]
+fn every_pending_call_counts_for_give_up_and_squat() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("sleep 9999")))
+        .on(MAIN, 20 * 60, call("b", ToolKind::Shell, cmd("ls -R")))
+        .tick(31 * 60);
+    let ids: Vec<_> = s
+        .boss()
+        .pending
+        .iter()
+        .map(|c| c.call_id.as_str())
+        .collect();
+    assert_eq!(ids, ["b"]);
+    is(
+        s.boss(),
+        Room::Build,
+        "서버실에서 땀 흘리는 중 (`ls -R`)",
+        Confirmed,
+    );
+
+    // 평균 10초인 빌드가 대표 호출 뒤에 있어도 쪼그린다
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("w", ToolKind::Build, cmd("cargo build")))
+        .on(MAIN, 10, result("w", ToolOutcome::Ok))
+        .on(MAIN, 100, call("b", ToolKind::Build, cmd("cargo build")))
+        .on(MAIN, 101, call("l", ToolKind::Shell, cmd("ls")))
+        .tick(125);
+    assert_eq!(s.boss().activity.pose, Pose::Squat);
+}
+
+#[test]
+fn going_off_drops_the_question() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("q", ToolKind::Ask, summary()))
+        .on(MAIN, 0, ask("배포할까요?", false));
+    assert!(s.team.needs_boss(s.boss(), at(1)));
+    s.tick(31 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Off);
+    assert!(s.boss().asking.is_none());
+    assert!(!s.team.needs_boss(s.boss(), at(31 * 60)));
+}
+
+#[test]
+fn completion_after_turn_end_is_not_waiting_for_the_boss() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("bg", ToolKind::Shell, cmd("npm run dev")))
+        .on(MAIN, 1, result("bg", ToolOutcome::Started))
+        .on(MAIN, 2, text("돌려 둘게요"))
+        .on(MAIN, 30, result("bg", ToolOutcome::Ok))
+        .tick(33);
+    is(s.boss(), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    assert!(!s.team.needs_boss(s.boss(), at(33)));
+
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    s.on(MAIN, 1, text("맡겨 뒀어요"))
+        .on(
+            MAIN,
+            30,
+            EventKind::SubagentDone {
+                child_id: SUB.into(),
+            },
+        )
+        .tick(33);
+    is(s.boss(), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    assert!(!s.team.needs_boss(s.boss(), at(33)));
+}
+
+#[test]
+fn light_returns_when_a_build_ends_without_a_verdict() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("g", ToolKind::Build, cmd("cargo build")))
+        .on(MAIN, 1, result("g", ToolOutcome::Ok));
+    assert_eq!(s.team.props.light, Light::Green);
+    let guessed = EventKind::ToolResult {
+        call_id: "i".into(),
+        outcome: ToolOutcome::Ok,
+        outcome_confidence: Inferred,
+        preview: String::new(),
+        test_result: None,
+    };
+    let ends = [
+        result("i", ToolOutcome::Rejected),
+        result("i", ToolOutcome::Unknown),
+        guessed,
+    ];
+    for (n, end) in ends.into_iter().enumerate() {
+        let t = 10 + n as i64 * 10;
+        s.on(MAIN, t, call("i", ToolKind::Test, cmd("cargo test")));
+        assert_eq!(s.team.props.light, Light::Yellow);
+        s.on(MAIN, t + 1, end);
+        assert_eq!(s.team.props.light, Light::Green, "{n}번째");
+    }
+    // 30분 포기도 같다
+    s.on(MAIN, 50, call("z", ToolKind::Build, cmd("cargo build")))
+        .tick(50 + 31 * 60);
+    assert_eq!(s.team.props.light, Light::Green);
+}
+
+#[test]
+fn messages_do_not_hide_a_question_or_a_running_call() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("q", ToolKind::Ask, summary()))
+        .on(MAIN, 0, ask("배포할까요?", false))
+        .on(
+            MAIN,
+            1,
+            EventKind::UserMessage {
+                text: "잠깐".into(),
+            },
+        );
+    is(
+        s.boss(),
+        Room::Door,
+        "결재판 들고 문 앞 대기: 「배포할까요?」",
+        Confirmed,
+    );
+
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("c", ToolKind::Shell, cmd("make")))
+        .on(MAIN, 1, text("빌드 중입니다"));
+    is(s.boss(), Room::Build, "`make` 실행 중", Confirmed);
+    let compaction = EventKind::ContextCompaction {
+        pre_tokens: Some(150_000),
+        post_tokens: Some(20_000),
+    };
+    s.on(MAIN, 2, compaction);
+    is(s.boss(), Room::Build, "`make` 실행 중", Confirmed);
+}
+
+#[test]
+fn plan_request_uses_the_plan_sentence() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("p", ToolKind::Ask, summary())).on(
+        MAIN,
+        0,
+        ask("# 계획\n1. 파서 고치기", true),
+    );
+    is(
+        s.boss(),
+        Room::Door,
+        "결재판 들고 문 앞 대기: 「계획 결재 올립니다」",
+        Confirmed,
+    );
+}
+
+#[test]
+fn pizza_counts_from_the_last_wake() {
+    let step = |s: &mut Sim, secs: i64| {
+        s.on(MAIN, secs, EventKind::Thinking).tick(secs);
+    };
+    let h = 3600;
+    let mut s = Sim::new();
+    for m in (0..=180).step_by(20) {
+        step(&mut s, m * 60);
+    }
+    step(&mut s, 3 * h + 60);
+    assert_eq!(s.team.props.pizza, 2);
+    s.tick(3 * h + 60 + 31 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Off);
+    // 깨어난 때부터 다시 센다. 세션 시작부터 세면 여기서 4상자가 된다
+    step(&mut s, 5 * h);
+    assert_eq!(s.team.props.pizza, 2);
+    for m in (5 * 60..=7 * 60).step_by(20) {
+        step(&mut s, m * 60);
+    }
+    assert_eq!(s.team.props.pizza, 2);
+    step(&mut s, 7 * h + 60);
+    assert_eq!(s.team.props.pizza, 3);
+}
+
+#[test]
+fn failed_test_stamp_is_estimated_only_for_mixed() {
+    let mixed = ToolSummary {
+        compound: Compound::Mixed,
+        ..cmd("cargo test | tail")
+    };
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("s", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 1, with_tests("s", ToolOutcome::Err, 1, 2))
+        .on(MAIN, 2, call("m", ToolKind::Test, mixed))
+        .on(MAIN, 3, with_tests("m", ToolOutcome::Err, 1, 2));
+    let stamps: Vec<_> = s
+        .cues
+        .iter()
+        .filter_map(|c| match c {
+            Cue::Stamp { estimated, .. } => Some(*estimated),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(stamps, [false, true]);
+}
+
+#[test]
+fn only_passing_tests_clear_red_and_incident() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("f", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 1, result("f", ToolOutcome::Err));
+    fail(&mut s, "a", 2, "ls a");
+    fail(&mut s, "b", 3, "ls b");
+    assert!(s.team.incident.is_some());
+    // 종료 코드가 0 이어도 본문에 반려가 있으면 장애는 이어진다
+    s.on(MAIN, 10, call("t", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 11, with_tests("t", ToolOutcome::Ok, 3, 1));
+    assert!(s.team.incident.is_some());
+    assert!(s.boss().red.is_some());
+    // Mixed 라도 본문이 전부 통과면 빨간불을 끄고 장애를 푼다
+    let mixed = ToolSummary {
+        compound: Compound::Mixed,
+        ..cmd("cargo test | tail")
+    };
+    s.on(MAIN, 20, call("m", ToolKind::Test, mixed)).on(
+        MAIN,
+        21,
+        with_tests("m", ToolOutcome::Ok, 4, 0),
+    );
+    assert!(s.boss().red.is_none());
+    assert!(s.team.incident.is_none());
+}
+
+#[test]
+fn background_runs_stay_out_of_the_average() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("bg", ToolKind::Build, cmd("cargo build")))
+        .on(MAIN, 1, result("bg", ToolOutcome::Started))
+        .on(MAIN, 600, result("bg", ToolOutcome::Ok));
+    assert!(s.team.stats.avg.is_empty());
+}
+
 // ---------- fixture 재구성 ----------
 
 fn fixture(rel: &str) -> PathBuf {
@@ -627,7 +1038,7 @@ impl Case {
                 let mut last = None;
                 f.iter()
                     .filter(|e| {
-                        last = e.ts.or(last);
+                        last = last.max(e.ts);
                         last.is_none_or(|t| t <= until)
                     })
                     .cloned()
@@ -687,11 +1098,18 @@ fn snapshot_reject_holds_four_seconds() {
     );
     assert_eq!(t.props.trash, 0);
     // 반려 직후 4초는 응답 대기보다 앞선다
+    let t = c.at("2026-03-02T09:01:54.802Z", 3);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "반려됨: `prog1 arg2 -q \"arg3\" \"C:/dir3/dir4/dir5/` 안 됩니다",
+        Confirmed,
+    );
+    assert!(t.needs_boss(boss(&t), ts("2026-03-02T09:01:57.802Z")));
+    // 사장님이 답하면 반려 직후가 끝나고 응답 대기다
     let t = c.at("2026-03-02T09:01:54.874Z", 3);
-    is(boss(&t), Room::TeamLead, "요구사항 접수", Confirmed);
-    assert!(t.needs_boss(boss(&t), ts("2026-03-02T09:01:57.874Z")));
-    let t = c.at("2026-03-02T09:01:54.874Z", 5);
     is(boss(&t), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    assert!(!t.needs_boss(boss(&t), ts("2026-03-02T09:01:57.874Z")));
 }
 
 #[test]
@@ -761,10 +1179,18 @@ fn snapshot_async_subagent() {
         "백그라운드: `VAR1=\"C:/dir3/dir4/dir5/dir6/dir7/dir8/d` 돌아가는 중 (작업표 1장)",
         Confirmed,
     );
-    // 완료 알림은 49.840 의 응답으로 턴이 끝난 뒤라 부장은 결재 대기다
+    // 49.840 의 응답으로 턴이 끝났지만 완료 알림이 다음 응답을 부른다 (2.4 응답 대기)
     let t = c.at("2026-03-02T09:01:30.259Z", 0);
     assert!(boss(&t).background.is_empty());
-    is(boss(&t), Room::TeamLead, "요구사항 대기 중인 듯", Inferred);
+    is(
+        boss(&t),
+        Room::TeamLead,
+        "`$dir11/dir12/file13.py` 열람",
+        Confirmed,
+    );
+    let t = c.at("2026-03-02T09:01:30.259Z", 3);
+    is(boss(&t), Room::TeamLead, "턱 괴고 고민 중인 듯", Inferred);
+    assert!(!t.needs_boss(boss(&t), ts("2026-03-02T09:01:33.259Z")));
 
     let t = c.at("2026-03-02T09:03:16.532Z", 0);
     is(
@@ -956,10 +1382,21 @@ fn shuffled(files: &[Vec<Event>], seed: u64) -> Vec<Event> {
 }
 
 type Final = (
-    Vec<(String, Room, String, Confidence, bool, usize)>,
+    Vec<(
+        String,
+        Room,
+        String,
+        Confidence,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+        DateTime<Utc>,
+        usize,
+        usize,
+    )>,
     u32,
     Light,
     Option<f32>,
+    TeamPhase,
 );
 
 fn final_state(t: &Team) -> Final {
@@ -972,42 +1409,103 @@ fn final_state(t: &Team) -> Final {
                 e.activity.room,
                 e.activity.sentence.clone(),
                 e.activity.confidence,
-                e.retired_at.is_some(),
+                e.activity.since,
+                e.retired_at,
+                e.hired_at,
                 e.pending.len(),
+                e.background.len(),
             )
         })
         .collect();
-    (emps, t.props.trash, t.props.light, t.props.plant)
+    (emps, t.props.trash, t.props.light, t.props.plant, t.phase)
+}
+
+/// 재구성하고 `end` 에 한 번 tick 한다
+fn replayed(id: &str, events: &[Event], end: DateTime<Utc>) -> Team {
+    let mut t = replay(id, Product::ClaudeCli, &[], events, utc());
+    t.tick(end, utc(), &mut Vec::new());
+    t
+}
+
+/// 하나씩 적용하며 1초마다 tick 한다. 실제 간격으로 append 한 것과 같은 시계다 (4.3)
+fn stepwise(id: &str, events: &[Event], end: DateTime<Utc>) -> Team {
+    let sec = Duration::seconds(1);
+    let mut clock = events.iter().find_map(|e| e.ts).unwrap();
+    let mut team = Team::new(id, Product::ClaudeCli, clock);
+    let mut cues = Vec::new();
+    for e in events {
+        if let Some(t) = e.ts {
+            while clock + sec < t {
+                clock += sec;
+                team.tick(clock, utc(), &mut cues);
+            }
+            team.tick(t, utc(), &mut cues);
+            clock = clock.max(t);
+        }
+        team.apply(e, &mut cues);
+    }
+    while clock < end {
+        clock = (clock + sec).min(end);
+        team.tick(clock, utc(), &mut cues);
+    }
+    team
+}
+
+#[test]
+fn stepwise_ticks_match_rebuild_on_fixtures() {
+    let claude = [
+        "async-subagent",
+        "bg-fail-reject-compact",
+        "compaction",
+        "internal-tool-failure",
+        "parallel-reversed",
+        "reject",
+        "rewrite-shrink",
+        "sync-subagent",
+        "test-fail-fix-pass",
+    ]
+    .map(Case::claude);
+    let codex = ["aborted", "ask-reject-compact", "codex-app"].map(Case::codex);
+    for c in claude.iter().chain(&codex) {
+        let events = merge(c.files.clone());
+        let last = events.iter().filter_map(|e| e.ts).max().unwrap();
+        for end in [last, last + Duration::minutes(40)] {
+            assert_eq!(
+                final_state(&replayed(&c.id, &events, end)),
+                final_state(&stepwise(&c.id, &events, end)),
+                "{} {end}",
+                c.id
+            );
+        }
+    }
 }
 
 #[test]
 fn order_invariance_async_subagent() {
     let c = Case::claude("async-subagent");
-    let base = rebuild(&c.id, c.product, &c.subs, c.files.clone(), utc());
-    let want = final_state(&base);
+    let want = final_state(&rebuild(&c.id, c.product, &c.subs, c.files.clone(), utc()));
     let canonical = merge(c.files.clone());
     let mut moved = 0;
     for seed in 0..40 {
         let order = shuffled(&c.files, seed);
         assert_eq!(order.len(), canonical.len());
         moved += usize::from(order != canonical);
-        let mut team = Team::new(&c.id, c.product, base.started);
-        for s in &c.subs {
-            team.preregister(
-                &s.agent_id,
-                s.model.as_deref(),
-                s.effort.as_deref(),
-                s.description.as_deref(),
-                s.depth,
-                base.started,
-            );
-        }
-        let mut cues = Vec::new();
-        for e in &order {
-            team.apply(e, &mut cues);
-            team.tick(e.ts.unwrap_or(team.last_activity), utc(), &mut cues);
-        }
+        let team = replay(&c.id, c.product, &c.subs, &order, utc());
         assert_eq!(final_state(&team), want, "seed {seed}");
     }
     assert!(moved > 0, "섞인 순서가 하나도 없다");
+}
+
+#[test]
+fn preregistered_sub_is_hired_when_it_first_appears() {
+    for scenario in ["sync-subagent", "async-subagent"] {
+        let c = Case::claude(scenario);
+        let with = rebuild(&c.id, c.product, &c.subs, c.files.clone(), utc());
+        let without = rebuild(&c.id, c.product, &[], c.files.clone(), utc());
+        for s in &c.subs {
+            let hired = emp(&with, &s.agent_id).hired_at;
+            assert_eq!(hired, emp(&without, &s.agent_id).hired_at, "{scenario}");
+            assert_ne!(hired, with.started, "{scenario}");
+        }
+    }
 }

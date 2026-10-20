@@ -26,9 +26,20 @@
   display: none;
 }
 
-/* 토스트: 빈 자리는 높이 0, 있으면 32 + 아래 여백 (HANDOFF 4.1) */
+/* 토스트: aside 밖이라 레일·드롭다운 모드에서도 보인다. 간판 60 아래에 겹쳐 띄운다 (HANDOFF 4.1) */
 .ow-toast-slot {
-  flex: none;
+  position: absolute;
+  top: 60px;
+  left: 0;
+  width: var(--ow-sidebar-w);
+  z-index: calc(var(--ow-z-rail-pop) + 1);
+  pointer-events: none;
+}
+.ow-side-host[data-mode="rail"] .ow-toast-slot {
+  left: 48px;
+}
+.ow-side-host[data-mode="select"] .ow-toast-slot {
+  top: 100%;
 }
 .ow-toast {
   width: auto;
@@ -170,6 +181,7 @@
 }
 .ow-rail {
   display: none;
+  overflow-y: auto;
 }
 
 /* 창 너비 구간 (PLAN 3.2). data-mode 는 mountSidebar 가 정한다 */

@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 // 왼쪽 사이드바 (PLAN 3.3, 4.9). 목록 전체 교체를 받아 DOM 을 키(office id)로 재사용하며 고친다.
 import "../design/handoff/tokens.css";
 import "./styles/sidebar.css";
@@ -28,12 +27,11 @@ export interface SidebarStore {
 /** 백엔드에 select_office 를 보낸다. requestId 는 store.selectOffice 가 돌려준 값 */
 export type SelectOffice = (officeId: string, requestId: number) => void;
 export interface SidebarOptions {
-  /** 너비를 재는 요소. 기본은 문서 루트 */
-  target?: Element;
+  /** 창 너비. 기본은 문서 루트의 clientWidth */
   getWidth?: () => number;
 }
 
-export type SidebarMode = "full" | "rail" | "select";
+type SidebarMode = "full" | "rail" | "select";
 const RAIL_BELOW = 900; // 3.2: 900 미만 레일
 const HIDE_BELOW = 720; // 720 미만 숨김, 상단 띠 <select>
 const TOAST_MS = 3000;
@@ -48,13 +46,13 @@ const DOT_STATE: Record<Dot, string> = {
   Dozing: "sleepy",
   Off: "off",
 };
-// 상태 점은 색만으로 말하지 않는다 (HANDOFF 10절). phrases 에 없어 여기 둔다
+// 상태 점은 색만으로 말하지 않는다 (HANDOFF 10절)
 const DOT_WORD: Record<string, string> = {
-  incident: "장애",
-  working: "근무 중",
-  waiting: "결재·응답 대기",
-  sleepy: "졸음",
-  off: "퇴근",
+  incident: P.stateIncident,
+  working: P.stateWorking,
+  waiting: P.stateWaiting,
+  sleepy: P.stateSleepy,
+  off: P.stateOff,
 };
 // 동 글자 = 제품 (PLAN 2부). 제품이 색을 정한다
 const BUILDING_PRODUCT: Record<string, [string, string]> = {
@@ -74,7 +72,7 @@ const color = (product: string) => `var(--ow-${product})`;
 const fill = (tpl: string, vars: Record<string, string | number>) =>
   tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
 
-export function elapsedText(startedIso: string, now: number): string {
+function elapsedText(startedIso: string, now: number): string {
   const sec = Math.floor((now - Date.parse(startedIso)) / 1000);
   const u = phrases.units;
   if (!(sec >= 60)) return u.now; // 시계가 어긋나 음수이거나 날짜를 못 읽어도 "방금"
@@ -102,7 +100,6 @@ const svgSpan = (doc: Document, svg: string, cls: string): El => {
   s.innerHTML = svg; // 앱에 묶인 정적 아이콘이다
   return s;
 };
-/** 값이 바뀐 때만 true. DOM 을 건드릴지 정하는 용도 */
 const changed = (last: Record<string, unknown>, key: string, v: unknown): boolean =>
   last[key] === v ? false : ((last[key] = v), true);
 
@@ -130,6 +127,7 @@ interface RowModel {
   targetId: string | null;
   name: string;
   workType: string;
+  folder: string;
   host: string;
   metaHead: string;
   started: string | null;
@@ -143,7 +141,6 @@ interface RowModel {
   /** 층 행만: 접기 키 */
   foldKey: string | null;
   open: boolean;
-  label: string;
 }
 interface GroupModel {
   t: "group";
@@ -178,6 +175,7 @@ interface Selectable {
   state: string;
   asking: boolean;
   off: boolean;
+  disabled: boolean;
 }
 interface Plan {
   items: Item[];
@@ -204,9 +202,12 @@ function metaHead(t: TeamSummaryDto, large: boolean): string {
   return fill(tpl.replace("{elapsed}째", ""), { folder: t.folder, n: t.others });
 }
 
+/** 공실이거나 사무실 id 가 없으면 고를 수 없다. 행·레일·option 이 같은 판정을 쓴다 */
+const unpickable = (vacant: boolean, id: string | null): boolean => vacant || id === null;
+
 const teamName = (t: TeamSummaryDto) => fill(P.teamName, { boss: t.bossName });
 const ariaOf = (name: string, state: string, asking: boolean) =>
-  [name, DOT_WORD[state], asking ? "허가 대기" : ""].filter(Boolean).join(", ");
+  [name, DOT_WORD[state], asking ? P.asking : ""].filter(Boolean).join(", ");
 
 function group(key: string, title: string, over: Partial<GroupModel>): GroupModel {
   return {
@@ -247,6 +248,7 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       targetId: o.officeId,
       name: o.label,
       workType,
+      folder: team?.folder ?? "",
       host: team?.hostBadge ?? "",
       metaHead: team ? (isOff ? team.folder : metaHead(team, true)) : "",
       started: team && !isOff ? team.started : null,
@@ -259,7 +261,6 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       hidden,
       foldKey: null,
       open: true,
-      label: ariaOf(o.label, state, asking),
     });
     selectables.push({
       id: o.officeId,
@@ -269,6 +270,7 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       state,
       asking,
       off: isOff,
+      disabled: false,
     });
   };
 
@@ -276,16 +278,18 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
   for (const b of [...new Set(active.map((o) => o.building ?? ""))].sort()) {
     const members = active.filter((o) => (o.building ?? "") === b);
     const gkey = `group:${b}`;
-    const open = isOpen(gkey, true);
+    // 동이 없는 사무실은 묶지 않고 머리글 없이 행만 둔다
+    const open = b ? isOpen(gkey, true) : true;
     const [product, prodKey] = BUILDING_PRODUCT[b] ?? ["", "codex"];
-    items.push(
-      group(gkey, b ? `${b}동` : "", {
-        sub: product,
-        count: String(members.length),
-        square: color(prodKey),
-        open,
-      }),
-    );
+    if (b)
+      items.push(
+        group(gkey, `${b}동`, {
+          sub: product,
+          count: String(members.length),
+          square: color(prodKey),
+          open,
+        }),
+      );
     for (const o of members) add(o, !open);
   }
   if (off.length) {
@@ -304,7 +308,7 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
 }
 
 function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
-  const items: Item[] = [{ t: "label", key: "label", text: `${P.sectionHq} · 3개 층`, count: "" }];
+  const items: Item[] = [{ t: "label", key: "label", text: P.sectionHqFloors, count: "" }];
   const selectables: Selectable[] = [];
   for (const n of [1, 2, 3]) {
     const o = offices.find((x) => x.floor === n);
@@ -317,7 +321,7 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
     const incidents = live.filter((t) => t.dot === "Incident").length;
     const state = vacant || !o ? "off" : DOT_STATE[o.dot];
     const asking = !vacant && !!o?.asking;
-    const name = o?.label ?? `${n}층 ${FLOOR_NAME[n - 1]} 사무실`;
+    const name = o?.label ?? fill(P.floorName, { n, product: FLOOR_NAME[n - 1] });
     items.push({
       t: "row",
       key: o ? `floor:${o.officeId}` : `vacant:${n}`,
@@ -325,6 +329,7 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       targetId: o?.officeId ?? null,
       name,
       workType: "",
+      folder: "",
       host: "",
       metaHead: vacant
         ? P.vacant
@@ -343,7 +348,6 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       hidden: false,
       foldKey: fkey,
       open,
-      label: ariaOf(name, state, asking),
     });
     selectables.push({
       id: o?.officeId ?? null,
@@ -353,6 +357,7 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       state,
       asking,
       off: vacant,
+      disabled: unpickable(vacant, o?.officeId ?? null),
     });
 
     const teamRow = (t: TeamSummaryDto, isOff: boolean, hidden: boolean): RowModel => {
@@ -365,6 +370,7 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
         targetId: o?.officeId ?? null,
         name: nm,
         workType: workLabel(t.workType),
+        folder: t.folder,
         host: t.hostBadge ?? "",
         metaHead: isOff ? t.folder : metaHead(t, false),
         started: isOff ? null : t.started,
@@ -377,7 +383,6 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
         hidden,
         foldKey: null,
         open: true,
-        label: ariaOf(nm, st, t.asking && !isOff),
       };
     };
     for (const t of live) items.push(teamRow(t, false, !open));
@@ -421,8 +426,8 @@ function entitiesOf(list: OfficeListDto): Map<string, Entity> {
   return m;
 }
 
-/** 대기업은 사무실, 중소기업은 팀이 입주·퇴근하는 단위다 (3.3) */
-export function diffToasts(prev: OfficeListDto, next: OfficeListDto): ToastMsg[] {
+// 대기업은 사무실, 중소기업은 팀이 입주·퇴근하는 단위다 (3.3)
+function diffToasts(prev: OfficeListDto, next: OfficeListDto): ToastMsg[] {
   // 규모가 바뀌었거나 조용한 재구성이면 알릴 일이 아니다 (4.5)
   if (prev.scale !== next.scale || next.rebuilt) return [];
   const a = entitiesOf(prev);
@@ -448,7 +453,6 @@ function toastEl(doc: Document, m: ToastMsg): El {
     dot.dataset.state = m.kind === "off" ? "off" : "working";
     el.append(dot);
   }
-  // 문구 틀의 자리표시자 자리에 굵은 이름을 넣는다
   const [before, after = ""] = T[m.kind].split(/\{(?:office|team)\}/);
   const text = mk(doc, "span", "ow-toast__text");
   text.append(mk(doc, "span", "", before), mk(doc, "b", "", m.name), mk(doc, "span", "", after));
@@ -500,11 +504,12 @@ export function mountSidebar(
 
   const aside = mk(doc, "aside", "ow-sidebar");
   aside.setAttribute("aria-label", phrases.header.officeSelect);
+  const listEl = mk(doc, "div", "ow-sidebar__list");
+  aside.append(listEl);
+  // 레일·드롭다운 모드에선 aside 가 숨으므로 토스트 칸은 aside 밖에 둔다
   const toastSlot = mk(doc, "div", "ow-toast-slot");
   toastSlot.setAttribute("role", "status");
   toastSlot.setAttribute("aria-live", "polite");
-  const listEl = mk(doc, "div", "ow-sidebar__list");
-  aside.append(toastSlot, listEl);
   const rail = mk(doc, "nav", "ow-rail");
   rail.setAttribute("aria-label", phrases.header.officeSelect);
   const band = mk(doc, "div", "ow-side-band");
@@ -512,7 +517,7 @@ export function mountSidebar(
   select.className = "ow-side-select";
   select.setAttribute("aria-label", phrases.header.officeSelect);
   band.append(select);
-  root.append(aside, rail, band);
+  root.append(aside, toastSlot, rail, band);
 
   function pick(id: string | null): void {
     root.classList.remove("is-pop");
@@ -528,8 +533,9 @@ export function mountSidebar(
   };
 
   let pool = new Map<string, View>();
+  let rowViews: RowView[] = [];
   let railPool = new Map<string, RailView>();
-  let optPool = new Map<string, View>();
+  let optSig = "";
   let lastScale: string | null = null;
   let lastList: OfficeListDto | null = null;
   let slideIn = false; // 첫 목록은 그냥 깔고, 그 뒤 새 행만 미끄러져 들어온다
@@ -563,7 +569,6 @@ export function mountSidebar(
     if (m.foldKey) {
       fold = mk(doc, "button", "ow-iconbtn ow-iconbtn--sm ow-row__fold");
       fold.setAttribute("type", "button");
-      fold.setAttribute("aria-label", "접기");
       fold.innerHTML = chevronSvg;
       el.append(fold);
     }
@@ -592,15 +597,37 @@ export function mountSidebar(
     return v;
   }
 
+  /** 읽어 주는 이름: 이름, 상태, 허가 대기, 업무, 폴더, 경과 */
+  function fillAria(v: RowView): void {
+    const m = v.model;
+    const aria = [
+      m.name,
+      DOT_WORD[m.state],
+      m.asking ? P.asking : "",
+      m.workType,
+      m.folder,
+      v.last.elapsed as string | undefined,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    if (changed(v.last, "aria", aria)) v.main.setAttribute("aria-label", aria);
+  }
+
   function fillElapsed(v: RowView): void {
     const text = v.model.started ? elapsedText(v.model.started, Date.now()) : "";
-    if (changed(v.last, "elapsed", text)) v.elapsed.textContent = text;
+    if (changed(v.last, "elapsed", text)) {
+      v.elapsed.textContent = text;
+      fillAria(v);
+    }
   }
 
   function updateRow(v: RowView, m: RowModel, selected: boolean): void {
     const L = v.last;
     v.model = m;
-    if (changed(L, "name", m.name)) v.name.textContent = m.name;
+    if (changed(L, "name", m.name)) {
+      v.name.textContent = m.name;
+      v.fold?.setAttribute("aria-label", m.name);
+    }
     if (changed(L, "work", m.workType)) {
       v.chip.textContent = m.workType;
       v.chip.hidden = !m.workType;
@@ -618,21 +645,22 @@ export function mountSidebar(
     }
     if (changed(L, "ask", m.asking)) v.ask.hidden = !m.asking;
     if (changed(L, "off", m.off)) v.el.classList.toggle("is-off", m.off);
-    if (changed(L, "vacant", m.vacant)) {
-      v.el.classList.toggle("is-vacant", m.vacant);
-      if (m.vacant) v.main.setAttribute("disabled", "");
+    if (changed(L, "vacant", m.vacant)) v.el.classList.toggle("is-vacant", m.vacant);
+    const disabled = unpickable(m.vacant, m.targetId);
+    if (changed(L, "dis", disabled)) {
+      if (disabled) v.main.setAttribute("disabled", "");
       else v.main.removeAttribute("disabled");
     }
     if (changed(L, "hidden", m.hidden)) v.el.hidden = m.hidden;
-    if (changed(L, "aria", m.label)) v.main.setAttribute("aria-label", m.label);
+    fillAria(v);
     if (changed(L, "accent", m.accent)) {
       v.el.style.setProperty("--ow-row-accent", m.accent);
       v.square?.style.setProperty("--ow-square", m.accent);
     }
     if (changed(L, "sel", selected)) {
       v.el.classList.toggle("is-selected", selected);
-      if (selected) v.el.setAttribute("aria-current", "true");
-      else v.el.removeAttribute("aria-current");
+      if (selected) v.main.setAttribute("aria-current", "true");
+      else v.main.removeAttribute("aria-current");
     }
     if (v.fold && changed(L, "open", m.open)) v.fold.setAttribute("aria-expanded", String(m.open));
   }
@@ -699,20 +727,54 @@ export function mountSidebar(
       return g;
     }
     const r = (old as RowView | undefined) ?? newRow(m);
-    // 접힌 팀·퇴근 행은 눌러 고르는 대상이 아니다: 층 행만 선택 표시
+    // 선택 표시는 사무실·층 행에만 둔다. 팀 행을 눌러도 표시는 그 층 행에 간다
     updateRow(r, m, m.kind !== "team" && m.targetId !== null && m.targetId === selectedId);
     return r;
   }
 
   function syncList(items: Item[], selectedId: string | null): void {
     const next = new Map<string, View>();
-    for (const m of items) next.set(m.key, viewOf(m, selectedId));
+    const nextRows: RowView[] = [];
+    for (const m of items) {
+      const v = viewOf(m, selectedId);
+      next.set(m.key, v);
+      if (m.t === "row") nextRows.push(v as RowView);
+    }
     pool = next;
+    rowViews = nextRows;
     place(
       listEl,
       [...next.values()].map((v) => v.el),
     );
+    ensureRoving();
   }
+
+  // ----- 로빙 tabindex: 행 중 Tab 정지점은 하나 (HANDOFF 10절) -----
+  const pickableMains = (): El[] =>
+    rowViews.filter((v) => !v.el.hidden && !v.main.hasAttribute("disabled")).map((v) => v.main);
+  function setRoving(active: El | null): void {
+    for (const v of rowViews) {
+      const t = v.main === active ? "0" : "-1";
+      if (v.main.getAttribute("tabindex") !== t) v.main.setAttribute("tabindex", t);
+    }
+  }
+  function ensureRoving(): void {
+    const mains = pickableMains();
+    const cur = mains.find((m) => m.getAttribute("tabindex") === "0");
+    setRoving(cur ?? mains.find((m) => m.hasAttribute("aria-current")) ?? mains[0] ?? null);
+  }
+  listEl.addEventListener("focusin", (e) => {
+    const t = e.target as El;
+    if (t.classList.contains("ow-row__main")) setRoving(t);
+  });
+  listEl.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const mains = pickableMains();
+    const i = mains.indexOf(e.target as El);
+    if (i < 0) return;
+    e.preventDefault();
+    mains[i + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
+  });
 
   function syncRail(sel: Selectable[], selectedId: string | null): void {
     const next = new Map<string, RailView>();
@@ -726,7 +788,7 @@ export function mountSidebar(
         const state = mk(doc, "span", "ow-rail__state");
         el.append(letter, state);
         const made: RailView = { el, last: {}, id: s.id, letter, state };
-        el.addEventListener("click", () => pick(made.id));
+        el.addEventListener("click", () => openOverlayAt(made.id));
         v = made;
       }
       v.id = s.id;
@@ -736,10 +798,13 @@ export function mountSidebar(
       const st = s.asking ? "ask" : s.state;
       if (changed(v.last, "st", st)) v.state.dataset.state = st;
       const aria = ariaOf(s.label, s.state, s.asking);
-      if (changed(v.last, "a", aria)) v.el.setAttribute("aria-label", aria);
+      if (changed(v.last, "a", aria)) {
+        v.el.setAttribute("aria-label", aria);
+        v.el.title = s.label;
+      }
       if (changed(v.last, "off", s.off)) v.el.classList.toggle("is-off", s.off);
-      if (changed(v.last, "dis", s.id === null)) {
-        if (s.id === null) v.el.setAttribute("disabled", "");
+      if (changed(v.last, "dis", s.disabled)) {
+        if (s.disabled) v.el.setAttribute("disabled", "");
         else v.el.removeAttribute("disabled");
       }
       const cur = s.id !== null && s.id === selectedId;
@@ -757,29 +822,24 @@ export function mountSidebar(
   }
 
   function syncSelect(sel: Selectable[], selectedId: string | null): void {
-    const next = new Map<string, View>();
-    sel.forEach((s, i) => {
-      const key = s.id ?? `vacant:${i}`;
-      let v = optPool.get(key);
-      if (!v) {
-        const el = doc.createElement("option");
-        el.value = s.id ?? "";
-        v = { el, last: {} };
-      }
-      if (changed(v.last, "t", s.label)) v.el.textContent = s.label;
-      if (changed(v.last, "dis", s.id === null))
-        (v.el as HTMLOptionElement).disabled = s.id === null;
-      next.set(key, v);
-    });
-    optPool = next;
-    place(
-      select,
-      [...next.values()].map((v) => v.el),
-    );
-    select.value = selectedId ?? "";
+    // 같은 목록을 다시 만들면 열려 있는 드롭다운이 닫힌다
+    const sig = sel.map((s) => [s.id, s.label, s.disabled].join("|")).join("\n");
+    if (sig !== optSig) {
+      optSig = sig;
+      select.replaceChildren(
+        ...sel.map((s) => {
+          const o = doc.createElement("option");
+          o.value = s.id ?? "";
+          o.textContent = s.label;
+          o.disabled = s.disabled;
+          return o;
+        }),
+      );
+    }
+    // 선택이 없을 때 value="" 는 id 없는 공실 option 과 겹친다
+    select.selectedIndex = sel.findIndex((s) => s.id !== null && s.id === selectedId);
   }
 
-  // ----- 토스트: 한 번에 하나, 3초 -----
   const queue: ToastMsg[] = [];
   let showing = false;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -810,8 +870,8 @@ export function mountSidebar(
       if (lastScale !== null && lastScale !== list.scale) {
         // 규모가 바뀌면 구조가 다르다: 키가 겹쳐도 같은 행이 아니다
         pool = new Map();
+        rowViews = [];
         railPool = new Map();
-        optPool = new Map();
         folds.clear();
         place(listEl, []);
         slideIn = false;
@@ -832,8 +892,7 @@ export function mountSidebar(
   }
 
   // ----- 창 너비 구간 (3.2) -----
-  const target = opts.target ?? doc.documentElement;
-  const getWidth = opts.getWidth ?? (() => target.clientWidth);
+  const getWidth = opts.getWidth ?? (() => doc.documentElement.clientWidth);
   function applyMode(): void {
     const w = getWidth();
     const mode: SidebarMode = w < HIDE_BELOW ? "select" : w < RAIL_BELOW ? "rail" : "full";
@@ -850,24 +909,33 @@ export function mountSidebar(
           clearTimeout(resizeTimer);
           resizeTimer = setTimeout(applyMode, RESIZE_DEBOUNCE_MS);
         });
-  ro?.observe(target);
+  ro?.observe(doc.documentElement);
 
   // 레일에 올리거나 초점이 가면 240 이 겹쳐 열린다 (HANDOFF 2.2)
   const pop = () => {
     if (root.dataset.mode === "rail") root.classList.add("is-pop");
   };
+  // 레일 항목을 누르면 고르지 않고 오버레이를 열어 그 사무실 행으로 초점을 옮긴다 (선택은 행에서)
+  function openOverlayAt(id: string | null): void {
+    pop();
+    const row = rowViews.find(
+      (v) => v.model.kind !== "team" && v.model.targetId === id && !v.el.hidden,
+    );
+    row?.main.focus();
+  }
+  const onLeave = () => root.classList.remove("is-pop");
+  const onFocusOut = (e: FocusEvent) => {
+    const next = e.relatedTarget as Node | null;
+    if (!next || !root.contains(next)) root.classList.remove("is-pop");
+  };
   rail.addEventListener("mouseenter", pop);
   rail.addEventListener("focusin", pop);
-  root.addEventListener("mouseleave", () => root.classList.remove("is-pop"));
-  root.addEventListener("focusout", (e) => {
-    const next = (e as FocusEvent).relatedTarget as Node | null;
-    if (!next || !root.contains(next)) root.classList.remove("is-pop");
-  });
+  root.addEventListener("mouseleave", onLeave);
+  root.addEventListener("focusout", onFocusOut);
   select.addEventListener("change", () => pick(select.value || null));
 
-  // 활성 경과는 그 칸만 1분마다 고친다
   const tick = setInterval(() => {
-    for (const v of pool.values()) if ("model" in v && "elapsed" in v) fillElapsed(v as RowView);
+    for (const v of rowViews) fillElapsed(v);
   }, ELAPSED_TICK_MS);
 
   const unsub = store.subscribe(render);
@@ -879,5 +947,16 @@ export function mountSidebar(
     clearInterval(tick);
     clearTimeout(toastTimer);
     clearTimeout(resizeTimer);
+    queue.length = 0;
+    showing = false;
+    root.removeEventListener("mouseleave", onLeave);
+    root.removeEventListener("focusout", onFocusOut);
+    root.classList.remove("ow-side-host", "is-pop");
+    delete root.dataset.mode;
+    delete root.dataset.scale;
+    aside.remove();
+    toastSlot.remove();
+    rail.remove();
+    band.remove();
   };
 }

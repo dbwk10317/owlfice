@@ -78,7 +78,6 @@ function setup(first: OfficeListDto, width = 1200) {
   const widthRef = { w: width };
   const picked: [string, number][] = [];
   const dispose = mountSidebar(root, store, (id, req) => picked.push([id, req]), {
-    target: document.documentElement,
     getWidth: () => widthRef.w,
   });
   const listEl = byClass(root, "ow-sidebar__list")[0];
@@ -174,7 +173,9 @@ test("행을 누르면 store 선택과 select_office 를 부른다", () => {
   byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0].click();
   expect(s.store.state.selectedId).toBe("102");
   expect(s.picked).toEqual([["102", 1]]);
-  expect(rowByName(s.root, "B동 102").getAttribute("aria-current")).toBe("true");
+  expect(
+    byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0].getAttribute("aria-current"),
+  ).toBe("true");
   // 이미 고른 사무실을 다시 눌러도 요청을 또 보내지 않는다
   byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0].click();
   expect(s.picked.length).toBe(1);
@@ -251,12 +252,11 @@ test("토스트: 입주·퇴근·재출근·퇴거를 3초씩 차례로", () => 
   s.store.applyList(
     list([office("101", { phase: "Off", dot: "Off" }), office("102"), office("104")]),
   );
-  // 순서: 104 입주 -> 101 퇴근 -> 102 재출근 -> 103 퇴거 (목록 순서, 퇴거는 마지막)
+  // 신규 목록 순서(101 퇴근, 102 재출근, 104 입주) 뒤에 퇴거(103)
   const order = ["B동 101 퇴근", "B동 102 재출근", "B동 104 입주", "B동 103 퇴거"];
-  // 101(퇴근) 102(재출근) 104(입주) 순으로 목록에 나온다
   for (const [i, want] of order.entries()) {
     expect(s.slot.children.length).toBe(1);
-    expect(s.slot.textContent).toContain(want.replace(/ 방금$/, ""));
+    expect(s.slot.textContent).toContain(want);
     vi.advanceTimersByTime(2999);
     expect(s.slot.children.length).toBe(1);
     vi.advanceTimersByTime(1);
@@ -282,4 +282,104 @@ test("활성 경과는 1분마다 그 칸만 고친다", () => {
   vi.advanceTimersByTime(60_000);
   expect(elapsed.textContent).toBe("13분째");
   s.dispose();
+});
+
+test("중소기업: 새 팀이 들어오면 팀 출근 토스트", () => {
+  const floor = (teams: TeamSummaryDto[]) =>
+    office("fl1", { floor: 1, building: null, label: "1층 Claude 사무실", teams });
+  const s = setup(list([floor([team("a")])], "Small"));
+  s.store.applyList(list([floor([team("a"), team("b", { bossName: "박민준" })])], "Small"));
+  expect(s.slot.textContent).toContain("박민준 부장 팀 출근");
+  s.dispose();
+});
+
+test("규모를 바꾼 목록에선 토스트가 없다", () => {
+  const s = setup(list([office("101")]));
+  s.store.applyList(
+    list([office("fl1", { floor: 1, building: null, label: "1층 Claude 사무실" })], "Small"),
+  );
+  expect(s.slot.children.length).toBe(0);
+  s.dispose();
+});
+
+test("토스트 칸은 aside 밖에 있어 레일 모드에서도 남는다", () => {
+  const s = setup(list([office("101")]), 850);
+  expect(s.slot.closest("aside")).toBeNull();
+  expect(s.slot.getAttribute("role")).toBe("status");
+  s.dispose();
+});
+
+test("백엔드가 선택을 바꾸면 aria-current 가 따라간다", () => {
+  const s = setup(list([office("101"), office("102")]));
+  s.store.applyList(list([office("101"), office("102")], "Large", { selectedId: "102" }));
+  const main = (name: string) => byClass(rowByName(s.root, name), "ow-row__main")[0];
+  expect(main("B동 102").getAttribute("aria-current")).toBe("true");
+  expect(main("B동 101").hasAttribute("aria-current")).toBe(false);
+  expect(rowByName(s.root, "B동 102").hasAttribute("aria-current")).toBe(false);
+  s.dispose();
+});
+
+test("행 버튼 이름에 이름·상태·업무·폴더·경과가 들어간다", () => {
+  const s = setup(list([office("101", { asking: true })]));
+  const main = byClass(rows(s.root)[0], "ow-row__main")[0];
+  expect(main.getAttribute("aria-label")).toBe(
+    "B동 101, 근무 중, 허가 대기, 버그 수정, lumaweave, 12분째",
+  );
+  s.dispose();
+});
+
+test("로빙 tabindex: 정지점은 하나, ↑↓ 로 옮긴다", () => {
+  const s = setup(list([office("101"), office("102"), office("103")]));
+  const mains = rows(s.root).map((r) => byClass(r, "ow-row__main")[0]);
+  expect(mains.map((m) => m.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+  const key = (el: Element, k: string) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+  mains[0].focus();
+  key(mains[0], "ArrowDown");
+  expect(document.activeElement).toBe(mains[1]);
+  expect(mains.map((m) => m.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+  key(mains[1], "ArrowUp");
+  expect(document.activeElement).toBe(mains[0]);
+  key(mains[0], "ArrowUp"); // 맨 위에서 멈춘다
+  expect(document.activeElement).toBe(mains[0]);
+  s.dispose();
+});
+
+test("레일 항목을 누르면 고르지 않고 오버레이를 열어 그 행으로 초점을 옮긴다", () => {
+  const s = setup(list([office("101"), office("102")]), 850);
+  const item = byClass(s.root, "ow-rail__item")[1];
+  item.click();
+  expect(s.picked).toEqual([]);
+  expect(s.root.classList.contains("is-pop")).toBe(true);
+  expect(document.activeElement).toBe(byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0]);
+  s.dispose();
+});
+
+test("공실 층은 행·레일·option 이 모두 고를 수 없고, 선택이 없으면 option 도 비어 있다", () => {
+  const floor = office("fl2", { floor: 2, building: null, label: "2층 Codex 사무실" });
+  const s = setup(list([floor], "Small"), 850);
+  const disabledRows = rows(s.root).filter((r) =>
+    byClass(r, "ow-row__main")[0].matches(":disabled"),
+  );
+  expect(disabledRows.length).toBe(2);
+  const railItems = byClass(s.root, "ow-rail__item");
+  expect(railItems.map((i) => i.hasAttribute("disabled"))).toEqual([true, false, true]);
+  const sel = byClass(s.root, "ow-side-select")[0] as HTMLSelectElement;
+  expect([...sel.options].map((o) => o.disabled)).toEqual([true, false, true]);
+  expect(sel.selectedIndex).toBe(-1);
+  s.dispose();
+});
+
+test("동이 없는 사무실은 머리글 없이 행만 둔다", () => {
+  const s = setup(list([office("101", { building: null })]));
+  expect(byClass(s.root, "ow-group").length).toBe(0);
+  expect(rows(s.root).length).toBe(1);
+  s.dispose();
+});
+
+test("dispose 하면 붙인 요소와 상태를 거둔다", () => {
+  const s = setup(list([office("101")]));
+  s.dispose();
+  expect(s.root.children.length).toBe(0);
+  expect(s.root.classList.contains("ow-side-host")).toBe(false);
 });

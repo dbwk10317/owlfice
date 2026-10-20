@@ -1,13 +1,14 @@
 // 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 세 겹 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
-import type { EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
+import type { Bubble, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
 import { gridToScreen, themeOf, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
 import { placeSprite } from "./sprites.ts";
 
 const BLINK_MS = 150;
 const ZZ_OFFSET: [number, number] = [6, -10];
 const BADGE_OFFSET: [number, number] = [14, 6];
+const BUBBLE_MS = 4000;
 
 export interface OwlMeta {
   anchor: [number, number];
@@ -296,6 +297,42 @@ export function fillElapsed(sentence: string, sinceIso: string, now: number): st
     .join("`");
 }
 
+// ---------- 말풍선 문구 (PLAN 3.6, 4.8) ----------
+
+const warned = new Set<string>();
+function warnOnce(key: string): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(`말풍선 문구 풀에 없는 키: ${key}`);
+}
+
+/**
+ * 말풍선 종류와 재료 → 글. 풀은 hash(agent_id + at) 로 골라 다시 그려도 같은 문구다.
+ * 키가 phrases.bubble 에 없으면 null (그리지 않는다).
+ */
+export function bubbleText(agentId: string, rank: string, b: Bubble): string | null {
+  const pools = phrases.bubble as Record<string, unknown>;
+  const say = b.say;
+  if (say.kind === "Say") return say.text;
+  const key = say.kind[0].toLowerCase() + say.kind.slice(1);
+  let pool = pools[key];
+  // 직급별 풀: { bujang: [...], ... }
+  if (pool && typeof pool === "object" && !Array.isArray(pool))
+    pool = (pool as Record<string, unknown>)[rank.toLowerCase()];
+  const pick = Array.isArray(pool)
+    ? pool[Number(fnv1a64(agentId + b.at) % BigInt(pool.length))]
+    : pool;
+  if (typeof pick !== "string" || pick === "") {
+    warnOnce(say.kind);
+    return null;
+  }
+  return fill(pick, {
+    server: "server" in say ? say.server : "",
+    tool: "tool" in say ? say.tool : "",
+    skill: "skill" in say ? say.skill : "",
+  });
+}
+
 // ---------- 액터 층 ----------
 
 interface Actor {
@@ -317,6 +354,9 @@ interface Actor {
   emp: EmployeeDto;
   zz: HTMLElement | null;
   badge: HTMLElement | null;
+  bubble: HTMLElement | null;
+  /** 말풍선 사건 시각(ms). 4초가 지나면 update 가 숨긴다 */
+  bubbleAt: number;
 }
 
 type ToCss = (x: number, y: number) => { left: number; top: number };
@@ -362,6 +402,7 @@ export class ActorLayer {
         a.root.destroy({ children: true });
         a.zz?.remove();
         a.badge?.remove();
+        a.bubble?.remove();
         this.actors.delete(id);
         if (this.hovered === id) this.hover(null);
       }
@@ -389,6 +430,7 @@ export class ActorLayer {
       this.setFrame(a, 0);
       this.setZz(a);
       this.setBadge(a);
+      this.setBubble(a, now);
       if (!a.root.parent && this.world) this.world.addChild(a.root);
     });
     for (const a of this.actors.values())
@@ -398,6 +440,8 @@ export class ActorLayer {
         a.zz = null;
         a.badge?.remove();
         a.badge = null;
+        a.bubble?.remove();
+        a.bubble = null;
         a.spot = "";
         if (this.hovered === a.id) this.hover(null);
       }
@@ -421,6 +465,8 @@ export class ActorLayer {
         }
         this.setFrame(a, frame);
       }
+    for (const a of this.actors.values())
+      if (a.bubble) a.bubble.hidden = !(now - a.bubbleAt < BUBBLE_MS);
     this.fillNametag(now);
   }
 
@@ -431,6 +477,7 @@ export class ActorLayer {
       const h = this.head(a);
       if (a.zz) this.put(a.zz, h.x + ZZ_OFFSET[0], h.y + ZZ_OFFSET[1]);
       if (a.badge) this.put(a.badge, h.x + BADGE_OFFSET[0], h.y + BADGE_OFFSET[1]);
+      if (a.bubble) this.put(a.bubble, h.x, h.y);
     }
     const a = this.hovered ? this.actors.get(this.hovered) : undefined;
     if (a) {
@@ -503,6 +550,8 @@ export class ActorLayer {
       emp,
       zz: null,
       badge: null,
+      bubble: null,
+      bubbleAt: 0,
     };
     this.actors.set(id, a);
     return a;
@@ -573,6 +622,30 @@ export class ActorLayer {
       a.badge = null;
     }
     if (a.badge) a.badge.textContent = `+${n}`;
+  }
+
+  private setBubble(a: Actor, now: number): void {
+    const b = a.emp.bubble;
+    a.bubbleAt = b ? Date.parse(b.at) : Number.NaN;
+    // 옛 말풍선(재구성·다시 불러오기 뒤)은 만들지도 않는다
+    const text = b && now - a.bubbleAt < BUBBLE_MS ? bubbleText(a.id, a.emp.rank, b) : null;
+    if (text === null) {
+      a.bubble?.remove();
+      a.bubble = null;
+      return;
+    }
+    if (!a.bubble) {
+      a.bubble = this.overlay.ownerDocument.createElement("div");
+      a.bubble.setAttribute("aria-hidden", "true");
+      // 이름표가 말풍선과 겹치면 이름표가 위 (DOM 순서)
+      this.overlay.insertBefore(a.bubble, this.nametag);
+    }
+    const act = a.emp.activity;
+    a.bubble.className = "ow-bubble";
+    a.bubble.classList.toggle("is-estimate", act.confidence === "Inferred");
+    a.bubble.classList.toggle("is-incident", act.room === "Incident");
+    a.bubble.classList.toggle("is-ask", act.room === "Door");
+    if (a.bubble.textContent !== text) a.bubble.textContent = text;
   }
 
   private head(a: Actor): { x: number; y: number } {

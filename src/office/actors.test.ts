@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
 import { Container, Graphics, Sprite, Texture, type Spritesheet } from "pixi.js";
-import { expect, test } from "vite-plus/test";
+import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
 import owlsJson from "../../design/sprites/owls.json";
-import type { EmployeeDto, OfficeDto, Pose, Rank, Role, Room, TeamDto } from "../types/ipc.ts";
+import phrases from "../../design/handoff/phrases.ko.json";
+import type {
+  Bubble,
+  EmployeeDto,
+  OfficeDto,
+  Pose,
+  Rank,
+  Role,
+  Room,
+  TeamDto,
+} from "../types/ipc.ts";
 import {
   ActorLayer,
+  bubbleText,
   fillElapsed,
   fnv1a64,
   layoutActors,
@@ -476,4 +487,125 @@ test("{elapsed}: 초 → 분 초 → 시간 분, 백틱 안은 그대로", () =>
     "`echo {elapsed}` · 1초",
   );
   expect(fillElapsed("그대로", SINCE, t0)).toBe("그대로");
+});
+
+// ---------- 말풍선 ----------
+
+const bub = (say: Bubble["say"], at = NOW - 1000): Bubble => ({
+  at: new Date(at).toISOString(),
+  say,
+});
+const bubbleOf = (overlay: HTMLElement) => overlay.querySelector<HTMLElement>(".ow-bubble");
+const poolOf = (v: unknown): string[] => (Array.isArray(v) ? v : Object.values(v as object).flat());
+
+test("종류마다 고른 문구가 phrases 에 있고 재료가 채워진다", () => {
+  const b = phrases.bubble as Record<string, unknown>;
+  const kinds: [Bubble["say"], string][] = [
+    [{ kind: "Rank" }, "rank"],
+    [{ kind: "Incident" }, "incident"],
+    [{ kind: "AllGreen" }, "allGreen"],
+    [{ kind: "TooLong" }, "tooLong"],
+    [{ kind: "ThinkingDuck" }, "thinkingDuck"],
+    [{ kind: "PlanApproval" }, "planApproval"],
+    [{ kind: "Scratch" }, "scratch"],
+    [{ kind: "Compaction" }, "compaction"],
+    [{ kind: "UnknownTool" }, "unknownTool"],
+    [{ kind: "ScriptFallback" }, "scriptFallback"],
+    [{ kind: "UnknownResult" }, "unknownResult"],
+  ];
+  for (const [say, key] of kinds) {
+    const pool = key === "rank" || key === "unknownTool" ? poolOf(b[key]) : [b[key]].flat();
+    expect(pool, say.kind).toContain(bubbleText("a", "Daeri", bub(say)));
+  }
+  // 직급별 풀은 그 직급 것만
+  const sawon = (b.rank as Record<string, string[]>).sawon;
+  expect(sawon).toContain(bubbleText("a", "Sawon", bub({ kind: "Rank" })));
+  expect(bubbleText("a", "Daeri", bub({ kind: "Mcp", server: "figma", tool: "get_file" }))).toBe(
+    "figma와 get_file 건으로",
+  );
+  const vendor = bubbleText("a", "Daeri", bub({ kind: "NewVendor", server: "figma" }))!;
+  expect((b.newVendor as string[]).map((s) => s.replace("{server}", "figma"))).toContain(vendor);
+  const skill = bubbleText("a", "Daeri", bub({ kind: "NewSkill", skill: "pdf" }))!;
+  expect((b.newSkill as string[]).map((s) => s.replace("{skill}", "pdf"))).toContain(skill);
+  expect(bubbleText("a", "Daeri", bub({ kind: "Say", text: "안녕 {x}" }))).toBe("안녕 {x}");
+});
+
+test("같은 직원·같은 at 이면 다시 그려도 같은 문구", () => {
+  const b = bub({ kind: "Rank" });
+  const first = bubbleText("a", "Daeri", b);
+  expect(bubbleText("a", "Daeri", b)).toBe(first);
+  const { layer, overlay } = newLayer();
+  const a = emp("a", "Dev", "Type", { seat: 0, bubble: b });
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  layer.sync(office([team("t", [boss(), { ...a }])]), "large", NOW);
+  expect(overlay.querySelectorAll(".ow-bubble")).toHaveLength(1);
+  expect(bubbleOf(overlay)!.textContent).toBe(first);
+});
+
+test("4초가 지나면 숨기고, 오래된 스냅샷은 만들지도 않는다", () => {
+  const { layer, overlay } = newLayer();
+  const a = emp("a", "Dev", "Type", { seat: 0, bubble: bub({ kind: "Say", text: "안녕" }, NOW) });
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  expect(bubbleOf(overlay)!.hidden).toBe(false);
+  layer.update(NOW + 3999);
+  expect(bubbleOf(overlay)!.hidden).toBe(false);
+  layer.update(NOW + 4000);
+  expect(bubbleOf(overlay)!.hidden).toBe(true);
+
+  const old = emp("b", "Dev", "Type", {
+    seat: 1,
+    bubble: bub({ kind: "Say", text: "옛날" }, NOW - 4001),
+  });
+  const fresh = newLayer();
+  fresh.layer.sync(office([team("t", [boss(), old])]), "large", NOW);
+  expect(bubbleOf(fresh.overlay)).toBeNull();
+});
+
+test("모양 클래스: 추정 점선, 장애 상황실, 허가 대기", () => {
+  const say = bub({ kind: "Say", text: "x" });
+  const shape = (room: Room, confidence: "Confirmed" | "Inferred") => {
+    const { layer, overlay } = newLayer();
+    const a = emp("a", room, "Sit", { bubble: say });
+    a.activity.confidence = confidence;
+    layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+    return bubbleOf(overlay)!;
+  };
+  expect(shape("Dev", "Confirmed").className).toBe("ow-bubble");
+  expect(shape("Dev", "Inferred").classList.contains("is-estimate")).toBe(true);
+  expect(shape("Incident", "Confirmed").classList.contains("is-incident")).toBe(true);
+  expect(shape("Door", "Confirmed").classList.contains("is-ask")).toBe(true);
+  expect(shape("Dev", "Confirmed").getAttribute("aria-hidden")).toBe("true");
+});
+
+test("직원이 없어지거나 외근이면 말풍선도 지운다", () => {
+  const { layer, overlay } = newLayer();
+  const a = emp("a", "Dev", "Type", { seat: 0, bubble: bub({ kind: "Say", text: "x" }) });
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  expect(bubbleOf(overlay)).not.toBeNull();
+  const out = { ...a, activity: { ...a.activity, room: "Outside" as Room } };
+  layer.sync(office([team("t", [boss(), out])]), "large", NOW);
+  expect(bubbleOf(overlay)).toBeNull();
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  expect(bubbleOf(overlay)).toBeNull();
+});
+
+test("사용자 글은 textContent 로만 넣는다", () => {
+  const { layer, overlay } = newLayer();
+  const a = emp("a", "Dev", "Type", {
+    seat: 0,
+    bubble: bub({ kind: "Say", text: "<img src=x onerror=alert(1)>" }),
+  });
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  expect(bubbleOf(overlay)!.querySelector("img")).toBeNull();
+  expect(bubbleOf(overlay)!.textContent).toBe("<img src=x onerror=alert(1)>");
+});
+
+test("풀에 없는 키는 그리지 않고 경고는 한 번", () => {
+  const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const bad = { kind: "Nope" } as unknown as Bubble["say"];
+  expect(bubbleText("a", "Daeri", bub(bad))).toBeNull();
+  expect(bubbleText("a", "Daeri", bub(bad))).toBeNull();
+  expect(spy).toHaveBeenCalledTimes(1);
+  spy.mockRestore();
 });

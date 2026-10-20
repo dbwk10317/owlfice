@@ -10,12 +10,14 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use ts_rs::TS;
 
+use crate::detail;
 use crate::discover::{Host, HostKind, Product, Vendor};
 use crate::office::names::RoomBook;
 use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
     Activity, Bubble, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
+    TimelineKind,
 };
 use crate::parse::{Confidence, TodoItem};
 use crate::settings::SettingsBook;
@@ -225,6 +227,176 @@ pub struct SharedPropsDto {
     pub night: bool,
 }
 
+/// 타임라인 커서 (4.8): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CursorDto {
+    pub generation: u64,
+    pub byte_offset: u64,
+}
+
+/// 긴 글의 앞뒤만. 잘렸으면 `tail` 이 끝부분이고, 안 잘렸으면 `head` 가 전문이고 `tail` 은 빈 글이다
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipDto {
+    pub head: String,
+    pub tail: String,
+    pub truncated: bool,
+    /// 원문 바이트 수
+    pub bytes: u64,
+}
+
+/// 도구 결과 판정 (4.6 ToolOutcome)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub enum OutcomeDto {
+    Ok,
+    Err,
+    Rejected,
+    Started,
+    Unknown,
+}
+
+/// 타임라인 한 칸 (3.7). 원본 줄을 다시 읽어 만든다
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EventDto {
+    /// 다음 페이지를 열 때 `before` 로 보낸다
+    pub cursor: CursorDto,
+    pub agent_id: String,
+    pub ts: DateTime<Utc>,
+    pub kind: TimelineKind,
+    /// 한 줄 요약
+    pub summary: String,
+    /// 결과를 본문 정규식으로 짐작했으면 Inferred
+    pub confidence: Confidence,
+    /// 원본의 도구 이름
+    pub tool: Option<String>,
+    /// 호출과 그 결과가 같은 값을 가진다
+    pub call_id: Option<String>,
+    /// 도구 입력 원문 (짧게)
+    pub input: Option<ClipDto>,
+    pub outcome: Option<OutcomeDto>,
+    /// 결과·메시지·지시 원문 (앞뒤 2KB)
+    pub body: Option<ClipDto>,
+    /// 원본 jsonl 과 줄 번호 (1 기준)
+    pub path: String,
+    pub line_no: u64,
+    /// 큰 결과가 분리된 `tool-results/` 파일. 세션 폴더 안인 것만
+    pub sidecar: Option<String>,
+}
+
+/// 직원 상세 팝업 (3.7) 중 원본을 다시 읽지 않는 부분
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EmployeeDetailDto {
+    pub agent_id: String,
+    pub name: String,
+    pub rank: Rank,
+    pub role: Role,
+    pub model: Option<String>,
+    pub hired_at: DateTime<Utc>,
+    pub retired_at: Option<DateTime<Utc>>,
+    /// 서브만. 상사 이름
+    pub boss_name: Option<String>,
+    /// 서브는 받은 프롬프트 전문, 부장은 첫 사장님 메시지
+    pub instruction: Option<String>,
+    pub files_read: Vec<String>,
+    pub files_edited: Vec<String>,
+    pub commands: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TokensDto {
+    pub input: u64,
+    pub output: u64,
+}
+
+/// 직급별 직원 수. 퇴장한 직원도 센다
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadcountDto {
+    pub bujang: u32,
+    pub gwajang: u32,
+    pub daeri: u32,
+    pub sawon: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PrDto {
+    pub number: u32,
+    pub url: String,
+}
+
+/// 세션 상세 팝업 (3.7)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDetailDto {
+    pub team_id: String,
+    pub session_id: String,
+    pub title: String,
+    /// 동 글자 (A~F)
+    pub building: String,
+    pub host_label: String,
+    pub work_type: WorkType,
+    /// 작업 폴더 전체 경로 (기록에 적힌 그대로)
+    pub cwd: String,
+    pub git_branch: Option<String>,
+    /// 부장 모델
+    pub model: Option<String>,
+    pub started: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub turns: u32,
+    pub tokens: Option<TokensDto>,
+    pub headcount: HeadcountDto,
+    pub pr: Option<PrDto>,
+    /// 최근 사건, 최신부터
+    pub recent: Vec<EventDto>,
+}
+
+/// `open_path` 대상. 경로는 백엔드가 아는 것만 연다. 프론트가 경로를 넘기는 길은 두지 않는다
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(tag = "kind", rename_all_fields = "camelCase")]
+pub enum OpenTarget {
+    /// 세션 원본 파일이 있는 폴더 (그 파일을 골라 둔다)
+    SourceFolder {
+        office_id: String,
+        team_id: String,
+    },
+    WorkFolder {
+        office_id: String,
+        team_id: String,
+    },
+    /// 그 칸의 원본 jsonl (탐색기는 줄로 못 간다. 줄 번호는 EventDto 가 준다)
+    SourceLine {
+        office_id: String,
+        agent_id: String,
+        cursor: CursorDto,
+    },
+    Sidecar {
+        office_id: String,
+        agent_id: String,
+        cursor: CursorDto,
+    },
+}
+
+/// 상세 커맨드의 에러 코드
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum DetailError {
+    /// 없는 사무실·팀·직원·칸, 형식이 틀린 id
+    NotFound,
+    /// Reset 으로 세대가 바뀌었다. 첫 페이지부터 다시 연다
+    CursorInvalid,
+    /// WSL 배포판이 꺼졌거나 통신 지연 중이라 파일에 손대지 않았다 (4.4.2)
+    HostOffline,
+    /// 읽기가 상한 시간을 넘겼다
+    Timeout,
+    /// 열 경로가 없거나 열 수 없는 모양이다
+    OpenFailed,
+}
+
 /// 대기업 `team/<vendor>/<session>/<host>`, 중소기업 `vendor/<vendor>`.
 /// 호스트 id 에 `:` 가 있고(`wsl:Ubuntu`) 세션 id 는 파일 이름이라 `/` 가 없어서 호스트를 끝에 둔다
 pub fn office_id_str(id: &OfficeId) -> String {
@@ -235,7 +407,7 @@ pub fn office_id_str(id: &OfficeId) -> String {
 }
 
 /// 팀 id. 방 번호 키로도 쓴다 (같은 세션 id 가 다른 호스트·제조사에서 와도 번호를 나누지 않게)
-fn team_id_str(k: &TeamKey) -> String {
+pub(crate) fn team_id_str(k: &TeamKey) -> String {
     format!("team/{}/{}/{}", vendor_str(k.vendor), k.session, k.host)
 }
 
@@ -279,7 +451,7 @@ fn vendor_floor(v: Vendor) -> u32 {
 }
 
 /// 동 (2.1)
-fn building(p: Product) -> &'static str {
+pub(crate) fn building(p: Product) -> &'static str {
     match p {
         Product::ClaudeDesktop => "A",
         Product::ClaudeCli => "B",
@@ -763,6 +935,40 @@ pub fn spawn_publisher(app: AppHandle, ipc: Arc<Ipc>) -> thread::JoinHandle<()> 
             thread::sleep(PUBLISH_EVERY.saturating_sub(start.elapsed()));
         }
     })
+}
+
+#[tauri::command(async)]
+pub fn get_employee_timeline(
+    ipc: State<'_, Arc<Ipc>>,
+    office_id: String,
+    agent_id: String,
+    before: Option<CursorDto>,
+    limit: Option<u32>,
+) -> Result<Vec<EventDto>, DetailError> {
+    detail::employee_timeline(&ipc.world, &office_id, &agent_id, before, limit)
+}
+
+#[tauri::command]
+pub fn get_employee_detail(
+    ipc: State<'_, Arc<Ipc>>,
+    office_id: String,
+    agent_id: String,
+) -> Result<EmployeeDetailDto, DetailError> {
+    detail::employee_detail(&ipc.world, &office_id, &agent_id)
+}
+
+#[tauri::command(async)]
+pub fn get_session_detail(
+    ipc: State<'_, Arc<Ipc>>,
+    office_id: String,
+    team_id: String,
+) -> Result<SessionDetailDto, DetailError> {
+    detail::session_detail(&ipc.world, &office_id, &team_id)
+}
+
+#[tauri::command(async)]
+pub fn open_path(ipc: State<'_, Arc<Ipc>>, target: OpenTarget) -> Result<(), DetailError> {
+    detail::open_path(&ipc.world, target)
 }
 
 #[cfg(test)]

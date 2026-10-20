@@ -816,6 +816,18 @@ fn bindings() -> String {
         Confidence,
         TodoItem,
         TodoStatus,
+        CursorDto,
+        ClipDto,
+        OutcomeDto,
+        EventDto,
+        TimelineKind,
+        EmployeeDetailDto,
+        TokensDto,
+        HeadcountDto,
+        PrDto,
+        SessionDetailDto,
+        OpenTarget,
+        DetailError,
     );
     out
 }

@@ -1,3 +1,4 @@
+pub mod detail;
 pub mod diag;
 pub mod discover;
 pub mod ipc;
@@ -138,6 +139,10 @@ pub fn run() {
             ipc::select_office,
             ipc::get_settings,
             ipc::set_settings,
+            ipc::get_employee_timeline,
+            ipc::get_employee_detail,
+            ipc::get_session_detail,
+            ipc::open_path,
             startup::get_startup_progress
         ])
         .run(tauri::generate_context!())

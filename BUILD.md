@@ -22,6 +22,8 @@
 | Rust | 1.99.1 | `winget install Rustlang.Rustup`. 기본 호스트 `x86_64-pc-windows-msvc`, rustfmt·clippy 포함 |
 | Node / npm | 26.8.1 / 11.19.0 | `winget install OpenJS.NodeJS` |
 | Python | 3.14.7 | `winget install Python.Python.3.14 --scope user`. 앱 아이콘과 `tools/` 스크립트용 |
+| uv | 0.13.1 | `winget install --id astral-sh.uv -e`. Python 린트(ruff 0.17.1)와 아이콘 스크립트의 Pillow를 받는다 |
+| Vite+ | 1.3.0 | 따로 깔지 않는다. `package.json` devDependency `vite-plus` (`vp`: Vite, Oxlint, Oxfmt, 타입 검사). `npx vp` 로 부른다 |
 | WebView2 | 155 | Windows 11에 들어 있다 |
 | NSIS, tauri-cli | 3.13 / 2.12.3 | 따로 깔지 않는다. NSIS는 Tauri 번들러가 첫 빌드 때 받고, tauri-cli는 `package.json` devDependency |
 
@@ -34,8 +36,10 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | 의존성 설치 | `npm ci` |
 | Rust 테스트 | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | Rust 포맷 검사 | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
-| Rust 린트 | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` |
-| 프론트 타입 검사·빌드 | `npm run build` |
+| Rust 린트 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
+| 프론트 포맷·린트·타입 검사 | `npm run check` (포맷만 고치기 `npm run fmt`) |
+| 프론트 빌드 | `npm run build` (린트·타입 검사 후 빌드) |
+| Python 린트·포맷 검사 | `uvx ruff check tools`, `uvx ruff format --check tools` |
 | 개발 실행 | `npm run tauri dev` |
 | 릴리스 | `npm run tauri build` → `src-tauri/target/release/bundle/nsis/*-setup.exe` |
 | 의존 DLL 확인 | `dumpbin /dependents src-tauri\target\release\owlfice.exe` (Developer PowerShell for VS) |
@@ -62,6 +66,7 @@ tauri 2.12.4, tauri-build 2.7.3, 나머지는 위 표의 버전. Defender만 켜
 
 - 명령은 MSYS2 셸이나 Git Bash에서 돌린다. 기본 경로 명령표의 `cargo test`·`cargo clippy`·`tauri dev` 에 `--target x86_64-pc-windows-gnu` 를 붙인다 (`tauri dev` 는 `npm run tauri dev -- --target ...`).
 - 릴리스는 `bash build-gnu.sh` 다. 설치 파일을 만들고 의존 DLL을 검사한다.
+- **(미확인)** Vite+ 전환 뒤 이 경로.
 - **(미확인)** 이 경로로 앱 전체를 빌드한 적은 없다. UCRT64와 Rust의 C 런타임이 섞이는 문제는 PLAN 6부.
 
 ## 폴백 2: WSL 크로스 빌드 (GNU)
@@ -78,6 +83,7 @@ tauri 2.12.4, tauri-build 2.7.3, 나머지는 위 표의 버전. Defender만 켜
 | tauri-cli | 2.12.3 | `package.json` devDependency |
 
 - 명령은 폴백 1과 같다 (`--target x86_64-pc-windows-gnu`, 릴리스는 `bash build-gnu.sh`). 로그인 셸(`bash -l`)에서 돌린다. 비로그인 셸이면 `~/.cargo/bin`·`~/.local/bin` 이 PATH에서 빠질 수 있다.
+- **(미확인)** Vite+ 전환 뒤 이 경로.
 - 링커는 rustc 기본값 `x86_64-w64-mingw32-gcc` 를 그대로 쓴다. 저장소의 `.cargo/config.toml` 말고 따로 둘 cargo 설정은 없다.
 - `npm ci` 도 WSL에서 한다. 저장소는 `/mnt/c/...` 그대로 쓰고, 산출물만 WSL 디스크에 둔다. `/mnt/c` 위의 target은 느리다.
 
@@ -111,7 +117,7 @@ tauri 2.12.4, tauri-cli 2.12.3, 나머지는 위 표의 버전.
 `src-tauri/icons/icon.ico` 는 `design/assets/logo.png` 를 최근접 정수배로 키워 만든다. 로고가 바뀌면 다시 만든다.
 
 ```bash
-python -c "
+uv run --with pillow python -c "
 from PIL import Image
 logo = Image.open('design/assets/logo.png').convert('RGBA')
 base = Image.new('RGBA', (16, 16)); base.paste(logo, (0, 1))

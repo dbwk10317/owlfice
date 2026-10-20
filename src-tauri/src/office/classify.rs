@@ -1176,12 +1176,15 @@ impl Team {
             .filter(|&t| working && now - t >= WAIT_USER_AFTER)
         {
             e.set_activity(
-                Activity::new(
-                    sentence::WAITING_USER,
-                    Room::TeamLead,
-                    t,
-                    Confidence::Inferred,
-                )
+                Activity {
+                    pose: Pose::Pace,
+                    ..Activity::new(
+                        sentence::WAITING_USER,
+                        Room::TeamLead,
+                        t,
+                        Confidence::Inferred,
+                    )
+                }
                 .timed(),
             );
             return;
@@ -1509,8 +1512,9 @@ mod sentence {
     pub const REPOT: &str = "분갈이 중 (서류 정리)";
     pub const REPOT_SAY: &str = "분갈이";
 
+    /// 내용 속 백틱은 닮은 글자(ˋ)로 바꿔 코드 조각의 짝이 뒤집히지 않게 한다
     fn code(s: &str) -> String {
-        format!("`{s}`")
+        format!("`{}`", s.replace('`', "\u{02CB}"))
     }
 
     /// 첫 줄을 `n` 자로. 뒤에 더 있으면 "…"

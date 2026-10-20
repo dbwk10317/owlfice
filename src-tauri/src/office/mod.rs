@@ -54,6 +54,8 @@ pub enum Pose {
     Read,
     Squat,
     Sleep,
+    /// 결재 대기: 부장이 팀장실 안을 왕복한다
+    Pace,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]

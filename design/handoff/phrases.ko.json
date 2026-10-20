@@ -159,6 +159,7 @@
     "scratch": "이게 왜 안 되지",
     "tooLong": "왜 이렇게 오래 걸려",
     "compaction": "분갈이",
+    "allGreen": "전부 초록불입니다!",
     "mcp": "{server}와 {tool} 건으로",
     "unknownTool": {
       "bujang": ["이건 나도 처음 보는데", "요즘은 이런 것도 쓰나"],

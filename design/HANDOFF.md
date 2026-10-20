@@ -371,7 +371,7 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 
 ### 6.7 참조 렌더로 검수하기
 
-`design/assets/office-claude-day.png`, `office-codex-night-smb.png`, `office-codex-day.png`, `office-gemini-day.png` 는 `make_canvas_images()` 의 고정 상태(직원 배치, 소품 상태, 칸반, 자석, 전광판)로 그린 그림이다. 앱 렌더러에 같은 상태를 넣고 1× 로 `renderer.extract` 한 결과가 **픽셀 단위로 같아야** 한다. 반투명 픽셀(장애 빛, 김)은 채널당 ±2 를 허용한다. 이 비교를 T18·T23 완료 기준에 넣기를 권한다.
+`design/assets/office-claude-day.png`, `office-codex-night-smb.png`, `office-codex-day.png`, `office-gemini-day.png` 는 `make_canvas_images()` 의 고정 상태(직원 배치, 소품 상태, 칸반, 자석, 전광판)로 그린 그림이다. 앱 렌더러에 같은 상태를 넣고 1× 로 `renderer.extract` 한 결과가 **픽셀 단위로 같아야** 한다. 반투명 픽셀(장애 빛, 김)은 채널당 ±2 를 허용한다. 조명(야간·소등)을 곱한 장면은 GPU 가 반올림하고 참조가 내림이라 불투명 픽셀도 채널당 ±1 을 허용한다. 이 비교를 T18·T23 완료 기준에 넣기를 권한다.
 
 ## 7. 움직임
 

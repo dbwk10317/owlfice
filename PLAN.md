@@ -1341,7 +1341,7 @@ Tauri 커맨드 (프론트 → 백엔드):
 
 프론트 수신 규칙: 스트림마다 따로 센다. `office-list` 는 `list_seq` < 마지막 list_seq → 버림. `office-state` 는 `state_seq` < 그 사무실의 마지막 state_seq → 버림 (같으면 멱등 적용), `office_id` ≠ 현재 선택 → 버림. `rebuilt` → 애니메이션 없이 즉시 배치. `select_office` 응답과 스냅샷의 `selected` 도 `office-state` 와 같은 state_seq 규칙을 거친다. 시작 순서는 4.3 (구독 먼저, 스냅샷 다음, 스냅샷 seq 이하의 버퍼 이벤트 폐기).
 
-DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 Rust 쪽에서 `ts-rs` 로 생성한다. 손으로 두 벌 쓰지 않는다.
+DTO는 모두 `#[derive(Serialize)]` + `camelCase`. enum 값은 Rust 이름 그대로 쓴다 (`"TeamLead"`, `{kind: "FrameSwap"}`. 위 cue 예시의 소문자 표기는 설명용이다). 프론트의 `types.ts` 는 Rust 쪽에서 `ts-rs` 로 생성한다. 손으로 두 벌 쓰지 않는다.
 
 ### 4.9 프론트 구조
 
@@ -1440,6 +1440,7 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 | T12 | `tail/scheduler.rs` 호스트별 스레드 (Hot/Warm/Scan/Probe/Cold) + `office/world.rs` (OfficeWorld, office_of, seq) | 상 | T10 T11 | probe가 실제 세션 변화를 500ms 내 출력. 새 세션 파일 생성 후 3.5초(WSL 35초) 내 Team 생성과 출근 판정. WSL 스레드 멈춤을 주입하면 감시자가 2초 안에 의심으로 바꾸고 Windows 갱신은 유지. 감시 중 `wsl --terminate` 로 배포판을 끄면 다음 Hot·Scan 뒤에도 꺼진 상태가 유지됨 (핸들·의심 상태, 4.4.2). 핸들 모드에서 같은 경로의 파일을 바꿔치기하면 다음 Scan에서 Reset. I/O를 멈추게 하면(공유 끊기) 재개 뒤 멈춘 동안 append된 줄이 하나도 빠지지 않음 (2단계 commit). 논리 시계 주입 아래 전체 읽기와 append 결과 동일. 규모 변경 절차(4.7.9) 테스트. 유휴 CPU 2% 미만 (측정 조건 4.10) |
 | T13 | WSL 폴링 측정 (핸들 기반 Hot stat·read, Probe 직후 나열) | 중 | T12 | UNC stat/read/나열 평균·p99 기록. stat 20ms 초과면 T31 착수 |
 | T38 | `diag.rs` 미대응 동작 로그 + `owlfice-probe unhandled` 요약 (번호는 뒤지만 파서 다음에 바로 착수. `state_conflict`·`scenario_gap` 두 kind만 T11 뒤. 설정 버튼은 T30에서) | 하 | T07 T08 | 4.12의 미대응 로그 테스트 통과. 기본 설정에서 원문이 한 글자도 저장되지 않음 |
+| T39 | `office` 담당(4.7.5)과 오늘의 업무(4.7.6), DTO 에 싣기 (번호는 뒤지만 T14 다음에 착수. 화면 T17·T21 이 쓴다) | 하 | T11 T14 | 4.7.5 분류 규칙(수습 5개 미만, 확장자·경로 규칙, `.ts .js` 경로 규칙)과 4.7.6 표(키워드·첫 20개 도구 패턴) 단위 테스트. fixture 하나의 담당·업무가 기대와 같다 |
 
 ### 5.2 2단계: 앱 껍데기와 정적 화면
 

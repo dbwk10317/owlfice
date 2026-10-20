@@ -324,11 +324,16 @@ export function showLoading(root: HTMLElement, io: LoadingIo, sheet?: LoadingShe
     );
   }
 
-  function apply(p: StartupProgressDto): void {
+  /** 이벤트로 이미 받은 단계. 다시 불러온 기록은 이 줄을 덮지 않는다 (기록이 이벤트보다 오래됐을 수 있다) */
+  const live = new Set<number>();
+
+  function apply(p: StartupProgressDto, replay = false): void {
     if (p.step < 1 || p.step > STEP_COUNT) return;
     if (isNote(p.summary)) {
       upsertNote(p);
     } else {
+      if (replay && live.has(p.step)) return;
+      if (!replay) live.add(p.step);
       const r = rows[p.step - 1];
       // 끝난 줄은 늦게 도착한 옛 이벤트로 되돌리지 않는다 (구독과 다시 불러오기가 겹칠 수 있다)
       if (r.state === "done" || r.state === "error") return;
@@ -390,7 +395,8 @@ export function showLoading(root: HTMLElement, io: LoadingIo, sheet?: LoadingShe
   }
 
   function onKey(e: KeyboardEvent): void {
-    if (!MODIFIER_KEYS.has(e.key)) skip();
+    // 규모 선택 카드를 Enter 로 누른 채면 자동 반복 keydown 이 이 화면으로 넘어와 곧바로 건너뛴다
+    if (!e.repeat && !MODIFIER_KEYS.has(e.key)) skip();
   }
 
   const ticker = setInterval(() => {
@@ -410,7 +416,9 @@ export function showLoading(root: HTMLElement, io: LoadingIo, sheet?: LoadingShe
       console.error("startup-progress 구독", e);
     }
     try {
-      (await io.invoke<StartupProgressDto[]>("get_startup_progress")).forEach(apply);
+      (await io.invoke<StartupProgressDto[]>("get_startup_progress")).forEach((p) =>
+        apply(p, true),
+      );
     } catch (e) {
       console.error("get_startup_progress", e);
     }

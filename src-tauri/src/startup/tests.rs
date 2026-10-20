@@ -10,6 +10,7 @@ use crate::diag::Diag;
 use crate::discover::{ReadMode, Vendor};
 use crate::office::names::NameBook;
 use crate::office::world::Scale;
+use crate::settings::SettingsBook;
 use crate::tail::scheduler::{Heartbeat, HostLoop, LogicalClock, Prober, spawn, spawn_probe};
 
 fn t0() -> DateTime<Utc> {
@@ -68,12 +69,20 @@ struct FakeBoot {
     world: Arc<Mutex<OfficeWorld>>,
     diag: Arc<Mutex<Diag>>,
     stop: Mutex<Option<Arc<Heartbeat>>>,
+    settings: Arc<SettingsBook>,
+    /// true 면 discover 에서 패닉한다
+    panic: bool,
     sidebar: AtomicUsize,
     publish: AtomicUsize,
 }
 
 impl Boot for FakeBoot {
+    fn wait_for_scale(&self) {
+        self.settings.wait_scale();
+    }
+
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>) {
+        assert!(!self.panic, "discover 가 터졌다");
         (self.sites.clone(), self.distros.clone())
     }
 
@@ -129,6 +138,13 @@ fn boot(
         world: world.clone(),
         diag: Arc::new(Mutex::new(Diag::open(tmp, false))),
         stop: Mutex::new(None),
+        // 규모가 이미 정해진 평소 실행
+        settings: {
+            let book = Arc::new(SettingsBook::load(tmp));
+            book.set_scale(Scale::Large).unwrap();
+            book
+        },
+        panic: false,
         sidebar: AtomicUsize::new(0),
         publish: AtomicUsize::new(0),
     };
@@ -376,4 +392,136 @@ fn late_subscriber_catches_up_from_the_log() {
     assert_eq!(log[0].summary, StartupSummary::Teams { n: 4 });
     assert_eq!(log[1].detail, files(187));
     assert_eq!(log[2].summary, off);
+}
+
+#[test]
+fn candidates_count_only_running_distros_with_session_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let rocky = tmp.path().join("rocky");
+    session(&rocky, "p1", "s1");
+    let (b, world) = boot(
+        tmp.path(),
+        Vec::new(),
+        vec![
+            distro(
+                "Rocky",
+                Some(true),
+                vec![claude_site(wsl_host("Rocky"), &rocky)],
+            ),
+            distro("Off", Some(false), Vec::new()),
+            distro("docker-desktop", Some(true), Vec::new()),
+        ],
+        true,
+    );
+    let events = run_all(&b, &world, &quick());
+    let c = events
+        .iter()
+        .find(|e| e.step == 2 && e.state == StepState::Done)
+        .unwrap();
+    assert_eq!(
+        c.summary,
+        StartupSummary::Candidates {
+            n: 2,
+            hosts: vec!["Windows".into(), "WSL Rocky".into()]
+        }
+    );
+}
+
+/// 불 켜진 팀은 호스트 스레드가 모아 준 수정 시각으로 센다. 기동 스레드는 경로를 모른다
+#[test]
+fn lit_teams_counts_by_collected_mtimes() {
+    let watch = ScanWatch::default();
+    let now = SystemTime::now();
+    let old = now - LIT_WITHIN - Duration::from_secs(60);
+    watch.listed("windows", 3, vec![now, old]);
+    watch.listed("wsl:Rocky", 1, vec![now - Duration::from_secs(10)]);
+    assert_eq!(lit_teams(&watch), 2);
+}
+
+/// 4단계에서 이미 쓴 시간은 5단계 몫에서 빠진다 (단계마다 한도를 받으면 멈춘 호스트 하나로 두 배가 걸린다)
+#[test]
+fn steps_four_and_five_share_one_deadline() {
+    let watch = ScanWatch::default();
+    // a 는 나열했지만 끝내지 못하고, b 는 나열도 못 한다
+    watch.listed("wsl:a", 1, Vec::new());
+    let mut waits: Vec<Expect> = ["a", "b"]
+        .iter()
+        .enumerate()
+        .map(|(i, n)| Expect {
+            id: format!("wsl:{n}"),
+            distro: Some((*n).into()),
+            floor: i as u32 + 2,
+        })
+        .collect();
+    let s = Startup::new(|_| {});
+    let tick = Duration::from_millis(20);
+    let started = Instant::now();
+    let until = Until {
+        deadline: started + Duration::from_millis(300),
+        tick,
+    };
+    await_hosts(
+        &s,
+        &watch,
+        &mut waits,
+        4,
+        until,
+        listed_or_finished,
+        pending_wsl,
+    );
+    assert_eq!(waits.len(), 1);
+    await_hosts(
+        &s,
+        &watch,
+        &mut waits,
+        5,
+        until,
+        |st, id| st.finished.contains(id),
+        read_progress,
+    );
+    let took = started.elapsed();
+    assert!(took >= Duration::from_millis(300), "{took:?}");
+    assert!(took < Duration::from_millis(500), "{took:?}");
+    assert!(waits.is_empty());
+}
+
+#[test]
+fn panic_in_startup_still_ends_every_step_with_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut b, world) = boot(tmp.path(), Vec::new(), Vec::new(), true);
+    b.panic = true;
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let s = Startup::new(move |p| sink.lock().unwrap().push(p.clone()));
+    run_guarded(&s, &b, &world, &quick());
+    let log = s.progress();
+    // 2단계는 시작했다가 끝내지 못했고, 나머지는 시작도 못 했다. 모두 Error 로 닫힌다
+    for step in 2..=7u8 {
+        let line = log.iter().find(|e| e.step == step).unwrap();
+        assert_eq!(line.state, StepState::Error, "{step}");
+    }
+    assert_eq!(last(&seen.lock().unwrap()), Some((7, StepState::Error)));
+}
+
+/// 첫 실행(규모 없음)은 규모를 고르기 전에 2단계가 나가지 않는다 (3.8 "고르기 전에는 진행하지 않는다")
+#[test]
+fn nothing_runs_until_the_scale_is_chosen() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut b, world) = boot(tmp.path(), Vec::new(), Vec::new(), true);
+    let empty = tempfile::tempdir().unwrap();
+    b.settings = Arc::new(SettingsBook::load(empty.path()));
+    let settings = b.settings.clone();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let runner = thread::spawn(move || {
+        let s = Startup::new(move |p| sink.lock().unwrap().push(p.clone()));
+        run(&s, &b, &world, &quick());
+    });
+    thread::sleep(Duration::from_millis(300));
+    assert!(seen.lock().unwrap().is_empty());
+    settings.set_scale(Scale::Small).unwrap();
+    runner.join().unwrap();
+    let events = seen.lock().unwrap().clone();
+    assert_eq!(events.first().map(|e| e.step), Some(2));
+    assert_eq!(last(&events), Some((7, StepState::Done)));
 }

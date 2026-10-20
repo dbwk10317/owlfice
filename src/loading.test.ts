@@ -207,6 +207,31 @@ test("구독과 기록이 겹쳐도, 늦게 온 옛 진행이 끝난 단계를 �
   expect(m.rows()).toHaveLength(8);
 });
 
+test("다시 불러온 기록은 이미 이벤트로 받은 줄의 원인을 옛 값으로 덮지 않는다", async () => {
+  let resolve!: (h: StartupProgressDto[]) => void;
+  const late = new Promise<StartupProgressDto[]>((r) => (resolve = r));
+  const m = mount(late as never);
+  await m.flush();
+  const files = (done: number) =>
+    ev(5, "Running", { kind: "None" }, { kind: "Files", done, total: 312 });
+  m.send(files(200));
+  resolve([files(100)]);
+  await m.flush();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(m.rows()[4].querySelector(".ld__cause")?.textContent).toBe(
+    "세션 파일 312개 확인 중 (200/312)",
+  );
+});
+
+test("키를 누른 채 생기는 자동 반복 keydown 은 건너뛰기가 아니다", async () => {
+  const m = mount();
+  await m.flush();
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", repeat: true }));
+  expect(m.root.querySelector(".ld--fade")).toBeNull();
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  expect(m.root.querySelector(".ld--fade")).not.toBeNull();
+});
+
 const sheet: LoadingSheet = {
   size: { w: 100, h: 100 },
   frames: {

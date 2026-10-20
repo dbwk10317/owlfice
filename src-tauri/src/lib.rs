@@ -40,9 +40,14 @@ struct AppBoot {
     ipc: Arc<Ipc>,
     world: Arc<Mutex<OfficeWorld>>,
     diag: Arc<Mutex<Diag>>,
+    settings: Arc<SettingsBook>,
 }
 
 impl Boot for AppBoot {
+    fn wait_for_scale(&self) {
+        self.settings.wait_scale();
+    }
+
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>) {
         (discover_all(), discover_wsl())
     }
@@ -112,9 +117,10 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
         ipc: ipc.clone(),
         world: world.clone(),
         diag,
+        settings: settings.clone(),
     };
     let progress = startup.clone();
-    thread::spawn(move || startup::run(&progress, &boot, &world, &Limits::default()));
+    thread::spawn(move || startup::run_guarded(&progress, &boot, &world, &Limits::default()));
     app.manage(ipc);
     app.manage(settings);
     app.manage(startup);

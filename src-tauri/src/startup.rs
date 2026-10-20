@@ -6,7 +6,7 @@
 //! 프론트가 늦게 구독해도 따라잡도록 마지막 상태를 모아 두었다가 `get_startup_progress` 로 돌려준다 (4.3 시작 순서와 같은 이유).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -29,7 +29,7 @@ pub enum StepState {
     Running,
     Done,
     Warn,
-    // ponytail: 단계 전체가 실패한 경우는 세션 폴더 없음(3단계) 하나뿐이다, 다른 실패가 생기면 그 단계에서 쓴다
+    // 단계가 끝까지 못 간 경우. 일부만 실패한 Warn 과 줄 색이 다르다
     Error,
 }
 
@@ -177,8 +177,9 @@ pub fn get_startup_progress(startup: State<'_, Arc<Startup>>) -> Vec<StartupProg
 
 #[derive(Default)]
 struct WatchState {
-    /// 호스트 → (나열된 세션 파일 수, 팀마다 파일 하나)
-    listed: BTreeMap<String, (usize, Vec<PathBuf>)>,
+    /// 호스트 → (나열된 세션 파일 수, 팀마다 파일 하나의 수정 시각).
+    /// 경로는 호스트 스레드만 건드린다. 기동 스레드가 WSL 경로에 직접 닿으면 꺼진 배포판을 깨우거나 멈춘 공유에 막힌다
+    listed: BTreeMap<String, (usize, Vec<SystemTime>)>,
     /// 지금까지 읽은 세션 파일 수
     read: usize,
     finished: BTreeSet<String>,
@@ -192,10 +193,10 @@ pub struct ScanWatch {
 }
 
 impl ScanWatch {
-    pub fn listed(&self, host: &str, files: usize, mains: Vec<PathBuf>) {
+    pub fn listed(&self, host: &str, files: usize, mtimes: Vec<SystemTime>) {
         lock(&self.state)
             .listed
-            .insert(host.to_string(), (files, mains));
+            .insert(host.to_string(), (files, mtimes));
         self.changed.notify_all();
     }
 
@@ -252,6 +253,8 @@ impl ScanWatch {
 
 /// 기동이 바깥 세계에 하는 일. 실제 앱은 lib.rs, 테스트는 가짜 Site·가짜 Probe 로 바꿔 끼운다
 pub trait Boot {
+    /// 규모를 고를 때까지 기다린다 (3.8 "고르기 전에는 진행하지 않는다"). 이미 있으면 바로 돌아온다
+    fn wait_for_scale(&self);
     /// 2단계: Windows 의 Site 와 WSL 배포판 (꺼진 배포판 포함)
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>);
     /// 호스트 스레드와 Probe 를 띄운다. 첫 Scan 마다 `watch` 에 알려야 한다
@@ -263,7 +266,7 @@ pub trait Boot {
 }
 
 pub struct Limits {
-    /// 한 단계에서 호스트를 기다리는 최대 시간. 지나면 그 호스트는 "응답 없음"으로 두고 진행한다
+    /// 4~5단계가 호스트를 기다리는 최대 시간 (둘이 마감 하나를 나눠 쓴다). 지나면 그 호스트는 "응답 없음"으로 두고 진행한다
     pub step: Duration,
     /// 진행 상황을 내는 최소 간격 (4.8 "1초에 한 번 이하")
     pub tick: Duration,
@@ -276,6 +279,13 @@ impl Default for Limits {
             tick: Duration::from_secs(1),
         }
     }
+}
+
+/// 기다림 하나의 마감과 진행 보고 간격
+#[derive(Clone, Copy)]
+struct Until {
+    deadline: Instant,
+    tick: Duration,
 }
 
 /// 기다리는 호스트 하나
@@ -301,13 +311,13 @@ fn await_hosts(
     watch: &ScanWatch,
     waits: &mut Vec<Expect>,
     step: u8,
-    lim: &Limits,
+    until: Until,
     ready: fn(&WatchState, &str) -> bool,
     detail: fn(&WatchState, &[Expect]) -> Option<StartupDetail>,
 ) {
     let ok = watch.wait(
-        Instant::now() + lim.step,
-        lim.tick,
+        until.deadline,
+        until.tick,
         |st| waits.iter().all(|e| ready(st, &e.id)),
         |st| detail(st, waits),
         |d| s.report(step, StepState::Running, StartupSummary::None, Some(d)),
@@ -361,19 +371,12 @@ fn read_progress(st: &WatchState, _: &[Expect]) -> Option<StartupDetail> {
 
 /// 불 켜진 팀 수: 팀마다 파일 하나의 수정 시각이 문턱 안인 것
 fn lit_teams(watch: &ScanWatch) -> u32 {
-    let mains: Vec<PathBuf> = lock(&watch.state)
+    let now = SystemTime::now();
+    lock(&watch.state)
         .listed
         .values()
-        .flat_map(|(_, m)| m.clone())
-        .collect();
-    let now = SystemTime::now();
-    mains
-        .iter()
-        .filter(|p| {
-            std::fs::metadata(p)
-                .and_then(|m| m.modified())
-                .is_ok_and(|t| now.duration_since(t).is_ok_and(|age| age <= LIT_WITHIN))
-        })
+        .flat_map(|(_, m)| m)
+        .filter(|t| now.duration_since(**t).is_ok_and(|age| age <= LIT_WITHIN))
         .count() as u32
 }
 
@@ -407,10 +410,21 @@ fn hired(world: &Mutex<OfficeWorld>) -> StartupSummary {
 /// 2~7단계. 1단계(설정 읽기)는 창이 뜨기 전 setup 이 했다.
 /// 층 번호는 이번에 찾은 배포판 순서(2, 3 ...)다. rooms.json 의 층과 다를 수 있다 (ponytail: ipc 가 층을 내주면 맞춘다)
 pub fn run(s: &Startup, boot: &dyn Boot, world: &Mutex<OfficeWorld>, lim: &Limits) {
+    boot.wait_for_scale();
+    let until = Until {
+        deadline: Instant::now() + lim.step,
+        tick: lim.tick,
+    };
     s.begin(2);
     let (sites, distros) = boot.discover();
+    // 켜져 있고 세션 폴더가 있는 배포판만 후보지다. 꺼진 배포판은 3단계의 소등 줄이 말한다
     let mut hosts = vec![host_name(&windows_host())];
-    hosts.extend(distros.iter().map(|d| host_name(&d.host)));
+    hosts.extend(
+        distros
+            .iter()
+            .filter(|d| d.running == Some(true) && !d.sites.is_empty())
+            .map(|d| host_name(&d.host)),
+    );
     s.put(
         2,
         StepState::Done,
@@ -450,7 +464,7 @@ pub fn run(s: &Startup, boot: &dyn Boot, world: &Mutex<OfficeWorld>, lim: &Limit
     let buildings: Vec<String> = sites
         .iter()
         .chain(distros.iter().flat_map(|d| &d.sites))
-        .map(|site| format!("{} {:?}", host_name(&site.host), site.vendor))
+        .map(|site| format!("{} {}", host_name(&site.host), site.vendor.label()))
         .collect();
     if buildings.is_empty() {
         s.put(3, StepState::Error, StartupSummary::NoFolders);
@@ -466,7 +480,7 @@ pub fn run(s: &Startup, boot: &dyn Boot, world: &Mutex<OfficeWorld>, lim: &Limit
         &watch,
         &mut waits,
         4,
-        lim,
+        until,
         listed_or_finished,
         pending_wsl,
     );
@@ -484,7 +498,7 @@ pub fn run(s: &Startup, boot: &dyn Boot, world: &Mutex<OfficeWorld>, lim: &Limit
         &watch,
         &mut waits,
         5,
-        lim,
+        until,
         |st, id| st.finished.contains(id),
         read_progress,
     );
@@ -497,6 +511,22 @@ pub fn run(s: &Startup, boot: &dyn Boot, world: &Mutex<OfficeWorld>, lim: &Limit
     s.begin(7);
     boot.publish();
     s.put(7, StepState::Done, StartupSummary::None);
+}
+
+/// `run` 이 패닉해도 프론트에 끝이 가게 한다: 끝나지 못한 단계를 Error 로 낸다
+pub fn run_guarded(s: &Startup, boot: &dyn Boot, world: &Mutex<OfficeWorld>, lim: &Limits) {
+    if catch_unwind(AssertUnwindSafe(|| run(s, boot, world, lim))).is_ok() {
+        return;
+    }
+    let ended: BTreeSet<u8> = s
+        .progress()
+        .iter()
+        .filter(|d| !d.summary.is_note() && matches!(d.state, StepState::Done | StepState::Error))
+        .map(|d| d.step)
+        .collect();
+    for step in (2..=7).filter(|st| !ended.contains(st)) {
+        s.put(step, StepState::Error, StartupSummary::None);
+    }
 }
 
 #[cfg(test)]

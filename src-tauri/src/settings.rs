@@ -3,7 +3,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 use serde_json::{Map, Value};
 
@@ -20,12 +20,18 @@ struct Inner {
 
 pub struct SettingsBook {
     inner: Mutex<Inner>,
+    /// 규모가 정해지면 깨운다 (기동이 첫 선택을 기다린다)
+    chosen: Condvar,
     /// 파일이 있는데 JSON 객체가 아니었다 (3.9 "설정 파일 손상")
     pub corrupt: bool,
 }
 
 fn lock(m: &Mutex<Inner>) -> MutexGuard<'_, Inner> {
     m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn scale_of(g: &Inner) -> Option<Scale> {
+    serde_json::from_value(g.map.get("scale")?.clone()).ok()
 }
 
 impl SettingsBook {
@@ -45,20 +51,33 @@ impl SettingsBook {
                 writable,
                 map,
             }),
+            chosen: Condvar::new(),
             corrupt,
         }
     }
 
     /// 없거나 알 수 없는 값이면 None. 부르는 쪽이 규모 선택부터 시킨다
     pub fn scale(&self) -> Option<Scale> {
-        let v = lock(&self.inner).map.get("scale")?.clone();
-        serde_json::from_value(v).ok()
+        scale_of(&lock(&self.inner))
+    }
+
+    /// 규모가 정해질 때까지 기다린다. 이미 있으면 바로 돌아온다.
+    /// 기다리는 스레드는 detach 되어 있어 앱이 꺼질 때 프로세스 종료를 막지 않는다
+    pub fn wait_scale(&self) -> Scale {
+        let mut g = lock(&self.inner);
+        loop {
+            if let Some(s) = scale_of(&g) {
+                return s;
+            }
+            g = self.chosen.wait(g).unwrap_or_else(|e| e.into_inner());
+        }
     }
 
     /// 메모리에는 항상 반영한다. 저장에 실패하면 에러를 돌려주되 값은 남는다
     pub fn set_scale(&self, scale: Scale) -> io::Result<()> {
         let mut g = lock(&self.inner);
         g.map.insert("scale".into(), serde_json::to_value(scale)?);
+        self.chosen.notify_all();
         if !g.writable {
             return Err(unwritable(&g.path));
         }

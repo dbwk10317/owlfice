@@ -863,14 +863,18 @@ impl HostLoop {
             }
         }
         self.project_dirs = project_dirs;
-        if let Some(w) = &self.watch {
+        if let Some(w) = self.watch.clone() {
             // 팀마다 메인 파일 하나. 서브만 있는 팀은 아무 파일이나
-            let mains = found
+            // 수정 시각도 여기서 함께 모은다: 경로는 이 스레드만 건드려야 의심·Probe 가드가 먹는다
+            let mtimes = found
                 .values()
                 .filter_map(|ps| ps.iter().find(|p| !is_subagent(p)).or(ps.first()))
-                .cloned()
+                .filter_map(|p| {
+                    self.path_ops += 1;
+                    fs::metadata(p).and_then(|m| m.modified()).ok()
+                })
                 .collect();
-            w.listed(&self.host.id, seen.len(), mains);
+            w.listed(&self.host.id, seen.len(), mtimes);
         }
 
         let tiers = self.tiers();

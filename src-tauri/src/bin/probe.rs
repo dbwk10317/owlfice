@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use owlfice_lib::diag::summarize;
-use owlfice_lib::discover::{Vendor, discover_all, discover_wsl};
+use owlfice_lib::discover::{Host, HostKind, ReadMode, Site, Vendor, discover_all, discover_wsl};
 use owlfice_lib::parse::{Parser, RawRef};
 use owlfice_lib::tail::scheduler::{self, is_subagent};
 use owlfice_lib::tail::{MAX_READ_BYTES, TailReader};
@@ -27,8 +27,9 @@ fn main() -> ExitCode {
         Some("bench") => {
             let json = args[1..].iter().any(|a| a == "--json");
             let dirs: Vec<&String> = args[1..].iter().filter(|a| *a != "--json").collect();
+            let unknown_flag = dirs.iter().any(|a| a.starts_with("--"));
             match dirs[..] {
-                [dir] => bench_cmd(Path::new(dir), json, &mut out),
+                [dir] if !unknown_flag => bench_cmd(Path::new(dir), json, &mut out),
                 _ => {
                     eprintln!("{USAGE}");
                     return ExitCode::from(2);
@@ -167,7 +168,8 @@ fn unread_bytes(path: &Path, last_line: Option<u64>) -> io::Result<usize> {
     })
 }
 
-/// 측정 횟수: 핸들 stat, 핸들 읽기, 경로 대조, 나열 (T13)
+// ponytail: 4.10 은 60초 동안 팀 4개(5MB + 2MB×4)를 재지만 여기는 횟수만 채우고 파일은 100KB 하나다.
+// 나열은 N=50 이라 p99 가 최대와 같다. 실측값을 4.10 예산과 직접 견주게 되면 그때 올린다
 const BENCH_N: [usize; 4] = [1000, 100, 200, 50];
 /// 읽기 한 번에 붙이는 양은 이 둘의 곱(100KB). 4.10 "Hot 틱 (읽기 포함, 100KB)"
 const LINE_BYTES: usize = 1024;
@@ -175,7 +177,6 @@ const LINES_PER_READ: usize = 100;
 /// 4.10 "Scan 1회 (로컬 프로젝트 폴더 25개)"
 const PROJECTS: usize = 25;
 
-/// 한 항목의 측정값 (ms)
 struct Stat {
     key: &'static str,
     label: &'static str,
@@ -235,14 +236,23 @@ fn bench_cmd(dir: &Path, json: bool, out: &mut impl Write) -> io::Result<()> {
 
 /// `dir` 아래에 새 폴더를 만들어 재고 지운다. 이미 있는 폴더는 남의 것일 수 있어 쓰지 않는다
 fn bench(dir: &Path, n: [usize; 4]) -> io::Result<Vec<Stat>> {
+    in_scratch(dir, |work| measure(work, n))
+}
+
+fn in_scratch<T>(dir: &Path, f: impl FnOnce(&Path) -> io::Result<T>) -> io::Result<T> {
     let work = dir.join(format!("owlfice-bench-{}", std::process::id()));
     fs::create_dir(&work)?;
-    let r = measure(&work, n);
-    // 열린 핸들은 measure 가 끝나며 닫혔다. 지우기 실패도 알려야 임시 파일이 남은 걸 안다
-    let cleanup = fs::remove_dir_all(&work);
-    let stats = r?;
-    cleanup?;
-    Ok(stats)
+    let r = f(&work);
+    // 열린 핸들은 f 가 끝나며 닫혔다. 지우기 실패도 알려야 임시 파일이 남은 걸 안다
+    match (r, fs::remove_dir_all(&work)) {
+        (Ok(v), Ok(())) => Ok(v),
+        (Ok(_), Err(c)) => Err(c),
+        (Err(e), Ok(())) => Err(e),
+        (Err(e), Err(c)) => {
+            eprintln!("임시 폴더 지우기도 실패 {}: {c}", work.display());
+            Err(e)
+        }
+    }
 }
 
 fn measure(work: &Path, [n_stat, n_read, n_verify, n_list]: [usize; 4]) -> io::Result<Vec<Stat>> {
@@ -304,10 +314,20 @@ fn measure(work: &Path, [n_stat, n_read, n_verify, n_list]: [usize; 4]) -> io::R
         fs::create_dir_all(&project)?;
         fs::write(project.join(format!("session-{i:02}.jsonl")), &line)?;
     }
+    let site = Site {
+        host: Host {
+            id: "bench".into(),
+            kind: HostKind::Windows,
+            label: "bench".into(),
+        },
+        vendor: Vendor::Claude,
+        root: site,
+        read_mode: ReadMode::Append,
+    };
     let mut v = Vec::with_capacity(n_list);
     for _ in 0..n_list {
         let t = Instant::now();
-        let found = list_like_scan(&site)?;
+        let found = scheduler::list_site(&site, &mut 0)?.files.len();
         v.push(t.elapsed());
         if found != PROJECTS {
             return Err(io::Error::other(format!("나열에서 {found}개를 찾았다")));
@@ -315,46 +335,6 @@ fn measure(work: &Path, [n_stat, n_read, n_verify, n_list]: [usize; 4]) -> io::R
     }
     let s_list = stat("list", "나열", v);
     Ok(vec![s_stat, s_read, s_verify, s_list])
-}
-
-/// Scan 의 Claude Site 나열(scheduler `list_site`)과 같은 read_dir 순서. 그 함수가 비공개라 따라 쓴다.
-/// 세션 파일 수와 subagents 폴더 항목 수의 합을 돌려준다
-fn list_like_scan(root: &Path) -> io::Result<usize> {
-    let mut found = 0;
-    for (project, _) in list_dir(root, false)?.into_iter().filter(|e| e.1) {
-        for (f, _) in list_dir(&project, true)?.into_iter().filter(|e| !e.1) {
-            if f.extension().is_none_or(|e| e != "jsonl") {
-                continue;
-            }
-            let Some(id) = f.file_stem() else {
-                continue;
-            };
-            found += list_dir(&project.join(id).join("subagents"), true)?.len() + 1;
-        }
-    }
-    Ok(found)
-}
-
-/// scheduler `entries` 와 같다: 종류는 나열 결과에서 읽고 링크만 따라가 본다
-fn list_dir(p: &Path, missing_ok: bool) -> io::Result<Vec<(PathBuf, bool)>> {
-    let rd = match fs::read_dir(p) {
-        Ok(rd) => rd,
-        Err(e) if missing_ok && e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e),
-    };
-    let mut out = Vec::new();
-    for e in rd {
-        let e = e?;
-        let ft = e.file_type()?;
-        let p = e.path();
-        let dir = if ft.is_symlink() {
-            p.is_dir()
-        } else {
-            ft.is_dir()
-        };
-        out.push((p, dir));
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
@@ -438,6 +418,30 @@ abc",
             );
         }
         assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn 측정이_실패해도_임시_폴더를_지운다() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = in_scratch(tmp.path(), |work| {
+            fs::write(work.join("x"), b"x")?;
+            Err::<(), _>(io::Error::other("측정 실패"))
+        });
+        assert_eq!(r.unwrap_err().to_string(), "측정 실패");
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn 이미_있는_측정_폴더_이름이면_거부하고_건드리지_않는다() {
+        let tmp = tempfile::tempdir().unwrap();
+        let existing = tmp
+            .path()
+            .join(format!("owlfice-bench-{}", std::process::id()));
+        fs::create_dir(&existing).unwrap();
+        fs::write(existing.join("남의것"), b"x").unwrap();
+        let r = in_scratch(tmp.path(), |_| Ok(()));
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert!(existing.join("남의것").is_file());
     }
 
     #[test]

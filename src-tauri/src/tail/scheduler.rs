@@ -187,8 +187,9 @@ pub struct HostLoop {
     pub heartbeat: Arc<Heartbeat>,
     diag: Arc<Mutex<Diag>>,
     last_scan: Option<DateTime<Utc>>,
-    /// 다시 만들어야 하는데 아직 못 만든 팀. 경로 접근이 되는 다음 Scan 에서 만든다. 그동안 기존 리더는 계속 읽는다
-    rebuild_due: BTreeSet<TeamKey>,
+    /// 다시 만들어야 하는데 아직 못 만든 팀. 경로 접근이 되는 다음 Scan 에서 만든다. 그동안 기존 리더는 계속 읽는다.
+    /// 값은 조용히 다시 만들 이유(새 팀·Reset)다. 미뤄지는 동안 잃으면 성공했을 때 rebuilt 표시가 빠진다 (4.3 조용한 재구성)
+    rebuild_due: BTreeMap<TeamKey, bool>,
     /// 파일이 없어져 퇴장시킨 직원과 그 시각. 재구성이 메인의 Spawn 으로 되살리면 다시 퇴장시킨다
     gone: BTreeMap<TeamKey, BTreeMap<String, DateTime<Utc>>>,
     /// Windows 스레드만: 감시할 다른 호스트
@@ -224,7 +225,7 @@ impl HostLoop {
             heartbeat: Arc::new(Heartbeat::default()),
             diag,
             last_scan: None,
-            rebuild_due: BTreeSet::new(),
+            rebuild_due: BTreeMap::new(),
             gone: BTreeMap::new(),
             remotes: Arc::new(Mutex::new(Vec::new())),
             alive: HashSet::new(),
@@ -293,12 +294,12 @@ impl HostLoop {
         if scan {
             self.scan(now);
             self.last_scan = Some(now);
-            for key in std::mem::take(&mut self.rebuild_due) {
+            for (key, quiet) in std::mem::take(&mut self.rebuild_due) {
                 if self.suspect() {
-                    self.rebuild_due.insert(key);
+                    self.rebuild_due.insert(key, quiet);
                     continue;
                 }
-                self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new());
+                self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new(), quiet);
             }
         }
         self.poll_teams(now, path_ok);
@@ -447,7 +448,7 @@ impl HostLoop {
                 eprintln!("Reset {}", p.display());
             }
             if path_ok {
-                self.try_rebuild(key, now, &BTreeSet::new(), &reset);
+                self.try_rebuild(key, now, &BTreeSet::new(), &reset, false);
                 return;
             }
             for p in &reset {
@@ -455,7 +456,7 @@ impl HostLoop {
                     t.stale = true;
                 }
             }
-            self.rebuild_due.insert(key.clone());
+            self.defer_rebuild(key, true);
         }
         if batch.is_empty() {
             return;
@@ -522,11 +523,11 @@ impl HostLoop {
         // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
         eprintln!("읽기 실패 {}: {e}", p.display());
         if path_ok {
-            self.try_rebuild(key, now, &BTreeSet::new(), &BTreeSet::new());
+            self.try_rebuild(key, now, &BTreeSet::new(), &BTreeSet::new(), false);
             return;
         }
         self.mark_suspect();
-        self.rebuild_due.insert(key.clone());
+        self.defer_rebuild(key, false);
     }
 
     /// Probe 직후 틱에 근무 중이 아닌 WSL 팀의 핸들을 닫는다 (4.4.2). 열어 둔 핸들은 배포판이 스스로 꺼지지 못하게 하고,
@@ -602,7 +603,7 @@ impl HostLoop {
             }
         }
         if !new.is_empty() {
-            self.try_rebuild(key, now, &new, &BTreeSet::new());
+            self.try_rebuild(key, now, &new, &BTreeSet::new(), false);
         }
     }
 
@@ -622,15 +623,23 @@ impl HostLoop {
         }
     }
 
-    /// 실패하면 기존 상태를 그대로 두고 다음 Scan 에 다시 한다
+    /// 조용히 다시 만들 이유는 한 번 생기면 성공할 때까지 합쳐 들고 간다. 뒤 호출이 덮어 지우지 않는다
+    fn defer_rebuild(&mut self, key: &TeamKey, quiet: bool) {
+        *self.rebuild_due.entry(key.clone()).or_insert(false) |= quiet;
+    }
+
+    /// 실패하면 기존 상태를 그대로 두고 다음 Scan 에 다시 한다.
+    /// `carried` 는 Scan 이 미뤄 둔 목록에서 꺼내 들고 온 조용한 재구성 이유다
     fn try_rebuild(
         &mut self,
         key: &TeamKey,
         now: DateTime<Utc>,
         new: &BTreeSet<PathBuf>,
         reset: &BTreeSet<PathBuf>,
+        carried: bool,
     ) {
-        if let Err(e) = self.rebuild_team(key, now, new, reset) {
+        let quiet = carried || self.rebuild_due.get(key) == Some(&true);
+        if let Err(e) = self.rebuild_team(key, now, new, reset, quiet) {
             // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
             eprintln!("팀 재구성 실패 {}: {e}", key.session);
             if self.is_wsl() {
@@ -638,7 +647,7 @@ impl HostLoop {
             }
             // 새 팀이면 파일이 아직 등록 전이라 다음 Scan 이 새 파일로 다시 찾는다
             if self.files.values().any(|t| &t.key == key) {
-                self.rebuild_due.insert(key.clone());
+                self.defer_rebuild(key, quiet || !reset.is_empty());
             }
         }
     }
@@ -653,6 +662,7 @@ impl HostLoop {
         now: DateTime<Utc>,
         new: &BTreeSet<PathBuf>,
         reset: &BTreeSet<PathBuf>,
+        carried_quiet: bool,
     ) -> io::Result<()> {
         let mut paths: Vec<PathBuf> = self
             .files
@@ -754,8 +764,14 @@ impl HostLoop {
                 .get(key)
                 .map(|t| t.employees.iter().map(|e| e.id.clone()).collect())
                 .unwrap_or_default();
-            // 조용한 재구성은 새 세션과 Reset 뿐이다 (4.3). 서브 파일이 새로 보인 것은 진행 중 연출을 끊지 않는다
-            w.put_team(key.clone(), team, now, !exists || !reset.is_empty());
+            // 조용한 재구성은 새 세션과 Reset 뿐이다 (4.3). 서브 파일이 새로 보인 것은 진행 중 연출을 끊지 않는다.
+            // 미뤄졌다 성공한 재구성은 미뤄질 때의 이유(carried_quiet)도 함께 본다
+            w.put_team(
+                key.clone(),
+                team,
+                now,
+                !exists || !reset.is_empty() || carried_quiet,
+            );
             // 파일이 없어 퇴장시킨 직원을 메인의 Spawn 이 되살렸으면 조용히 다시 퇴장시킨다
             let quiet_from = w.outbox.len();
             for (agent, at) in &gone {
@@ -940,7 +956,7 @@ impl HostLoop {
             for p in new {
                 self.revive(key, p);
             }
-            self.try_rebuild(key, now, new, &BTreeSet::new());
+            self.try_rebuild(key, now, new, &BTreeSet::new(), false);
         }
         for key in rebuild {
             if self.suspect() {
@@ -956,7 +972,7 @@ impl HostLoop {
             for p in &back {
                 self.revive(&key, p);
             }
-            self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new());
+            self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new(), false);
         }
         if !self.is_wsl() {
             let tracked: HashSet<&str> = self
@@ -1358,9 +1374,9 @@ fn default_product(vendor: Vendor) -> Product {
 
 /// Site 한 번 나열한 결과
 #[derive(Default)]
-struct Listing {
+pub struct Listing {
     /// 세션 파일과 그 세션 id
-    files: Vec<(PathBuf, String)>,
+    pub files: Vec<(PathBuf, String)>,
     /// 서브 파일 옆 `*.meta.json`
     metas: HashSet<PathBuf>,
     /// Claude 프로젝트 폴더 (등록부 세션 기다리기용)
@@ -1369,7 +1385,7 @@ struct Listing {
 
 /// Site 아래 세션 파일과 그 세션 id. Claude 는 `<프로젝트>/<uuid>.jsonl` 과 `<프로젝트>/<uuid>/subagents/*.jsonl`,
 /// Codex 는 `YYYY/MM/DD/rollout-*.jsonl` (4.4.1). 어디서든 나열이 실패하면 Site 전체를 "못 봄"으로 돌려준다
-fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
+pub fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
     let mut out = Listing::default();
     match site.vendor {
         Vendor::Claude => {
@@ -2588,7 +2604,7 @@ mod tests {
         );
         e.at(now + secs(9));
         h.tick();
-        assert!(h.rebuild_due.contains(&e.key(SYNC)));
+        assert!(h.rebuild_due.contains_key(&e.key(SYNC)));
         append(
             &sub,
             &[rec(
@@ -2711,6 +2727,42 @@ mod tests {
         // Probe 밖이면 의심으로 둔다
         h.on_wsl_error(&key, &file, &err, now + secs(2), false);
         assert!(h.heartbeat.suspect.load(Ordering::Relaxed));
+    }
+
+    /// Reset 재구성이 경로 접근 불가로 미뤄졌다 다음 Scan 에서 성공해도 조용한 재구성(rebuilt)으로 나간다
+    #[test]
+    fn deferred_reset_rebuild_stays_quiet_when_it_finally_succeeds() {
+        let e = env();
+        let root = e.dir("wsl/projects");
+        let file = root.join("p1").join(format!("{REJECT}.jsonl"));
+        copy_dir(&fixture("claude/reject"), &root.join("p1"));
+        let mut h = e.host(wsl(), Vec::new());
+        let now = t0() + secs(150);
+        let sites = [site_of(&wsl(), Vendor::Claude, &root)];
+        probe_now(&h, &sites);
+        e.at(now);
+        h.tick();
+        e.select(REJECT);
+        // 파일이 짧게 다시 쓰였다. Probe 가 없는 틱은 Reset 만 보고 재구성은 미룬다
+        fs::write(
+            &file,
+            user_line(REJECT, t0() + secs(145), "새 내용")
+                + "
+",
+        )
+        .unwrap();
+        e.at(now + secs(1));
+        h.tick();
+        assert_eq!(h.rebuild_due.get(&e.key(REJECT)), Some(&true));
+        e.w().rebuilt.clear();
+        probe_now(&h, &sites);
+        e.at(now + secs(2));
+        h.tick();
+        assert!(h.rebuild_due.is_empty());
+        assert!(
+            !e.w().rebuilt.is_empty(),
+            "미뤄졌어도 Reset 이었음을 잃는다"
+        );
     }
 
     #[test]

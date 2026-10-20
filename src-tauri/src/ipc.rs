@@ -12,6 +12,7 @@ use ts_rs::TS;
 
 use crate::discover::{Host, HostKind, Product, Vendor};
 use crate::office::names::RoomBook;
+use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
     Activity, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
@@ -89,6 +90,8 @@ pub struct TeamSummaryDto {
     pub delayed: bool,
     /// 호스트 배지 (`WSL`). Windows 는 null
     pub host_badge: Option<String>,
+    /// 오늘의 업무 (3.3 사무실 한 줄)
+    pub work_type: WorkType,
 }
 
 /// 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
@@ -155,6 +158,7 @@ pub struct TeamDto {
     pub started: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
+    pub work_type: WorkType,
     /// 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (4.7.9)
     pub desk_slot: Option<u8>,
     /// 첫 번째가 부장
@@ -170,6 +174,8 @@ pub struct EmployeeDto {
     pub agent_id: String,
     pub name: String,
     pub rank: Rank,
+    /// 담당 (3.5 카드)
+    pub role: Role,
     pub model: Option<String>,
     pub description: Option<String>,
     pub activity: Activity,
@@ -342,6 +348,7 @@ fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> T
         border: border(t.props.light),
         delayed: w.suspect_hosts.contains(&k.host),
         host_badge: host_badge(w, &k.host),
+        work_type: t.work_type,
     }
 }
 
@@ -415,6 +422,7 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
         agent_id: e.id.clone(),
         name: e.name.clone(),
         rank: e.rank,
+        role: e.role,
         model: e.model.clone(),
         description: e.description.clone(),
         activity: e.activity.clone(),
@@ -443,6 +451,7 @@ fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team) -> TeamDto {
         started: t.started,
         last_activity: t.last_activity,
         phase: t.phase,
+        work_type: t.work_type,
         desk_slot: t.desk_slot,
         employees: t.employees.iter().map(employee_dto).collect(),
         props: t.props.clone(),

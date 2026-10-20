@@ -86,7 +86,11 @@ delayed: boolean,
 /**
  * 호스트 배지 (`WSL`). Windows 는 null
  */
-hostBadge: string | null, };
+hostBadge: string | null, 
+/**
+ * 오늘의 업무 (3.3 사무실 한 줄)
+ */
+workType: WorkType, };
 
 /**
  * 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
@@ -118,7 +122,7 @@ building: string, hostBadge: string | null,
 /**
  * 통신 지연 구름 (S46)
  */
-delayed: boolean, folder: string, started: string, lastActivity: string, phase: TeamPhase, 
+delayed: boolean, folder: string, started: string, lastActivity: string, phase: TeamPhase, workType: WorkType, 
 /**
  * 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (4.7.9)
  */
@@ -131,7 +135,11 @@ employees: Array<EmployeeDto>, props: TeamProps, incident: Incident | null, };
 /**
  * 직원 카드 한 장 (3.5)
  */
-export type EmployeeDto = { agentId: string, name: string, rank: Rank, model: string | null, description: string | null, activity: Activity, 
+export type EmployeeDto = { agentId: string, name: string, rank: Rank, 
+/**
+ * 담당 (3.5 카드)
+ */
+role: Role, model: string | null, description: string | null, activity: Activity, 
 /**
  * 최근 행적, 최신이 먼저
  */
@@ -206,6 +214,16 @@ export type AnimCue = { "kind": "BossVisit", text: string, } | { "kind": "Clap",
  * 직원 직급 (PLAN 4.7.4). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
  */
 export type Rank = "Bujang" | "Gwajang" | "Daeri" | "Sawon";
+
+/**
+ * 담당. 선언 순서가 동률일 때의 우선순위다
+ */
+export type Role = "Backend" | "Frontend" | "Qa" | "DevOps" | "Writer" | "Trainee";
+
+/**
+ * 오늘의 업무
+ */
+export type WorkType = "CodeReview" | "BugFix" | "Refactor" | "Docs" | "Research" | "NewDev";
 
 /**
  * 사무실 안 구역 (PLAN 2.3)

@@ -7,6 +7,7 @@ use chrono::{DateTime, Duration, FixedOffset, Timelike, Utc};
 
 use super::rank::rank_of;
 use super::stats::TeamStats;
+use super::work::{Role, Touched, WorkTally, WorkType, touches_file};
 use super::{
     Activity, Counters, Cue, Employee, Incident, Light, PendingCall, Pose, Rank, Room, Team,
     TeamPhase, TeamProps,
@@ -71,6 +72,8 @@ impl Employee {
             id: id.to_string(),
             name: String::new(),
             rank,
+            role: Role::Trainee,
+            touched: Touched::default(),
             model: None,
             description: None,
             activity: Activity::new(arrival, room, at, confidence),
@@ -139,6 +142,8 @@ impl Team {
             id,
             product,
             title: String::new(),
+            work_type: WorkType::NewDev,
+            work: WorkTally::default(),
             cwd: PathBuf::new(),
             git_branch: None,
             started,
@@ -251,6 +256,8 @@ impl Team {
                     e.rejected_at = None;
                     self.props.boss_visit = Some(text.clone());
                     cues.push(Cue::BossVisit { text: text.clone() });
+                    self.work.message(text);
+                    self.sync_work();
                 }
                 if !self.refresh(i, ts) && boss {
                     self.employees[i].set_activity(Activity::new(
@@ -307,6 +314,12 @@ impl Team {
                 e.quiet_since = None;
                 e.last_was_text = false;
                 count(&mut e.counters, tool);
+                if touches_file(tool)
+                    && let Some(p) = &summary.path
+                {
+                    e.role = e.touched.touch(p);
+                }
+                self.work.call(call_id, tool, summary.path.as_deref());
                 if is_review(tool) && e.activity.room != Room::Review {
                     e.review_pens = 0;
                 }
@@ -327,8 +340,15 @@ impl Team {
                     });
                 }
                 self.refresh(i, ts);
+                self.sync_work();
             }
-            EventKind::ToolResult { .. } => self.on_result(i, &ev.kind, ts, cues),
+            EventKind::ToolResult {
+                call_id, outcome, ..
+            } => {
+                self.work.result(call_id, *outcome);
+                self.on_result(i, &ev.kind, ts, cues);
+                self.sync_work();
+            }
             EventKind::SubagentSpawn {
                 child_id,
                 prompt,
@@ -472,6 +492,12 @@ impl Team {
                 }
             }
             EventKind::Reset => {}
+        }
+    }
+
+    fn sync_work(&mut self) {
+        if let Some(w) = self.work.verdict() {
+            self.work_type = w;
         }
     }
 

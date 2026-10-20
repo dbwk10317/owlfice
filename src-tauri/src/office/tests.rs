@@ -1551,3 +1551,324 @@ fn preregistered_sub_is_hired_when_it_first_appears() {
         }
     }
 }
+
+// ---------- 담당 (4.7.5) · 오늘의 업무 (4.7.6) ----------
+
+use super::work::{Role, WorkType};
+
+type Step<'a> = (ToolKind, Option<&'a str>, Option<ToolOutcome>);
+
+/// 첫 메시지와 (도구, 경로, 결과) 열로 팀을 만든다. 호출마다 결과를 바로 준다
+fn work_sim(msg: Option<&str>, calls: &[Step]) -> Sim {
+    let mut s = Sim::new();
+    let mut secs = 0;
+    if let Some(m) = msg {
+        s.on(MAIN, secs, EventKind::UserMessage { text: m.into() });
+    }
+    for (i, (tool, path, outcome)) in calls.iter().enumerate() {
+        secs += 1;
+        let id = format!("c{i}");
+        let sum = match path {
+            Some(p) => file(p),
+            None => summary(),
+        };
+        s.on(MAIN, secs, call(&id, tool.clone(), sum));
+        if let Some(o) = outcome {
+            s.on(MAIN, secs, result(&id, *o));
+        }
+    }
+    s
+}
+
+fn touch(paths: &[&str]) -> Role {
+    let calls: Vec<Step> = paths
+        .iter()
+        .map(|p| (ToolKind::FileRead, Some(*p), None))
+        .collect();
+    work_sim(None, &calls).boss().role
+}
+
+#[test]
+fn role_is_trainee_below_five_distinct_files() {
+    assert_eq!(touch(&["a.rs", "b.rs", "c.rs", "d.rs"]), Role::Trainee);
+    // 같은 파일을 여러 번 읽어도 하나다
+    assert_eq!(
+        touch(&["a.rs", "a.rs", "a.rs", "b.rs", "b.rs", "c.rs", "d.rs"]),
+        Role::Trainee
+    );
+    assert_eq!(
+        touch(&["a.rs", "b.rs", "c.rs", "d.rs", "e.rs"]),
+        Role::Backend
+    );
+}
+
+#[test]
+fn role_per_category() {
+    let five = |ext: &str| -> Vec<String> { (0..5).map(|i| format!("x/f{i}.{ext}")).collect() };
+    for (ext, want) in [
+        ("go", Role::Backend),
+        ("php", Role::Backend),
+        ("tsx", Role::Frontend),
+        ("scss", Role::Frontend),
+        ("yml", Role::DevOps),
+        ("ps1", Role::DevOps),
+        ("mdx", Role::Writer),
+        ("rst", Role::Writer),
+    ] {
+        let v = five(ext);
+        let refs: Vec<&str> = v.iter().map(String::as_str).collect();
+        assert_eq!(touch(&refs), want, "{ext}");
+    }
+    // 경로 규칙: QA 는 확장자보다 앞선다, 데브옵스는 Dockerfile·.github·ci
+    assert_eq!(
+        touch(&[
+            "tests/a.rs",
+            "src/__tests__/b.tsx",
+            "x.spec.ts",
+            "fixtures/c.json",
+            "t/test_d.py"
+        ]),
+        Role::Qa
+    );
+    assert_eq!(
+        touch(&[
+            "Dockerfile",
+            ".github/workflows/a.json",
+            "ci/b.rs",
+            "C:\\p\\.github\\c.md",
+            "d.sh"
+        ]),
+        Role::DevOps
+    );
+    // `ci` 는 단어 단위라 decision 에 걸리지 않는다
+    assert_eq!(
+        touch(&["decision/a.rs", "b.rs", "c.rs", "d.rs", "e.rs"]),
+        Role::Backend
+    );
+}
+
+#[test]
+fn role_ts_js_follow_path() {
+    let fe = ["src/a.ts", "src/b.js", "ui/c.ts", "ui/d.js", "e.ts"];
+    assert_eq!(touch(&fe), Role::Frontend);
+    let be = [
+        "src/server/a.ts",
+        "api/b.js",
+        "x/backend/c.ts",
+        "src\\server\\d.js",
+        "e.rs",
+    ];
+    assert_eq!(touch(&be), Role::Backend);
+}
+
+#[test]
+fn role_ties_unknown_files_and_tool_kinds() {
+    // 프론트 2, 백엔드 2 → 선언 순서가 앞선 백엔드
+    assert_eq!(
+        touch(&["a.tsx", "b.tsx", "c.rs", "d.rs", "e.md"]),
+        Role::Backend
+    );
+    // 다섯 개를 채웠지만 분류되는 것이 없으면 수습
+    assert_eq!(
+        touch(&["a.bin", "b.bin", "c.bin", "d.bin", "e.bin"]),
+        Role::Trainee
+    );
+    // 쓰기·검색 도구도 센다, 경로가 있어도 파일 도구가 아니면 안 센다
+    let s = work_sim(
+        None,
+        &[
+            (ToolKind::FileWrite, Some("a.md"), None),
+            (ToolKind::FileEdit, Some("b.md"), None),
+            (ToolKind::FileSearch, Some("c.md"), None),
+            (ToolKind::Shell, Some("d.md"), None),
+            (ToolKind::FileRead, Some("e.md"), None),
+        ],
+    );
+    assert_eq!(s.boss().role, Role::Trainee);
+}
+
+use ToolKind::{
+    FileEdit as Ed, FileRead as Rd, FileWrite as Wr, GitDiff, PrView, Test as Tst, WebSearch,
+};
+use ToolOutcome::{Err as Bad, Ok as Good};
+
+fn kind_of(msg: Option<&str>, calls: &[Step]) -> WorkType {
+    work_sim(msg, calls).team.work_type
+}
+
+#[test]
+fn work_keywords_case_insensitive_and_in_table_order() {
+    for (msg, want) in [
+        ("Please REVIEW this", WorkType::CodeReview),
+        ("코드 리뷰해 줘", WorkType::CodeReview),
+        ("버그가 있어", WorkType::BugFix),
+        ("빌드가 안 돼", WorkType::BugFix),
+        ("Fix the login", WorkType::BugFix),
+        ("에러 나", WorkType::BugFix),
+        ("오류 확인", WorkType::BugFix),
+        ("Refactor the parser", WorkType::Refactor),
+        ("코드 정리", WorkType::Refactor),
+        ("README 써 줘", WorkType::Docs),
+        ("Update the DOCS", WorkType::Docs),
+        ("문서 작업", WorkType::Docs),
+        ("이게 가능한지 조사", WorkType::Research),
+        ("파일 찾아 줘", WorkType::Research),
+        ("알아봐", WorkType::Research),
+        ("새 기능 만들어", WorkType::NewDev),
+        // 우선순위: 리뷰 > 버그 > 리팩터 > 문서 > 조사
+        ("review and fix", WorkType::CodeReview),
+        ("fix 하고 refactor", WorkType::BugFix),
+        ("refactor the docs", WorkType::Refactor),
+        ("docs 조사", WorkType::Docs),
+    ] {
+        assert_eq!(kind_of(Some(msg), &[]), want, "{msg}");
+    }
+}
+
+#[test]
+fn work_without_evidence_keeps_current_value() {
+    assert_eq!(work_sim(None, &[]).team.work_type, WorkType::NewDev);
+    // 근거가 못 되는 이벤트(짝 없는 결과)는 값을 바꾸지 않는다
+    let mut s = work_sim(Some("fix it"), &[]);
+    s.on(MAIN, 50, result("nope", Good));
+    assert_eq!(s.team.work_type, WorkType::BugFix);
+}
+
+#[test]
+fn work_tool_patterns() {
+    // 코드 리뷰: 쓰기 전에 GitDiff·PrView
+    assert_eq!(
+        kind_of(
+            None,
+            &[(GitDiff, None, Some(Good)), (Rd, Some("a.rs"), None)]
+        ),
+        WorkType::CodeReview
+    );
+    assert_eq!(kind_of(None, &[(PrView, None, None)]), WorkType::CodeReview);
+    // 편집 뒤의 diff 는 리뷰가 아니다
+    assert_eq!(
+        kind_of(None, &[(Ed, Some("a.rs"), None), (GitDiff, None, None)]),
+        WorkType::NewDev
+    );
+    // 버그 수정: 첫 Test 가 실패
+    assert_eq!(
+        kind_of(None, &[(Tst, None, Some(Bad)), (Ed, Some("a.rs"), None)]),
+        WorkType::BugFix
+    );
+    // 첫 Test 가 성공이면 뒤의 실패는 "먼저"가 아니다
+    assert_eq!(
+        kind_of(None, &[(Tst, None, Some(Good)), (Tst, None, Some(Bad))]),
+        WorkType::NewDev
+    );
+    // 리팩터링: 편집이 절반 이상이고 테스트가 계속 통과
+    let refactor: Vec<Step> = vec![
+        (Ed, Some("a.rs"), None),
+        (Ed, Some("b.rs"), None),
+        (Ed, Some("c.rs"), None),
+        (Tst, None, Some(Good)),
+    ];
+    assert_eq!(kind_of(None, &refactor), WorkType::Refactor);
+    let mut failed = refactor.clone();
+    failed.push((Tst, None, Some(Bad)));
+    assert_eq!(kind_of(None, &failed), WorkType::NewDev);
+    assert_eq!(
+        kind_of(None, &refactor[..2]),
+        WorkType::NewDev,
+        "편집 2번은 리팩터링 근거가 못 된다"
+    );
+    // 문서: .md 쓰기가 과반
+    assert_eq!(
+        kind_of(
+            None,
+            &[
+                (Wr, Some("a.md"), None),
+                (Ed, Some("b.md"), None),
+                (Ed, Some("c.rs"), None)
+            ]
+        ),
+        WorkType::Docs
+    );
+    assert_eq!(
+        kind_of(None, &[(Wr, Some("a.md"), None), (Ed, Some("c.rs"), None)]),
+        WorkType::NewDev,
+        "반반은 위주가 아니다"
+    );
+    // 기술 조사: 읽기·검색 위주, 쓰기 없음
+    let research: Vec<Step> = vec![
+        (WebSearch, None, None),
+        (Rd, Some("a.rs"), None),
+        (Rd, Some("b.rs"), None),
+    ];
+    assert_eq!(kind_of(None, &research), WorkType::Research);
+    let mut edited = research.clone();
+    edited.push((Ed, Some("a.rs"), None));
+    assert_eq!(kind_of(None, &edited), WorkType::NewDev);
+    // 우선순위: 리뷰 패턴이 버그 패턴보다 앞선다
+    assert_eq!(
+        kind_of(None, &[(GitDiff, None, None), (Tst, None, Some(Bad))]),
+        WorkType::CodeReview
+    );
+}
+
+#[test]
+fn work_freezes_after_twenty_calls() {
+    // 20개 동안은 조사 패턴, 그 뒤 편집·diff·실패·키워드는 무시
+    let mut calls: Vec<Step> = (0..20).map(|_| (Rd, Some("a.rs"), None)).collect();
+    calls.extend([
+        (Ed, Some("a.rs"), None),
+        (GitDiff, None, None),
+        (Tst, None, Some(Bad)),
+    ]);
+    let mut s = work_sim(None, &calls);
+    assert_eq!(s.team.work_type, WorkType::Research);
+    s.on(
+        MAIN,
+        100,
+        EventKind::UserMessage {
+            text: "fix this bug".into(),
+        },
+    );
+    assert_eq!(s.team.work_type, WorkType::Research);
+    // 20번째 호출이 Test 면 그 결과는 창 안이라 센다
+    let mut calls: Vec<Step> = (0..19).map(|_| (Rd, Some("a.rs"), None)).collect();
+    calls.push((Tst, None, Some(Bad)));
+    assert_eq!(kind_of(None, &calls), WorkType::BugFix);
+}
+
+#[test]
+fn work_only_first_boss_message_counts() {
+    let mut s = work_sim(Some("새 기능"), &[]);
+    s.on(
+        MAIN,
+        10,
+        EventKind::UserMessage {
+            text: "fix bug".into(),
+        },
+    );
+    assert_eq!(s.team.work_type, WorkType::NewDev);
+    // 서브 파일의 지시는 키워드가 아니다
+    let mut s = Sim::new();
+    s.on(
+        SUB,
+        1,
+        EventKind::UserMessage {
+            text: "fix bug".into(),
+        },
+    );
+    assert_eq!(s.team.work_type, WorkType::NewDev);
+}
+
+#[test]
+fn work_and_role_from_fixture_match_hand_expectation() {
+    // 첫 메시지 "Run the tests and fix what fails." → fix. 만진 파일은 하나뿐이라 수습
+    let c = Case::claude("test-fail-fix-pass");
+    let t = rebuild(&c.id, c.product, &c.subs, c.files.clone(), utc());
+    assert_eq!(t.work_type, WorkType::BugFix);
+    assert_eq!(boss(&t).role, Role::Trainee);
+    // 이벤트를 하나씩 먹여도 같다
+    let mut s = Team::new(&c.id, c.product, t.started);
+    for e in merge(c.files.clone()) {
+        s.apply(&e, &mut Vec::new());
+    }
+    assert_eq!((s.work_type, boss(&s).role), (t.work_type, boss(&t).role));
+}

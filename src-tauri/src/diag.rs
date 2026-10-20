@@ -2,6 +2,7 @@
 //! 저장 폴더는 인자로 받는다. 실제 경로 `%APPDATA%\Owlfice\logs` 는 부르는 쪽이 정한다.
 //! 시각도 부르는 쪽이 넘긴다 (논리 시계와 같은 축).
 
+use std::collections::btree_map::Entry::{Occupied, Vacant};
 use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,8 @@ const MAX_BYTES: usize = 10 * 1024 * 1024;
 const FLUSH_EVERY_SECS: i64 = 60;
 /// 인자 모양이 끝없이 길어지지 않게 자른다
 const SHAPE_TOKENS: usize = 24;
+/// 낱말·플래그 이름으로 남기는 길이 상한. 붙여 쓴 비밀이 이름으로 남지 않게 한다
+const IDENT_MAX: usize = 24;
 const RAW_COMMAND_CHARS: usize = 80;
 const RAW_RESULT_CHARS: usize = 200;
 /// 결과가 안 오는 호출이 쌓여도 메모리가 자라지 않게 하는 상한
@@ -60,16 +63,37 @@ fn parse_entries(bytes: &[u8]) -> impl Iterator<Item = Entry> {
         .into_iter()
 }
 
-fn load(path: &Path) -> (BTreeMap<Key, Entry>, bool) {
-    match std::fs::read(path) {
-        Ok(b) => (
-            parse_entries(&b)
-                .map(|e| ((e.kind.clone(), e.key.clone()), e))
-                .collect(),
-            true,
-        ),
-        Err(e) => (BTreeMap::new(), e.kind() == io::ErrorKind::NotFound),
+/// 같은 (kind, key) 가 여러 줄이면 합친다. raw 를 끄고 열면 예전 raw 도 버린다
+fn load(path: &Path, raw: bool) -> (BTreeMap<Key, Entry>, bool) {
+    let b = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => return (BTreeMap::new(), e.kind() == io::ErrorKind::NotFound),
+    };
+    let mut map: BTreeMap<Key, Entry> = BTreeMap::new();
+    for mut e in parse_entries(&b) {
+        if !raw {
+            e.fields.remove("raw");
+        }
+        match map.entry((e.kind.clone(), e.key.clone())) {
+            Occupied(mut o) => {
+                let m = o.get_mut();
+                m.count = m.count.saturating_add(e.count);
+                if e.first_seen < m.first_seen {
+                    m.first_seen = e.first_seen;
+                }
+                if e.last_seen > m.last_seen {
+                    m.last_seen = e.last_seen;
+                }
+                for (k, v) in e.fields {
+                    m.fields.entry(k).or_insert(v);
+                }
+            }
+            Vacant(v) => {
+                v.insert(e);
+            }
+        }
     }
+    (map, true)
 }
 
 /// 임시 파일에 쓴 뒤 이름을 바꾼다. 쓰다 끊겨도 기존 파일이 깨지지 않는다
@@ -100,9 +124,9 @@ impl Diag {
         Self::open_with_limit(dir, raw, MAX_BYTES)
     }
 
-    pub fn open_with_limit(dir: &Path, raw: bool, max_bytes: usize) -> Self {
+    fn open_with_limit(dir: &Path, raw: bool, max_bytes: usize) -> Self {
         let path = dir.join(FILE_NAME);
-        let (entries, writable) = load(&path);
+        let (entries, writable) = load(&path, raw);
         Self {
             path,
             raw,
@@ -115,7 +139,7 @@ impl Diag {
         }
     }
 
-    /// `raw` 는 원문 진단이 꺼져 있으면 부르는 쪽이 None 으로 넘긴다
+    /// 원문 진단이 꺼져 있으면 원문이 어디에도 안 들어가도록 부르는 쪽이 `raw` 를 None 으로 넘긴다
     fn bump(
         &mut self,
         kind: &str,
@@ -189,7 +213,6 @@ impl Diag {
         self.bump(kind, key, now, fields, None);
     }
 
-    /// 이벤트에서 알 수 있는 kind: command, mcp_server, skill, result_shape
     pub fn observe_event(&mut self, ev: &Event, now: DateTime<Utc>) {
         match &ev.kind {
             EventKind::ToolCall {
@@ -197,7 +220,11 @@ impl Diag {
                 tool,
                 summary,
             } => {
-                let key = summary.command_key.clone().unwrap_or_default();
+                let key = summary
+                    .command_key
+                    .as_deref()
+                    .map(safe_key)
+                    .unwrap_or_default();
                 match tool {
                     ToolKind::Shell => {
                         let norm = summary.command_norm.as_deref().unwrap_or_default();
@@ -212,10 +239,9 @@ impl Diag {
                         self.bump("command", shape, now, fields, raw);
                     }
                     ToolKind::Test => {
-                        if self.test_calls.len() >= MAX_PENDING_TESTS {
-                            self.test_calls.clear();
+                        if self.test_calls.len() < MAX_PENDING_TESTS {
+                            self.test_calls.insert(call_id.clone(), key);
                         }
-                        self.test_calls.insert(call_id.clone(), key);
                     }
                     ToolKind::Mcp { server, tool } => self.bump(
                         "mcp_server",
@@ -267,47 +293,55 @@ impl Diag {
         self.flush()
     }
 
-    /// 통째로 쓴다. 실패하면 메모리 집계는 그대로 두고 에러를 돌려준다
+    /// 통째로 쓴다. 쓰기에 실패하면 상한 초과분도 메모리에 남겨 다음 flush 에서 다시 시도한다
     pub fn flush(&mut self) -> io::Result<()> {
+        let (out, dropped) = self.render()?;
         if !self.writable {
+            // 못 읽은 파일은 덮어쓰지 않지만 메모리 집계가 끝없이 자라면 안 된다
+            self.forget(dropped);
             return Err(io::Error::other(format!(
                 "{} 을 읽지 못해 쓰지 않음",
                 self.path.display()
             )));
         }
-        self.evict();
-        let mut out = String::new();
-        for e in self.entries.values() {
-            out.push_str(&serde_json::to_string(e)?);
-            out.push('\n');
-        }
         write_atomic(&self.path, out.as_bytes())?;
+        self.forget(dropped);
         self.dirty = false;
         Ok(())
     }
 
-    /// 상한을 넘으면 last_seen 이 가장 오래된 것부터 지운다
-    fn evict(&mut self) {
-        let mut sizes: Vec<(String, Key, usize)> = self
-            .entries
-            .iter()
-            .map(|(k, e)| {
-                let len = serde_json::to_string(e).map_or(0, |s| s.len() + 1);
-                (e.last_seen.clone(), k.clone(), len)
-            })
-            .collect();
-        let mut total: usize = sizes.iter().map(|s| s.2).sum();
-        if total <= self.max_bytes {
-            return;
-        }
-        sizes.sort();
-        for (_, k, len) in sizes {
-            if total <= self.max_bytes {
-                break;
-            }
+    fn forget(&mut self, keys: Vec<Key>) {
+        for k in keys {
             self.entries.remove(&k);
-            total -= len;
         }
+    }
+
+    /// 항목마다 한 번만 직렬화해 상한 계산과 출력에 함께 쓴다.
+    /// 상한을 넘으면 last_seen 이 가장 오래된 것부터 빼고, 뺀 키를 함께 돌려준다
+    fn render(&self) -> io::Result<(String, Vec<Key>)> {
+        let mut rows: Vec<(&str, &Key, String)> = Vec::with_capacity(self.entries.len());
+        for (k, e) in &self.entries {
+            rows.push((&e.last_seen, k, serde_json::to_string(e)?));
+        }
+        let mut total: usize = rows.iter().map(|r| r.2.len() + 1).sum();
+        let mut dropped = Vec::new();
+        if total > self.max_bytes {
+            rows.sort_by(|a, b| a.0.cmp(b.0).then_with(|| a.1.cmp(b.1)));
+            let mut cut = 0;
+            while cut < rows.len() && total > self.max_bytes {
+                total -= rows[cut].2.len() + 1;
+                dropped.push(rows[cut].1.clone());
+                cut += 1;
+            }
+            rows.drain(..cut);
+            rows.sort_by(|a, b| a.1.cmp(b.1));
+        }
+        let mut out = String::with_capacity(total);
+        for (_, _, line) in rows {
+            out.push_str(&line);
+            out.push('\n');
+        }
+        Ok((out, dropped))
     }
 }
 
@@ -359,7 +393,7 @@ fn test_family(command_key: &str) -> &'static str {
 
 fn is_ident(t: &str) -> bool {
     t.starts_with(|c: char| c.is_ascii_alphabetic())
-        && t.len() <= 24
+        && t.len() <= IDENT_MAX
         && t.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
@@ -370,6 +404,48 @@ fn is_file_name(t: &str) -> bool {
         .is_some_and(|(stem, ext)| !stem.is_empty() && !ext.is_empty() && ext.len() <= 5)
 }
 
+/// 파서가 준 command_key 에 공백 든 경로 조각 등이 섞였을 수 있어 낱말 모양이 아닌 것은 가린다
+fn safe_key(key: &str) -> String {
+    key.split_whitespace()
+        .map(|w| if is_ident(w) { w } else { "<arg>" })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 따옴표 안의 공백·연산자가 토큰 경계나 연산자로 읽히지 않게 따옴표를 따라가며 나눈다.
+/// 짝 없는 따옴표는 끝까지 한 토큰으로 삼는다 (가리는 쪽으로 틀린다). 둘째 값은 따옴표가 든 토큰인지
+fn split_shell(s: &str) -> Vec<(String, bool)> {
+    let mut out = Vec::new();
+    let (mut cur, mut quoted, mut open) = (String::new(), false, None::<char>);
+    for c in s.chars() {
+        match open {
+            Some(close) => {
+                cur.push(c);
+                if c == close {
+                    open = None;
+                }
+            }
+            None if c.is_whitespace() => {
+                if !cur.is_empty() {
+                    out.push((std::mem::take(&mut cur), quoted));
+                    quoted = false;
+                }
+            }
+            None => {
+                if matches!(c, '"' | '\'') {
+                    open = Some(c);
+                    quoted = true;
+                }
+                cur.push(c);
+            }
+        }
+    }
+    if !cur.is_empty() {
+        out.push((cur, quoted));
+    }
+    out
+}
+
 /// 명령의 인자 모양. 세그먼트 첫 토큰·command_key 단어·연산자·플래그 이름만 남기고
 /// 나머지 값은 `<arg>`·`<path>`·`<num>` 로 바꾼다.
 /// ponytail: `-pSECRET` 처럼 붙여 쓴 단일 대시 플래그를 가를 수 없어 단일 대시는 4글자까지만 남긴다, 필요해지면 도구별 목록을 둔다
@@ -377,12 +453,13 @@ fn arg_shape(norm: &str, command_key: &str) -> String {
     let key_words: Vec<&str> = command_key.split_whitespace().collect();
     let mut out: Vec<String> = Vec::new();
     let mut head = true;
-    for (i, t) in norm.split_whitespace().enumerate() {
+    for (i, (t, quoted)) in split_shell(norm).iter().enumerate() {
+        let (t, quoted) = (t.as_str(), *quoted);
         if i >= SHAPE_TOKENS {
             out.push("…".into());
             break;
         }
-        if matches!(t, "&&" | "||" | "|" | "|&" | ";" | "&") {
+        if !quoted && matches!(t, "&&" | "||" | "|" | "|&" | ";" | "&") {
             out.push(t.into());
             head = true;
             continue;
@@ -398,7 +475,8 @@ fn arg_shape(norm: &str, command_key: &str) -> String {
                 && body
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'));
-            if plain && (name.starts_with("--") || body.len() <= 4) {
+            let max = if name.starts_with("--") { IDENT_MAX } else { 4 };
+            if plain && body.len() <= max {
                 out.push(if has_value {
                     format!("{name}=<arg>")
                 } else {
@@ -407,6 +485,8 @@ fn arg_shape(norm: &str, command_key: &str) -> String {
             } else {
                 out.push("<arg>".into());
             }
+        } else if quoted {
+            out.push("<arg>".into());
         } else if is_ident(t) && (was_head || key_words.contains(&t)) {
             out.push(t.into());
         } else if t.parse::<f64>().is_ok() {
@@ -645,19 +725,114 @@ mod tests {
     }
 
     #[test]
-    fn write_failure_keeps_memory_and_flush_waits_a_minute() {
+    fn write_failure_keeps_records_and_flush_waits_a_minute() {
         let dir = tempfile::tempdir().unwrap();
-        let blocker = dir.path().join("file");
-        std::fs::write(&blocker, "x").unwrap();
-        let mut d = Diag::open(&blocker.join("sub"), false);
+        // 임시 파일 자리를 폴더로 막아 쓰기만 실패시킨다
+        let block = dir.path().join("unhandled.jsonl.tmp");
+        std::fs::create_dir(&block).unwrap();
+        let mut d = Diag::open(dir.path(), false);
         let u = Unhandled::SystemSubtype {
             subtype: "s".into(),
         };
         d.observe_unhandled(Product::ClaudeCli, &u, t(0));
         assert!(d.flush_if_due(t(30)).is_ok(), "1분 전에는 쓰지 않는다");
         assert!(d.flush_if_due(t(60)).is_err());
-        assert_eq!(d.entries.len(), 1);
-        assert!(d.dirty);
+        std::fs::remove_dir(&block).unwrap();
+        d.flush_if_due(t(120)).unwrap();
+        assert!(read(dir.path()).contains(r#""subtype":"s""#));
+    }
+
+    #[test]
+    fn write_failure_does_not_lose_over_limit_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let block = dir.path().join("unhandled.jsonl.tmp");
+        std::fs::create_dir(&block).unwrap();
+        let u = |n: &str| Unhandled::ToolName {
+            name: n.into(),
+            input_keys: vec![],
+        };
+        let mut d = Diag::open_with_limit(dir.path(), false, 300);
+        for (i, n) in ["a", "b", "c", "d", "e"].iter().enumerate() {
+            d.observe_unhandled(Product::ClaudeCli, &u(n), t(i as i64));
+        }
+        assert!(d.flush().is_err());
+        std::fs::remove_dir(&block).unwrap();
+        d.flush().unwrap();
+        let text = read(dir.path());
+        assert!(text.len() <= 300, "{}", text.len());
+        assert!(text.contains(r#""name":"e""#), "{text}");
+    }
+
+    #[test]
+    fn unreadable_existing_file_is_not_overwritten_and_memory_stays_bounded() {
+        let dir = tempfile::tempdir().unwrap();
+        // 파일 자리가 폴더라 읽기가 NotFound 가 아닌 에러로 끝난다
+        let existing = dir.path().join(FILE_NAME);
+        std::fs::create_dir(&existing).unwrap();
+        let mut d = Diag::open_with_limit(dir.path(), false, 300);
+        for i in 0..20 {
+            let u = Unhandled::ToolName {
+                name: format!("n{i}"),
+                input_keys: vec![],
+            };
+            d.observe_unhandled(Product::ClaudeCli, &u, t(i));
+        }
+        assert!(d.flush().is_err());
+        assert!(existing.is_dir());
+        assert!(d.entries.len() < 20, "상한 정리가 안 됨");
+    }
+
+    #[test]
+    fn quoted_operators_do_not_leak_next_word() {
+        for (cmd, key, want) in [
+            (r#"echo "a | SecretWord b""#, "echo", "echo <arg>"),
+            (
+                r#"git commit -m "x ; leakedword""#,
+                "git commit",
+                "git commit -m <arg>",
+            ),
+            (r#"python -c "a && token""#, "python", "python -c <arg>"),
+            ("echo 'a & Tail b' | wc", "echo", "echo <arg> | wc"),
+        ] {
+            assert_eq!(arg_shape(cmd, key), want, "{cmd}");
+        }
+    }
+
+    #[test]
+    fn long_flag_name_and_odd_key_words_are_masked() {
+        assert_eq!(
+            arg_shape("tool --sk-live-abcdefghijklmnopqrstuvwxyz", "tool"),
+            "tool <arg>"
+        );
+        assert_eq!(arg_shape("tool --verbose", "tool"), "tool --verbose");
+        assert_eq!(safe_key(r"cargo C:\Users\bob"), "cargo <arg>");
+        assert_eq!(safe_key(""), "");
+    }
+
+    #[test]
+    fn duplicate_lines_merge_and_old_raw_is_dropped_when_raw_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let line = |count: u32, first: &str, last: &str| {
+            format!(
+                r#"{{"kind":"skill","key":"x","first_seen":"{first}","last_seen":"{last}","count":{count},"raw":"LEAK"}}"#
+            )
+        };
+        let text = format!(
+            "{}\n{}\n",
+            line(2, "2026-01-02T00:00:00Z", "2026-01-03T00:00:00Z"),
+            line(3, "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"),
+        );
+        std::fs::write(dir.path().join(FILE_NAME), text).unwrap();
+        let mut d = Diag::open(dir.path(), false);
+        d.bump("skill", "x".into(), t(0), json!({}), None);
+        d.flush().unwrap();
+        let out = read(dir.path());
+        assert_eq!(out.lines().count(), 1, "{out}");
+        assert!(!out.contains("LEAK"), "{out}");
+        let v: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["count"], 6);
+        assert_eq!(v["first_seen"], "2026-01-01T00:00:00Z");
+        assert_ne!(v["last_seen"], "2026-01-03T00:00:00Z");
     }
 
     #[test]

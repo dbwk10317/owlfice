@@ -29,7 +29,15 @@
     "offAgo": "{folder} · {ago} 퇴근",
     "idleAlive": "대기 중",
     "emptyTitle": "불 켜진 사무실이 없어요",
-    "emptyBody": "세션을 시작하면 여기에 나타납니다."
+    "emptyBody": "세션을 시작하면 여기에 나타납니다.",
+    "stateIncident": "장애",
+    "stateWorking": "근무 중",
+    "stateWaiting": "결재·응답 대기",
+    "stateSleepy": "졸음",
+    "stateOff": "퇴근",
+    "asking": "허가 대기",
+    "sectionHqFloors": "본사 건물 · 3개 층",
+    "floorName": "{n}층 {product} 사무실"
   },
 
   "toast": {

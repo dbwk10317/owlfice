@@ -1,0 +1,234 @@
+/* 왼쪽 사이드바. 행·점·그룹 머리글의 기본 모양은 tokens.css, 여기는 배치와 창 너비 구간만 */
+
+.ow-side-host {
+  position: relative;
+  flex: none;
+  display: flex;
+  height: 100%;
+}
+.ow-side-host [hidden] {
+  display: none !important;
+}
+
+.ow-sidebar {
+  min-height: 0;
+}
+.ow-sidebar__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ow-side-band {
+  display: none;
+}
+
+/* 토스트: aside 밖이라 레일·드롭다운 모드에서도 보인다. 간판 60 아래에 겹쳐 띄운다 (HANDOFF 4.1) */
+.ow-toast-slot {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  width: var(--ow-sidebar-w);
+  z-index: calc(var(--ow-z-rail-pop) + 1);
+  pointer-events: none;
+}
+.ow-side-host[data-mode="rail"] .ow-toast-slot {
+  left: 48px;
+}
+.ow-side-host[data-mode="select"] .ow-toast-slot {
+  top: 100%;
+}
+.ow-toast {
+  width: auto;
+}
+.ow-toast__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-toast__text b {
+  font-weight: 600;
+}
+.ow-toast__ago {
+  color: #fff;
+  opacity: 0.7;
+  font-size: 11px;
+}
+.ow-toast .ow-dot::before {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.4);
+}
+
+/* 행 */
+.ow-sidebar .ow-row__main {
+  width: 100%;
+  align-items: flex-start;
+  text-align: left;
+}
+.ow-row__lead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding-top: 2px;
+}
+.ow-row__ask {
+  color: var(--ow-ask);
+}
+.ow-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ow-row__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ow-row__meta {
+  white-space: nowrap;
+}
+.ow-row.is-floor .ow-row__fold {
+  margin-top: 6px;
+}
+.ow-row__fold svg {
+  transition: transform var(--ow-dur-2) var(--ow-ease);
+}
+.ow-row__fold[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+.ow-row.is-vacant {
+  opacity: 0.55;
+}
+.ow-row.is-new {
+  animation: ow-slide-in 240ms var(--ow-ease);
+}
+.ow-row__main:disabled {
+  cursor: default;
+}
+
+/* 동 머리글 (퇴근 묶음 포함) */
+.ow-group-wrap.has-divider {
+  margin-top: 6px;
+  border-top: 1px solid var(--ow-line);
+  padding-top: 6px;
+}
+.ow-group-wrap.is-nested .ow-group {
+  padding-left: 30px;
+}
+.ow-group__arrow {
+  transition: transform var(--ow-dur-2) var(--ow-ease);
+}
+.ow-group[aria-expanded="false"] .ow-group__arrow {
+  transform: rotate(-90deg);
+}
+.ow-group__sub {
+  flex: 1;
+  color: var(--ow-ink-3);
+}
+
+/* 빈 목록 */
+.ow-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--ow-ink-3);
+  font-size: 12px;
+}
+.ow-empty b {
+  color: var(--ow-ink);
+  font-size: 13px;
+}
+.ow-empty__art {
+  width: 120px;
+  height: 120px;
+  opacity: 0.85;
+  color: var(--ow-ink-3);
+}
+.ow-empty__art svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* 레일: 상태 점 색 (tokens 의 .ow-dot 규칙은 14px 점 전용) */
+.ow-rail__item.is-off {
+  opacity: 0.6;
+}
+.ow-rail__state[data-state="working"],
+.ow-rail__state[data-state="waiting"] {
+  --ow-dot-color: var(--ow-ok);
+}
+.ow-rail__state[data-state="sleepy"] {
+  --ow-dot-color: var(--ow-sleep);
+}
+.ow-rail__state[data-state="incident"] {
+  --ow-dot-color: var(--ow-fail);
+}
+.ow-rail__state[data-state="ask"] {
+  --ow-dot-color: var(--ow-ask);
+}
+.ow-rail__state[data-state="waiting"] {
+  animation: ow-blink var(--ow-blink) steps(2, start) infinite;
+}
+.ow-rail {
+  display: none;
+  overflow-y: auto;
+}
+
+/* 창 너비 구간 (PLAN 3.2). data-mode 는 mountSidebar 가 정한다 */
+.ow-side-host[data-mode="rail"] .ow-rail {
+  display: flex;
+}
+.ow-side-host[data-mode="rail"] .ow-sidebar {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: var(--ow-z-rail-pop);
+  box-shadow: 8px 0 32px rgb(24 24 27 / 0.12);
+}
+.ow-side-host[data-mode="rail"].is-pop .ow-sidebar {
+  display: flex;
+}
+.ow-side-host[data-mode="select"] {
+  height: auto;
+  width: 100%;
+}
+.ow-side-host[data-mode="select"] .ow-sidebar {
+  display: none;
+}
+.ow-side-host[data-mode="select"] .ow-side-band {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.ow-side-select {
+  height: 32px;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #d4d4d8;
+  border-radius: var(--ow-radius-md);
+  padding: 0 10px;
+  background: #fff;
+  font: 500 13px var(--ow-font-sans);
+  color: var(--ow-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ow-row.is-new {
+    animation: none;
+  }
+  .ow-rail__state[data-state="waiting"] {
+    animation: none;
+  }
+}

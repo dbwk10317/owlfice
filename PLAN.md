@@ -1370,7 +1370,9 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 유휴 CPU | < 2% |
 | 메모리 | < 150MB (WebView2 포함) |
 
-한 호스트의 Hot 틱이 200ms를 연속 5회 넘기면 그 호스트만 400ms로 늦추고 로그에 남긴다. WSL이면 그 사무실에 "통신 지연" 구름(S46)을 띄운다. 다른 호스트는 영향 없다.
+이 PC 실측 (release, 실제 기록 팀 36·직원 135, Probe·WebView2 제외. 확인됨): 시작 때 전체 재구성 약 1~1.4초, 그 뒤 유휴 CPU 한 코어의 0.5~0.6%, 백엔드 메모리 약 22MB. 파일 크기는 측정 조건(5MB+2MB×4)과 다르다.
+
+한 호스트의 Hot 틱이 200ms를 연속 5회 넘기면 그 호스트만 400ms로 늦추고 로그에 남긴다. 연속 5회 200ms 이하면 되돌린다. WSL이면 그 사무실에 "통신 지연" 구름(S46)을 띄운다. 다른 호스트는 영향 없다.
 
 ### 4.11 로그와 진단 (`diag.rs`)
 
@@ -1497,6 +1499,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | Codex exec 분류 | `cmd:` 리터럴을 뽑아 classify_command (4.6.2). 변수·템플릿 문자열로 만든 명령은 못 뽑는다. CLI 표본에서 명령 하나의 CommandExecution item이 빠진 일이 있다 (`git init` 이 읽기 전용 파일시스템에서 실패) | 실제 사용에서 Script로 떨어진 비율 보기 (미대응 로그), 같은 명령을 쓰기 가능한 폴더에서 다시 | T08, T38 |
 | 세션 등록부 허가 대기 `status` | `idle`·`busy` 확인. 허가 창이 떠 있을 때의 값은 미확인. 타 프로젝트(c9watch) fixture는 `waiting` + `waitingFor` (CC 2.1.280, macOS CLI) | 허가 창을 띄운 채 등록부 보기 (Desktop Code 탭·Windows에서). 확인되면 4.7.2의 Claude 허가 대기 행이 Confirmed로 산다 | T02, T11 |
 | WSL 핸들이 깨우는 경우 | 근무 중인 팀의 핸들만 쥔다 (4.4.2). 근무 중에 사용자가 배포판을 직접 끄면 다음 핸들 접근이 한 번 깨울 수 있고, 꺼진 배포판의 핸들을 쥔 채 앱을 끄면 종료가 깨울 수 있다 (T12 실측) | 근무 중 terminate 뒤 Hot 한 번의 영향, 앱 종료 때 영향을 실측. 줄일 길이 있으면 (예: 그 배포판 Probe 를 짧게) T31 에서 | T12, T31 |
+| 옛 방식 삭제·Probe 일시 실패 | 핸들을 쥔 동안 옛 방식(비 POSIX)으로 지운 메인 파일은 나열에 계속 보여 "두 번 연속 없음"이 오지 않을 수 있다. Probe 가 Site 를 한 번 덜 돌려주면 그 루트의 리더를 버려 다시 생길 때까지 팀이 언다 (둘 다 T12 리뷰 뒤 추정) | 다른 도구로 지운 세션, Probe 실패를 주입해 보기 | T12 |
 | 등록부 pid 재사용·`procStart` | `startedAt` 과 프로세스 생성 시각 비교로 재사용을 거른다 (4.4.1). Windows 생성 시각은 `GetProcessTimes` 라 `windows-sys` 직접 의존이 필요할 수 있다 | T02에서 std로 되는지 먼저 본다. 안 되면 crate 추가는 메인 허락 | T02 |
 | WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T03, T12 |
 | WSL 홈의 `.claude`·`.codex` 가 `/mnt/c` 심링크인 구성 | WSL Site가 Windows Site와 같은 파일을 가리켜 세션이 두 번 잡힐 수 있다 (추정) | 심링크 구성에서 probe로 두 Site의 파일 ID 대조. 겹치면 WSL 쪽을 뺀다 | T12 |

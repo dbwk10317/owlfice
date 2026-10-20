@@ -6,8 +6,7 @@ import {
   CANVAS_H,
   CANVAS_W,
   gridToScreen,
-  hexToNumber,
-  partitionTint,
+  hexToRgb,
   spriteName,
   themeOf,
   tileFrame,
@@ -23,12 +22,12 @@ const MINI_H = 74;
 const LIGHT_MS = 1500;
 const RESIZE_DEBOUNCE_MS = 100;
 
-/** 배율은 장치 픽셀 기준 정수 (PLAN 3.2). 백킹은 장치 픽셀, CSS 크기는 소수여도 된다. */
-export function canvasScale(availW: number, availH: number, dpr: number) {
-  const scale = Math.max(
-    1,
-    Math.floor(Math.min((availW * dpr) / CANVAS_W, (availH * dpr) / CANVAS_H)),
-  );
+/**
+ * 배율은 장치 픽셀 기준 정수 (PLAN 3.2). 백킹은 장치 픽셀, CSS 크기는 소수여도 된다.
+ * 사용 가능 크기도 장치 픽셀로 받는다. 반올림한 CSS px 에 DPR 을 곱하면 실제보다 커져 배율이 한 단계 올라간다.
+ */
+export function canvasScale(availDevW: number, availDevH: number, dpr: number) {
+  const scale = Math.max(1, Math.floor(Math.min(availDevW / CANVAS_W, availDevH / CANVAS_H)));
   return {
     scale,
     backingW: CANVAS_W * scale,
@@ -39,11 +38,20 @@ export function canvasScale(availW: number, availH: number, dpr: number) {
 }
 
 /**
- * 창 크기 구간 (HANDOFF 2.2): 너비 720 미만은 가로로, 높이 480 미만은 세로로도 끌어서 이동.
- * 실제로 끌리는 것은 그 축에서 캔버스가 무대보다 클 때뿐이다.
+ * 패닝은 축마다 캔버스(백킹)가 무대(장치 픽셀)보다 클 때만 열린다 (HANDOFF 2.2, 11).
+ * 무대는 가운데 정렬이라 넘친 만큼 양쪽으로 반씩 나간다. 반환은 CSS px.
  */
-export function viewMode(winW: number, winH: number): { panX: boolean; panY: boolean } {
-  return { panX: winW < 720, panY: winH < 480 };
+export function panLimits(
+  backingW: number,
+  backingH: number,
+  availDevW: number,
+  availDevH: number,
+  dpr: number,
+): { maxX: number; maxY: number } {
+  return {
+    maxX: Math.max(0, backingW - availDevW) / 2 / dpr,
+    maxY: Math.max(0, backingH - availDevH) / 2 / dpr,
+  };
 }
 
 /** 1× 캔버스 좌표 → 캔버스 왼쪽 위 기준 CSS px (HANDOFF 6.1). */
@@ -99,11 +107,15 @@ export function buildScene(
       base.addChild(placeSprite(sheet, tileFrame(fp, i, j, theme, incident), p.x, p.y));
     }
 
-  const placements = fp.layouts[kind].placements.filter((pl) => pl.visible !== false);
+  // 장애 빛은 평면도 기본이 숨김이고 장애 중에만 보인다 (참조 make_canvas_images 와 같다)
+  const placements = fp.layouts[kind].placements.filter(
+    (pl) => pl.visible !== false || (incident && pl.id === "glow_incident"),
+  );
   // 깔개·벽 소품은 바닥 위에 배열 순서로, 월드는 depth 로 (render_scene 3·4단계)
   placements.forEach((pl, seq) => {
     const key = `${spriteName(pl, theme)}/${pl.state}`;
-    const tint = pl.id.startsWith("dev_part_") ? partitionTint(fp, theme) : undefined;
+    // ponytail: 중소기업 좌석의 팀 색은 직원을 앉히는 T20 에서 넣는다, 지금은 빈자리 색(테마 cubicle)만
+    const tint = pl.id.startsWith("dev_part_") ? fp.themes[theme].cubicle : undefined;
     const s = placeSprite(
       sheet,
       key,
@@ -133,10 +145,6 @@ interface OfficeStore {
 
 type Rgb = [number, number, number];
 const WHITE: Rgb = [255, 255, 255];
-const rgbOf = (hex: string): Rgb => {
-  const n = hexToNumber(hex);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-};
 
 /** `stage` 는 가운데 무대(`.ow-stage`). 캔버스·방 이름표·미니맵을 그 안에 만든다. */
 export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promise<void> {
@@ -167,9 +175,12 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
 
   let scene: Scene | null = null;
   let sceneKey = "";
+  let officeId = "";
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
   let fit = canvasScale(CANVAS_W, CANVAS_H, 1);
   let dpr = 1;
+  // 무대의 사용 가능 크기, 장치 픽셀
+  let avail = { w: CANVAS_W, h: CANVAS_H };
   const pan = { x: 0, y: 0, maxX: 0, maxY: 0 };
 
   // ---------- 조명: 바뀌면 1.5초 보간 ----------
@@ -178,7 +189,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   let lightCur: Rgb = WHITE;
   let lightT = 1;
   function setLight(name: LightName | null, immediate: boolean): void {
-    const to = name ? rgbOf(fp.lightTints[name]) : WHITE;
+    const to = name ? hexToRgb(fp.lightTints[name]) : WHITE;
     if (to.every((v, i) => v === lightTo[i])) return;
     lightFrom = immediate ? to : lightCur;
     lightTo = to;
@@ -197,22 +208,33 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
     const { list, office, selectedId } = store.state;
     if (!list) return;
     // 사무실을 바꾸는 중(선택은 있고 office 는 아직 null)에는 테마가 잠깐 바뀌어 깜빡이지 않게 지금 화면을 둔다
+    // ponytail: 선택 응답이 끝내 안 오면 옛 사무실이 남는다, 사무실 전환 티켓(T28)에서 상한을 정한다
     if (!office && selectedId !== null && scene) return;
-    const kind: Kind = list.scale === "Small" ? "small" : "large";
+    // 규모는 office 에서 읽는다. 설정 전환과 늦은 선택 응답이 겹쳐도 small 평면도에 대기업 팀이 섞이지 않는다
+    const kind: Kind = office
+      ? office.officeId.startsWith("vendor/")
+        ? "small"
+        : "large"
+      : list.scale === "Small"
+        ? "small"
+        : "large";
     const theme = themeOf(office?.teams[0]?.building);
     const incident = office?.shared.incident ?? false;
     const key = `${kind}|${theme}|${incident}`;
-    const first = !scene;
+    const switched = !scene || (office?.officeId ?? "") !== officeId;
     if (key !== sceneKey) {
+      // 새 장면을 다 지은 뒤에 옛것을 지운다. 짓다 던져도 화면은 옛 장면이 남는다
+      const next = buildScene(assets, kind, theme, incident);
       scene?.root.destroy({ children: true });
-      scene = buildScene(assets, kind, theme, incident);
+      scene = next;
       app.stage.addChild(scene.root);
       sceneKey = key;
       buildLabels(kind);
     }
+    officeId = office?.officeId ?? "";
     // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
     const off = !office || office.teams.every((t) => t.phase === "Off");
-    setLight(off ? "off" : office.shared.night ? "night" : null, first);
+    setLight(off ? "off" : office.shared.night ? "night" : null, switched);
     stepLight(0);
   }
 
@@ -240,9 +262,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   // ---------- 배율·패닝 ----------
   function layout(): void {
     dpr = window.devicePixelRatio || 1;
-    const availW = stage.clientWidth;
-    const availH = stage.clientHeight;
-    fit = canvasScale(availW, availH, dpr);
+    fit = canvasScale(avail.w, avail.h, dpr);
     if (app.renderer.width !== fit.backingW || app.renderer.height !== fit.backingH)
       app.renderer.resize(fit.backingW, fit.backingH);
     app.stage.scale.set(fit.scale);
@@ -251,10 +271,9 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
       el.style.height = `${fit.cssH}px`;
     }
     placeLabels();
-    const mode = viewMode(window.innerWidth, window.innerHeight);
-    // 무대는 가운데 정렬이라 넘친 만큼 양쪽으로 반씩 나간다
-    pan.maxX = mode.panX ? Math.max(0, fit.cssW - availW) / 2 : 0;
-    pan.maxY = mode.panY ? Math.max(0, fit.cssH - availH) / 2 : 0;
+    const lim = panLimits(fit.backingW, fit.backingH, avail.w, avail.h, dpr);
+    pan.maxX = lim.maxX;
+    pan.maxY = lim.maxY;
     const panning = pan.maxX > 0 || pan.maxY > 0;
     stage.classList.toggle("is-panning", panning);
     minimap.hidden = !panning;
@@ -267,12 +286,14 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
     wrap.style.transform = pan.x || pan.y ? `translate(${pan.x}px, ${pan.y}px)` : "";
     if (minimap.hidden) return;
     // 보이는 영역 = 무대 ∩ 캔버스, 캔버스 좌표로
-    const left = (stage.clientWidth - fit.cssW) / 2 + pan.x;
-    const top = (stage.clientHeight - fit.cssH) / 2 + pan.y;
+    const stageW = avail.w / dpr;
+    const stageH = avail.h / dpr;
+    const left = (stageW - fit.cssW) / 2 + pan.x;
+    const top = (stageH - fit.cssH) / 2 + pan.y;
     const x0 = Math.max(0, -left);
     const y0 = Math.max(0, -top);
-    const x1 = Math.min(fit.cssW, stage.clientWidth - left);
-    const y1 = Math.min(fit.cssH, stage.clientHeight - top);
+    const x1 = Math.min(fit.cssW, stageW - left);
+    const y1 = Math.min(fit.cssH, stageH - top);
     const kx = MINI_W / fit.cssW;
     const ky = MINI_H / fit.cssH;
     miniView.style.left = `${x0 * kx}px`;
@@ -296,9 +317,18 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   wrap.addEventListener("pointerup", endDrag);
   wrap.addEventListener("pointercancel", endDrag);
 
+  // 소수 CSS px 를 반올림하지 않도록 장치 픽셀 크기를 그대로 받는다
+  function measure(): void {
+    const r = stage.getBoundingClientRect();
+    const d = window.devicePixelRatio || 1;
+    avail = { w: Math.floor(r.width * d), h: Math.floor(r.height * d) };
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   // device-pixel-content-box: CSS 크기는 그대로인데 DPR 만 바뀌어도(모니터 이동, 배율 변경) 다시 맞춘다
-  new ResizeObserver(() => {
+  new ResizeObserver((entries) => {
+    const box = entries[entries.length - 1]?.devicePixelContentBoxSize?.[0];
+    if (box) avail = { w: box.inlineSize, h: box.blockSize };
+    else measure();
     clearTimeout(timer);
     timer = setTimeout(layout, RESIZE_DEBOUNCE_MS);
   }).observe(stage, { box: "device-pixel-content-box" });
@@ -314,7 +344,12 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
     (t) => {
       if (dirty) {
         dirty = false;
-        apply();
+        // 던지면 Pixi Ticker 가 멈춰 캔버스가 영원히 빈다. 알리고 다음 틱으로
+        try {
+          apply();
+        } catch (e) {
+          console.error("사무실 장면 적용 실패", e);
+        }
       }
       if (lightT < 1) stepLight(t.deltaMS);
     },
@@ -324,7 +359,10 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   // 앱의 렌더(LOW) 뒤라 WebGL 버퍼가 아직 살아 있다 (preserveDrawingBuffer 없이 복사)
   app.ticker.add(
     () => {
-      if (!minimap.hidden && miniCtx) miniCtx.drawImage(app.canvas, 0, 0, MINI_W, MINI_H);
+      if (!minimap.hidden && miniCtx) {
+        miniCtx.clearRect(0, 0, MINI_W, MINI_H);
+        miniCtx.drawImage(app.canvas, 0, 0, MINI_W, MINI_H);
+      }
     },
     undefined,
     UPDATE_PRIORITY.UTILITY,
@@ -333,5 +371,6 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
     if (document.hidden) app.ticker.stop();
     else app.ticker.start();
   });
+  measure();
   layout();
 }

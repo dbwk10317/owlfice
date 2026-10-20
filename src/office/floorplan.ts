@@ -71,7 +71,9 @@ export function parseFloorplan(raw: unknown): Floorplan {
     fp.origin?.y === ORIGIN_Y &&
     Array.isArray(fp.layouts?.large?.placements) &&
     Array.isArray(fp.layouts?.small?.placements) &&
+    fp.rooms !== null &&
     typeof fp.rooms === "object" &&
+    fp.themes !== null &&
     typeof fp.themes === "object";
   if (!ok)
     throw new Error("floorplan.json 형식이 렌더러와 맞지 않는다 (version·canvas1x·origin·layouts)");
@@ -90,7 +92,7 @@ export function themeOf(building: string | undefined): Theme {
   return "claude";
 }
 
-export function roomAt(fp: Floorplan, i: number, j: number): string | undefined {
+function roomAt(fp: Floorplan, i: number, j: number): string | undefined {
   for (const [key, r] of Object.entries(fp.rooms)) {
     const [a, b, c, d] = r.rect;
     if (a <= i && i < c && b <= j && j < d) return key;
@@ -126,12 +128,8 @@ export function zIndexOf(depth: number, seq: number): number {
   return Math.round(depth * 1000) * 10000 + seq;
 }
 
-export function hexToNumber(hex: string): number {
-  return Number.parseInt(hex.slice(1), 16);
-}
-
-/** 파티션 곱하기 색 (HANDOFF 6.5). */
-// ponytail: 중소기업 좌석의 팀 색은 직원을 앉히는 T20 에서 넣는다, 지금은 빈자리 색(테마 cubicle)만
-export function partitionTint(fp: Floorplan, theme: Theme): string {
-  return fp.themes[theme].cubicle;
+/** "#rrggbb" → [r, g, b]. */
+export function hexToRgb(hex: string): [number, number, number] {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }

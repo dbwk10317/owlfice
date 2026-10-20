@@ -9,7 +9,7 @@ const CASES: [Kind, Theme][] = [
   ["large", "claude"],
   ["small", "codex"],
 ];
-// 반투명 픽셀은 채널당 이만큼 허용 (HANDOFF 6.7)
+// 참조가 반투명인 픽셀은 채널당 이만큼 허용 (HANDOFF 6.7)
 const TOLERANCE = 2;
 
 declare global {
@@ -28,6 +28,17 @@ async function loadRef(name: string): Promise<Uint8ClampedArray> {
   const ctx = c.getContext("2d", { willReadFrequently: true })!;
   ctx.drawImage(img, 0, 0);
   return ctx.getImageData(0, 0, CANVAS_W, CANVAS_H).data;
+}
+
+/** 미리 곱한 알파를 나눠 곧은 알파로 돌려 화면에 보인다 (putImageData 는 곧은 알파를 받는다). */
+function unpremultiply(data: Uint8ClampedArray): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    for (let k = 0; k < 3; k++) out[i + k] = a ? Math.round((data[i + k] * 255) / a) : 0;
+    out[i + 3] = a;
+  }
+  return out;
 }
 
 function show(parent: HTMLElement, data: Uint8ClampedArray): void {
@@ -51,7 +62,8 @@ function compare(
   let count = 0;
   for (let i = 0; i < ref.length; i += 4) {
     const a = ref[i + 3];
-    const opaque = a === 255 && got[i + 3] === 255;
+    // ponytail: 반투명 소품(김·장애 빛) 자리 ±2 는 그 소품이 참조에 들어오는 T23·T26 에서 마스크로
+    const opaque = a === 255;
     let bad = false;
     for (let k = 0; k < 4; k++) {
       const want = k === 3 ? a : Math.round((ref[i + k] * a) / 255);
@@ -89,7 +101,7 @@ async function main(): Promise<void> {
     if (count) h.className = "bad";
     sec.append(h);
     show(sec, ref);
-    show(sec, pixels);
+    show(sec, unpremultiply(pixels));
     show(sec, diff);
     out.append(sec);
   }

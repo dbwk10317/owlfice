@@ -86,4 +86,6 @@ test("바닥 타일 규칙: 팀장실은 테마 카펫, 장애 상황실은 장�
 test("렌더러 상수와 다른 평면도는 거부한다", () => {
   expect(() => parseFloorplan({ ...rawFloorplan, canvas1x: { w: 640, h: 320 } })).toThrow();
   expect(() => parseFloorplan(null)).toThrow();
+  expect(() => parseFloorplan({ ...rawFloorplan, rooms: null })).toThrow();
+  expect(() => parseFloorplan({ ...rawFloorplan, themes: null })).toThrow();
 });

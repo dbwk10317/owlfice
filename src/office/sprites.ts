@@ -1,6 +1,6 @@
 // 사무실 시트를 읽고 시트 규약(HANDOFF 6.3)대로 스프라이트를 만든다.
 import { Assets, Sprite, Spritesheet, Texture } from "pixi.js";
-import { hexToNumber, parseFloorplan, type Floorplan } from "./floorplan.ts";
+import { hexToRgb, parseFloorplan, type Floorplan } from "./floorplan.ts";
 
 interface FrameData {
   frame: { x: number; y: number; w: number; h: number };
@@ -65,10 +65,7 @@ export function tintedTexture(sheet: Spritesheet, key: string, hex: string): Tex
   if (!ctx) throw new Error("2d 컨텍스트를 만들 수 없다");
   ctx.drawImage(sheet.textureSource.resource as CanvasImageSource, x, y, w, h, 0, 0, w, h);
   const img = ctx.getImageData(0, 0, w, h);
-  const t = hexToNumber(hex);
-  const tr = (t >> 16) & 255;
-  const tg = (t >> 8) & 255;
-  const tb = t & 255;
+  const [tr, tg, tb] = hexToRgb(hex);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     d[i] = Math.floor((d[i] * tr) / 255);

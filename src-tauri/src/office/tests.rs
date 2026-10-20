@@ -2324,6 +2324,25 @@ fn bubble_needs_boss_gets_only_waiting_bubbles() {
 }
 
 #[test]
+fn backtick_in_command_does_not_flip_code_pairs() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("echo `date`")));
+    assert_eq!(
+        s.boss().activity.sentence,
+        "`echo \u{02CB}date\u{02CB}` 실행 중 · {elapsed}째"
+    );
+}
+
+#[test]
+fn waiting_user_boss_paces() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, text("확인 부탁드립니다"));
+    s.tick(144);
+    let a = &s.boss().activity;
+    assert_eq!((a.room, a.pose), (Room::TeamLead, Pose::Pace));
+}
+
+#[test]
 fn elapsed_flag_marks_only_our_slot() {
     let mut s = Sim::new();
     s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("cargo run")));

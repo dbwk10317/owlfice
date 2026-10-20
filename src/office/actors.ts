@@ -6,8 +6,8 @@ import { gridToScreen, themeOf, zIndexOf, type Floorplan, type Kind } from "./fl
 import { placeSprite } from "./sprites.ts";
 
 const BLINK_MS = 150;
-// ponytail: "+n" 배지(ow-parallel)는 Activity.extra 가 DTO 에 아직 없어 뺐다, 백엔드가 보내면 head 기준점 +14,+6 에 붙인다
 const ZZ_OFFSET: [number, number] = [6, -10];
+const BADGE_OFFSET: [number, number] = [14, 6];
 
 export interface OwlMeta {
   anchor: [number, number];
@@ -48,6 +48,8 @@ interface Rule {
   /** "seat" 는 자기 좌석, 아니면 floorplan.stands 이름을 이은 목록 */
   at: "seat" | string[];
   look: Look;
+  /** 서 있는 자리 이름별로 자세가 다를 때 (탕비실: 콘솔 sit, 안마의자 sleep, 그 밖 idle) */
+  looks?: Record<string, Look>;
   /** 목록에서 먼저 볼 자리. 장애 상황실 0번은 부장 몫이다 */
   from?: number;
 }
@@ -55,9 +57,10 @@ interface Rule {
 const IDLE: Look = { pose: "idle", dir: "f" };
 const SIT: Look = { pose: "sit", dir: "f" };
 
-const SEAT_LOOK: Record<Pose, Look> = {
+const SEAT_LOOK: Record<Exclude<Pose, "Pace">, Look> = {
   Sit: SIT,
   Type: { pose: "type", dir: "f" },
+  Read: { pose: "read", dir: "f" },
   // 창 쪽으로 돌아앉음
   Think: { pose: "idle", dir: "b" },
   Duck: { pose: "carry", dir: "f", held: "duck" },
@@ -74,7 +77,12 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
   Meeting: { at: ["meeting"], look: IDLE },
   Shipping: { at: ["shipping"], look: { pose: "carry", dir: "f", held: "box_carry" } },
   Door: { at: ["door_wait", "door"], look: { pose: "carry", dir: "f", held: "clipboard" } },
-  Pantry: { at: ["pantry_console", "pantry"], look: SIT },
+  // 서브 종료 (HANDOFF 5절): 첫째 콘솔, 둘째 안마의자, 그다음은 탕비실에 서 있는다
+  Pantry: {
+    at: ["pantry_console", "pantry_massage", "pantry"],
+    look: SIT,
+    looks: { pantry_console: SIT, pantry_massage: SEAT_LOOK.Sleep, pantry: IDLE },
+  },
   // 백엔드는 팀원을 장애 상황실로 보내지 않지만 표대로 둔다
   Incident: { at: ["incident"], look: IDLE, from: 1 },
   // 부장 아닌 직원이 팀장실, 부장이 개발실에 있을 때
@@ -85,13 +93,17 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
 /** 방·자세 → 자리와 sprite 자세. null 은 그리지 않는다 (외근). */
 export function placeRule(room: Room, pose: Pose, boss: boolean): Rule | null {
   if (room === "Outside") return null;
+  // 결재 대기. 왕복 걷기는 T22 라 그때까지 boss_pace 에 서 있는다
+  // ponytail: 왕복 없이 첫 자리에 idle, 걷기 티켓(T22)에서 두 자리를 오간다
+  if (pose === "Pace") return { at: ["boss_pace"], look: IDLE };
   if (room === (boss ? "TeamLead" : "Dev")) return { at: "seat", look: SEAT_LOOK[pose] };
   if (room === "Incident" && boss) return { at: ["incident"], look: { pose: "panic", dir: "f" } };
   if (room === "Pantry" && pose === "Sleep")
     return { at: ["pantry_sofa", "pantry_massage"], look: SEAT_LOOK.Sleep };
   const rule = ROOM_RULE[room];
   if (!rule) return null;
-  if (pose === "Squat" || pose === "Sleep") return { ...rule, look: SEAT_LOOK[pose] };
+  if (pose === "Squat" || pose === "Sleep")
+    return { ...rule, looks: undefined, look: SEAT_LOOK[pose] };
   return rule;
 }
 
@@ -108,12 +120,15 @@ interface Spot {
   gy: number;
   z: number;
   depth: number;
+  look?: Look;
 }
 
 export interface Placed {
   emp: EmployeeDto;
   team: TeamDto;
   spot: string;
+  /** 자리가 모자라 마지막 자리에 겹쳤다 */
+  overflow: boolean;
   x: number;
   y: number;
   depth: number;
@@ -121,31 +136,37 @@ export interface Placed {
 }
 
 /** 참조 렌더(Python round)와 같은 은행가 반올림. 의자·소파 자리 몇 곳이 정확히 .5 에 떨어진다. */
-function roundEven(v: number): number {
+export function roundEven(v: number): number {
   const f = Math.floor(v);
   const d = v - f;
   if (d !== 0.5) return Math.round(v);
   return f % 2 === 0 ? f : f + 1;
 }
 
-function standSpots(fp: Floorplan, kind: Kind, names: string[]): Spot[] {
+function standSpots(fp: Floorplan, kind: Kind, rule: Rule & { at: string[] }): Spot[] {
   const placements = fp.layouts[kind].placements;
-  return names.flatMap((name) =>
+  return rule.at.flatMap((name) =>
     (fp.stands[name] ?? []).map(([gx, gy, z = 0], i) => {
       const on = SIT_ON[name] && placements.find((p) => p.id === SIT_ON[name]);
-      return { id: `${name}_${i}`, gx, gy, z, depth: on ? on.depth : gx + gy };
+      return {
+        id: `${name}_${i}`,
+        gx,
+        gy,
+        z,
+        depth: on ? on.depth : gx + gy,
+        look: rule.looks?.[name],
+      };
     }),
   );
 }
 
-/** 좌석 목록과 그중 이 직원의 번호. 번호가 없으면 마지막 자리에 겹친다. */
 function seatSpots(
   fp: Floorplan,
   kind: Kind,
   team: TeamDto,
   emp: EmployeeDto,
   boss: boolean,
-): { spots: Spot[]; index: number } | null {
+): { spots: Spot[]; index: number } {
   const s = fp.layouts[kind].seats;
   const toSpot = (seat: { id: string; gx: number; gy: number; depth: number }): Spot => ({
     ...seat,
@@ -153,13 +174,12 @@ function seatSpots(
   });
   if (!boss) {
     const spots = [...s.dev, ...s.temp].map(toSpot);
-    // ponytail: 백엔드는 10명째 뒤 직원에게 좌석을 안 준다(카드만). 문서(3.4)대로 마지막 임시 책상에 겹친다, 만석 쪽지는 소품 티켓(T23)
+    // ponytail: 백엔드는 10명째 뒤 직원에게 좌석을 안 준다(카드만). 문서(3.4)대로 마지막 임시 책상에 겹치고 만석 쪽지를 붙인다
     return { spots, index: emp.seat ?? spots.length - 1 };
   }
   if (kind === "large") return { spots: s.boss.map(toSpot), index: 0 };
-  // 팀장석 0~3, 간이 4~5, 그 밖은 카드만 (PLAN 4.7.9)
-  if (team.deskSlot === null) return null;
-  return { spots: [...s.boss, ...s.spare].map(toSpot), index: team.deskSlot };
+  // 팀장석 0~3, 간이 4~5 (PLAN 4.7.9). deskSlot null 은 layoutActors 가 먼저 거른다
+  return { spots: [...s.boss, ...s.spare].map(toSpot), index: team.deskSlot ?? 0 };
 }
 
 /**
@@ -174,24 +194,26 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
     if (team.phase === "Off") continue;
     team.employees.forEach((emp, i) => {
       const boss = i === 0;
+      // 팀장석·간이 책상이 다 찬 팀은 카드만 (PLAN 3.4). 상황실·탕비실에서도 자리를 차지하지 않는다
+      if (boss && kind === "small" && team.deskSlot === null) return;
       const rule = placeRule(emp.activity.room, emp.activity.pose, boss);
       if (!rule) return;
       let spots: Spot[];
       let start: number;
       if (rule.at === "seat") {
         const seat = seatSpots(fp, kind, team, emp, boss);
-        if (!seat) return;
         spots = seat.spots;
         start = seat.index;
       } else {
-        spots = standSpots(fp, kind, rule.at);
+        spots = standSpots(fp, kind, { ...rule, at: rule.at });
         start = rule.from ?? 0;
       }
       if (spots.length === 0) return;
       start = Math.min(Math.max(0, start), spots.length - 1);
       let k = start;
       while (k < spots.length && used.has(spots[k].id)) k++;
-      // ponytail: 자리가 모자라면 마지막 자리에 겹친다, 겹침 연출(만석 쪽지 등)은 T23·T29
+      const overflow = k >= spots.length;
+      // ponytail: 자리가 모자라면 마지막 자리에 겹친다, 겹침 연출은 T29
       const spot = spots[Math.min(k, spots.length - 1)];
       used.add(spot.id);
       const p = gridToScreen(spot.gx, spot.gy, spot.z);
@@ -199,13 +221,31 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
         emp,
         team,
         spot: spot.id,
+        overflow,
         x: roundEven(p.x),
         y: roundEven(p.y),
         depth: spot.depth,
-        look: rule.look,
+        look: spot.look ?? rule.look,
       });
     });
   }
+  return out;
+}
+
+/**
+ * 평면도가 숨겨 둔 소품 중 지금 보여야 할 것: 임시·간이 책상과 쪽지 (HANDOFF 6.5).
+ * 만석 쪽지는 임시 책상 쪽지와 같은 자리에 놓고 그것을 대신한다.
+ */
+export function seatProps(fp: Floorplan, kind: Kind, placed: Placed[]): Set<string> {
+  const s = fp.layouts[kind].seats;
+  const out = new Set<string>();
+  for (const p of placed) {
+    const seat = [...s.temp, ...s.spare].find((x) => x.id === p.spot);
+    if (!seat) continue;
+    out.add(seat.desk);
+    if (s.temp.includes(seat)) out.add(p.overflow ? "note_full" : "note_temp");
+  }
+  if (out.has("note_full")) out.delete("note_temp");
   return out;
 }
 
@@ -269,13 +309,14 @@ interface Actor {
   outfit: string;
   role: string | null;
   look: Look;
+  spot: string;
   x: number;
   y: number;
-  flip: boolean;
   animStart: number;
   nextBlink: number;
   emp: EmployeeDto;
   zz: HTMLElement | null;
+  badge: HTMLElement | null;
 }
 
 type ToCss = (x: number, y: number) => { left: number; top: number };
@@ -289,16 +330,12 @@ export class ActorLayer {
   private nametagName: HTMLElement;
   private nametagText: HTMLElement;
 
-  /**
-   * `office` 는 손에 드는 물건(held_*)을 꺼내는 사무실 시트, `overlay` 는 이름표·Zzz 를 넣을 DOM 층.
-   * `random` 은 눈 깜빡임 간격용 (테스트에서 고정).
-   */
+  /** `office` 는 손에 드는 물건(held_*)을 꺼내는 사무실 시트, `overlay` 는 이름표·Zzz·배지를 넣을 DOM 층. */
   constructor(
     private fp: Floorplan,
     private office: Spritesheet,
     private owls: Owls | null,
     private overlay: HTMLElement,
-    private random: () => number = Math.random,
   ) {
     const doc = overlay.ownerDocument;
     this.nametag = doc.createElement("div");
@@ -316,14 +353,15 @@ export class ActorLayer {
     for (const a of this.actors.values()) world.addChild(a.root);
   }
 
-  /** 스냅샷 전체 교체. 같은 agent_id 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. */
-  sync(office: OfficeDto | null, kind: Kind, now: number): void {
+  /** 스냅샷 전체 교체. 같은 agent_id 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. 그린 자리를 돌려준다. */
+  sync(office: OfficeDto | null, kind: Kind, now: number): Placed[] {
     const placed = office ? layoutActors(this.fp, kind, office) : [];
     const present = new Set(office?.teams.flatMap((t) => t.employees.map((e) => e.agentId)));
     for (const [id, a] of this.actors)
       if (!present.has(id)) {
         a.root.destroy({ children: true });
         a.zz?.remove();
+        a.badge?.remove();
         this.actors.delete(id);
         if (this.hovered === id) this.hover(null);
       }
@@ -336,21 +374,21 @@ export class ActorLayer {
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
       a.role = p.emp.role === "Trainee" ? null : p.emp.role.toLowerCase();
-      // ponytail: 방이 바뀌면 바로 옮긴다, 걷기·큐는 T22
-      // 왼쪽으로 옮겨 갔으면 왼쪽을 본다. 처음 놓일 때(x NaN)는 오른쪽
-      if (p.x < a.x) a.flip = true;
-      else if (p.x > a.x) a.flip = false;
+      // Pixi 는 직원이 다른 자리로 옮겨져도 pointerout 을 안 내서 이름표가 새 자리를 따라간다
+      if (a.spot !== p.spot && this.hovered === a.id) this.hover(null);
+      // ponytail: 방이 바뀌면 바로 옮긴다, 걷기·큐·좌우 반전은 T22
+      a.spot = p.spot;
       a.x = p.x;
       a.y = p.y;
       if (a.look.pose !== p.look.pose || a.look.dir !== p.look.dir) a.animStart = now;
       a.look = p.look;
       a.root.position.set(p.x, p.y);
-      a.root.scale.x = a.flip ? -1 : 1;
       a.root.zIndex = zIndexOf(p.depth, seqBase + i);
       a.root.visible = true;
       this.setHeld(a);
       this.setFrame(a, 0);
       this.setZz(a);
+      this.setBadge(a);
       if (!a.root.parent && this.world) this.world.addChild(a.root);
     });
     for (const a of this.actors.values())
@@ -358,13 +396,16 @@ export class ActorLayer {
         a.root.visible = false;
         a.zz?.remove();
         a.zz = null;
+        a.badge?.remove();
+        a.badge = null;
+        a.spot = "";
         if (this.hovered === a.id) this.hover(null);
       }
     this.placeOverlay();
     this.update(now);
+    return placed;
   }
 
-  /** 틱마다: 자세 애니메이션, 눈 깜빡임, 이름표의 경과 시간. */
   update(now: number): void {
     if (this.owls)
       for (const a of this.actors.values()) {
@@ -375,27 +416,21 @@ export class ActorLayer {
         if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
         else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
           // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
-          if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + this.random() * 2000;
+          if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
           frame = now >= a.nextBlink ? 1 : 0;
         }
         this.setFrame(a, frame);
       }
-    if (this.hovered) {
-      const a = this.actors.get(this.hovered);
-      if (a) {
-        const text = fillElapsed(a.emp.activity.sentence, a.emp.activity.since, now);
-        if (this.nametagText.textContent !== text) this.nametagText.textContent = text;
-      }
-    }
+    this.fillNametag(now);
   }
 
   /** 1× 캔버스 좌표 → 오버레이 CSS px 변환을 받아 DOM 요소를 다시 놓는다 (HANDOFF 6.1). */
   placeOverlay(toCss?: ToCss): void {
     if (toCss) this.toCss = toCss;
     for (const a of this.actors.values()) {
-      if (!a.zz) continue;
       const h = this.head(a);
-      this.put(a.zz, h.x + (a.flip ? -ZZ_OFFSET[0] : ZZ_OFFSET[0]), h.y + ZZ_OFFSET[1]);
+      if (a.zz) this.put(a.zz, h.x + ZZ_OFFSET[0], h.y + ZZ_OFFSET[1]);
+      if (a.badge) this.put(a.badge, h.x + BADGE_OFFSET[0], h.y + BADGE_OFFSET[1]);
     }
     const a = this.hovered ? this.actors.get(this.hovered) : undefined;
     if (a) {
@@ -404,7 +439,6 @@ export class ActorLayer {
     }
   }
 
-  /** 마우스를 올린 직원의 이름표 (HANDOFF 4.4). null 이면 숨긴다. */
   hover(agentId: string | null): void {
     const a = agentId ? this.actors.get(agentId) : undefined;
     this.hovered = a?.root.visible ? a.id : null;
@@ -412,14 +446,22 @@ export class ActorLayer {
     if (!a || !this.hovered) return;
     const ranks = phrases.ranks as Record<string, string>;
     this.nametagName.textContent = `${a.emp.name} ${ranks[a.emp.rank.toLowerCase()] ?? ""}`;
-    this.nametagText.textContent = "";
     this.placeOverlay();
-    this.update(Date.now());
+    this.fillNametag(Date.now());
   }
 
   /** 테스트·개발 페이지용: 지금 그린 직원의 루트 컨테이너. */
   rootOf(agentId: string): Container | undefined {
     return this.actors.get(agentId)?.root;
+  }
+
+  private fillNametag(now: number): void {
+    const a = this.hovered ? this.actors.get(this.hovered) : undefined;
+    if (!a) return;
+    const act = a.emp.activity;
+    // {elapsed} 는 백엔드가 둔 자리일 때만 채운다. 에이전트가 쓴 글 속 같은 글자는 그대로 둔다
+    const text = act.elapsed ? fillElapsed(act.sentence, act.since, now) : act.sentence;
+    if (this.nametagText.textContent !== text) this.nametagText.textContent = text;
   }
 
   private create(emp: EmployeeDto, now: number): Actor {
@@ -453,19 +495,19 @@ export class ActorLayer {
       outfit: "",
       role: null,
       look: IDLE,
+      spot: "",
       x: Number.NaN,
       y: Number.NaN,
-      flip: false,
       animStart: now,
-      nextBlink: now + 3000 + this.random() * 2000,
+      nextBlink: now + 3000 + Math.random() * 2000,
       emp,
       zz: null,
+      badge: null,
     };
     this.actors.set(id, a);
     return a;
   }
 
-  /** 아틀라스가 없을 때: 단색 사각 + 눈 (PLAN 4.9). 발 기준점이 (0,0). */
   private fallbackBody(): Graphics {
     return new Graphics()
       .rect(-6, -18, 12, 18)
@@ -498,7 +540,6 @@ export class ActorLayer {
     const anchor = this.owls.meta.anchors[`${a.look.pose}_${a.look.dir}_0`];
     if (!anchor) return;
     const [ax, ay] = this.owls.meta.anchor;
-    // 컨테이너를 뒤집으면 손 위치와 물건이 같이 뒤집혀 참조 렌더의 flip 과 같아진다
     a.held = placeSprite(
       this.office,
       `held_${name}/default`,
@@ -521,13 +562,24 @@ export class ActorLayer {
     }
   }
 
-  /** `head` 기준점의 1× 캔버스 좌표. 아틀라스가 없으면 대체 몸체 머리. */
+  private setBadge(a: Actor): void {
+    const n = a.emp.activity.extra;
+    if (n > 0 && !a.badge) {
+      a.badge = this.overlay.ownerDocument.createElement("div");
+      a.badge.className = "ow-parallel";
+      this.overlay.insertBefore(a.badge, this.nametag);
+    } else if (n <= 0 && a.badge) {
+      a.badge.remove();
+      a.badge = null;
+    }
+    if (a.badge) a.badge.textContent = `+${n}`;
+  }
+
   private head(a: Actor): { x: number; y: number } {
     const meta = this.owls?.meta;
     const anchor = meta?.anchors[`${a.look.pose}_${a.look.dir}_0`];
     if (!meta || !anchor) return { x: a.x, y: a.y - 18 };
-    const dx = anchor.head[0] - meta.anchor[0];
-    return { x: a.x + (a.flip ? -dx : dx), y: a.y + anchor.head[1] - meta.anchor[1] };
+    return { x: a.x + anchor.head[0] - meta.anchor[0], y: a.y + anchor.head[1] - meta.anchor[1] };
   }
 
   private put(el: HTMLElement, x: number, y: number): void {

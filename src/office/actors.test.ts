@@ -11,6 +11,8 @@ import {
   fnv1a64,
   layoutActors,
   owlFrameKeys,
+  roundEven,
+  seatProps,
   speciesOf,
   type OwlMeta,
   type Owls,
@@ -53,6 +55,8 @@ function emp(
       expectedSecs: null,
       pose,
       confidence: "Confirmed",
+      extra: 0,
+      elapsed: false,
     },
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },
@@ -65,6 +69,7 @@ function emp(
     confidence: "Confirmed",
     contextUsed: null,
     contextWindow: null,
+    bubble: null,
     ...o,
   };
 }
@@ -114,13 +119,7 @@ function screen(gx: number, gy: number, z = 0) {
 
 function newLayer(o: { owls?: Owls | null } = {}) {
   const overlay = document.createElement("div");
-  const layer = new ActorLayer(
-    fp,
-    officeSheet,
-    o.owls === undefined ? owls : o.owls,
-    overlay,
-    () => 0,
-  );
+  const layer = new ActorLayer(fp, officeSheet, o.owls === undefined ? owls : o.owls, overlay);
   const world = new Container();
   layer.attach(world);
   return { layer, overlay, world };
@@ -258,6 +257,60 @@ test("퇴근한 팀은 그리지 않는다", () => {
   expect(layoutActors(fp, "large", office([team("t", [boss()], { phase: "Off" })]))).toEqual([]);
 });
 
+test("결재 대기(Pace)는 부장이 boss_pace 자리에 idle", () => {
+  const p = at("large", office([team("t", [boss("TeamLead", "Pace")])]), "boss")!;
+  expect(p.spot).toBe("boss_pace_0");
+  expect(p.look).toEqual({ pose: "idle", dir: "f" });
+});
+
+test("탕비실: 첫째 콘솔 sit, 둘째 안마의자 sleep, 그다음은 서 있고, 넘치면 마지막에 겹친다", () => {
+  const ids = ["a", "b", "c", "d", "e"];
+  const o = office([
+    team("t", [boss(), ...ids.map((id) => emp(id, "Pantry", "Sit", { retiredAt: SINCE }))]),
+  ]);
+  const got = ids.map((id) => at("large", o, id)!);
+  expect(got.map((p) => [p.spot, p.look.pose])).toEqual([
+    ["pantry_console_0", "sit"],
+    ["pantry_massage_0", "sleep"],
+    ["pantry_0", "idle"],
+    ["pantry_1", "idle"],
+    ["pantry_1", "idle"],
+  ]);
+  expect(got[4].overflow).toBe(true);
+});
+
+test("deskSlot null 팀의 부장은 어디서든 그리지 않는다", () => {
+  for (const room of ["TeamLead", "Incident", "Pantry", "Door"] as const)
+    expect(
+      at("small", office([team("t", [boss(room)], { deskSlot: null })]), "boss"),
+      room,
+    ).toBeUndefined();
+});
+
+test("임시·간이 책상은 쓰는 직원이 있을 때만, 겹쳐 앉으면 만석 쪽지", () => {
+  const dev = (id: string, seat: number | null) => emp(id, "Dev", "Sit", { seat });
+  const props = (kind: Kind, teams: TeamDto[]) =>
+    seatProps(fp, kind, layoutActors(fp, kind, office(teams)));
+  expect(props("large", [team("t", [boss(), dev("a", 5)])])).toEqual(new Set());
+  expect(props("large", [team("t", [boss(), dev("a", 6), dev("b", 8)])])).toEqual(
+    new Set(["temp_desk_0", "temp_desk_2", "note_temp"]),
+  );
+  // 좌석 번호가 없으면 마지막 임시 책상에 겹친다
+  expect(props("large", [team("t", [boss(), dev("a", 9), dev("b", null)])])).toEqual(
+    new Set(["temp_desk_3", "note_full"]),
+  );
+  // 중소기업 deskSlot 4~5 는 간이 책상
+  expect(props("small", [team("t", [boss()], { deskSlot: 5 })])).toEqual(new Set(["spare_desk_1"]));
+});
+
+test("은행가 반올림: .5 는 짝수 쪽 (참조 렌더 Python round)", () => {
+  expect([0.5, 1.5, 2.5, 220.5, 221.5, -0.5, -1.5].map(roundEven)).toEqual([
+    0, 2, 2, 220, 222, 0, -2,
+  ]);
+  expect(roundEven(2.4)).toBe(2);
+  expect(roundEven(2.6)).toBe(3);
+});
+
 // ---------- 프레임 ----------
 
 test("담당 겹: 수습은 없고, 담당 프레임 없는 자세는 건너뛴다", () => {
@@ -312,15 +365,12 @@ test("세 겹을 같은 자리에, 수습은 담당 겹을 숨기고 depth 는 z
   expect(root.zIndex).toBe(8900 * 10000 + n + 1);
 });
 
-test("왼쪽으로 옮겨 가면 scale.x = −1, 오른쪽으로 오면 1", () => {
+test("옮겨 가는 방향과 상관없이 뒤집지 않는다 (같은 스냅샷은 같은 모습)", () => {
   const { layer } = newLayer();
-  // 테스트실(x≈350) → 서고(x≈212)
+  // 테스트실(x≈350) → 서고(x≈212): 왼쪽으로 옮겨도 그대로
   layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
   const root = layer.rootOf("a")!;
-  expect(root.scale.x).toBe(1);
   layer.sync(office([team("t", [boss(), emp("a", "Archive")])]), "large", NOW);
-  expect(root.scale.x).toBe(-1);
-  layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
   expect(root.scale.x).toBe(1);
 });
 
@@ -335,6 +385,8 @@ test("이름표: head 기준점을 CSS px 로, 이름 직급 + {elapsed} 를 채
       expectedSecs: null,
       pose: "Sit",
       confidence: "Confirmed",
+      extra: 0,
+      elapsed: true,
     },
   });
   layer.sync(office([team("t", [boss(), a])]), "large", NOW);
@@ -352,6 +404,48 @@ test("이름표: head 기준점을 CSS px 로, 이름 직급 + {elapsed} 를 채
   expect(tag.style.top).toBe(`${head.top}px`);
   layer.hover(null);
   expect(tag.hidden).toBe(true);
+});
+
+test("{elapsed} 는 Activity.elapsed 일 때만 채운다", () => {
+  const { layer, overlay } = newLayer();
+  const a = emp("a", "Test");
+  a.activity.sentence = "{elapsed} 초 걸렸습니다";
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  layer.hover("a");
+  expect(overlay.querySelector(".ow-nametag span")!.textContent).toBe("{elapsed} 초 걸렸습니다");
+});
+
+test("스냅샷으로 다른 자리에 옮겨지면 이름표를 닫는다", () => {
+  const { layer, overlay } = newLayer();
+  layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
+  layer.hover("a");
+  const tag = overlay.querySelector<HTMLElement>(".ow-nametag")!;
+  // 같은 자리면 그대로
+  layer.sync(office([team("t", [boss(), emp("a", "Test", "Type")])]), "large", NOW);
+  expect(tag.hidden).toBe(false);
+  layer.sync(office([team("t", [boss(), emp("a", "Archive")])]), "large", NOW);
+  expect(tag.hidden).toBe(true);
+});
+
+test("짧은 열람은 자리에서 read 자세, 병렬 호출은 +n 배지", () => {
+  const { layer, overlay } = newLayer();
+  const a = emp("a", "Dev", "Read", { seat: 0 });
+  a.activity.extra = 2;
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  expect(at("large", office([team("t", [boss(), a])]), "a")).toMatchObject({
+    spot: "dev_0",
+    look: { pose: "read", dir: "f" },
+  });
+  const badge = overlay.querySelector<HTMLElement>(".ow-parallel")!;
+  expect(badge.textContent).toBe("+2");
+  // read_f_0 의 head 는 (8, 9): 발 (x, y) 에서 (0, −14), 배지는 거기서 (+14, +6)
+  const seat = fp.layouts.large.seats.dev[0];
+  const foot = screen(seat.gx, seat.gy);
+  expect(badge.style.left).toBe(`${foot.x + 14}px`);
+  expect(badge.style.top).toBe(`${foot.y - 14 + 6}px`);
+  a.activity.extra = 0;
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  expect(overlay.querySelectorAll(".ow-parallel")).toHaveLength(0);
 });
 
 test("졸음 자세에는 Zzz, 깨면 지운다", () => {

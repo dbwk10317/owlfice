@@ -31,7 +31,16 @@ function emp(
     role,
     model: null,
     description: null,
-    activity: { sentence, room, since, expectedSecs: null, pose, confidence: "Confirmed" },
+    activity: {
+      sentence,
+      room,
+      since,
+      expectedSecs: null,
+      pose,
+      confidence: "Confirmed",
+      extra: 0,
+      elapsed: sentence.includes("{elapsed}"),
+    },
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },
     lastSay: null,
@@ -43,8 +52,14 @@ function emp(
     confidence: "Confirmed",
     contextUsed: null,
     contextWindow: null,
+    bubble: null,
     ...o,
   };
+}
+
+// 병렬 호출 수 (+n 배지)
+function parallel(e: EmployeeDto, extra: number): EmployeeDto {
+  return { ...e, activity: { ...e.activity, extra } };
 }
 
 function team(
@@ -81,6 +96,11 @@ const LARGE: OfficeDto = {
     team("t1", "A", 0, [
       emp("L-boss", "김부장", "Bujang", "Backend", "TeamLead", "Type", "보고서 작성 중"),
       emp("L-dev0", "이대리", "Daeri", "Frontend", "Dev", "Type", "app.ts 수정 중", { seat: 0 }),
+      // +n 배지: 병렬 호출 중
+      parallel(
+        emp("L-par", "서대리", "Daeri", "Backend", "Dev", "Read", "열람 중 (외 2건)", { seat: 1 }),
+        2,
+      ),
       emp("L-dev3", "박사원", "Sawon", "Qa", "Dev", "Sit", "출근 중 · 자리 찾는 중", { seat: 3 }),
       emp(
         "L-temp",
@@ -117,6 +137,13 @@ const LARGE: OfficeDto = {
       emp("L-door", "강대리", "Daeri", "Writer", "Door", "Sit", "결재판 들고 문 앞 대기"),
       emp("L-inc", "조사원", "Sawon", "DevOps", "Incident", "Sit", "장애 상황실 소집"),
       emp("L-pantry", "신대리", "Daeri", "Backend", "Pantry", "Sit", "탕비실에서 게임 중인 듯", {
+        retiredAt: since,
+      }),
+      // 탕비실 셋째부터: 콘솔 → 안마의자 → 서 있기
+      emp("L-pantry2", "문사원", "Sawon", "Qa", "Pantry", "Sit", "탕비실에서 쉬는 중", {
+        retiredAt: since,
+      }),
+      emp("L-pantry3", "배사원", "Sawon", "Qa", "Pantry", "Sit", "탕비실에서 쉬는 중", {
         retiredAt: since,
       }),
       emp("L-out", "외근자", "Sawon", "Backend", "Outside", "Sit", "외근 중 (안 보여야 한다)"),
@@ -160,8 +187,17 @@ const SMALL: OfficeDto = {
       emp("S-d1", "라사원", "Sawon", "Frontend", "Meeting", "Sit", "외주 매뉴얼 펼쳐보는 중"),
       emp("S-d2", "라대리", "Daeri", "DevOps", "Shipping", "Sit", "출고 포장 중"),
     ]),
+    // 결재 대기: 부장이 boss_pace 에 선다 (왕복 걷기는 T22)
     team("e", "C", 3, [
-      emp("S-e", "마부장", "Bujang", "Writer", "TeamLead", "Think", "턱 괴고 고민 중인 듯"),
+      emp(
+        "S-e",
+        "마부장",
+        "Bujang",
+        "Writer",
+        "TeamLead",
+        "Pace",
+        "요구사항 대기 중인 듯 · 사장님 자리 비움 {elapsed}",
+      ),
     ]),
     // 간이 책상도 찬 팀은 카드만
     team("f", "C", null, [

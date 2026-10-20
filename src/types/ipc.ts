@@ -261,7 +261,7 @@ export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" 
 /**
  * 상태가 정하는 자세. 어떤 스프라이트로 그릴지는 프론트가 정한다 (design/HANDOFF.md 5절)
  */
-export type Pose = "Sit" | "Type" | "Think" | "Duck" | "Read" | "Squat" | "Sleep";
+export type Pose = "Sit" | "Type" | "Think" | "Duck" | "Read" | "Squat" | "Sleep" | "Pace";
 
 /**
  * 선언 순서가 활발한 순서다. 사무실 단계는 팀 중 최솟값

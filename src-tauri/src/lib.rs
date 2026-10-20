@@ -1,3 +1,4 @@
+pub mod diag;
 pub mod discover;
 pub mod office;
 pub mod parse;

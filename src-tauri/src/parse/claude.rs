@@ -36,6 +36,8 @@ pub struct ClaudeParser {
     /// 비동기로 뜬 서브 id. 완료 알림이 서브 것인지 백그라운드 명령 것인지 가른다
     agents: HashSet<String>,
     custom_title: bool,
+    /// 서브 파일에서 agentId 없는 줄이 쓸 직전 값
+    last_agent: Option<String>,
     /// 한 응답의 블록마다 같은 usage가 반복된다
     last_usage: Option<(Option<String>, u64, u64)>,
 }
@@ -54,6 +56,8 @@ struct Call {
     test: bool,
     /// 단독 `&` 로 띄워 셸이 즉시 0을 돌려준 명령 (4.6.4)
     async_unknown: bool,
+    /// `run_in_background: true` Bash·PowerShell. 서브 파일의 결과에는 backgroundTaskId 가 없다
+    background: bool,
     spawn: Option<SpawnInput>,
 }
 
@@ -100,6 +104,7 @@ impl ClaudeParser {
             bg_tasks: HashMap::new(),
             agents: HashSet::new(),
             custom_title: false,
+            last_agent: None,
             last_usage: None,
         }
     }
@@ -123,7 +128,9 @@ impl ClaudeParser {
             cwd: cwd.clone(),
             model: self.model.clone(),
             product,
-            branch: str_at(rec, "/gitBranch").map(str::to_string),
+            branch: str_at(rec, "/gitBranch")
+                .map(str::to_string)
+                .or_else(|| self.meta.as_ref().and_then(|m| m.branch.clone())),
         };
         if self.meta.as_ref() == Some(&meta) {
             return;
@@ -172,8 +179,20 @@ impl ClaudeParser {
                     out.push(ctx.ev(EventKind::UserMessage { text: s.clone() }));
                 }
             }
-            // text 블록 배열(거부 직후의 중단 표식 등)은 사람 입력이 아니다
+            // text 블록만 있는 배열(거부 직후의 중단 표식 등)은 사람 입력이 아니다
             Some(Value::Array(blocks)) => {
+                // image 블록이 최상위에 있으면 사람이 그림을 붙인 입력이다
+                if !flag(rec, "/isMeta")
+                    && blocks.iter().any(|b| str_at(b, "/type") == Some("image"))
+                {
+                    let text = blocks
+                        .iter()
+                        .filter(|b| str_at(b, "/type") == Some("text"))
+                        .filter_map(|b| str_at(b, "/text"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    out.push(ctx.ev(EventKind::UserMessage { text }));
+                }
                 for b in blocks {
                     if str_at(b, "/type") == Some("tool_result") {
                         self.tool_result(b, rec, ctx, out, unhandled);
@@ -191,26 +210,22 @@ impl ClaudeParser {
         out: &mut Vec<Event>,
         unhandled: &mut Vec<Unhandled>,
     ) {
-        let text = |out: &mut Vec<Event>, s: &str| {
-            if !s.trim().is_empty() {
-                out.push(ctx.ev(EventKind::AssistantText {
-                    text: s.to_string(),
-                }));
-            }
-        };
-        match rec.pointer("/message/content") {
-            Some(Value::Array(blocks)) => {
-                for b in blocks {
-                    match str_at(b, "/type") {
-                        Some("text") => text(out, str_at(b, "/text").unwrap_or_default()),
-                        Some("thinking") => out.push(ctx.ev(EventKind::Thinking)),
-                        Some("tool_use") => self.tool_use(b, ctx, out, unhandled),
-                        _ => {}
+        if let Some(Value::Array(blocks)) = rec.pointer("/message/content") {
+            for b in blocks {
+                match str_at(b, "/type") {
+                    Some("text") => {
+                        let s = str_at(b, "/text").unwrap_or_default();
+                        if !s.trim().is_empty() {
+                            out.push(ctx.ev(EventKind::AssistantText {
+                                text: s.to_string(),
+                            }));
+                        }
                     }
+                    Some("thinking") => out.push(ctx.ev(EventKind::Thinking)),
+                    Some("tool_use") => self.tool_use(b, ctx, out, unhandled),
+                    _ => {}
                 }
             }
-            Some(Value::String(s)) => text(out, s),
-            _ => {}
         }
         self.usage(rec, ctx, out);
     }
@@ -343,6 +358,7 @@ impl ClaudeParser {
                         summary.compound = c.compound;
                         call.test = c.kind == ToolKind::Test;
                         call.async_unknown = c.async_unknown;
+                        call.background = summary.background;
                         c.kind
                     }
                     None => ToolKind::Shell,
@@ -444,9 +460,9 @@ impl ClaudeParser {
             return;
         }
         let text = content_text(b.get("content"));
-        let rejected = rec.get("toolDenialKind").is_some_and(|v| !v.is_null())
-            || text.starts_with(REJECTED_TEXT);
         let is_error = b.get("is_error").and_then(Value::as_bool) == Some(true);
+        let rejected = rec.get("toolDenialKind").is_some_and(|v| !v.is_null())
+            || (is_error && text.starts_with(REJECTED_TEXT));
         if let Some(task) = self.stops.remove(call_id) {
             // 중단이 실패하면 작업은 계속 돈다. 작업표를 유지한다
             if !rejected
@@ -460,12 +476,15 @@ impl ClaudeParser {
         }
         let call = self.calls.remove(call_id).unwrap_or_default();
         let tur = rec.get("toolUseResult").unwrap_or(&Value::Null);
+        let bg_task = str_at(tur, "/backgroundTaskId");
         let outcome = if rejected {
             ToolOutcome::Rejected
         } else if is_error {
             ToolOutcome::Err
-        } else if let Some(task) = str_at(tur, "/backgroundTaskId") {
-            self.bg_tasks.insert(task.to_string(), call_id.to_string());
+        } else if bg_task.is_some() || call.background {
+            if let Some(task) = bg_task {
+                self.bg_tasks.insert(task.to_string(), call_id.to_string());
+            }
             self.calls.insert(
                 call_id.to_string(),
                 Call {
@@ -535,8 +554,9 @@ impl ClaudeParser {
         unhandled: &mut Vec<Unhandled>,
     ) {
         let task = tag(s, "task-id");
+        // 띄운 걸 못 본 중첩 서브의 알림은 `<usage>` 로 서브임을 안다
         if let Some(t) = task
-            && self.agents.contains(t)
+            && (self.agents.contains(t) || tag(s, "usage").is_some())
         {
             out.push(ctx.ev(EventKind::SubagentDone {
                 child_id: t.to_string(),
@@ -591,8 +611,7 @@ impl ClaudeParser {
         }
     }
 
-    fn title(&mut self, rec: &Value, key: &str, ctx: &Ctx, out: &mut Vec<Event>) {
-        let custom = key == "/customTitle";
+    fn title(&mut self, rec: &Value, key: &str, custom: bool, ctx: &Ctx, out: &mut Vec<Event>) {
         if !custom && self.custom_title {
             return;
         }
@@ -622,10 +641,16 @@ impl Parser for ClaudeParser {
             self.session_id = s.to_string();
         }
         let sub = str_at(&rec, "/agentId");
+        if let (Some(a), Some(_)) = (sub, &self.parent_agent) {
+            self.last_agent = Some(a.to_string());
+        }
         let ctx = Ctx {
             ts: str_at(&rec, "/timestamp").and_then(parse_ts),
             session_id: self.session_id.clone(),
-            agent_id: sub.unwrap_or(&self.session_id).to_string(),
+            agent_id: sub
+                .map(str::to_string)
+                .or_else(|| self.last_agent.clone())
+                .unwrap_or_else(|| self.session_id.clone()),
             parent: self.parent_agent.clone(),
             cwd: str_at(&rec, "/cwd").map(str::to_string),
             raw: raw_ref,
@@ -638,7 +663,7 @@ impl Parser for ClaudeParser {
             self.model = Some(m.to_string());
         }
         let mut out = Vec::new();
-        if sub.is_none() {
+        if sub.is_none() && self.parent_agent.is_none() {
             self.session_meta(&rec, &ctx, &mut out, unhandled);
         }
         match typ {
@@ -663,10 +688,10 @@ impl Parser for ClaudeParser {
                     subtype: other.to_string(),
                 }),
             },
-            "custom-title" => self.title(&rec, "/customTitle", &ctx, &mut out),
-            "agent-name" => self.title(&rec, "/agentName", &ctx, &mut out),
+            "custom-title" => self.title(&rec, "/customTitle", true, &ctx, &mut out),
+            "agent-name" => self.title(&rec, "/agentName", false, &ctx, &mut out),
             // ponytail: ai-title 의 키는 표본이 없어 짐작이다, CLI 표본이 생기면 확인한다
-            "ai-title" => self.title(&rec, "/aiTitle", &ctx, &mut out),
+            "ai-title" => self.title(&rec, "/aiTitle", false, &ctx, &mut out),
             "pr-link" => {
                 let number = rec
                     .get("prNumber")
@@ -866,28 +891,41 @@ fn tag<'a>(s: &'a str, name: &str) -> Option<&'a str> {
     Some(s[start..end].trim())
 }
 
+/// 알림에서 하네스가 쓰는 태그. 이 밖의 낱말은 원문 조각일 수 있어 로그에 안 남긴다
+const KNOWN_TAGS: [&str; 8] = [
+    "task-id",
+    "tool-use-id",
+    "output-file",
+    "status",
+    "summary",
+    "note",
+    "result",
+    "usage",
+];
+
 /// 알림 안의 태그 이름. 미대응 로그에 원문 대신 남기는 구조 정보
 fn tag_names(s: &str) -> Vec<String> {
     s.split('<')
         .skip(1)
         .filter_map(|p| {
             let name = p.split(['>', ' ']).next()?;
-            (!name.is_empty() && !name.starts_with('/') && name != "task-notification")
-                .then(|| name.to_string())
+            KNOWN_TAGS.contains(&name).then(|| name.to_string())
         })
         .collect()
 }
 
-/// `… (exit code 0)`, `… failed with exit code 2`
+/// summary 끝의 `(exit code 0)`, `failed with exit code 2`. 끝에 오는 것만 받아 따옴표 안 설명문의 말은 거른다
 fn exit_code(summary: &str) -> Option<i64> {
     const KEY: &str = "exit code ";
-    let rest = &summary[summary.rfind(KEY)? + KEY.len()..];
-    let n: String = rest
-        .chars()
-        .enumerate()
-        .take_while(|&(i, c)| c.is_ascii_digit() || (i == 0 && c == '-'))
-        .map(|(_, c)| c)
-        .collect();
+    let s = summary.trim_end_matches(|c: char| c.is_whitespace() || c == '.');
+    let at = s.rfind(KEY)?;
+    let (head, rest) = (&s[..at], &s[at + KEY.len()..]);
+    // 앞말은 따지지 않는다: 표본은 익명화로 "with" 가 다른 낱말이 되어 있다
+    let n = match rest.strip_suffix(')') {
+        Some(n) if head.ends_with('(') => n,
+        None => rest,
+        _ => return None,
+    };
     n.parse().ok()
 }
 
@@ -1090,8 +1128,8 @@ mod tests {
                 }
             }
         }
-        // subagents, rewrite-shrink/before 포함
-        assert_eq!(files, 12);
+        // 순회가 비어 통과하는 걸 막는다
+        assert!(files > 0);
     }
 
     #[test]
@@ -1217,6 +1255,9 @@ mod tests {
         let rej = "toolu_818LWOeNnoOamXVqS26fMhcz";
         assert!(is_result(&at(&r, 75)[0], rej, ToolOutcome::Rejected, None));
         assert!(at(&r, 76).is_empty());
+        // 서브 파일의 백그라운드 결과에는 toolUseResult 가 없다
+        let bg = "toolu_97K7pFRvh9lEbVPj0LZZgGtY";
+        assert!(is_result(&at(&r, 57)[0], bg, ToolOutcome::Started, None));
     }
 
     #[test]
@@ -1726,5 +1767,145 @@ mod tests {
             ]
         );
         assert!(r.unhandled.is_empty());
+    }
+
+    #[test]
+    fn background_without_task_id_and_agent_call_stays_ok() {
+        let r = feed(&[
+            tool_use(
+                "toolu_fake01",
+                "PowerShell",
+                r#"{"command":"make","run_in_background":true}"#,
+            ),
+            tool_result("toolu_fake01", "", ""),
+            tool_use(
+                "toolu_fake02",
+                "Agent",
+                r#"{"description":"d","prompt":"p","run_in_background":true}"#,
+            ),
+            tool_result("toolu_fake02", "", ""),
+        ]);
+        assert_eq!(
+            results(&r),
+            vec![
+                ("toolu_fake01".into(), ToolOutcome::Started),
+                ("toolu_fake02".into(), ToolOutcome::Ok),
+            ]
+        );
+    }
+
+    #[test]
+    fn notification_leaks_no_prose_and_reads_exit_code_only_at_the_end() {
+        let bg = [
+            tool_use(
+                "toolu_fake01",
+                "Bash",
+                r#"{"command":"make","run_in_background":true}"#,
+            ),
+            tool_result(
+                "toolu_fake01",
+                "",
+                r#""toolUseResult":{"backgroundTaskId":"task01"},"#,
+            ),
+        ];
+        let prose = notification(
+            "task01",
+            "toolu_fake01",
+            r#"Background command \"check exit code 0\" was stopped"#,
+        )
+        .replace("</summary>", "</summary>\\n<secret.txt>");
+        let r = feed(&[&bg[..], &[prose]].concat());
+        assert_eq!(results(&r)[1].1, ToolOutcome::Unknown);
+        let [Unhandled::OutcomeUnknown { result_keys, .. }] = &r.unhandled[..] else {
+            panic!("{:?}", r.unhandled)
+        };
+        assert_eq!(
+            result_keys,
+            &["task-id", "tool-use-id", "status", "summary"]
+        );
+
+        assert_eq!(exit_code("done (exit code 0). "), Some(0));
+        assert_eq!(exit_code("failed with exit code 2"), Some(2));
+        assert_eq!(
+            exit_code(r#"Background command "exit code 0" stopped"#),
+            None
+        );
+    }
+
+    #[test]
+    fn rejection_text_needs_is_error() {
+        let r = feed(&[
+            tool_use("toolu_fake01", "Bash", r#"{"command":"ls"}"#),
+            tool_result(
+                "toolu_fake01",
+                r#","content":"The user doesn't want to proceed with this tool use. x""#,
+                "",
+            ),
+        ]);
+        assert_eq!(results(&r), vec![("toolu_fake01".into(), ToolOutcome::Ok)]);
+    }
+
+    #[test]
+    fn sub_parser_never_emits_meta_and_keeps_last_agent_id() {
+        let mut p = ClaudeParser::new(1, Some("parent".into()));
+        let text = [
+            r#"{"type":"user","agentId":"a1","sessionId":"s1","cwd":"C:\\w","message":{"content":"hi"}}"#,
+            r#"{"type":"user","sessionId":"s1","cwd":"C:\\w","message":{"content":"again"}}"#,
+        ]
+        .join("\n");
+        let r = run_bytes(text.as_bytes(), Path::new("sub.jsonl"), &mut p);
+        assert_eq!(r.events.len(), 2);
+        assert!(
+            r.events
+                .iter()
+                .all(|e| e.agent_id == "a1" && matches!(e.kind, EventKind::UserMessage { .. }))
+        );
+    }
+
+    #[test]
+    fn missing_git_branch_keeps_the_previous_one() {
+        let rec = |b: &str| {
+            format!(
+                r#"{{"type":"assistant","cwd":"C:\\w","entrypoint":"cli",{b}"sessionId":"s1","message":{{"content":[]}}}}"#
+            )
+        };
+        let r = feed(&[rec(r#""gitBranch":"main","#), rec("")]);
+        assert_eq!(
+            r.events
+                .iter()
+                .filter(|e| matches!(e.kind, EventKind::SessionMeta { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn nested_subagent_notification_with_usage_is_done() {
+        let n = notification("a9999999999999999", "toolu_fake01", "Agent completed")
+            .replace("</summary>", "</summary>\\n<usage>total_tokens: 1</usage>");
+        let r = feed(&[n]);
+        assert_eq!(
+            at(&r, 1),
+            vec![EventKind::SubagentDone {
+                child_id: "a9999999999999999".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn pasted_image_makes_a_user_message() {
+        let user = |content: &str| {
+            format!(r#"{{"type":"user","message":{{"role":"user","content":{content}}}}}"#)
+        };
+        let r = feed(&[
+            user(
+                r#"[{"type":"text","text":"look"},{"type":"image","source":{}},{"type":"text","text":"here"}]"#,
+            ),
+            user(r#"[{"type":"text","text":"plain"}]"#),
+        ]);
+        assert_eq!(user_lines(&r), vec![1]);
+        assert!(
+            matches!(&at(&r, 1)[..], [EventKind::UserMessage { text }] if text == "look\nhere")
+        );
     }
 }

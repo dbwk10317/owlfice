@@ -191,7 +191,12 @@ expectedSecs: number | null, pose: Pose, confidence: Confidence,
 /**
  * 함께 도는 호출 수. `+n` 배지와 문장의 "(외 n건)"
  */
-extra: number, };
+extra: number, 
+/**
+ * 문장에 `{elapsed}` 자리가 있나. 에이전트가 쓴 글 속의 같은 글자를 프론트가 채우지 않게,
+ * 문장 모양이 아니라 우리가 틀로 둔 자리인지로 정한다 (4.8)
+ */
+elapsed: boolean, };
 
 /**
  * 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (4.8)
@@ -205,7 +210,7 @@ at: string, say: BubbleSay, };
 /**
  * 말풍선 종류와 재료. 이름이 `phrases.ko.json` 의 `bubble` 풀과 짝이다
  */
-export type BubbleSay = { "kind": "Say", text: string, } | { "kind": "Mcp", server: string, tool: string, } | { "kind": "NewVendor", server: string, } | { "kind": "NewSkill", skill: string, } | { "kind": "Rank" } | { "kind": "Joke" } | { "kind": "Incident" } | { "kind": "AllGreen" } | { "kind": "TooLong" } | { "kind": "ThinkingDuck" } | { "kind": "PlanApproval" } | { "kind": "Scratch" } | { "kind": "Compaction" } | { "kind": "UnknownTool" } | { "kind": "ScriptFallback" } | { "kind": "UnknownResult" };
+export type BubbleSay = { "kind": "Say", text: string, } | { "kind": "Mcp", server: string, tool: string, } | { "kind": "NewVendor", server: string, } | { "kind": "NewSkill", skill: string, } | { "kind": "Rank" } | { "kind": "Incident" } | { "kind": "AllGreen" } | { "kind": "TooLong" } | { "kind": "ThinkingDuck" } | { "kind": "PlanApproval" } | { "kind": "Scratch" } | { "kind": "Compaction" } | { "kind": "UnknownTool" } | { "kind": "ScriptFallback" } | { "kind": "UnknownResult" };
 
 /**
  * 오늘 실적 (3.5 카드의 여섯 칸)
@@ -256,7 +261,7 @@ export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" 
 /**
  * 상태가 정하는 자세. 어떤 스프라이트로 그릴지는 프론트가 정한다 (design/HANDOFF.md 5절)
  */
-export type Pose = "Sit" | "Type" | "Think" | "Duck" | "Squat" | "Sleep";
+export type Pose = "Sit" | "Type" | "Think" | "Duck" | "Read" | "Squat" | "Sleep";
 
 /**
  * 선언 순서가 활발한 순서다. 사무실 단계는 팀 중 최솟값

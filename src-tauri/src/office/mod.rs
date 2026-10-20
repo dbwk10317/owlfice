@@ -51,6 +51,7 @@ pub enum Pose {
     Type,
     Think,
     Duck,
+    Read,
     Squat,
     Sleep,
 }
@@ -69,6 +70,9 @@ pub struct Activity {
     pub confidence: Confidence,
     /// 함께 도는 호출 수. `+n` 배지와 문장의 "(외 n건)"
     pub extra: u32,
+    /// 문장에 `{elapsed}` 자리가 있나. 에이전트가 쓴 글 속의 같은 글자를 프론트가 채우지 않게,
+    /// 문장 모양이 아니라 우리가 틀로 둔 자리인지로 정한다 (4.8)
+    pub elapsed: bool,
 }
 
 /// 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (4.8)
@@ -99,7 +103,6 @@ pub enum BubbleSay {
         skill: String,
     },
     Rank,
-    Joke,
     Incident,
     AllGreen,
     TooLong,
@@ -118,6 +121,8 @@ pub struct PendingCall {
     pub tool: ToolKind,
     pub summary: ToolSummary,
     pub started: DateTime<Utc>,
+    /// 큰 파일·연속 읽기라서 소스 서고로 가는 FileRead (4.7.1). 시작할 때 정해 둔다
+    pub big_read: bool,
 }
 
 /// 오늘 실적 (3.5 카드의 여섯 칸)
@@ -185,6 +190,14 @@ pub struct Employee {
     greeted: bool,
     /// 말풍선을 낸 모르는 도구 이름. 같은 도구는 처음 한 번만 (3.6)
     unknown_tools: HashSet<String>,
+    /// Script 의 대체 말풍선을 이미 냈나
+    script_said: bool,
+    /// 최근 10초 안의 FileRead 시각 (연속 읽기 판정)
+    reads: VecDeque<DateTime<Utc>>,
+    /// 러버덕 말풍선을 낸 침묵의 시작 (quiet_since). 같은 침묵에서는 한 번만
+    ducked: Option<DateTime<Utc>>,
+    /// 부모의 Spawn 을 이미 행적에 넣었나 (중복 Spawn 이 두 번 들어가지 않게)
+    spawn_logged: bool,
     /// "왜 이렇게 오래 걸려" 를 이미 낸 호출
     too_long: Option<String>,
 }

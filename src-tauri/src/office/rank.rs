@@ -16,7 +16,9 @@ pub fn rank_of(model: Option<&str>, effort: Option<&str>) -> Rank {
         return Rank::Sawon;
     }
     let high = effort.is_some_and(|e| ["high", "xhigh"].iter().any(|h| e.eq_ignore_ascii_case(h)));
-    if ["opus", "fable", "mythos", "o3"].into_iter().any(has)
+    if ["opus", "fable", "mythos", "o3", "argon", "sol", "astra"]
+        .into_iter()
+        .any(has)
         || (has("gemini") && has("pro"))
         || (seq(&["gpt", "5"]) && high)
     {
@@ -43,6 +45,10 @@ mod tests {
             ("gpt-5", None, Rank::Daeri),
             ("gpt-4.1", None, Rank::Daeri),
             ("claude-opus-5-5", None, Rank::Gwajang),
+            ("gpt-6.1-sol", None, Rank::Gwajang),
+            ("gpt-6-astra", None, Rank::Gwajang),
+            ("gemini-4-argon-trial", None, Rank::Gwajang),
+            ("gpt-6.1-sol-mini", None, Rank::Sawon),
         ];
         for (model, effort, want) in cases {
             assert_eq!(rank_of(Some(model), effort), want, "{model} {effort:?}");
@@ -57,6 +63,6 @@ mod tests {
     #[test]
     fn case_and_unknown_model() {
         assert_eq!(rank_of(Some("Claude-OPUS-4"), None), Rank::Gwajang);
-        assert_eq!(rank_of(Some("gpt-6.1-sol"), None), Rank::Daeri);
+        assert_eq!(rank_of(Some("gpt-5.5-turbo"), None), Rank::Daeri);
     }
 }

@@ -151,7 +151,11 @@ retiredAt: string | null, seat: number | null,
 /**
  * 상사 agent_id. 깊이 2 이상 카드의 "상사" 줄
  */
-parent: string | null, depth: number, confidence: Confidence, contextUsed: number | null, contextWindow: number | null, };
+parent: string | null, depth: number, confidence: Confidence, contextUsed: number | null, contextWindow: number | null, 
+/**
+ * 마지막 말풍선
+ */
+bubble: Bubble | null, };
 
 /**
  * 사무실 공유 소품 (4.7.9 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
@@ -176,13 +180,37 @@ incident: boolean, night: boolean, };
 
 export type Activity = { 
 /**
- * 경과 시간("· 12초째")은 넣지 않는다. 프론트가 `since` 로 붙여야 매초 상태를 다시 보내지 않는다
+ * 시간이 흐르며 바뀌는 문장은 경과 대신 `{elapsed}` 자리를 둔다. 프론트가 `since` 로 채워야
+ * 매초 상태를 다시 보내지 않는다 (4.8)
  */
 sentence: string, room: Room, since: string, 
 /**
  * 이 명령의 평균 소요 (진행 막대)
  */
-expectedSecs: number | null, pose: Pose, confidence: Confidence, };
+expectedSecs: number | null, pose: Pose, confidence: Confidence, 
+/**
+ * 함께 도는 호출 수. `+n` 배지와 문장의 "(외 n건)"
+ */
+extra: number, 
+/**
+ * 문장에 `{elapsed}` 자리가 있나. 에이전트가 쓴 글 속의 같은 글자를 프론트가 채우지 않게,
+ * 문장 모양이 아니라 우리가 틀로 둔 자리인지로 정한다 (4.8)
+ */
+elapsed: boolean, };
+
+/**
+ * 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (4.8)
+ */
+export type Bubble = { 
+/**
+ * 그 사건의 시각. 프론트는 4초 안일 때만 그린다
+ */
+at: string, say: BubbleSay, };
+
+/**
+ * 말풍선 종류와 재료. 이름이 `phrases.ko.json` 의 `bubble` 풀과 짝이다
+ */
+export type BubbleSay = { "kind": "Say", text: string, } | { "kind": "Mcp", server: string, tool: string, } | { "kind": "NewVendor", server: string, } | { "kind": "NewSkill", skill: string, } | { "kind": "Rank" } | { "kind": "Incident" } | { "kind": "AllGreen" } | { "kind": "TooLong" } | { "kind": "ThinkingDuck" } | { "kind": "PlanApproval" } | { "kind": "Scratch" } | { "kind": "Compaction" } | { "kind": "UnknownTool" } | { "kind": "ScriptFallback" } | { "kind": "UnknownResult" };
 
 /**
  * 오늘 실적 (3.5 카드의 여섯 칸)
@@ -233,7 +261,7 @@ export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" 
 /**
  * 상태가 정하는 자세. 어떤 스프라이트로 그릴지는 프론트가 정한다 (design/HANDOFF.md 5절)
  */
-export type Pose = "Sit" | "Type" | "Think" | "Duck" | "Squat" | "Sleep";
+export type Pose = "Sit" | "Type" | "Think" | "Duck" | "Read" | "Squat" | "Sleep";
 
 /**
  * 선언 순서가 활발한 순서다. 사무실 단계는 팀 중 최솟값
@@ -253,6 +281,27 @@ export type SettingsDto = {
  * 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
  */
 scale: Scale | null, };
+
+export type StepState = "Running" | "Done" | "Warn" | "Error";
+
+/**
+ * 문장 틀은 `phrases.ko.json` 의 loading 이 갖고 프론트가 이 재료로 채운다
+ */
+export type StartupSummary = { "kind": "None" } | { "kind": "Candidates", n: number, hosts: Array<string>, } | { "kind": "Rented", buildings: Array<string>, } | { "kind": "NoFolders" } | { "kind": "Teams", n: number, } | { "kind": "Hired", n: number, bujang: number, gwajang: number, daeri: number, sawon: number, } | { "kind": "WslOff", floor: number, distro: string, } | { "kind": "WslFail", floor: number, distro: string, } | { "kind": "SettingsBroken" };
+
+/**
+ * 오래 걸리는 단계의 진짜 원인 (2초 넘으면 화면에 나온다)
+ */
+export type StartupDetail = { "kind": "Files", done: number, total: number, } | { "kind": "Wsl", distro: string, };
+
+/**
+ * `startup-progress` 페이로드
+ */
+export type StartupProgressDto = { 
+/**
+ * 1..7. 0단계(규모 선택)는 프론트 몫이다
+ */
+step: number, state: StepState, summary: StartupSummary, detail: StartupDetail | null, };
 
 /**
  * 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)

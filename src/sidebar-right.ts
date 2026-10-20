@@ -22,7 +22,8 @@ import roomPantry from "../design/handoff/icons/room-pantry.svg?raw";
 import roomReview from "../design/handoff/icons/room-review.svg?raw";
 import roomShipping from "../design/handoff/icons/room-shipping.svg?raw";
 import roomTest from "../design/handoff/icons/room-test.svg?raw";
-import { createEventCollector, createTicker, fill, hhmm, rankLabel, teamName } from "./ticker.ts";
+import { createEventCollector, createTicker, rankLabel, teamName } from "./ticker.ts";
+import { durationText, fill, fillElapsed, hhmm } from "./text.ts";
 import type {
   Activity,
   CueDto,
@@ -169,34 +170,10 @@ function setRich(node: HTMLElement, text: string): void {
   });
 }
 
-/** 시간이 흐르는 문장의 `{elapsed}` 를 채운다. 백틱 코드 조각 안은 그대로 둔다 */
-function fillElapsed(sentence: string, sec: number | null): string {
-  if (!sentence.includes("{elapsed}")) return sentence;
-  const value = sec === null ? "" : fmtSec(sec);
-  return sentence
-    .split("`")
-    .map((seg, i) => (i % 2 ? seg : seg.split("{elapsed}").join(value)))
-    .join("`");
-}
-
-function fmtSec(sec: number): string {
-  if (sec < 60) return fill(phrases.units.sec, { n: sec });
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return s
-    ? `${fill(phrases.units.min, { n: m })} ${fill(phrases.units.sec, { n: s })}`
-    : fill(phrases.units.min, { n: m });
-}
-
 /** 팀 경과: 60초 미만 "방금", 이후 "12분째", "1시간 4분째" (HANDOFF 8절) */
 function fmtTeamElapsed(sec: number): string {
   if (sec < 60) return phrases.units.now;
-  const min = Math.floor(sec / 60);
-  const value =
-    min < 60
-      ? fill(phrases.units.min, { n: min })
-      : fill(phrases.units.hourMin, { h: Math.floor(min / 60), m: min % 60 });
-  return fill(phrases.units.elapsed, { value });
+  return fill(phrases.units.elapsed, { value: durationText(sec, false) });
 }
 
 const cap99 = (n: number): string => (n > 99 ? "99+" : String(n));
@@ -243,6 +220,8 @@ interface CardEntry {
     quote: HTMLElement;
   };
   sentence: string;
+  /** sentence 의 {elapsed} 를 프론트가 채우나 (Activity.elapsed) */
+  elapsed: boolean;
   sinceMs: number;
   /** 진행 막대용 평균 소요(초). 없으면 막대를 숨긴다 */
   expected: number;
@@ -352,6 +331,7 @@ function createCard(doc: Document, agentId: string): CardEntry {
       quote,
     },
     sentence: "",
+    elapsed: false,
     sinceMs: NaN,
     expected: 0,
   };
@@ -444,6 +424,7 @@ function updateCard(
   }
 
   c.sentence = act.sentence;
+  c.elapsed = act.elapsed;
   c.sinceMs = Date.parse(act.since);
   const expected =
     act.expectedSecs !== null && act.expectedSecs > 0 ? Math.round(act.expectedSecs) : 0;
@@ -482,7 +463,7 @@ function updateCard(
 function tickCard(c: CardEntry, nowMs: number): void {
   const r = c.ref;
   const sec = Number.isNaN(c.sinceMs) ? null : Math.max(0, Math.floor((nowMs - c.sinceMs) / 1000));
-  setRichCached(c, "now", r.nowText, fillElapsed(c.sentence, sec));
+  setRichCached(c, "now", r.nowText, fillElapsed(c.sentence, sec, c.elapsed));
   if (c.expected === 0 || sec === null) {
     if (changed(c, "prog", "off")) r.progress.hidden = true;
     return;

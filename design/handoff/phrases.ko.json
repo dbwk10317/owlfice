@@ -266,5 +266,5 @@
     "roomTooltipTitle": "{room} 최근 사건"
   },
 
-  "units": { "sec": "{n}초", "min": "{n}분", "hourMin": "{h}시간 {m}분", "elapsed": "{value}째", "now": "방금" }
+  "units": { "sec": "{n}초", "min": "{n}분", "hour": "{n}시간", "hourMin": "{h}시간 {m}분", "elapsed": "{value}째", "now": "방금" }
 }

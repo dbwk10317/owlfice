@@ -280,6 +280,12 @@ fn scan(cmd: &str) -> Scan {
                     has_tok = true;
                 }
             },
+            // 단어 첫머리 `#` 은 줄 끝까지 주석이라 실행되지 않는다. 개행은 남겨 기존 분기가 처리한다
+            '#' if !has_tok => {
+                while i + 1 < chars.len() && chars[i + 1] != '\n' {
+                    i += 1;
+                }
+            }
             ' ' | '\t' | '\r' => flush(&mut seg, &mut cur, &mut has_tok),
             '\n' | ';' => {
                 flush(&mut seg, &mut cur, &mut has_tok);
@@ -947,5 +953,26 @@ mod tests {
         assert_eq!(classify_command("sed -n -i 1,5p a").kind, Shell);
         assert_eq!(classify_command("sed -i.bak -n 1p a").kind, Shell);
         assert_eq!(classify_command("sed --in-place -n 1p a").kind, Shell);
+    }
+
+    #[test]
+    fn shell_comment_is_not_executed() {
+        let cases: &[(&str, ToolKind, Compound)] = &[
+            (
+                "echo ok # no deployment && git push",
+                Shell,
+                Compound::Single,
+            ),
+            ("git push # done", GitPush, Compound::Single),
+            ("echo a#b && git push", GitPush, Compound::AndOnly),
+            ("echo \"# x\" && git push", GitPush, Compound::AndOnly),
+            ("echo $# && git push", GitPush, Compound::AndOnly),
+            ("ls # c\ngit push", GitPush, Compound::Mixed),
+            ("cat <<EOF # c\ngit push\nEOF", FileRead, Compound::Mixed),
+        ];
+        for (cmd, kind, compound) in cases {
+            let c = classify_command(cmd);
+            assert_eq!((&c.kind, &c.compound), (kind, compound), "{cmd}");
+        }
     }
 }

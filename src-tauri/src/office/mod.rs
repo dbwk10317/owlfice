@@ -91,7 +91,6 @@ pub struct Employee {
     pub model: Option<String>,
     pub description: Option<String>,
     pub activity: Activity,
-    /// 최근 행적 3개
     pub recent: VecDeque<Activity>,
     pub counters: Counters,
     pub last_say: Option<String>,
@@ -226,6 +225,13 @@ pub struct Team {
     pub props: TeamProps,
     pub incident: Option<Incident>,
     pub stats: stats::TeamStats,
+    /// 파일별 직전 ts. ts 없는 레코드가 다른 파일 시각을 쓰지 않게 (4.3 "순서")
+    file_ts: HashMap<PathBuf, DateTime<Utc>>,
+    /// 노랑으로 켜기 전 색. 확정 결과 없이 끝나면 이 색으로 돌아간다
+    light_before: Light,
+    /// 마지막으로 퇴근에서 깨어난 때와 그때의 피자 수 (4.7.2 피자)
+    awake_since: DateTime<Utc>,
+    pizza_at_wake: u32,
 }
 
 #[cfg(test)]

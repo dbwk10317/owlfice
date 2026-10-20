@@ -236,6 +236,7 @@ LITERAL_PHRASES = [
     ),
     "The user doesn't want to proceed with this tool use",
     "User rejected tool use",
+    "[Request interrupted by user for tool use]",
     "Conversation compacted",
     "Full output saved to: ",
     "Async agent launched successfully.",

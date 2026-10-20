@@ -1016,7 +1016,7 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 | TaskStop | 호출 때는 `input.task_id` 와 이 호출을 연결만 한다. 이 호출의 tool_result가 Ok일 때 그 background 작업의 call_id로 `ToolResult { outcome: Unknown }` 을 내서 작업표를 뗀다. Err이면 작업표를 유지한다. 호출만 보고 끝내면 중단이 실패해도 추적이 사라지고 뒤따른 완료 알림이 버려진다 |
 | `mcp__ccd_*`, `mcp__terminal__*`, `mcp__Claude_Browser__*`, `mcp__claude-in-chrome__*`, ToolSearch, Monitor, SendMessage, ScheduleWakeup, Workflow, Artifact* | **이벤트를 내지 않는다.** 앱 내부 배관이라 pending·실적·미대응 로그 어디에도 안 들어간다. 파서는 이렇게 버린 call_id를 기억해 뒤따르는 tool_result도 내지 않는다 (내부 도구의 실패가 사고로 세지지 않게) |
 | `mcp__<server>__<tool>` 중 tool 이름에 `search`, `fetch`, `scrape`, `crawl` | WebSearch / WebFetch (외근). Claude Desktop의 웹 도구는 커넥터 MCP로 들어온다 |
-| `mcp__<server>__<tool>` | Mcp (거래처). server가 UUID 꼴(`04586901-4c2c-…`)이면 상호는 tool 이름의 첫 토큰(`asset_search` → `asset`, `firecrawl_search` → `firecrawl`). Claude Desktop 커넥터는 서버 id가 UUID다 |
+| `mcp__<server>__<tool>` | Mcp (거래처). server가 UUID 꼴(`04586901-4c2c-…`)이면 상호는 tool 이름의 첫 토큰(`asset_add_file` → `asset`. 이름에 `search` 등이 든 도구는 앞 행에서 이미 외근이다). Claude Desktop 커넥터는 서버 id가 UUID다 |
 | 그 외 | Other(name). 미지원 도구. pending에 넣어 "뭔가 하는 중"은 보이되 실적에는 세지 않고 미대응 로그에 남긴다. 말풍선은 3.6 |
 
 서브에이전트 (확인됨):
@@ -1030,7 +1030,7 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 - `is_error: true` → `Err` (Confirmed). 단, 최상위 `toolDenialKind` 가 있으면 `Rejected` (`user-rejected` 사장님 반려, `automode-blocked` 자동 모드 차단. 차단도 사고로 세지 않으려고 반려로 본다, 확인됨). 본문이 "The user doesn't want to proceed with this tool use" 로 시작하는 것도 `Rejected` (옛 버전).
 - `is_error` 없음·false → `Ok` (Confirmed). Read·Edit 등 많은 도구는 성공 때 `is_error` 키 자체가 없다. Claude Code는 명령의 **마지막 문장** 종료 코드가 0이 아니면 `is_error` 를 세운다 (`npm test; echo $?` 는 false, 확인됨). 실패하면 `toolUseResult` 가 객체가 아니라 `Error: Exit code N…` 문자열이다.
 - 호출이 `background` 였으면 결과는 `toolUseResult.backgroundTaskId` 가 있는 중간 응답이고 `Started` 다. 완료는 나중에 완료 알림으로 온다 (확인됨). 알림은 두 모양이다: 턴이 끝나 있으면 `origin.kind: task-notification` 인 문자열 user 레코드, 턴 진행 중이면 `attachment.type: queued_command` (`prompt` 에 같은 XML). 태그는 `task-id`(= backgroundTaskId), `tool-use-id`(= 원래 call_id), `output-file`, `status`(`completed`·`failed` 확인됨), `summary`(성공 `… completed (exit code 0)`, 실패 `… failed with exit code 2`, 확인됨). `tool-use-id` 로 원래 호출을 찾고 summary의 `exit code (\d+)` 로 `Ok`/`Err` 를 낸다 (하네스가 쓰는 문구라 Confirmed. exit code가 없으면 Unknown). 종료 코드는 summary 문구 안에만 있다. `TaskStop` 으로 멈춘 작업은 알림이 오지 않는다 (확인됨). 시간 제한은 두지 않는다. `npm run dev` 처럼 끝나지 않는 작업이 흔하다. 정리는 완료 알림, `TaskStop` 의 성공 결과, 팀 퇴근 중 먼저 오는 것으로 한다 (4.7.2).
-- 결과 본문의 테스트 요약 정규식(`(\d+) passed`, `test result: ok. (\d+) passed; (\d+) failed`, `Tests: (\d+) failed, (\d+) passed`)은 `test_result` (도장 숫자)에만 쓴다. 성공·실패 판정에는 쓰지 않는다.
+- 결과 본문의 테스트 요약 정규식(`(\d+) passed`, `test result: (ok|FAILED). (\d+) passed; (\d+) failed` (크레이트마다 한 줄이라 합산), `Tests: (\d+) failed, (\d+) passed`)은 `test_result` (도장 숫자)에만 쓴다. 성공·실패 판정에는 쓰지 않는다.
 - 분리된 큰 결과는 구조 필드 `toolUseResult.persistedOutputPath` 가 우선이고 (확인됨), 없으면 본문의 `<persisted-output>` 참조에서 `tool-results/` 경로를 읽어 RawRef에 덧붙인다. 서브의 결과 파일도 **부모** 세션의 `tool-results/` 에 있다. "원본 열기"에 넘기기 전에 그 경로가 세션 폴더 안인지 검사한다 (레코드 값이라 믿지 않는다).
 
 허가 대기 레코드는 따로 없다. tool_result 레코드의 `permissionDecision { decision, source }` (`source`: `config`·`user_permanent`·`user_temporary`)는 허가가 끝난 뒤의 기록이다. 대기 중인지는 결과 없는 호출과 침묵으로만 안다. 옛 "Bash 결과 30초 안 오면 위험 명령 추정" 규칙은 폐기한다. 30초짜리 빌드마다 오탐이다.
@@ -1499,7 +1499,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 등록부 pid 재사용·`procStart` | `startedAt` 과 프로세스 생성 시각 비교로 재사용을 거른다 (4.4.1). Windows 생성 시각은 `GetProcessTimes` 라 `windows-sys` 직접 의존이 필요할 수 있다 | T02에서 std로 되는지 먼저 본다. 안 되면 crate 추가는 메인 허락 | T02 |
 | WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T03, T12 |
 | WSL 홈의 `.claude`·`.codex` 가 `/mnt/c` 심링크인 구성 | WSL Site가 Windows Site와 같은 파일을 가리켜 세션이 두 번 잡힐 수 있다 (추정) | 심링크 구성에서 probe로 두 Site의 파일 ID 대조. 겹치면 WSL 쪽을 뺀다 | T12 |
-| 기록 모양의 남은 미확인 | Claude 알림 `status` 는 `completed`·`failed`, 압축 `trigger` 는 `manual` 만 봤다 (타 프로젝트는 `stopped`·`error` 도 구별한다). Codex 거부는 사용자 거부 문구만 봤다. Codex `originator` 에 `codex_exec`(비대화형)가, `event_msg` 에 `turn_complete` 가 올 수 있다는 관찰이 있다 (타 프로젝트, 미확인) | 자동 압축이 난 세션, `TaskStop` 아닌 방법으로 죽은 백그라운드 작업, 샌드박스가 막은 Codex 명령을 하나씩 보기 | T07, T08 |
+| 기록 모양의 남은 미확인 | Claude 알림 `status` 는 `completed`·`failed`, 압축 `trigger` 는 `auto`·`manual` 만 봤다 (타 프로젝트는 `stopped`·`error` 도 구별한다). Codex 거부는 사용자 거부 문구만 봤다. Codex `originator` 에 `codex_exec`(비대화형)가, `event_msg` 에 `turn_complete` 가 올 수 있다는 관찰이 있다 (타 프로젝트, 미확인) | 자동 압축이 난 세션, `TaskStop` 아닌 방법으로 죽은 백그라운드 작업, 샌드박스가 막은 Codex 명령을 하나씩 보기 | T07, T08 |
 | 컨텍스트 윈도우 | Claude는 compaction `preTokens` 로 학습 (이 PC 표본 967k → 1M). 못 봤으면 설정값 200k + "?" 표시. Codex는 `model_context_window` 확인됨 | 200k 세션과 1M 세션을 하나씩 돌려 화분 곡선 확인 | T11, T23 |
 | 할 일 도구 | Claude Desktop·CLI(2.1.299·2.1.304)와 Codex 0.163 표본에는 할 일 도구가 없었다 (모델이 todo 파일로 대신). Antigravity는 `task.md` (4.6.3). 칸반(S40)을 무엇으로 움직일지 미정 | 할 일 도구가 있는 빌드·설정이 있는지 보기. 없으면 칸반 신호를 바꾼다 | T07, T23 |
 | Codex 앱 mtime 늦은 갱신과 규칙 (c) | Codex 앱은 쓰는 동안 mtime을 안 바꾼다. 나중에 OS가 mtime을 한꺼번에 갱신할 때 길이가 읽은 곳과 같으면 규칙 (c)가 가짜 Reset을 내 팀을 다시 만든다 (조용한 재구성이라 화면은 그대로지만 비용이 든다). 타 프로젝트(ai-office-dollhouse)는 반대로 "mtime 15분 이내"로 활성 파일을 고르니 어느 쪽이 맞는지 재확인 | Codex 앱 세션을 켜 둔 채 Reset 횟수를 로그로 보기 | T12, T13 |

@@ -532,7 +532,7 @@
 |---|---|---|---|
 | 1 | 창 생성, 설정·이름·방 번호 저장소 읽기 | 회사를 창설하는 중... | 법인 등기 완료 (사명: Owlfice) |
 | 2 | Windows 홈, 켜져 있는 WSL 배포판과 홈 찾기 | 부동산 둘러보는 중... | 후보지 2곳 확인 (Windows, WSL Rocky-9) |
-| 3 | 각 홈에서 세션 폴더 존재 확인 | 회사 건물을 임대하는 중... | A동·B동·D동 임대 계약 완료 |
+| 3 | 각 홈에서 세션 폴더 존재 확인 | 회사 건물을 임대하는 중... | Windows Claude · WSL Rocky-9 Codex 임대 계약 완료 (동 글자는 첫 레코드를 읽어야 정해져 이때는 호스트·제조사로 부른다) |
 | 4 | 세션 파일 목록, 세션 등록부, 수정 시각 수집 | 입주 신청서 받는 중... | 불 켜진 팀 4곳 |
 | 5 | 활성 세션 파일을 전체 읽어 상태 구성, 직원 생성·이름 부여 (연출·토스트·소리 없이) | 직원 채용하는 중... | 12명 입사 (부장 4, 과장 2, 대리 3, 사원 3) |
 | 6 | 그림 자원 로드, 사이드바 구성 | 회사 사무실을 꾸미는 중... | 파티션 설치 완료 |
@@ -1331,7 +1331,7 @@ Tauri 커맨드 (프론트 → 백엔드):
 
 | 이벤트 | 페이로드 | 빈도 |
 |---|---|---|
-| `startup-progress` | `{step: 0..7, state: "running"|"done"|"warn"|"error", summary, detail?}` | 시작 시 |
+| `startup-progress` | `{step, state, summary, detail?}`. 단계 본줄과 그 밑 알림 줄(소등·접근 실패·설정 손상). 모양은 `src-tauri/src/startup.rs`. 늦은 구독자는 `get_startup_progress` | 시작 시 |
 | `office-list` | `{list_seq, rebuilt: bool, selected_id, select_request, offices: [OfficeSummaryDto { office_id, floor, label, phase, dot, badge, teams: [TeamSummaryDto] }]}` | 바뀔 때만. **전체 목록** (변경분 아님). 중소기업의 팀 행은 `teams` 로 백엔드가 선택을 스스로 바꾸면(팀 제거, 규모 변경 4.7.9) `selected_id` 로 알린다. 프론트는 `select_request` 가 자기 마지막 요청 번호 이상일 때만 받아들인다 |
 | `office-state` | `{state_seq, office_id, rebuilt: bool, teams: [TeamDto { team, employees, props, incident }], shared: SharedPropsDto, cues: [AnimCue]}` | 선택 사무실, 바뀔 때만 (최대 5회/초로 병합). **전체 상태**. 목록에 없는 직원은 삭제된 것 |
 | `ticker` | `{ts, office_id, team_id, agent_id, text}` | 사건마다 |

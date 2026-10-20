@@ -1,4 +1,9 @@
 /* 화면 배치 보강. 기본 모양은 design/handoff/tokens.css, 창 너비 구간은 header.ts 가 app.dataset.layout 으로 정한다 (PLAN 3.2) */
+/* 브라우저 기본 body 여백 8px 이 모든 화면에 세로 스크롤을 만들고 무대를 줄인다 */
+html,
+body {
+  margin: 0;
+}
 .ow-app {
   position: relative; /* 현황판 드로어의 기준 */
 }
@@ -8,6 +13,8 @@
 .ow-panel-host {
   display: contents;
 }
+/* tokens.css 의 .ow-header{display:flex} 가 [hidden] 을 이긴다 */
+.ow-header[hidden],
 .ow-header [hidden] {
   display: none !important;
 }
@@ -48,11 +55,26 @@
 .ow-header--strip {
   height: var(--ow-band-h);
 }
+/* 900-1099 는 시안 Medium 처럼 사각형·이름·세션 제목·배율 칩·panel 버튼만, 띠는 거기서 배율 칩과 세션 제목도 뺀다 */
+.ow-app:not([data-layout="wide"]) .ow-header__wide,
 .ow-header--strip .ow-header__full {
   display: none;
 }
+.ow-app[data-layout="drawer"] .ow-header__session {
+  flex: 1 1 auto;
+}
 .ow-header--strip .ow-header__work {
   display: inline-flex;
+}
+/* 드로어는 구간의 머리말·띠 높이 아래에서 열린다 (tokens.css 는 56 고정) */
+.ow-app[data-layout="rail"] .ow-panel.is-drawer {
+  top: var(--ow-band-h);
+}
+.ow-app[data-layout="select"] .ow-panel.is-drawer {
+  top: var(--ow-band-sm-h);
+}
+.ow-side-band .ow-header__panel {
+  margin-left: 8px;
 }
 .ow-app[data-layout="select"] {
   flex-direction: column;

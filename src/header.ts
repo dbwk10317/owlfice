@@ -1,51 +1,21 @@
 // 가운데 머리말 (HANDOFF 4.3)과 창 너비 구간 (PLAN 3.2). store 가 바뀌면 바뀐 칸만 고친다.
 import "../design/handoff/tokens.css";
-import "./styles/app.css";
 import phrases from "../design/handoff/phrases.ko.json";
 import nightSvg from "../design/handoff/icons/night.svg?raw";
 import panelSvg from "../design/handoff/icons/panel.svg?raw";
 import roomLabelsSvg from "../design/handoff/icons/room-labels.svg?raw";
-import type { Viewport } from "./sidebar-right.ts";
-import type { OfficeDto, OfficeListDto, TeamSummaryDto, WorkType } from "./types/ipc.ts";
+import { BUILDING_PRODUCT, DOT_STATE, FLOOR_PRODUCT, ringOf, WORK_TYPES } from "./sidebar-left.ts";
+import { windowViewport, type Viewport } from "./sidebar-right.ts";
+import type { OfficeDto, OfficeListDto, TeamSummaryDto } from "./types/ipc.ts";
 
 const H = phrases.header;
 const TICK_MS = 30_000;
 
-export type Layout = "wide" | "drawer" | "rail" | "select";
+type Layout = "wide" | "drawer" | "rail" | "select";
 /** 3.2 표의 너비 구간. 사이드바(900/720)와 현황판(900) 경계가 같다 */
 export function layoutOf(width: number): Layout {
   return width >= 1100 ? "wide" : width >= 900 ? "drawer" : width >= 720 ? "rail" : "select";
 }
-
-export function windowViewport(win: Window): Viewport {
-  return {
-    size: () => ({ w: win.innerWidth, h: win.innerHeight }),
-    subscribe(cb) {
-      let t: ReturnType<typeof setTimeout> | undefined;
-      const on = () => {
-        clearTimeout(t);
-        t = setTimeout(cb, 100);
-      };
-      win.addEventListener("resize", on);
-      return () => {
-        clearTimeout(t);
-        win.removeEventListener("resize", on);
-      };
-    },
-  };
-}
-
-// 동 글자 = 제품 (PLAN 2부). 사이드바와 같은 표
-const BUILDING: Record<string, [string, string]> = {
-  A: ["Claude Desktop", "claude"],
-  B: ["Claude Code CLI", "claude"],
-  C: ["Codex 앱", "codex"],
-  D: ["Codex CLI", "codex"],
-  E: ["Antigravity 앱", "gemini"],
-  F: ["Antigravity CLI", "gemini"],
-};
-const FLOOR_PRODUCT = ["claude", "codex", "gemini"];
-const WORK_TYPES: WorkType[] = ["CodeReview", "BugFix", "Refactor", "Docs", "Research", "NewDev"];
 
 const fill = (tpl: string, vars: Record<string, string | number>) =>
   tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
@@ -54,9 +24,8 @@ const fill = (tpl: string, vars: Record<string, string | number>) =>
 function elapsedText(startedMs: number, now: number): string {
   const min = Math.max(1, Math.floor((now - startedMs) / 60_000));
   const u = phrases.units;
-  if (min < 60) return fill(u.min, { n: min });
-  return min % 60 === 0
-    ? `${min / 60}시간`
+  return min < 60
+    ? fill(u.min, { n: min })
     : fill(u.hourMin, { h: Math.floor(min / 60), m: min % 60 });
 }
 
@@ -72,7 +41,8 @@ export interface HeaderStore {
 export interface HeaderOptions {
   /** 창 크기 출처. 기본은 window 크기와 resize(100ms 디바운스) */
   viewport?: Viewport;
-  now?: () => number;
+  /** 720 미만에서 panel 버튼이 옮겨 갈 사이드바 띠. 없으면 머리말에 남는다 */
+  bandSlot?(): HTMLElement | null;
   togglePanel(): void;
   setRoomLabels(on: boolean): void;
 }
@@ -80,7 +50,6 @@ export interface HeaderHandle {
   roomLabels(): boolean;
   setScale(scale: number): void;
   setDrawerOpen(open: boolean): void;
-  destroy(): void;
 }
 
 type El = HTMLElement;
@@ -116,15 +85,14 @@ export function mountHeader(
   opts: HeaderOptions,
 ): HeaderHandle {
   const doc = header.ownerDocument;
-  const now = opts.now ?? Date.now;
   header.classList.add("ow-header");
 
   const square = mk(doc, "span", "ow-header__square");
   const title = mk(doc, "h1", "ow-header__title");
-  const sub = mk(doc, "span", "ow-header__sub ow-header__full");
-  const slash = mk(doc, "span", "ow-header__sub ow-header__full", "/");
+  const sub = mk(doc, "span", "ow-header__sub ow-header__wide");
+  const slash = mk(doc, "span", "ow-header__sub ow-header__wide", "/");
   const session = mk(doc, "span", "ow-header__session ow-header__full");
-  const status = mk(doc, "span", "ow-chip ow-header__full");
+  const status = mk(doc, "span", "ow-chip ow-header__wide");
   const statusDot = mk(doc, "span", "ow-dot");
   const statusNight = mk(doc, "span", "ow-icon ow-icon--sm");
   statusNight.setAttribute("aria-hidden", "true");
@@ -132,9 +100,9 @@ export function mountHeader(
   const statusText = mk(doc, "span", "ow-header__status");
   status.append(statusDot, statusNight, statusText);
   const work = mk(doc, "span", "ow-chip ow-header__work");
-  const divider = mk(doc, "span", "ow-header__divider ow-header__full");
+  const divider = mk(doc, "span", "ow-header__divider ow-header__wide");
   const labels = iconBtn(doc, roomLabelsSvg, H.roomLabels);
-  labels.classList.add("ow-header__full");
+  labels.classList.add("ow-header__wide");
   labels.setAttribute("aria-pressed", "true");
   const scale = mk(doc, "span", "ow-chip ow-header__scale ow-header__full", "1×");
   scale.title = H.scale;
@@ -164,9 +132,10 @@ export function mountHeader(
     let accent = "var(--ow-ink-4)";
     let subText = "";
     if (sel && large) {
-      const [name, key] = BUILDING[sel.building ?? ""] ?? ["", "codex"];
+      const [name, key] = BUILDING_PRODUCT[sel.building ?? ""] ?? ["", "codex"];
       accent = `var(--ow-${key})`;
       const host = sel.teams[0]?.hostBadge;
+      // ponytail: 시안은 층·배포판 이름도 붙지만 DTO 에 없다, 백엔드가 주면 붙인다
       subText = host ? `${name} · ${host}` : name;
     } else if (sel) {
       accent = `var(--ow-${FLOOR_PRODUCT[(sel.floor ?? 1) - 1] ?? "codex"})`;
@@ -181,24 +150,28 @@ export function mountHeader(
     setText(session, sessionTitle);
     slash.hidden = session.hidden = !sessionTitle;
 
-    const t = now();
+    const t = Date.now();
     const night = !!office?.shared.night;
-    const off = !sel || live.length === 0;
-    status.hidden = !sel;
+    const off = !sel || sel.phase === "Off" || live.length === 0;
     statusDot.hidden = night;
     statusNight.hidden = !night;
-    statusDot.dataset.state = off ? "off" : "working";
-    if (sel) {
+    statusDot.dataset.state = off || !sel ? "off" : DOT_STATE[sel.dot];
+    const ring = sel ? ringOf(sel.border, sel.delayed) : "";
+    if (ring) statusDot.dataset.ring = ring;
+    else delete statusDot.dataset.ring;
+    let statusMsg = "";
+    if (sel && office) {
       const started = Math.min(...live.map((x) => Date.parse(x.started)));
-      setText(
-        statusText,
-        off
-          ? fill(H.allOff, { time: clock(t) })
-          : night
-            ? fill(H.night, { time: clock(t) })
-            : fill(H.working, { elapsed: elapsedText(started, t) }),
-      );
+      statusMsg = off
+        ? fill(H.allOff, { time: clock(t) })
+        : night
+          ? fill(H.night, { time: clock(t) })
+          : Number.isFinite(started)
+            ? fill(H.working, { elapsed: elapsedText(started, t) })
+            : "";
     }
+    status.hidden = !statusMsg;
+    setText(statusText, statusMsg);
 
     const wt = live[0]?.workType;
     work.hidden = !wt;
@@ -206,18 +179,20 @@ export function mountHeader(
       setText(work, fill(H.workType, { type: phrases.workType[WORK_TYPES.indexOf(wt)] ?? "" }));
   }
 
-  const view = opts.viewport ?? windowViewport(doc.defaultView!);
+  const view = opts.viewport ?? windowViewport(doc.defaultView);
   function onResize(): void {
     const layout = layoutOf(view.size().w);
     app.dataset.layout = layout;
     header.hidden = layout === "select";
     header.classList.toggle("ow-header--strip", layout === "rail");
-    panelBtn.hidden = layout !== "drawer";
+    panelBtn.hidden = layout === "wide";
+    const home = (layout === "select" && opts.bandSlot?.()) || header;
+    if (panelBtn.parentElement !== home) home.append(panelBtn);
   }
 
-  const unsub = store.subscribe(render);
-  const unsubView = view.subscribe(onResize);
-  const tick = setInterval(render, TICK_MS);
+  store.subscribe(render);
+  view.subscribe(onResize);
+  setInterval(render, TICK_MS);
   onResize();
   render();
 
@@ -227,12 +202,6 @@ export function mountHeader(
     setDrawerOpen(open) {
       panelBtn.setAttribute("aria-expanded", String(open));
       panelBtn.setAttribute("aria-label", open ? H.panelClose : H.panelOpen);
-    },
-    destroy() {
-      unsub();
-      unsubView();
-      clearInterval(tick);
-      header.replaceChildren();
     },
   };
 }

@@ -50,7 +50,12 @@ const summary = (over: Partial<OfficeSummaryDto> = {}): OfficeSummaryDto => ({
   ...over,
 });
 
-function setup(o: OfficeSummaryDto, scale: Scale = "Large", over: Partial<OfficeDto> = {}) {
+function setup(
+  o: OfficeSummaryDto,
+  scale: Scale = "Large",
+  over: Partial<OfficeDto> = {},
+  bandSlot?: () => HTMLElement | null,
+) {
   const store = createStore<OfficeListDto, OfficeDto>();
   const sel = {
     ...office(o.officeId, 1, [team("t", [emp("a")], { title: "로그인 버그 고치기" })]),
@@ -88,6 +93,7 @@ function setup(o: OfficeSummaryDto, scale: Scale = "Large", over: Partial<Office
   });
   handle = mountHeader(app, header, store, {
     viewport: vp,
+    bandSlot,
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels,
   });
@@ -143,13 +149,7 @@ test("방 이름표 토글은 aria-pressed 를 바꾸고 렌더러에 알린다"
   expect(s.setRoomLabels).toHaveBeenLastCalledWith(true);
 });
 
-test("배율 칩은 렌더러가 알린 값을 보인다", () => {
-  const s = setup(summary());
-  s.handle.setScale(2);
-  expect(s.q(".ow-header__scale").textContent).toBe("2×");
-});
-
-test("panel 버튼은 900-1099 에서만 보이고 드로어 상태와 맞는다", () => {
+test("panel 버튼은 1100 미만에서 보이고 드로어 상태와 맞는다", () => {
   const s = setup(summary());
   const btn = s.q(".ow-header__panel");
   expect(btn.hidden).toBe(true);
@@ -166,6 +166,47 @@ test("panel 버튼은 900-1099 에서만 보이고 드로어 상태와 맞는다
   s.vp.set(1200); // 넓어지면 드로어가 닫히고 버튼이 사라진다
   expect(btn.getAttribute("aria-expanded")).toBe("false");
   expect(btn.hidden).toBe(true);
+});
+
+test("720 미만에서는 panel 버튼이 사이드바 띠로 옮겨 가고, 구간이 바뀌어도 드로어와 맞는다", () => {
+  const band = document.createElement("div");
+  const s = setup(summary(), "Large", {}, () => band);
+  const btn = s.q(".ow-header__panel");
+  s.vp.set(800); // 52 띠: 머리말 안
+  expect(btn.hidden).toBe(false);
+  expect(btn.parentElement).toBe(s.header);
+  btn.click();
+  s.vp.set(600);
+  expect(btn.parentElement).toBe(band);
+  expect(btn.hidden).toBe(false);
+  expect(btn.getAttribute("aria-expanded")).toBe("true");
+  btn.click();
+  expect(btn.getAttribute("aria-expanded")).toBe("false");
+  s.vp.set(1000);
+  expect(btn.parentElement).toBe(s.header);
+});
+
+test("상태 칩 점은 사이드바와 같은 판정: 장애·졸음·테두리", () => {
+  const dot = (o: Partial<OfficeSummaryDto>) => setup(summary(o)).q(".ow-dot") as HTMLElement;
+  expect(dot({ dot: "Incident" }).dataset.state).toBe("incident");
+  expect(dot({ dot: "Dozing" }).dataset.state).toBe("sleepy");
+  expect(dot({ border: "Failed" }).dataset.ring).toBe("fail");
+  expect(dot({ delayed: true }).dataset.ring).toBe("lag");
+  expect(dot({}).dataset.ring).toBeUndefined();
+});
+
+test("office 가 아직 없거나 시작 시각을 못 읽으면 상태 칩을 숨기고, 경과 시간은 시간·분", () => {
+  const s = setup(summary());
+  expect(s.q(".ow-header__status").parentElement!.hidden).toBe(false);
+  s.store.selectOffice("o"); // office 를 비운다
+  expect(s.q(".ow-header__status").parentElement!.hidden).toBe(true);
+  document.body.innerHTML = "";
+  const bad = setup(summary({ teams: [{ ...summary().teams[0], started: "x" }] }));
+  expect(bad.q(".ow-header__status").parentElement!.hidden).toBe(true);
+  document.body.innerHTML = "";
+  const long = new Date(NOW.getTime() - (13 * 60 + 20) * 60_000).toISOString();
+  const l = setup(summary({ teams: [{ ...summary().teams[0], started: long }] }));
+  expect(l.q(".ow-header__status").textContent).toBe("근무 중 · 13시간 20분째");
 });
 
 test("창 너비 구간마다 배치: 띠는 레일에서, 머리말은 select 에서 숨는다", () => {

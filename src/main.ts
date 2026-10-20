@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "../design/handoff/tokens.css";
+import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 이 필요해 가장 먼저 부른다
+import { firstOffice } from "./first-office.ts";
 import { mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
 import { mountSidebar } from "./sidebar-left.ts";
@@ -27,7 +29,7 @@ function requestSelect(officeId: string, requestId: number): void {
 
 // ponytail: 첫 사무실을 여기서 고른다, 로딩 화면(T16)이 "첫 사무실 선택"을 맡으면 옮긴다
 store.subscribe(() => {
-  const first = store.state.list?.offices[0];
+  const first = firstOffice(store.state.list?.offices ?? []);
   if (store.state.selectedId !== null || !first) return;
   requestSelect(first.officeId, store.selectOffice(first.officeId));
 });
@@ -64,16 +66,15 @@ function mountShell(): void {
   const panel = mountPanel(panelHost, store, {
     onDrawerChange: (open) => header?.setDrawerOpen(open),
   });
+  mountSidebar(side, store, requestSelect); // 머리말이 띠를 찾으니 먼저
   header = mountHeader(app, headerEl, store, {
+    bandSlot: () => side.querySelector<HTMLElement>(".ow-side-band"),
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
   });
-  mountSidebar(side, store, requestSelect);
-  mountOffice(stage, store)
+  mountOffice(stage, store, { onScale: (n) => header?.setScale(n) })
     .then((o) => {
       office = o;
-      o.onScale((n) => header?.setScale(n));
-      header?.setScale(o.scale());
       o.setRoomLabels(header?.roomLabels() ?? true);
     })
     .catch((e) => console.error("사무실 캔버스", e));

@@ -38,8 +38,15 @@ const TOAST_MS = 3000;
 const ELAPSED_TICK_MS = 60_000;
 const RESIZE_DEBOUNCE_MS = 100;
 
-const WORK_TYPES: WorkType[] = ["CodeReview", "BugFix", "Refactor", "Docs", "Research", "NewDev"];
-const DOT_STATE: Record<Dot, string> = {
+export const WORK_TYPES: WorkType[] = [
+  "CodeReview",
+  "BugFix",
+  "Refactor",
+  "Docs",
+  "Research",
+  "NewDev",
+];
+export const DOT_STATE: Record<Dot, string> = {
   Incident: "incident",
   Working: "working",
   Waiting: "waiting",
@@ -55,7 +62,7 @@ const DOT_WORD: Record<string, string> = {
   off: P.stateOff,
 };
 // 동 글자 = 제품 (PLAN 2부). 제품이 색을 정한다
-const BUILDING_PRODUCT: Record<string, [string, string]> = {
+export const BUILDING_PRODUCT: Record<string, [string, string]> = {
   A: ["Claude Desktop", "claude"],
   B: ["Claude Code CLI", "claude"],
   C: ["Codex 앱", "codex"],
@@ -63,7 +70,7 @@ const BUILDING_PRODUCT: Record<string, [string, string]> = {
   E: ["Antigravity 앱", "gemini"],
   F: ["Antigravity CLI", "gemini"],
 };
-const FLOOR_PRODUCT = ["claude", "codex", "gemini"];
+export const FLOOR_PRODUCT = ["claude", "codex", "gemini"];
 const FLOOR_NAME = ["Claude", "Codex", "Gemini"];
 const color = (product: string) => `var(--ow-${product})`;
 
@@ -183,7 +190,7 @@ interface Plan {
 }
 type IsOpen = (key: string, def: boolean) => boolean;
 
-const ringOf = (border: Border, delayed: boolean): string =>
+export const ringOf = (border: Border, delayed: boolean): string =>
   // ponytail: data-ring 이 하나뿐이라 빌드 테두리가 통신 지연보다 앞선다, 둘을 같이 보일 디자인이 생기면 올린다
   border === "Failed" ? "fail" : border === "Running" ? "run" : delayed ? "lag" : "";
 

@@ -15,7 +15,7 @@ use crate::office::names::RoomBook;
 use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
-    Activity, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
+    Activity, Bubble, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
 };
 use crate::parse::{Confidence, TodoItem};
 use crate::settings::SettingsBook;
@@ -203,6 +203,8 @@ pub struct EmployeeDto {
     pub confidence: Confidence,
     pub context_used: Option<u64>,
     pub context_window: Option<u64>,
+    /// 마지막 말풍선
+    pub bubble: Option<Bubble>,
 }
 
 /// 사무실 공유 소품 (4.7.9 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
@@ -447,6 +449,7 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
         confidence: e.confidence,
         context_used: e.context_used,
         context_window: e.context_window,
+        bubble: e.bubble.clone(),
     }
 }
 

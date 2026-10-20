@@ -21,6 +21,7 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
+    "Win32_System_Registry",
     "Win32_System_Threading",
 ] }
 

@@ -978,9 +978,9 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 
 | type | 처리 |
 |---|---|
-| `user` | 먼저 `origin.kind` 를 본다: `task-notification` 이면 완료 알림이다 (아래. `isMeta` 는 붙지 않는다, 확인됨). 그 밖에 `message.content` 가 문자열이면 UserMessage (agent_id 포함. 서브 파일의 첫 레코드는 프롬프트 전문을 담은 user 레코드다, 확인됨. 사장님 방문 여부는 상태 기계가 소유자로 가른다, 4.7.1). 블록 배열이고 `tool_result` 면 ToolResult. `isMeta: true` 면 시스템 주입이라 UserMessage로 내지 않는다. 거부 직후 오는 `[Request interrupted by user for tool use]` text 블록도 UserMessage가 아니다. `isCompactSummary: true` 면 요약 본문(무시) |
+| `user` | 먼저 `origin.kind` 를 본다: `task-notification` 이면 완료 알림이다 (아래. `isMeta` 는 붙지 않는다, 확인됨). 그 밖에 `message.content` 가 문자열이면 UserMessage (agent_id 포함. 서브 파일의 첫 레코드는 프롬프트 전문을 담은 user 레코드다, 확인됨. 사장님 방문 여부는 상태 기계가 소유자로 가른다, 4.7.1). 블록 배열이고 `tool_result` 면 ToolResult. `isMeta: true` 면 시스템 주입이라 UserMessage로 내지 않는다. 거부 직후 오는 `[Request interrupted by user for tool use]` text 블록도 UserMessage가 아니다. `isCompactSummary: true` 면 요약 본문(무시). 문자열이 `<command-name>`·`<local-command-stdout>`·`<local-command-caveat>` 로 시작하면 슬래시 명령(`/compact` 등)의 흔적이라 UserMessage가 아니다 (확인됨) |
 | `assistant` | content 블록 하나마다 레코드 하나. `text` / `thinking` / `tool_use`. 같은 API 응답은 `requestId`·`message.id` 가 같고 `apiBlockIndex` 가 는다. `message.model`, `message.usage`. `message.stop_reason` 은 한 응답의 모든 블록이 같은 값이다 (`tool_use`·`end_turn`. 서브 파일은 마지막 블록만 값이 있고 앞은 null). 턴 끝은 `end_turn` 으로만 안다 (확인됨) |
-| `system` | `subtype`: `compact_boundary` → ContextCompaction (`compactMetadata.preTokens / postTokens`). `stop_hook_summary`·`turn_duration`·`away_summary`·`informational` 무시 |
+| `system` | `subtype`: `compact_boundary` → ContextCompaction (`compactMetadata.preTokens / postTokens`. `trigger` 는 `/compact` 일 때 `manual`, 확인됨). 뒤이어 `isCompactSummary` 요약, 슬래시 명령 흔적 user 레코드 셋, attachment 재주입이 온다. `stop_hook_summary`·`turn_duration`·`away_summary`·`informational` 무시 |
 | `custom-title`, `agent-name`, `ai-title` | `customTitle` / `agentName` → TitleChanged. `timestamp` 없음. `ai-title` 은 CLI에만 있다 (키는 T07에서 확인) |
 | `pr-link` | `prNumber`, `prUrl` → PrLinked |
 | `queue-operation` | `operation` 은 `enqueue`·`dequeue`·`remove`. 사람 입력이든 알림이든 뒤이어 오는 user·attachment 레코드와 중복이므로 이벤트는 내지 않는다. 단, Desktop에서는 파일 첫 줄인 경우가 많아 "첫 레코드 시각"(4.5)에는 이 timestamp를 쓴다 (CLI는 첫 입력에 queue-operation이 없다) |
@@ -1025,7 +1025,7 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 `tool_result` 의 `outcome`:
 - `is_error: true` → `Err` (Confirmed). 단, 최상위 `toolDenialKind` 가 있으면 `Rejected` (`user-rejected` 사장님 반려, `automode-blocked` 자동 모드 차단. 차단도 사고로 세지 않으려고 반려로 본다, 확인됨). 본문이 "The user doesn't want to proceed with this tool use" 로 시작하는 것도 `Rejected` (옛 버전).
 - `is_error` 없음·false → `Ok` (Confirmed). Read·Edit 등 많은 도구는 성공 때 `is_error` 키 자체가 없다. Claude Code는 명령의 **마지막 문장** 종료 코드가 0이 아니면 `is_error` 를 세운다 (`npm test; echo $?` 는 false, 확인됨). 실패하면 `toolUseResult` 가 객체가 아니라 `Error: Exit code N…` 문자열이다.
-- 호출이 `background` 였으면 결과는 `toolUseResult.backgroundTaskId` 가 있는 중간 응답이고 `Started` 다. 완료는 나중에 완료 알림으로 온다 (확인됨). 알림은 두 모양이다: 턴이 끝나 있으면 `origin.kind: task-notification` 인 문자열 user 레코드, 턴 진행 중이면 `attachment.type: queued_command` (`prompt` 에 같은 XML). 태그는 `task-id`(= backgroundTaskId), `tool-use-id`(= 원래 call_id), `status`, `summary`(`(exit code N)` 포함), `output-file`. `tool-use-id` 로 원래 호출을 찾고 summary의 exit code로 `Ok`/`Err` 를 낸다 (하네스가 쓰는 문구라 Confirmed. exit code가 없으면 Unknown). `TaskStop` 으로 멈춘 작업은 알림이 오지 않는다 (확인됨). 시간 제한은 두지 않는다. `npm run dev` 처럼 끝나지 않는 작업이 흔하다. 정리는 완료 알림, `TaskStop` 의 성공 결과, 팀 퇴근 중 먼저 오는 것으로 한다 (4.7.2).
+- 호출이 `background` 였으면 결과는 `toolUseResult.backgroundTaskId` 가 있는 중간 응답이고 `Started` 다. 완료는 나중에 완료 알림으로 온다 (확인됨). 알림은 두 모양이다: 턴이 끝나 있으면 `origin.kind: task-notification` 인 문자열 user 레코드, 턴 진행 중이면 `attachment.type: queued_command` (`prompt` 에 같은 XML). 태그는 `task-id`(= backgroundTaskId), `tool-use-id`(= 원래 call_id), `output-file`, `status`(`completed`·`failed` 확인됨), `summary`(성공 `… completed (exit code 0)`, 실패 `… failed with exit code 2`, 확인됨). `tool-use-id` 로 원래 호출을 찾고 summary의 `exit code (\d+)` 로 `Ok`/`Err` 를 낸다 (하네스가 쓰는 문구라 Confirmed. exit code가 없으면 Unknown). 종료 코드는 summary 문구 안에만 있다. `TaskStop` 으로 멈춘 작업은 알림이 오지 않는다 (확인됨). 시간 제한은 두지 않는다. `npm run dev` 처럼 끝나지 않는 작업이 흔하다. 정리는 완료 알림, `TaskStop` 의 성공 결과, 팀 퇴근 중 먼저 오는 것으로 한다 (4.7.2).
 - 결과 본문의 테스트 요약 정규식(`(\d+) passed`, `test result: ok. (\d+) passed; (\d+) failed`, `Tests: (\d+) failed, (\d+) passed`)은 `test_result` (도장 숫자)에만 쓴다. 성공·실패 판정에는 쓰지 않는다.
 - 본문에 `<persisted-output>` 참조가 있으면 `tool-results/` 경로를 RawRef에 덧붙인다.
 
@@ -1038,15 +1038,15 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 - `session_meta.payload`: `id, session_id, cwd, originator, cli_version, source, thread_source, …` → SessionMeta. `originator` 로 C/D동 (`Codex Desktop` / `codex-tui`, 확인됨). `source` 는 앱·CLI 모두 `vscode` 라 쓰지 않는다.
 - `turn_context` → 모델명(`model`), effort(`effort`). effort는 앱에만 늘 있고 CLI 본 세션에는 없었다 (확인됨, 6부).
 - `response_item.payload.type`:
-  - `message`: role user는 주입 문맥(`<environment_context>` 등)이 섞인다. 줄 `metadata.user_input_order` 가 있는 것만 UserMessage (확인됨). role assistant → AssistantText
+  - `message`: role user는 주입 문맥(`<environment_context>` 등)이 섞인다. 줄 `metadata.user_input_order` 가 있는 것만 UserMessage (확인됨). 단 본문이 `<send_user_message_question_reply>` 로 시작하면 질문 답이다. 안의 JSON `[{questionItemId, question, answer}]` 의 `questionItemId` 에 질문 호출의 call_id가 들어 있다. UserMessage로 내지 않는다 (확인됨). role assistant → AssistantText
   - `reasoning` → Thinking (요약은 거의 비어 있다)
   - `custom_tool_call` `name: "exec"` → ToolCall. **셸·파일 편집·웹 검색이 모두 여기로 온다** (앱·CLI 모두, 확인됨). `input` 은 JS 코드이고 그 안에서 `tools.exec_command({cmd: "<문자열>", …})`, `tools.apply_patch("*** Begin Patch…")`, `tools.web__run({…})`, `tools.write_stdin({session_id, chars})` 를 부른다. 한 호출에 여러 개가 들어가고 `Promise.allSettled` 로 병렬도 돈다. 분류: 코드에서 `cmd:` 문자열 리터럴을 모두 뽑아 `classify_command` 에 넣고 우선순위가 가장 높은 것을 대표로 고른다 (4.6.4 3번과 같은 규칙). 명령이 둘 이상이면 `compound = Mixed`. `apply_patch` 만 있으면 `*** Add File` → FileWrite, `*** Update File` → FileEdit (경로는 패치 머리줄). `web__` 만 있으면 WebSearch. 뽑을 것이 없으면 Script. `write_stdin` 의 `chars` 가 `\u0003` 이면 백그라운드 작업 중단이다 (TaskStop과 같게)
-  - `custom_tool_call_output` → ToolResult. `output` 은 `[{type: "input_text", text}]` 배열이다. 첫 text는 `Script completed` / `Script failed` 로 시작한다. 둘째부터는 모델이 `text()` 로 찍은 값이라 모양이 정해져 있지 않다 (`exit_code` 가 든 JSON일 때도, 모델이 감쌌을 때도 있다)
-  - `function_call` → ToolCall. 확인된 이름: `spawn_agent`·`wait_agent`·`followup_task` (`namespace: collaboration`) → Spawn·Other, `request_user_input_async` (`request_user_input` 도 있다) → Ask. `mcp__` 접두 → Mcp. 결과는 `function_call_output`
+  - `custom_tool_call_output` → ToolResult. `output` 은 `[{type: "input_text", text}]` 배열이다. 첫 text는 `Script completed` / `Script failed` 로 시작한다. 둘째부터는 모델이 `text()` 로 찍은 값이라 모양이 정해져 있지 않다 (`exit_code` 가 든 JSON일 때도, 모델이 감쌌을 때도 있다). 사용자가 승인 창에서 거부하면 `Script failed` 와 `exec_command failed: CreateProcess { message: "Rejected(\"rejected by user\")" }` 가 오고 CommandExecution item도 exit_code도 없다. 이 문구가 있으면 `Rejected` (확인됨). 승인 창은 exec 입력의 `sandbox_permissions: "require_escalated"` + `justification` 으로 요청된다 (허가 대기 판정에 쓸지는 T11)
+  - `function_call` → ToolCall. 확인된 이름: `spawn_agent`·`wait_agent`·`followup_task` (`namespace: collaboration`) → Spawn·Other, `request_user_input_async` (`request_user_input` 도 있다) → Ask. 그 결과 `{accepted: true}` 는 접수일 뿐이고 답은 뒤의 user 메시지로 온다 (위). 답을 기다리며 부르는 `sleep` (`namespace: clock`)은 이벤트를 내지 않는다. `mcp__` 접두 → Mcp. 결과는 `function_call_output`
   - `agent_message` (`author`, `recipient`): 부모·자식 사이 메시지. 이벤트를 내지 않는다
 - `event_msg.payload.type`:
   - `item_completed`: `item.type` 이 `CommandExecution` (`command, cwd, parsed_cmd, status, exit_code, duration, process_id`), `FileChange` (`changes, status`), `Extension` (`kind: web.search`), `SubAgentActivity`, `CollabAgentToolCall`, `AgentMessage`, `Reasoning`, `UserMessage`. **명령의 성공·실패를 알려 주는 구조 필드는 CommandExecution 의 `exit_code` 와 `status`(`completed`/`failed`) 다** (확인됨). item에 call_id가 없어서, exec 호출과 그 결과 사이에 온 item을 그 호출의 것으로 본다. exec 하나의 outcome: 그 사이 CommandExecution이 하나라도 `failed` 면 Err, 모두 `completed` 면 Ok (Confirmed). 하나도 없으면 첫 text가 `Script failed` 일 때 Err, 그 외 Unknown
-  - `task_started` (`turn_attribution { turn_id, turn_trigger, parent_turn_id, initiating_agent_path, root_turn_id }`, `model_context_window`), `task_complete`, `token_count` → TokenUsage (`info.total_token_usage`, `info.model_context_window`). 그 외 무시. `thread_settings_applied` 는 `task_complete` 몇 분 뒤에도 온다
+  - `task_started` (`turn_attribution { turn_id, turn_trigger, parent_turn_id, initiating_agent_path, root_turn_id }`, `model_context_window`), `task_complete`, `token_count` → TokenUsage (컨텍스트 사용량은 `info.last_token_usage`. `total_token_usage` 는 세션 누적이라 압축 뒤에도 줄지 않는다, 확인됨. 창 크기는 `info.model_context_window`). 턴 끝은 `task_complete` 이고, 중단된 턴은 `task_complete` 없이 `turn_aborted { reason: "interrupted" }` 로 끝난다. `AgentMessage` 의 `phase: "final_answer"` 는 질문 직후에도 나와 턴 끝 신호가 아니다 (확인됨). 그 외 무시. `thread_settings_applied` 는 `task_complete` 몇 분 뒤에도 온다
 - 최상위 `world_state`, `token_usage_record`, `inter_agent_communication_metadata` 는 무시.
 - 백그라운드: 표시 플래그가 없다. `exec_command` 결과 JSON에 `session_id` 가 있고 `exit_code` 가 없으면 아직 도는 작업이라 `Started`. 끝나면 `process_id` 가 그 session_id인 CommandExecution item이 따로 온다 (확인됨). 이것으로 원래 호출의 `Ok`/`Err` 를 낸다. 푸시 알림 레코드는 없다.
 - 서브에이전트 (확인됨):
@@ -1054,7 +1054,8 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
   - 부모 쪽: `spawn_agent` 결과는 `{task_name}` 뿐이다. 자식 thread id·모델·effort는 직후 `item_completed` 의 `SubAgentActivity {kind: "started", agent_thread_id, agent_path, model, reasoning_effort}` 에 있다. **여기서 SubagentSpawn을 낸다.** `kind: "completed"` 로 SubagentDone, `"interacted"` 는 추가 지시다. `wait_agent` 결과(`{message, timed_out}`)에는 대상 정보가 없어 쓰지 않는다.
   - `spawn_agent`·`followup_task` 의 `message` 와 자식이 받은 지시는 암호화돼 있다. SubagentSpawn의 `prompt` 는 비운다.
   - 자식 파일의 활동(파일 읽기·수정 연출)은 T33에서 붙인다. T08은 Spawn·Done까지.
-- 할 일 도구는 이 버전에 없다 (모델이 todo 파일로 대신했다, 확인됨). 거부·`/compact` 의 기록 모양은 미확인 (6부).
+- `/compact` (확인됨): 사용자 입력 없는 `task_started`(`turn_attribution` 없음) → 최상위 `compacted` (`replacement_history`, `window_id` 등. 요약은 암호화돼 있다) → `item_completed` 의 `ContextCompaction` → `task_complete`. ContextCompaction을 내고 토큰 수는 비운다. 압축 뒤 사용량은 다음 `token_count` 의 `last_token_usage` 로 안다.
+- 할 일 도구는 이 버전에 없다 (모델이 todo 파일로 대신했다, 확인됨).
 
 `~/.codex/session_index.jsonl` (`{ id, thread_name, updated_at }`) 과 `history.jsonl` (`{ session_id, ts, text }`) 은 Scan 단계에서 세션 목록·제목·첫 요청을 얻는 데 쓴다 (확인됨). `session_index` 에는 자식 세션이 없고, `updated_at` 은 첫 턴 직후 값에서 갱신되지 않는다.
 
@@ -1480,12 +1481,9 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 직급 표의 모델명 | 표본 모델명은 `gpt-6.1-sol`, `gemini-4-argon-trial` 로 4.7.4 예시보다 새것이다. Codex effort는 `turn_context.effort` (앱만 늘 있다, `xhigh`)와 `SubAgentActivity.reasoning_effort` (`low`) | 4.7.4 토큰 표를 지금 모델명으로 다시 보기 | T09 |
 | 세션 등록부 허가 대기 `status` | `idle`·`busy` 확인. 허가 창이 떠 있을 때의 값은 미확인 | 허가 창을 띄운 채 등록부 보기 | T02, T11 |
 | WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T03, T12 |
-| Claude 알림의 실패 모양 | 알림 `status` 는 `completed` 만 봤다. 실패한 백그라운드 작업의 status·summary 미확인 | 실패하는 백그라운드 명령 하나 | T07 |
+| 기록 모양의 남은 미확인 | Claude 알림 `status` 는 `completed`·`failed`, 압축 `trigger` 는 `manual` 만 봤다. Codex 거부는 사용자 거부 문구만 봤다 | 자동 압축이 난 세션, `TaskStop` 아닌 방법으로 죽은 백그라운드 작업, 샌드박스가 막은 Codex 명령을 하나씩 보기 | T07, T08 |
 | 컨텍스트 윈도우 | Claude는 compaction `preTokens` 로 학습 (이 PC 표본 967k → 1M). 못 봤으면 설정값 200k + "?" 표시. Codex는 `model_context_window` 확인됨 | 200k 세션과 1M 세션을 하나씩 돌려 화분 곡선 확인 | T11, T23 |
 | 할 일 도구 | Claude Desktop·CLI(2.1.299·2.1.304)와 Codex 0.163 표본에는 할 일 도구가 없었다 (모델이 todo 파일로 대신). Antigravity는 `task.md` (4.6.3). 칸반(S40)을 무엇으로 움직일지 미정 | 할 일 도구가 있는 빌드·설정이 있는지 보기. 없으면 칸반 신호를 바꾼다 | T07, T23 |
-| Codex 거부 기록 | Claude는 `toolDenialKind`, Antigravity 앱은 `ERROR` + `permission check failed` 로 확인. Codex는 표본에서 허가 창이 안 떴거나 허용됐다 | 허가 창에서 거부 | T08 |
-| `/compact` 기록 | 2026-10-20 표본 세 제품 모두 없음. Claude `compact_boundary` 는 옛 실제 세션으로 확인됨(fixture). Codex는 옛 실제 세션에 `compacted` 레코드가 있었다 (키 미확인) | 각 제품에서 한 턴 더 한 뒤 `/compact` | T07, T08, T32 |
-| Codex 질문 답 | `request_user_input_async` 결과는 `{accepted: true}` 뿐. 사용자의 선택이 어디 남는지 미확인 | 질문에 답하고 한 턴 더 | T08 |
 | Codex 앱 mtime 늦은 갱신과 규칙 (c) | Codex 앱은 쓰는 동안 mtime을 안 바꾼다. 나중에 OS가 mtime을 한꺼번에 갱신할 때 길이가 읽은 곳과 같으면 규칙 (c)가 가짜 Reset을 내 팀을 다시 만든다 (조용한 재구성이라 화면은 그대로지만 비용이 든다) | Codex 앱 세션을 켜 둔 채 Reset 횟수를 로그로 보기 | T12, T13 |
 | WSL UNC 200ms 폴링 비용 | 미측정 | T13 | T13, T31 |
 | MSVC 빌드 (기본 경로) | `vcruntime140.dll` 의존 없음은 확인됨 (Defender만 켜진 개발 PC, 커밋 5a7ea29). 깨끗한 PC에서 설치·실행만 미확인 | 깨끗한 Windows 11 VM에 설치·실행 | T01, T36 |

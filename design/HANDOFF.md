@@ -148,7 +148,7 @@ python design/tools/owlfice_art.py
 7. 세로 구분선 1×20
 8. `room-labels` 토글 (`aria-pressed`), 소리 토글 (`sound-off`/`sound-on`)
 9. 배율 칩 mono "2×" (`title="캔버스 배율"`)
-10. 900–1099: 맨 오른쪽 `panel` 버튼. 드로어가 열려 있으면 검은 바탕 (`ow-iconbtn--solid`, `aria-expanded="true"`)
+10. 1100 미만: 맨 오른쪽 `panel` 버튼 ("직원 현황판 열기"). 드로어가 열려 있으면 검은 바탕 (`ow-iconbtn--solid`, `aria-expanded="true"`). 900 미만은 머리말 대신 띠(52·48)에 둔다 (시안 Narrow·Tiny). 900–1099 는 시안 Medium 처럼 사각형·이름·세션 제목·배율 칩·panel 버튼만
 
 ### 4.4 캔버스 위 DOM 요소
 

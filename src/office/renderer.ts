@@ -146,8 +146,17 @@ interface OfficeStore {
 type Rgb = [number, number, number];
 const WHITE: Rgb = [255, 255, 255];
 
+/** 머리말이 부르는 것 */
+export interface OfficeHandle {
+  setRoomLabels(on: boolean): void;
+  /** 지금 정수 배율 (장치 픽셀 기준) */
+  scale(): number;
+  /** 배율이 바뀔 때 (등록 즉시 부르지 않는다) */
+  onScale(cb: (scale: number) => void): void;
+}
+
 /** `stage` 는 가운데 무대(`.ow-stage`). 캔버스·방 이름표·미니맵을 그 안에 만든다. */
-export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promise<void> {
+export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promise<OfficeHandle> {
   const app = await createOfficeApp();
   const assets = await loadOfficeAssets();
   const fp = assets.floorplan;
@@ -182,6 +191,8 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   // 무대의 사용 가능 크기, 장치 픽셀
   let avail = { w: CANVAS_W, h: CANVAS_H };
   const pan = { x: 0, y: 0, maxX: 0, maxY: 0 };
+  const scaleListeners: ((scale: number) => void)[] = [];
+  let notifiedScale = fit.scale;
 
   // ---------- 조명: 바뀌면 1.5초 보간 ----------
   let lightFrom: Rgb = WHITE;
@@ -266,6 +277,10 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
     if (app.renderer.width !== fit.backingW || app.renderer.height !== fit.backingH)
       app.renderer.resize(fit.backingW, fit.backingH);
     app.stage.scale.set(fit.scale);
+    if (fit.scale !== notifiedScale) {
+      notifiedScale = fit.scale;
+      for (const cb of scaleListeners) cb(fit.scale);
+    }
     for (const el of [wrap, app.canvas]) {
       el.style.width = `${fit.cssW}px`;
       el.style.height = `${fit.cssH}px`;
@@ -373,4 +388,9 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   });
   measure();
   layout();
+  return {
+    setRoomLabels: (on) => void (overlay.hidden = !on),
+    scale: () => fit.scale,
+    onScale: (cb) => void scaleListeners.push(cb),
+  };
 }

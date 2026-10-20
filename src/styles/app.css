@@ -1,0 +1,62 @@
+/* 화면 배치 보강. 기본 모양은 design/handoff/tokens.css, 창 너비 구간은 header.ts 가 app.dataset.layout 으로 정한다 (PLAN 3.2) */
+.ow-app {
+  position: relative; /* 현황판 드로어의 기준 */
+}
+.ow-main {
+  min-height: 0;
+}
+.ow-panel-host {
+  display: contents;
+}
+.ow-header [hidden] {
+  display: none !important;
+}
+.ow-header {
+  min-width: 0;
+  overflow: hidden;
+}
+.ow-header__title,
+.ow-header__sub {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ow-header__sub {
+  color: var(--ow-ink-3);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ow-header__session {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ow-ink-2b);
+  font-size: 13px;
+}
+.ow-header__spacer {
+  flex: 1;
+}
+.ow-header__scale {
+  font-family: var(--ow-font-mono);
+}
+.ow-header__work {
+  display: none;
+}
+.ow-header--strip {
+  height: var(--ow-band-h);
+}
+.ow-header--strip .ow-header__full {
+  display: none;
+}
+.ow-header--strip .ow-header__work {
+  display: inline-flex;
+}
+.ow-app[data-layout="select"] {
+  flex-direction: column;
+}
+.ow-app[data-layout="select"] .ow-main {
+  flex: 1;
+}

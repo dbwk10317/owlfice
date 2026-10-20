@@ -53,7 +53,7 @@
 - 에이전트를 조종하지 않는다. 세션 파일을 쓰지 않는다. 읽기 전용이다. 꺼진 WSL 배포판을 깨우지도 않는다.
 - 외부 서버에 연결하지 않고 포트를 열지 않는다. WSL 파일은 `\\wsl.localhost` 루프백 공유로 읽는다. 이것이 유일한 네트워크 사용이다.
 - 과거 세션을 재생하지 않는다 (1차 범위 밖).
-- 세 회사(Anthropic, OpenAI, Google) 제품 외의 에이전트는 지원하지 않는다. 1차 범위는 Claude Desktop(Code 탭), Claude Code CLI, Codex 앱이다. Codex CLI는 레코드 확인 후 같은 파서로 지원한다. Google 쪽은 Antigravity CLI(`agy`)를 표본 확인 후 지원한다 (T32). Gemini CLI는 2026-06-18 개인 사용자 서비스가 끝나 지원하지 않는다. Antigravity 앱(IDE)은 1차 범위 밖이다 (4.4.1, 6부).
+- 세 회사(Anthropic, OpenAI, Google) 제품 외의 에이전트는 지원하지 않는다. 1차 범위는 Claude Desktop(Code 탭), Claude Code CLI, Codex 앱이다. Codex CLI는 레코드 확인 후 같은 파서로 지원한다. Google 쪽은 Antigravity CLI(`agy`)를 표본 확인 후 지원한다 (T32). Gemini CLI는 2026-06-18 개인 사용자 서비스가 끝나 지원하지 않는다. Antigravity 앱(IDE)은 CLI와 같은 기록 파일을 쓰는 것이 확인되면 같은 파서로 지원한다. Gemini 채팅 데스크톱 앱은 코딩 에이전트가 아니고 대화 기록 파일이 없어 지원하지 않는다 (4.4.1, 6부).
 
 ---
 
@@ -761,8 +761,11 @@ gemini = %USERPROFILE%\.gemini
 | Claude Code CLI | B | 같은 폴더 | jsonl append | `entrypoint: "cli"` | 지원 (확인됨, 표본 적음) |
 | Codex 앱 | C | `<codex>\sessions\YYYY\MM\DD\rollout-<시각>-<uuid>.jsonl` | jsonl append | `session_meta.payload.originator: "Codex Desktop"` | 지원 (확인됨) |
 | Codex CLI | D | 같은 폴더 | jsonl append | `originator`가 그 외 | 지원 예정 (레코드 미확인) |
-| Antigravity 앱 (IDE) | E | `<gemini>\antigravity\conversations\<uuid>.db`, `brain\<uuid>\`, `%APPDATA%\Antigravity` | DB·protobuf | — | 1차 범위 밖 |
+| Antigravity 앱 (IDE) | E | `<gemini>\antigravity\brain\<uuid>\.system_generated\logs\transcript.jsonl` (2차 자료), `conversations\<uuid>.db` | jsonl (가정) | 경로 (`antigravity`) | 표본 확인 후 (T32). 개발 PC에 없음 |
+| Gemini 앱 (채팅) | — | `%APPDATA%\gemini` (Electron·Chromium 저장소) | — | — | 지원 안 함. 코딩 에이전트가 아니고 대화 기록 파일이 없다 (확인됨) |
 | Antigravity CLI (`agy`) | F | `<gemini>\antigravity-cli\brain\<uuid>\.system_generated\logs\transcript_full.jsonl` | jsonl (append 전용인지 미확인) | 경로 (`antigravity-cli`) | 표본 확인 후 (T32). WSL에서 확인됨 |
+
+**호스트마다 찾는 제품.** Windows는 데스크톱 앱과 CLI를 모두 찾는다. WSL은 데스크톱이 없으니 CLI만 찾는다 (4.4.2). Claude·Codex는 앱과 CLI가 같은 폴더를 써서 경로가 같고 동은 세션마다 정한다. Antigravity는 앱(`<gemini>\antigravity\`, E동)과 CLI(`<gemini>\antigravity-cli\`, F동)의 폴더가 달라 Windows에서는 둘 다 본다.
 
 Claude 세션 폴더의 구조 (확인됨):
 - `<프로젝트폴더>\<uuid>.jsonl` 이 세션 본체.
@@ -795,7 +798,7 @@ AI 없이 기계적으로 따라가는 체인이다. 1번은 개발 PC에서 확
 2. **켜진 배포판만 다룬다.** Probe 주기(30초)마다 `wsl.exe -l --running -q` 를 한 번 실행해(약 100ms) 켜진 목록을 얻는다. 3초 Scan에서는 프로세스를 띄우지 않는다. 꺼진 배포판은 "소등"으로 표시하고 UNC를 건드리지 않는다. UNC 첫 접근은 VM을 부팅시키기 때문이다 (1.3).
 3. 배포판 루트는 `\\wsl.localhost\<DistributionName>\`. `BasePath` 의 vhdx는 열지 않는다. 구버전 호환으로 `\\wsl$\<이름>\` 도 시도한다.
 4. `\\wsl.localhost\<이름>\etc\passwd` 를 읽어 세 번째 필드가 `DefaultUid` 와 같은 줄의 여섯 번째 필드가 홈 디렉터리.
-5. 홈 아래 `.claude/projects`, `.codex/sessions`, `.gemini/antigravity-cli/brain` 존재 확인.
+5. 홈 아래 `.claude/projects`, `.codex/sessions`, `.gemini/antigravity-cli/brain` 존재 확인. CLI 폴더만 본다 (4.4.1 "호스트마다 찾는 제품").
 6. 못 찾으면 폴백: `wsl.exe -d <이름> -- printenv HOME CLAUDE_CONFIG_DIR CODEX_HOME` 을 한 번 실행한다. 로그인 셸(`sh -lc`)은 느리고 프로필 출력이 섞이므로 쓰지 않는다. 그래도 없으면 설정의 수동 경로.
 
 **깨우지 않기의 한계와 완화.** 경로 기반 UNC 접근은 어떤 주기로 켜짐을 확인해도 "확인 직후 종료"의 창이 남는다. 그래서:
@@ -896,6 +899,8 @@ impl TailReader {
 ### 4.6 공통 이벤트 모델 (parse)
 
 제품별 파서는 각자 포맷을 읽어 아래 하나의 enum으로 바꾼다. 상태 기계는 제품을 모른다.
+
+포맷 대조 자료 (2차 자료다. 다르면 실제 파일이 기준): majiayu000/agent-sessions 의 `docs/formats.md` (Claude·Codex), pixtuoid 의 에이전트별 디코더 (둘 다 MIT. 의존성으로 쓰지 않는다, 6부), traces.com/blog/gemini-cli (Antigravity 레코드 종류). coding_agent_session_search(cass)는 라이선스가 Anthropic과 그 대리인을 배제하므로 코드를 보지도 쓰지도 않는다.
 
 ```rust
 pub struct Event {
@@ -1432,9 +1437,10 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 항목 | 현재 가정 | 확인 방법 | 영향 |
 |---|---|---|---|
 | Antigravity CLI 레코드 | `USER_INPUT`·`PLANNER_RESPONSE` 만 확인 (WSL 표본 1개, 2줄). 도구 호출 type, append 전용 여부, 서브에이전트 기록 위치 미확인 | 파일 읽기·수정·셸·서브에이전트를 쓰는 agy 세션 하나 | T32 |
-| Antigravity 앱(IDE) 저장 형식 | `~/.gemini/antigravity/conversations/*.db`. 1차 범위 밖. CLI와 같은 `brain/<uuid>/.system_generated/logs/transcript_full.jsonl` 을 쓰는지 미확인 | IDE 세션 폴더를 CLI와 비교 | 없음 (1차) |
+| Antigravity 앱(IDE) 저장 형식 | 2차 자료는 IDE가 `~/.gemini/antigravity/brain/<uuid>/.system_generated/logs/transcript.jsonl` 을 쓴다고 한다. 개발 PC에 IDE가 없어 미확인 | Windows에 Antigravity 앱을 깔고 세션 하나 만들어 CLI 폴더와 비교 | T32 |
 | Codex 서브에이전트 자식 파일 | `spawn_agent`·`turn_attribution` 은 확인됨. 자식이 별도 rollout인지 미확인 | 서브를 쓰는 Codex 세션의 rollout 폴더 비교 | T33 |
 | Codex CLI 레코드 | Desktop 레코드만 대조함. WSL에 Codex CLI 세션 표본 1개가 생겼다. CLI의 `shell` function_call 형태, `originator` 값 미확인 | 그 표본 대조 | T08 |
+| 기존 공개 도구 재사용 | 조사함 (2026-10-20). 그대로 쓸 의존성 없음: agent-sessions(Rust, MIT)는 신생·SQLite 번들·서브에이전트 파일 미지원, pixtuoid(Rust, MIT, 터미널 픽셀 사무실)는 hook 기반이라 읽기 전용 원칙(1.3)과 다르다 | 파서 티켓에서 포맷 대조 자료로만 쓴다 (4.6) | T07 T08 T32 |
 | Codex 앱 `exec` JS 세분 매핑 | Script로 뭉뚱그림 | 자주 나오는 `tools.*` 호출 목록 수집 | T11 |
 | Codex `turn_context` effort 필드 | 있으면 직급에 반영 | turn_context 레코드 키 확인 | T09 |
 | 세션 등록부 `status` 값 | `busy` 만 확인. idle·허가 대기 값 미확인 | 결재·허가 대기 중에 등록부 파일 보기 | T02, T11 |
@@ -1447,7 +1453,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 컨텍스트 윈도우 | Claude는 compaction `preTokens` 로 학습 (이 PC 표본 967k → 1M). 못 봤으면 설정값 200k + "?" 표시. Codex는 `model_context_window` 확인됨 | 200k 세션과 1M 세션을 하나씩 돌려 화분 곡선 확인 | T11, T23 |
 | 서브에이전트 종료 | 추정 규칙 (60초 무변경) | 비동기 Agent 완료 시 부모 파일에 남는 레코드 확인 | T11 |
 | WSL UNC 200ms 폴링 비용 | 미측정 | T13 | T13, T31 |
-| MSVC 빌드 (기본 경로) | `tauri-build` 가 VC 런타임을 정적 링크해 `vcruntime140.dll` 의존이 없다고 가정. 개발 PC는 보안 소프트웨어 때문에 Windows에서 링크할 수 없어 확인 불가 | Visual Studio Build Tools가 있는 PC에서 `npm run tauri build` 뒤 `dumpbin /dependents`, 깨끗한 Windows 11 VM에 설치·실행 | T01 |
+| MSVC 빌드 (기본 경로) | `vcruntime140.dll` 의존 없음은 확인됨 (Defender만 켜진 개발 PC, 커밋 5a7ea29). 깨끗한 PC에서 설치·실행만 미확인 | 깨끗한 Windows 11 VM에 설치·실행 | T01, T36 |
 | GNU 폴백의 MSYS2 빌드 | MSYS2 UCRT64로 된다고 가정. 개발 PC는 SEP 때문에 확인 불가. rustup의 windows-gnu std는 msvcrt로 링크하므로(확인됨: Rust 1.98 링크 인자 `-lmsvcrt`) UCRT64 gcc와 CRT가 섞인다. WSL 폴백의 mingw64는 msvcrt라 섞이지 않는다 | SEP 없는 PC에서 `bash build-gnu.sh`. 링크·실행이 깨지면 MSYS2 MINGW64(`mingw-w64-x86_64-gcc`)로 바꾼다 | T01 |
 | 중소기업 팀장석 5팀 초과 | 간이 책상 2 + 카드만 | 실제 사용 보고 | T29 |
 | 픽셀아트 어셋 조달 | `design/tools/owlfice_art.py` 가 만든 부품 시트(올빼미 5종·옷·담당 레이어 693프레임, 소품 125종)를 1차 어셋으로 쓴다. 손그림으로 바꿀지는 미정 | 프레임 이름·기준점 규약(`design/HANDOFF.md` 6.3–6.4)을 고정한 채 올빼미 1종을 손으로 다시 그려 비교 | T19, T35 |

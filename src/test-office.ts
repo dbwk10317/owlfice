@@ -13,6 +13,7 @@ export function act(over: Partial<Activity> = {}): Activity {
     pose: "Type",
     confidence: "Confirmed",
     extra: 0,
+    elapsed: false,
     ...over,
   };
 }

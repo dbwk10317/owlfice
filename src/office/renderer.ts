@@ -286,7 +286,9 @@ export async function mountOffice(
       buildLabels(kind);
     }
     officeId = office?.officeId ?? "";
-    const placed = actors.sync(office, kind, Date.now());
+    // 사무실을 바꾼 첫 스냅샷, 숨은 창에서 돌아온 스냅샷은 걷지 않고 제자리 (cue 도 버린다)
+    const placed = actors.sync(office, kind, Date.now(), { instant: switched || resumed });
+    resumed = false;
     const props = seatProps(fp, kind, placed);
     for (const [id, s] of scene?.toggled ?? []) s.visible = props.has(id);
     // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
@@ -398,6 +400,7 @@ export async function mountOffice(
   // ---------- 렌더 루프 ----------
   // 스냅샷은 표시만 해 두고 틱에서 한 번 적용한다. 숨은 창에선 틱이 멈춰 마지막 것만 보일 때 적용된다 (PLAN 4.9)
   let dirty = true;
+  let resumed = false;
   store.subscribe(() => {
     dirty = true;
   });
@@ -432,7 +435,11 @@ export async function mountOffice(
   );
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) app.ticker.stop();
-    else app.ticker.start();
+    else {
+      resumed = true;
+      dirty = true;
+      app.ticker.start();
+    }
   });
   measure();
   layout();

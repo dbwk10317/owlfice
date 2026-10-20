@@ -1,8 +1,9 @@
 // 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 세 겹 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
-import type { Bubble, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
+import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
 import { fill, fillElapsed } from "../text.ts";
+import { HIDDEN, Track, canWander, isEntering, playCue, type Target } from "./anim-queue.ts";
 import { gridToScreen, themeOf, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
 import { placeSprite } from "./sprites.ts";
 
@@ -95,8 +96,7 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
 /** 방·자세 → 자리와 sprite 자세. null 은 그리지 않는다 (외근). */
 export function placeRule(room: Room, pose: Pose, boss: boolean): Rule | null {
   if (room === "Outside") return null;
-  // 결재 대기. 왕복 걷기는 T22 라 그때까지 boss_pace 에 서 있는다
-  // ponytail: 왕복 없이 첫 자리에 idle, 걷기 티켓(T22)에서 두 자리를 오간다
+  // 결재 대기. 서 있는 자리는 boss_pace 첫 자리, 두 자리 왕복은 anim-queue 가 한다
   if (pose === "Pace") return { at: ["boss_pace"], look: IDLE };
   if (room === (boss ? "TeamLead" : "Dev")) return { at: "seat", look: SEAT_LOOK[pose] };
   if (room === "Incident" && boss) return { at: ["incident"], look: { pose: "panic", dir: "f" } };
@@ -133,8 +133,14 @@ export interface Placed {
   overflow: boolean;
   x: number;
   y: number;
+  /** 걷기 경로용 격자 좌표 */
+  gx: number;
+  gy: number;
+  z: number;
   depth: number;
   look: Look;
+  /** 자기 좌석 (유휴 동작 대상) */
+  seated: boolean;
 }
 
 /** 참조 렌더(Python round)와 같은 은행가 반올림. 의자·소파 자리 몇 곳이 정확히 .5 에 떨어진다. */
@@ -226,8 +232,12 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
         overflow,
         x: roundEven(p.x),
         y: roundEven(p.y),
+        gx: spot.gx,
+        gy: spot.gy,
+        z: spot.z,
         depth: spot.depth,
         look: spot.look ?? rule.look,
+        seated: rule.at === "seat",
       });
     });
   }
@@ -326,6 +336,9 @@ interface Actor {
   spot: string;
   x: number;
   y: number;
+  /** 같은 depth 에서 그리는 순번 */
+  seq: number;
+  track: Track;
   animStart: number;
   nextBlink: number;
   emp: EmployeeDto;
@@ -338,6 +351,21 @@ interface Actor {
 
 type ToCss = (x: number, y: number) => { left: number; top: number };
 
+function reducedMotion(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function targetOf(p: Placed): Target {
+  const { room, pose } = p.emp.activity;
+  return {
+    at: { gx: p.gx, gy: p.gy, z: p.z },
+    look: p.look,
+    depth: p.depth,
+    wander: canWander(room, pose, p.seated),
+    pace: pose === "Pace",
+  };
+}
+
 export class ActorLayer {
   private actors = new Map<string, Actor>();
   private world: Container | null = null;
@@ -346,6 +374,7 @@ export class ActorLayer {
   private nametag: HTMLElement;
   private nametagName: HTMLElement;
   private nametagText: HTMLElement;
+  private lastOffice: OfficeDto | null = null;
 
   /** `office` 는 손에 드는 물건(held_*)을 꺼내는 사무실 시트, `overlay` 는 이름표·Zzz·배지를 넣을 DOM 층. */
   constructor(
@@ -370,8 +399,25 @@ export class ActorLayer {
     for (const a of this.actors.values()) world.addChild(a.root);
   }
 
-  /** 스냅샷 전체 교체. 같은 agent_id 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. 그린 자리를 돌려준다. */
-  sync(office: OfficeDto | null, kind: Kind, now: number): Placed[] {
+  /**
+   * 스냅샷 전체 교체. 같은 agent_id 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. 그린 자리를 돌려준다.
+   * 자리가 바뀐 직원은 큐에 걷기를 넣는다. `instant` 면 큐를 비우고 바로 제자리, cue 는 버린다
+   * (사무실 전환 첫 스냅샷, 숨은 창에서 돌아옴). 조용한 재구성도 바로 제자리지만 백엔드가 남긴 출근 cue 는 재생한다 (PLAN 4.3).
+   */
+  sync(
+    office: OfficeDto | null,
+    kind: Kind,
+    now: number,
+    opts: { instant?: boolean } = {},
+  ): Placed[] {
+    // 목록만 바뀌어도 같은 스냅샷으로 다시 불린다. 그때 cue 를 또 재생하지 않는다
+    const fresh = office !== this.lastOffice;
+    this.lastOffice = office;
+    const instant = opts.instant || (fresh && !!office?.rebuilt);
+    const cuesOf = new Map<string, CueDto[]>();
+    for (const c of fresh && !opts.instant ? (office?.cues ?? []) : [])
+      if ("agent" in c) cuesOf.set(c.agent, [...(cuesOf.get(c.agent) ?? []), c]);
+      else playCue(c, undefined, now);
     const placed = office ? layoutActors(this.fp, kind, office) : [];
     const present = new Set(office?.teams.flatMap((t) => t.employees.map((e) => e.agentId)));
     for (const [id, a] of this.actors)
@@ -386,7 +432,8 @@ export class ActorLayer {
     const shown = new Set<string>();
     const seqBase = this.fp.layouts[kind].placements.length;
     placed.forEach((p, i) => {
-      const a = this.actors.get(p.emp.agentId) ?? this.create(p.emp, now);
+      const old = this.actors.get(p.emp.agentId);
+      const a = old ?? this.create(p.emp, now);
       shown.add(a.id);
       a.emp = p.emp;
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
@@ -394,25 +441,24 @@ export class ActorLayer {
       a.role = p.emp.role === "Trainee" ? null : p.emp.role.toLowerCase();
       // Pixi 는 직원이 다른 자리로 옮겨져도 pointerout 을 안 내서 이름표가 새 자리를 따라간다
       if (a.spot !== p.spot && this.hovered === a.id) this.hover(null);
-      // ponytail: 방이 바뀌면 바로 옮긴다, 걷기·큐·좌우 반전은 T22
       a.spot = p.spot;
-      a.x = p.x;
-      a.y = p.y;
-      if (a.look.pose !== p.look.pose || a.look.dir !== p.look.dir) a.animStart = now;
-      a.look = p.look;
-      a.root.position.set(p.x, p.y);
-      a.root.zIndex = zIndexOf(p.depth, seqBase + i);
-      a.root.visible = true;
-      this.setHeld(a);
-      this.setFrame(a, 0);
-      this.setZz(a);
+      a.seq = seqBase + i;
+      const cues = cuesOf.get(a.id) ?? [];
+      const entering = cues.some(isEntering);
+      const target = targetOf(p);
+      // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (PLAN 4.8)
+      if (instant || (!old && !entering)) a.track.reset(target, now);
+      if (entering || (old && !instant)) a.track.retarget(target, now, entering);
+      for (const c of cues) playCue(c, a.track, now);
       this.setBadge(a);
       this.setBubble(a, now);
       if (!a.root.parent && this.world) this.world.addChild(a.root);
     });
     for (const a of this.actors.values())
       if (!shown.has(a.id)) {
-        a.root.visible = false;
+        if (instant) a.track.reset(HIDDEN, now);
+        else a.track.retarget(HIDDEN, now);
+        for (const c of cuesOf.get(a.id) ?? []) playCue(c, a.track, now);
         a.zz?.remove();
         a.zz = null;
         a.badge?.remove();
@@ -422,28 +468,53 @@ export class ActorLayer {
         a.spot = "";
         if (this.hovered === a.id) this.hover(null);
       }
-    this.placeOverlay();
     this.update(now);
+    this.placeOverlay();
     return placed;
   }
 
   update(now: number): void {
-    if (this.owls)
-      for (const a of this.actors.values()) {
-        if (!a.root.visible) continue;
-        const pose = this.owls.meta.poses[a.look.pose];
-        const n = pose?.dirs[a.look.dir] ?? 1;
-        let frame = 0;
-        if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
-        else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
-          // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
-          if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
-          frame = now >= a.nextBlink ? 1 : 0;
-        }
-        this.setFrame(a, frame);
+    let moved = false;
+    for (const a of this.actors.values()) {
+      const s = a.track.update(now);
+      if (!s.at) {
+        if (a.root.visible && this.hovered === a.id) this.hover(null);
+        a.root.visible = false;
+        continue;
       }
+      const p = gridToScreen(s.at.gx, s.at.gy, s.at.z);
+      const x = roundEven(p.x);
+      const y = roundEven(p.y);
+      if (x !== a.x || y !== a.y || s.flip !== a.root.scale.x < 0) moved = true;
+      a.x = x;
+      a.y = y;
+      a.root.position.set(x, y);
+      // 기준점 x=8 이 가운데라 뒤집어도 발이 제자리다 (HANDOFF 6.4)
+      a.root.scale.x = s.flip ? -1 : 1;
+      a.root.zIndex = zIndexOf(s.depth, a.seq);
+      a.root.visible = true;
+      if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir) a.animStart = now;
+      if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir || s.look.held !== a.look.held) {
+        a.look = s.look;
+        this.setHeld(a);
+        this.setZz(a);
+        moved = true;
+      }
+      if (!this.owls) continue;
+      const pose = this.owls.meta.poses[a.look.pose];
+      const n = pose?.dirs[a.look.dir] ?? 1;
+      let frame = 0;
+      if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
+      else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
+        // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
+        if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
+        frame = now >= a.nextBlink ? 1 : 0;
+      }
+      this.setFrame(a, frame);
+    }
     for (const a of this.actors.values())
       if (a.bubble) a.bubble.hidden = !(Math.abs(now - a.bubbleAt) < BUBBLE_MS);
+    if (moved) this.placeOverlay();
     this.fillNametag(now);
   }
 
@@ -522,6 +593,12 @@ export class ActorLayer {
       spot: "",
       x: Number.NaN,
       y: Number.NaN,
+      seq: 0,
+      track: new Track({
+        fp: this.fp,
+        seed: Number(fnv1a64(id) & 0xffffffffn),
+        reduced: reducedMotion,
+      }),
       animStart: now,
       nextBlink: now + 3000 + Math.random() * 2000,
       emp,
@@ -630,7 +707,10 @@ export class ActorLayer {
     const meta = this.owls?.meta;
     const anchor = meta?.anchors[`${a.look.pose}_${a.look.dir}_0`];
     if (!meta || !anchor) return { x: a.x, y: a.y - 18 };
-    return { x: a.x + anchor.head[0] - meta.anchor[0], y: a.y + anchor.head[1] - meta.anchor[1] };
+    return {
+      x: a.x + (anchor.head[0] - meta.anchor[0]) * a.root.scale.x,
+      y: a.y + anchor.head[1] - meta.anchor[1],
+    };
   }
 
   private put(el: HTMLElement, x: number, y: number): void {

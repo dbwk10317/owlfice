@@ -4,6 +4,7 @@ pub mod classify;
 pub mod names;
 pub mod rank;
 pub mod stats;
+pub mod world;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;

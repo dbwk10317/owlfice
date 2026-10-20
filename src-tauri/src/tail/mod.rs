@@ -1,5 +1,7 @@
 //! 증분 파일 읽기 (PLAN 4.5)
 
+pub mod scheduler;
+
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
 use std::hash::Hasher;

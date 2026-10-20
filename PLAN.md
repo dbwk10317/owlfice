@@ -1387,6 +1387,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | `mcp_server` | 처음 본 거래처 | server, tool |
 | `skill` | 처음 본 스킬 | name |
 | `system_subtype` | 처음 본 `system.subtype` | subtype |
+| `product_value` | 모르는 Claude `entrypoint`·Codex `originator` 값 (B·D동으로 둔다) | product, value |
 | `result_shape` | 테스트 정규식에 걸리지 않은 Test 결과 | command_key, 결과 줄 수, 걸린 정규식 계열 이름(`cargo`·`pytest`·`jest`·`none`). 첫 줄 문자열은 저장하지 않는다. 숫자·경로를 치환해도 `Authentication failed for user alice` 같은 자유 문자열이 남는다 |
 | `outcome_unknown` | 성공·실패를 판별하지 못한 결과 | product, tool, 결과의 최상위 키 목록 |
 | `state_conflict` | 2.5 우선순위로 가려진 동시 상태 | 상태 두 개 |

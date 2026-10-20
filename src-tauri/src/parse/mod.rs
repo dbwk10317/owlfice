@@ -1,5 +1,8 @@
 //! 제품별 레코드를 공통 Event로 (PLAN 4.6)
 
+pub mod claude;
+pub mod codex;
+
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -26,6 +29,46 @@ pub struct RawRef {
     pub generation: u64,
     pub byte_offset: u64,
     pub line_no: u64,
+}
+
+/// 파일 하나(메인 또는 서브 기록)마다 하나 둔다. 파일이 Reset되면 새로 만든다 (4.3)
+pub trait Parser {
+    /// TailReader의 한 줄을 이벤트로. 연출로 못 바꾼 모양은 `unhandled` 에 구조만 넣는다
+    fn parse_line(
+        &mut self,
+        bytes: &[u8],
+        raw_ref: &RawRef,
+        unhandled: &mut Vec<Unhandled>,
+    ) -> Vec<Event>;
+}
+
+/// 원본 레코드를 보는 파서만 아는 미대응 재료 (4.11). 원문 값은 담지 않는다.
+/// 이벤트에서 알 수 있는 kind(`command`·`mcp_server`·`skill` 등)와 집계·저장은 diag 몫이다
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unhandled {
+    /// 모르는 최상위 `type`, Codex `payload.type`. `keys` 는 최상위 키 이름
+    RecordType {
+        type_name: String,
+        keys: Vec<String>,
+        renamed_turn: bool,
+    },
+    SystemSubtype {
+        subtype: String,
+    },
+    /// ToolKind::Other 로 떨어진 도구 (내부 배관 제외)
+    ToolName {
+        name: String,
+        input_keys: Vec<String>,
+    },
+    /// 성공·실패를 판별하지 못한 결과. `result_keys` 는 결과의 최상위 키 이름
+    OutcomeUnknown {
+        tool: String,
+        result_keys: Vec<String>,
+    },
+    /// 모르는 Claude `entrypoint`·Codex `originator` 값
+    ProductValue {
+        value: String,
+    },
 }
 
 /// 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)

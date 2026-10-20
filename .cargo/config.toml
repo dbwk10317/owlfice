@@ -1,0 +1,3 @@
+# GNU 폴백 전용. MSYS2의 libgcc_s·libstdc++ DLL에 기대지 않게 정적 링크한다 (PLAN 4.1). 확인은 build-gnu.sh
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-args=-static-libgcc -static-libstdc++"]

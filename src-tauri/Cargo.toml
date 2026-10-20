@@ -1,0 +1,24 @@
+[package]
+name = "owlfice"
+version = "0.1.0"
+description = "AI 에이전트 세션을 픽셀아트 사무실로 보여주는 앱"
+edition = "2024"
+publish = false
+
+[lib]
+# bin(owlfice)과 이름이 같으면 Windows에서 산출물이 충돌한다 (rust-lang/cargo#8519)
+name = "owlfice_lib"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+# https://v2.tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

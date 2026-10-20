@@ -1,0 +1,159 @@
+/* 현황판에서만 쓰는 보강. 카드·칩·막대 같은 기본 스타일은 design/handoff/tokens.css 가 가진다. */
+.ow-panel [hidden],
+.ow-panel[hidden] {
+  display: none !important;
+}
+.ow-panel {
+  position: relative;
+}
+.ow-panel.is-drawer .ow-panel__head {
+  height: 48px;
+}
+.ow-panel__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ow-panel__count {
+  height: 20px;
+  font-size: 11.5px;
+}
+.ow-panel__office {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ow-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ow-panel__close {
+  margin-left: 4px;
+}
+.ow-panel__list {
+  min-height: 0;
+}
+.ow-panel__empty {
+  margin: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ow-ink-3);
+}
+.ow-panel__toasts {
+  position: absolute;
+  top: calc(var(--ow-header-h) + 8px);
+  left: 12px;
+  right: 12px;
+  z-index: var(--ow-z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.ow-panel__toast {
+  background: #fff;
+  border-radius: var(--ow-radius-md);
+  box-shadow: var(--ow-shadow-pop);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  animation: ow-toast-in var(--ow-dur-2) var(--ow-ease);
+}
+
+/* 카드는 button 이라 안쪽은 span 이다. 줄 단위는 여기서 정한다 */
+.ow-card__id {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+.ow-card__line,
+.ow-card__sub {
+  display: block;
+}
+.ow-card__reject {
+  color: var(--ow-ask);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.ow-card .ow-icon {
+  display: inline-flex;
+}
+.ow-card .ow-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.ow-model {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ow-now {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ow-now__tail {
+  color: var(--ow-ink-2);
+}
+.ow-trail__row {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-quote {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-teamhead__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 압축형: 행적 1줄, 실적과 발언 숨김 (높이 640 미만) */
+.ow-card.is-compact .ow-stats,
+.ow-card.is-compact .ow-quote,
+.ow-card.is-compact .ow-card__sub,
+.ow-card.is-compact .ow-trail__row:nth-child(n + 2) {
+  display: none;
+}
+
+/* 티커: 목록을 두 번 이어 붙여 -50% 만큼 흐르면 이음매가 없다. 간격은 항목 오른쪽 여백으로 (gap 이면 반이 어긋난다) */
+.ow-ticker__view {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.ow-ticker__track {
+  gap: 0;
+}
+.ow-ticker__item {
+  font: inherit;
+  color: inherit;
+  margin-right: 24px;
+  white-space: nowrap;
+}
+.ow-ticker__item:hover {
+  color: var(--ow-ink);
+}
+.ow-ticker__time {
+  color: var(--ow-ink-3);
+}
+.ow-ticker__track.is-flowing {
+  animation: ow-tick 48s linear infinite;
+}
+@keyframes ow-tick {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ow-ticker__track.is-flowing,
+  .ow-panel__toast {
+    animation: none;
+  }
+}

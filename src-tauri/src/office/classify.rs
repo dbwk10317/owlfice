@@ -1,9 +1,9 @@
 //! 이벤트 → 방·행동·문장 (PLAN 4.7.1), 시간 전이 (4.7.2)
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, FixedOffset, Timelike, Utc};
 
 use super::rank::rank_of;
 use super::stats::TeamStats;
@@ -26,6 +26,11 @@ const SUB_DONE_AFTER: Duration = Duration::seconds(60);
 const DOZE_AFTER: Duration = Duration::minutes(3);
 const OFF_AFTER: Duration = Duration::minutes(30);
 const INCIDENT_CLEAR: Duration = Duration::seconds(120);
+/// codex 소스의 yield 상한 (4.7.2)
+const ESCALATION_WAIT: Duration = Duration::seconds(35);
+const REPEAT_EDIT_WINDOW: Duration = Duration::seconds(60);
+const REPEAT_EDITS: usize = 3;
+const PIZZA_AFTER: Duration = Duration::hours(2);
 
 impl Employee {
     fn new(
@@ -69,6 +74,9 @@ impl Employee {
             depth,
             confidence,
             last_was_text: false,
+            edits: HashMap::new(),
+            red: None,
+            review_pens: 0,
         }
     }
 
@@ -203,9 +211,15 @@ impl Team {
                 if e.is_boss() {
                     e.waiting_user_since = Some(ts);
                 }
-                let room = home_room(e);
+                // 리뷰실에서 한 말의 `파일:줄` 이 빨간펜이다. 리뷰 중엔 리뷰실에 남는다 (3.4)
+                let (sentence, room) = if e.activity.room == Room::Review {
+                    e.review_pens += count_file_lines(text);
+                    (sentence::review(e.review_pens), Room::Review)
+                } else {
+                    (sentence::report(text), home_room(e))
+                };
                 e.set_activity(Activity {
-                    sentence: sentence::report(text),
+                    sentence,
                     room,
                     since: ts,
                     expected_secs: None,
@@ -223,6 +237,14 @@ impl Team {
                 e.quiet_since = None;
                 e.last_was_text = false;
                 count(&mut e.counters, tool);
+                if is_review(tool) && e.activity.room != Room::Review {
+                    e.review_pens = 0;
+                }
+                if *tool == ToolKind::FileEdit
+                    && let Some(p) = &summary.path
+                {
+                    e.edits.entry(p.clone()).or_default().push(ts);
+                }
                 e.pending.push(PendingCall {
                     call_id: call_id.clone(),
                     tool: tool.clone(),
@@ -256,13 +278,14 @@ impl Team {
             ),
             EventKind::SubagentSpawn {
                 child_id,
+                prompt,
                 model,
                 description,
+                effort,
                 depth,
-                ..
             } => {
                 let parent = ev.agent_id.clone();
-                match self.employees.iter_mut().find(|e| &e.id == child_id) {
+                let (rank, desc) = match self.employees.iter_mut().find(|e| &e.id == child_id) {
                     Some(e) => {
                         if e.retired_at.take().is_some() {
                             cues.push(Cue::Rehire {
@@ -271,17 +294,18 @@ impl Team {
                         }
                         // 임시 직원이었으면 이제야 직급을 안다
                         if e.confidence == Confidence::Inferred || model.is_some() {
-                            e.rank = rank_of(model.as_deref(), None);
+                            e.rank = rank_of(model.as_deref(), effort.as_deref());
                         }
                         e.confidence = Confidence::Confirmed;
                         e.model = model.clone().or(e.model.take());
                         e.description = description.clone().or(e.description.take());
                         e.parent = Some(parent);
+                        (e.rank, e.description.clone())
                     }
                     None => {
                         let mut e = Employee::new(
                             child_id,
-                            rank_of(model.as_deref(), None),
+                            rank_of(model.as_deref(), effort.as_deref()),
                             Some(parent),
                             *depth,
                             ts,
@@ -292,8 +316,26 @@ impl Team {
                         cues.push(Cue::Enter {
                             agent: e.id.clone(),
                         });
+                        let r = (e.rank, e.description.clone());
                         self.employees.push(e);
+                        r
                     }
+                };
+                // 이름은 world 가 붙여서 여기선 직급과 지시 내용으로 쓴다.
+                // 허가 대기나 다른 진행 중 호출이 있으면 그쪽이 앞선다 (2.5)
+                let e = &mut self.employees[i];
+                let busy = e.asking.is_some()
+                    || e.pending.last().is_some_and(|c| c.tool != ToolKind::Spawn);
+                if !busy {
+                    let room = room_for(&ToolKind::Spawn, e.is_boss());
+                    e.set_activity(Activity {
+                        sentence: sentence::spawn(rank, desc.as_deref().unwrap_or(prompt)),
+                        room,
+                        since: ts,
+                        expected_secs: None,
+                        pose: Pose::Sit,
+                        confidence: Confidence::Confirmed,
+                    });
                 }
             }
             EventKind::SubagentDone { child_id } => {
@@ -315,6 +357,9 @@ impl Team {
                     e.context_window = Some(window_from_pre_tokens(*pre, e.context_window));
                 }
                 if e.is_boss() {
+                    // 압축 레코드가 침묵을 끊는다. 안 끊으면 같은 틱에 고민·결재 대기가 분갈이를 덮는다
+                    e.quiet_since = None;
+                    e.waiting_user_since = None;
                     self.props.plant = Some(0.0);
                     cues.push(Cue::Repot);
                     e.set_activity(boss_activity(sentence::repot(), Room::TeamLead, ts));
@@ -342,6 +387,7 @@ impl Team {
             } => {
                 let e = &mut self.employees[i];
                 e.context_used = Some(*input_total);
+                // ponytail: 창 규칙 2(같은 호스트의 다른 세션에서 배운 값)는 world 가 안다, world 티켓에서 넣는다
                 if context_window.is_some() {
                     e.context_window = *context_window;
                 } else if e.context_window.is_none_or(|w| *input_total > w) {
@@ -358,15 +404,15 @@ impl Team {
         }
     }
 
-    /// 시간 기반 전이 (4.7.2). `now` 는 벽시계 또는 논리 시계(4.3)다
-    pub fn tick(&mut self, now: DateTime<Utc>, cues: &mut Vec<Cue>) {
+    /// 시간 기반 전이 (4.7.2). `now` 는 벽시계 또는 논리 시계(4.3)다.
+    /// `local` 은 야근 판정용 현지 시간대. 테스트가 실행 환경의 시간대에 기대지 않게 받는다
+    pub fn tick(&mut self, now: DateTime<Utc>, local: FixedOffset, cues: &mut Vec<Cue>) {
         if self
             .incident
             .as_ref()
             .is_some_and(|inc| now - inc.last_error > INCIDENT_CLEAR)
         {
-            self.incident = None;
-            cues.push(Cue::Siren { on: false });
+            self.end_incident(now, cues);
         }
         let quiet = now - self.last_activity;
         let idle = self
@@ -378,7 +424,7 @@ impl Team {
                 self.phase = TeamPhase::Off;
                 // 끝내 결과가 안 올 호출의 뒷정리 (4.7.2)
                 for e in &mut self.employees {
-                    give_up_calls(e, now);
+                    give_up_calls(e, now, cues);
                 }
             }
         } else if quiet > DOZE_AFTER && idle && self.phase == TeamPhase::Working {
@@ -394,6 +440,12 @@ impl Team {
         }
         // 팀 단계를 먼저 정해야 졸음이 결재 대기를 이긴다 (2.5 우선순위 4·5번)
         let working = self.phase == TeamPhase::Working;
+        let hour = now.with_timezone(&local).hour();
+        self.props.night = self.phase != TeamPhase::Off && !(6..22).contains(&hour);
+        if working {
+            // 졸거나 퇴근한 동안은 쌓지 않는다
+            self.props.pizza = self.props.pizza.max(pizza_count(now - self.started));
+        }
         for i in 0..self.employees.len() {
             self.tick_employee(i, now, working, cues);
         }
@@ -403,9 +455,22 @@ impl Team {
     /// 말풍선·토스트·장애 판정·탕비실 연출 금지가 모두 이것을 쓴다
     pub fn needs_boss(&self, e: &Employee, now: DateTime<Utc>) -> bool {
         e.asking.is_some()
+            || escalation_wait(e, now)
             || e.waiting_user_since
                 .is_some_and(|t| now - t >= WAIT_USER_AFTER)
             || e.rejected_at.is_some_and(|t| now - t < REJECT_HOLD)
+    }
+
+    /// 장애 해제 (4.7.3). 상황실에 있던 부장은 자리로 돌아간다 (S27)
+    fn end_incident(&mut self, at: DateTime<Utc>, cues: &mut Vec<Cue>) {
+        if self.incident.take().is_none() {
+            return;
+        }
+        cues.push(Cue::Siren { on: false });
+        let boss = &mut self.employees[0];
+        if boss.activity.room == Room::Incident {
+            boss.set_activity(boss_activity(sentence::incident_over(), Room::TeamLead, at));
+        }
     }
 
     fn employee_for(
@@ -488,7 +553,11 @@ impl Team {
             ToolOutcome::Started => {
                 e.background.push(call.clone());
                 cues.push(Cue::Paper { agent, on: true });
-                e.set_activity(activity(sentence::background(&call), Confidence::Confirmed));
+                let n = e.background.len();
+                e.set_activity(activity(
+                    sentence::background(&call, n),
+                    Confidence::Confirmed,
+                ));
             }
             ToolOutcome::Ok if confirmed => {
                 let secs = (ts - call.started).num_milliseconds() as f32 / 1000.0;
@@ -497,8 +566,10 @@ impl Team {
                 }
                 self.stats.record_ok(call.summary.command_norm.as_deref());
                 let e = &mut self.employees[i];
+                let mut cleared = false;
                 match (&call.tool, declares) {
                     (ToolKind::Test, true) => {
+                        e.red = None;
                         self.props.light = Light::Green;
                         let t = test_result.unwrap_or(TestResult {
                             passed: 0,
@@ -510,9 +581,7 @@ impl Team {
                             estimated: false,
                         });
                         // 테스트 전부 통과는 장애 해제 조건이다 (4.7.3)
-                        if self.incident.take().is_some() {
-                            cues.push(Cue::Siren { on: false });
-                        }
+                        cleared = true;
                     }
                     (ToolKind::Test, false) => {
                         if let Some(t) = test_result {
@@ -528,10 +597,22 @@ impl Team {
                     (ToolKind::Release, true) => cues.push(Cue::Fireworks),
                     _ => {}
                 }
-                e.set_activity(activity(
-                    sentence::done(&call, declares),
-                    Confidence::Confirmed,
-                ));
+                // 리뷰 도구는 끝나도 리뷰실에 남아 이어지는 지적을 센다
+                let room = if is_review(&call.tool) {
+                    Room::Review
+                } else {
+                    home
+                };
+                e.set_activity(Activity {
+                    room,
+                    ..activity(
+                        sentence::done(&call, declares, test_result, e.review_pens),
+                        Confidence::Confirmed,
+                    )
+                });
+                if cleared {
+                    self.end_incident(ts, cues);
+                }
             }
             ToolOutcome::Err if confirmed => {
                 e.counters.errors += 1;
@@ -542,6 +623,8 @@ impl Team {
                     ToolKind::Build => self.props.light = Light::Red,
                     ToolKind::Test => {
                         self.props.light = Light::Red;
+                        let fails = e.red.as_ref().map_or(0, |r| r.1);
+                        e.red = Some((sentence::failed_test(&call, preview), fails + 1));
                         if let Some(t) = test_result {
                             cues.push(Cue::Stamp {
                                 passed: t.passed,
@@ -612,7 +695,7 @@ impl Team {
         }
         if let Some(call) = e.pending.last() {
             let a = Activity {
-                sentence: sentence::call(call, e.pending.len() - 1),
+                sentence: sentence::call(call, e.pending.len() - 1, e),
                 room: room_for(&call.tool, boss),
                 since: call.started,
                 expected_secs: expected,
@@ -625,6 +708,7 @@ impl Team {
 
     fn tick_employee(&mut self, i: usize, now: DateTime<Utc>, working: bool, cues: &mut Vec<Cue>) {
         let avg = &self.stats.avg;
+        let incident = self.incident.as_ref().map(|inc| inc.since);
         let e = &mut self.employees[i];
         if e.retired_at.is_some() || e.asking.is_some() {
             return;
@@ -632,7 +716,19 @@ impl Team {
         if let Some(call) = e.pending.last().cloned() {
             let elapsed = now - call.started;
             if elapsed > CALL_GIVE_UP {
-                give_up_calls(e, now);
+                give_up_calls(e, now, cues);
+                return;
+            }
+            // Codex 승인 창은 레코드가 없어 무결과 시간으로 짐작한다. 결과가 오면 refresh 가 푼다
+            if escalation_wait(e, now) {
+                e.set_activity(Activity {
+                    sentence: sentence::escalated(&call),
+                    room: Room::Door,
+                    since: call.started + ESCALATION_WAIT,
+                    expected_secs: None,
+                    pose: Pose::Sit,
+                    confidence: Confidence::Inferred,
+                });
                 return;
             }
             let slow = call
@@ -641,8 +737,10 @@ impl Team {
                 .as_ref()
                 .and_then(|k| avg.get(k))
                 .is_some_and(|&a| elapsed.num_milliseconds() as f32 / 1000.0 > a * 2.0);
-            if elapsed > LONG_RUN {
-                e.activity.sentence = sentence::long_run(&call);
+            if elapsed > LONG_RUN
+                && let Some(s) = sentence::long_run(&call)
+            {
+                e.activity.sentence = s;
             }
             if slow || elapsed > LONG_RUN {
                 e.activity.pose = Pose::Squat;
@@ -665,6 +763,11 @@ impl Team {
                 confidence: Confidence::Inferred,
             };
             e.set_activity(a);
+            return;
+        }
+        // 장애 중 부장은 상황실에 있다 (3.4, S26). 사장님 손이 필요한 상태가 먼저다
+        if let Some(since) = incident.filter(|_| working && e.is_boss()) {
+            e.set_activity(boss_activity(sentence::incident(), Room::Incident, since));
             return;
         }
         if let Some(t) = e.quiet_since.filter(|_| working) {
@@ -731,12 +834,17 @@ fn retire(e: &mut Employee, at: DateTime<Utc>, confidence: Confidence, cues: &mu
 }
 
 /// 결과가 영영 오지 않는 호출을 Unknown 으로 정리한다 (4.7.2)
-fn give_up_calls(e: &mut Employee, now: DateTime<Utc>) {
+fn give_up_calls(e: &mut Employee, now: DateTime<Utc>, cues: &mut Vec<Cue>) {
     let Some(last) = e.pending.last().or(e.background.last()).cloned() else {
         return;
     };
     e.pending.clear();
-    e.background.clear();
+    for _ in e.background.drain(..) {
+        cues.push(Cue::Paper {
+            agent: e.id.clone(),
+            on: false,
+        });
+    }
     let room = home_room(e);
     e.set_activity(Activity {
         sentence: sentence::unknown(&last),
@@ -746,6 +854,47 @@ fn give_up_calls(e: &mut Employee, now: DateTime<Utc>) {
         pose: Pose::Sit,
         confidence: Confidence::Inferred,
     });
+}
+
+/// Codex 승인 창 추정 (4.7.2): 대표 호출이 escalated 이고 결과 없이 35초
+fn escalation_wait(e: &Employee, now: DateTime<Utc>) -> bool {
+    e.pending
+        .last()
+        .is_some_and(|c| c.summary.escalated && now - c.started >= ESCALATION_WAIT)
+}
+
+/// 활성 2시간을 넘기면 1상자, 그 뒤 60분마다 1상자 (4.7.2, S42)
+fn pizza_count(active: Duration) -> u32 {
+    if active <= PIZZA_AFTER {
+        return 0;
+    }
+    let over = (active - PIZZA_AFTER).num_seconds() - 1;
+    u32::try_from(over / 3600 + 1).unwrap_or(u32::MAX)
+}
+
+fn is_review(tool: &ToolKind) -> bool {
+    match tool {
+        ToolKind::GitDiff | ToolKind::PrView => true,
+        ToolKind::Skill { name } => name.to_ascii_lowercase().contains("review"),
+        _ => false,
+    }
+}
+
+/// 리뷰 지적 수: `auth.rs:42` 처럼 확장자 있는 파일 이름 뒤에 `:숫자` 가 붙은 토큰 (3.4 리뷰실)
+fn count_file_lines(text: &str) -> u32 {
+    let is_ref = |tok: &str| {
+        tok.char_indices().any(|(k, c)| {
+            c == ':'
+                && tok[k + 1..].starts_with(|d: char| d.is_ascii_digit())
+                && tok[..k].rsplit_once('.').is_some_and(|(name, ext)| {
+                    !name.is_empty()
+                        && (1..=5).contains(&ext.len())
+                        && ext.chars().all(|x| x.is_ascii_alphanumeric())
+                })
+        })
+    };
+    let toks = text.split(|c: char| c.is_whitespace() || "`'\"()[]<>,".contains(c));
+    u32::try_from(toks.filter(|t| is_ref(t)).count()).unwrap_or(u32::MAX)
 }
 
 /// 응답 대기 중인가 (2.5 우선순위 4번)
@@ -837,6 +986,52 @@ fn window_from_pre_tokens(pre: u64, known: Option<u64>) -> u64 {
     known.map_or(w, |k| k.max(w))
 }
 
+/// 서브 meta.json 에서 읽은 것 (4.3 직원 사전 등록)
+#[derive(Debug, Clone)]
+pub struct SubMeta {
+    pub agent_id: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub description: Option<String>,
+    pub depth: u8,
+}
+
+/// 파일을 처음부터 읽어 팀을 다시 만든다 (4.3 재구성 규칙). `files[0]` 이 메인 파일이다.
+/// 재구성 중 `now` 는 그 이벤트의 ts 다. 끝난 뒤 벽시계 tick 은 부르는 쪽이 한다
+pub fn rebuild(
+    id: &str,
+    product: Product,
+    subs: &[SubMeta],
+    files: Vec<Vec<Event>>,
+    local: FixedOffset,
+) -> Team {
+    let events = merge(files);
+    let started = events
+        .iter()
+        .find_map(|e| e.ts)
+        .unwrap_or(DateTime::UNIX_EPOCH);
+    let mut team = Team::new(id, product, started);
+    for s in subs {
+        team.preregister(
+            &s.agent_id,
+            s.model.as_deref(),
+            s.effort.as_deref(),
+            s.description.as_deref(),
+            s.depth,
+            started,
+        );
+    }
+    // 조용한 재구성: 연출 신호는 버린다
+    let mut cues = Vec::new();
+    for ev in &events {
+        team.apply(ev, &mut cues);
+        let now = ev.ts.unwrap_or(team.last_activity);
+        team.tick(now, local, &mut cues);
+        cues.clear();
+    }
+    team
+}
+
 /// 규칙 3: 모델명으로. 입력이 창을 넘으면 1M 으로 올린다
 fn window_from_model(model: Option<&str>, input_total: u64) -> u64 {
     let m = model.unwrap_or("").to_ascii_lowercase();
@@ -856,9 +1051,99 @@ fn arrival_sentence(boss: bool) -> String {
     }
 }
 
-/// "지금 하는 일" 문장 (3.5 표). 경과 시간은 프론트가 붙인다
+/// "지금 하는 일" 문장 (3.5 표). 경과 시간과 "(평소 n초)"는 프론트가 붙인다.
+/// 경로·명령·패턴은 백틱으로 감싼다. 명령은 파서가 이미 40자로 잘랐다
 mod sentence {
-    use super::{Confidence, PendingCall};
+    use super::{
+        Confidence, Employee, PendingCall, REPEAT_EDIT_WINDOW, REPEAT_EDITS, Rank, TestResult,
+        ToolKind, is_review,
+    };
+
+    const QUOTE: usize = 30;
+    const LINE: usize = 40;
+
+    fn code(s: &str) -> String {
+        format!("`{s}`")
+    }
+
+    /// 첫 줄을 `n` 자로. 뒤에 더 있으면 "…"
+    fn cut(text: &str, n: usize) -> String {
+        let trimmed = text.trim();
+        let line = trimmed.lines().next().unwrap_or_default();
+        let head: String = line.chars().take(n).collect();
+        let head = head.trim_end();
+        if head.len() < trimmed.len() {
+            format!("{head}…")
+        } else {
+            head.to_string()
+        }
+    }
+
+    fn rank_name(r: Rank) -> &'static str {
+        match r {
+            Rank::Bujang => "부장",
+            Rank::Gwajang => "과장",
+            Rank::Daeri => "대리",
+            Rank::Sawon => "사원",
+        }
+    }
+
+    /// 입력이 없을 때 쓰는 도구 이름
+    fn label(tool: &ToolKind) -> String {
+        match tool {
+            ToolKind::FileRead => "열람",
+            ToolKind::FileSearch => "검색",
+            ToolKind::FileWrite => "새 서류",
+            ToolKind::FileEdit => "수정",
+            ToolKind::Shell => "셸 명령",
+            ToolKind::Script => "스크립트",
+            ToolKind::Build => "빌드",
+            ToolKind::Test => "테스트",
+            ToolKind::GitQuery => "git 조회",
+            ToolKind::GitDiff => "git diff",
+            ToolKind::GitCommit => "커밋",
+            ToolKind::GitPush => "push",
+            ToolKind::PrView => "PR 조회",
+            ToolKind::PrCreate => "PR 생성",
+            ToolKind::Release => "릴리스",
+            ToolKind::Spawn => "업무 지시",
+            ToolKind::Ask => "결재",
+            ToolKind::WebSearch => "웹 검색",
+            ToolKind::WebFetch => "웹 열람",
+            ToolKind::Todo => "칸반 정리",
+            ToolKind::Mcp { server, tool } => return format!("{server} {tool}"),
+            ToolKind::Skill { name } | ToolKind::Other(name) => return name.clone(),
+        }
+        .to_string()
+    }
+
+    /// 반려·결과 미확인·완료 문장의 대상: 명령, 경로, 패턴 순. 없으면 도구 이름
+    fn subject(call: &PendingCall) -> String {
+        let s = &call.summary;
+        s.command
+            .as_deref()
+            .or(s.path.as_deref())
+            .or(s.pattern.as_deref())
+            .map_or_else(|| label(&call.tool), code)
+    }
+
+    fn command(call: &PendingCall, fallback: &str) -> String {
+        call.summary
+            .command
+            .as_deref()
+            .map_or_else(|| fallback.to_string(), code)
+    }
+
+    fn path(call: &PendingCall) -> String {
+        call.summary
+            .path
+            .as_deref()
+            .map_or_else(|| "서류".to_string(), code)
+    }
+
+    fn red(r: &(String, u32)) -> String {
+        format!("빨간불 끄는 중: {} {}번째 시도", code(&r.0), r.1 + 1)
+    }
 
     pub fn arrival_boss() -> String {
         "출근 중".to_string()
@@ -870,39 +1155,198 @@ mod sentence {
         "요구사항 접수".to_string()
     }
     pub fn report(text: &str) -> String {
-        format!(
-            "보고서 제출함: \"{}\"",
-            text.chars().take(30).collect::<String>()
-        )
+        format!("보고서 제출함: \"{}\"", cut(text, QUOTE))
     }
-    pub fn call(call: &PendingCall, extra: usize) -> String {
-        let base = format!("{:?}", call.tool);
+    pub fn review(pens: u32) -> String {
+        format!("PR 리뷰 중 · 빨간펜 {pens}개")
+    }
+
+    /// 진행 중 호출 (대표 작업). `extra` 는 함께 도는 호출 수
+    pub fn call(call: &PendingCall, extra: usize, e: &Employee) -> String {
+        let s = &call.summary;
+        let base = match &call.tool {
+            ToolKind::FileRead => {
+                let mut t = format!("{} 열람 중", path(call));
+                if let Some((a, b)) = s.range {
+                    t += &format!(" ({a}~{b}행)");
+                }
+                t
+            }
+            ToolKind::FileSearch => match (&s.pattern, &s.path) {
+                (Some(p), Some(dir)) => format!("'{}' 전사 수색 중 ({})", code(p), code(dir)),
+                (Some(p), None) => format!("'{}' 전사 수색 중", code(p)),
+                (None, _) => format!("{} 전사 수색 중", command(call, "서류철")),
+            },
+            ToolKind::FileWrite => format!("{} 새 서류 작성 중", path(call)),
+            ToolKind::FileEdit => match (&e.red, &s.path) {
+                (Some(r), _) => red(r),
+                (None, Some(p)) => {
+                    let times = e.edits.get(p).map_or(&[][..], Vec::as_slice);
+                    let recent = times
+                        .iter()
+                        .filter(|&&t| t <= call.started && call.started - t <= REPEAT_EDIT_WINDOW)
+                        .count();
+                    if recent >= REPEAT_EDITS {
+                        format!("{} 리팩터링 중 (오늘 {}번째 수정)", code(p), times.len())
+                    } else if let Some(n) = s.lines_changed {
+                        format!("{} 수정 중 ({n}줄 교체)", code(p))
+                    } else {
+                        format!("{} 수정 중", code(p))
+                    }
+                }
+                (None, None) => "서류 수정 중".to_string(),
+            },
+            ToolKind::Test => match &e.red {
+                Some(r) => red(r),
+                None => format!("{} 돌리는 중", command(call, "테스트")),
+            },
+            ToolKind::Build => "빌드 서버 돌리는 중, 선풍기 가동".to_string(),
+            ToolKind::Script => "스크립트 돌리는 중".to_string(),
+            ToolKind::Shell
+            | ToolKind::GitQuery
+            | ToolKind::GitPush
+            | ToolKind::PrCreate
+            | ToolKind::Release => format!("{} 실행 중", command(call, "셸 명령")),
+            ToolKind::GitDiff | ToolKind::PrView => review(e.review_pens),
+            ToolKind::Skill { .. } if is_review(&call.tool) => review(e.review_pens),
+            ToolKind::Skill { name } => format!("외주 매뉴얼 {} 펼쳐보는 중", code(name)),
+            ToolKind::Mcp { server, tool } => {
+                format!("거래처 {}와 {} 건으로 미팅 중", code(server), code(tool))
+            }
+            ToolKind::WebSearch | ToolKind::WebFetch => match &s.pattern {
+                Some(p) => format!("'{}' 건으로 외근 중", code(p)),
+                None => "외근 중".to_string(),
+            },
+            ToolKind::GitCommit => match &s.commit_message {
+                Some(m) => format!("출고 포장 중: \"{}\"", cut(m, LINE)),
+                None => format!("출고 포장 중: {}", command(call, "커밋")),
+            },
+            ToolKind::Spawn => "업무 지시 중".to_string(),
+            ToolKind::Ask => "결재판 들고 문 앞 대기".to_string(),
+            ToolKind::Todo => "칸반 보드 정리 중".to_string(),
+            ToolKind::Other(name) => format!("처음 보는 업무: {}", code(name)),
+        };
         if extra > 0 {
             format!("{base} (외 {extra}건)")
         } else {
             base
         }
     }
-    pub fn background(call: &PendingCall) -> String {
-        format!("백그라운드: {:?}", call.tool)
+
+    /// 서브 생성 (3.5). 이름 대신 직급과 description, 없으면 prompt 앞부분
+    pub fn spawn(rank: Rank, what: &str) -> String {
+        format!("{}에게 \"{}\" 지시", rank_name(rank), cut(what, QUOTE))
     }
-    pub fn done(call: &PendingCall, _declares: bool) -> String {
-        format!("{:?} 완료", call.tool)
+
+    pub fn background(call: &PendingCall, jobs: usize) -> String {
+        format!(
+            "백그라운드: {} 돌아가는 중 (작업표 {jobs}장)",
+            subject(call)
+        )
     }
-    pub fn accident(_call: &PendingCall, preview: &str) -> String {
-        format!("사고: {}", preview.lines().next().unwrap_or_default())
+
+    /// 확인된 성공. Mixed 명령은 결과를 보증하지 못해 "완료"만 적는다 (4.6.4)
+    pub fn done(call: &PendingCall, declares: bool, test: Option<TestResult>, pens: u32) -> String {
+        let s = &call.summary;
+        match &call.tool {
+            ToolKind::FileRead => format!("{} 열람", path(call)),
+            ToolKind::FileSearch => match &s.pattern {
+                Some(p) => format!("'{}' 검색", code(p)),
+                None => format!("{} 검색", command(call, "서류철")),
+            },
+            ToolKind::FileWrite => format!("{} 작성", path(call)),
+            ToolKind::FileEdit => match s.lines_changed {
+                Some(n) => format!("{} 수정 ({n}줄)", path(call)),
+                None => format!("{} 수정", path(call)),
+            },
+            ToolKind::Test if declares => match test {
+                Some(t) => format!("합격 {} / 반려 {}", t.passed, t.failed),
+                None => format!("{} 통과", command(call, "테스트")),
+            },
+            ToolKind::Build if declares => "빌드 성공".to_string(),
+            ToolKind::GitPush | ToolKind::PrCreate if declares => "출고 완료".to_string(),
+            ToolKind::Release if declares => "릴리스 완료".to_string(),
+            ToolKind::GitCommit => "출고 포장 완료".to_string(),
+            t if is_review(t) => review(pens),
+            ToolKind::WebSearch | ToolKind::WebFetch => "외근 복귀".to_string(),
+            ToolKind::Mcp { server, .. } => format!("거래처 {} 미팅 완료", code(server)),
+            ToolKind::Skill { name } => format!("외주 매뉴얼 {} 확인", code(name)),
+            ToolKind::Spawn => "업무 지시 완료".to_string(),
+            ToolKind::Ask => "결재 받음".to_string(),
+            ToolKind::Todo => "칸반 보드 정리".to_string(),
+            _ => format!("{} 완료", subject(call)),
+        }
     }
+
+    /// 결과 본문에서 사고 원인 한 줄. 에러 낱말이 든 줄, 없으면 "Exit code" 아닌 첫 줄
+    fn cause(preview: &str) -> Option<&str> {
+        let lines = || preview.lines().map(str::trim).filter(|l| !l.is_empty());
+        lines()
+            .find(|l| {
+                let low = l.to_lowercase();
+                ["error", "fail", "panic", "fatal", "denied", "rejected"]
+                    .iter()
+                    .any(|w| low.contains(w))
+            })
+            .or_else(|| lines().find(|l| !l.starts_with("Exit code")))
+            .or_else(|| lines().next())
+    }
+
+    pub fn accident(call: &PendingCall, preview: &str) -> String {
+        let why = cause(preview).map(|l| code(&cut(l, LINE)));
+        match &call.tool {
+            ToolKind::GitPush | ToolKind::PrCreate => {
+                format!("반송: {}", why.unwrap_or_else(|| "push 거부됨".to_string()))
+            }
+            _ => format!("사고: {}", why.unwrap_or_else(|| subject(call))),
+        }
+    }
+
+    /// 실패한 테스트 이름 (cargo `test x ... FAILED`, pytest `FAILED x - …`). 못 찾으면 명령
+    pub fn failed_test(call: &PendingCall, preview: &str) -> String {
+        preview
+            .lines()
+            .map(str::trim)
+            .find_map(|l| {
+                l.strip_prefix("test ")
+                    .and_then(|r| r.strip_suffix(" ... FAILED"))
+                    .or_else(|| {
+                        l.strip_prefix("FAILED ")
+                            .and_then(|r| r.split_whitespace().next())
+                    })
+            })
+            .map(str::to_string)
+            .or_else(|| call.summary.command.clone())
+            .unwrap_or_else(|| label(&call.tool))
+    }
+
     pub fn rejected(call: &PendingCall) -> String {
-        format!("반려됨: {:?}", call.tool)
+        format!("반려됨: {} 안 됩니다", subject(call))
     }
+    /// 표(3.5)의 문구를 그대로 쓴다. 추정 표시는 confidence 가 한다
     pub fn unknown(call: &PendingCall) -> String {
-        format!("결과 확인 불가: {:?}", call.tool)
+        format!("결과 확인 불가: {}", subject(call))
     }
-    pub fn long_run(call: &PendingCall) -> String {
-        format!("서버실에서 땀 흘리는 중 ({:?})", call.tool)
+    /// 셸 2분 초과. 명령 없는 호출(편집 허가 대기 등)은 문장을 그대로 둔다
+    pub fn long_run(call: &PendingCall) -> Option<String> {
+        let c = call.summary.command.as_deref()?;
+        Some(format!("서버실에서 땀 흘리는 중 ({})", code(c)))
     }
     pub fn asking(q: &str) -> String {
-        format!("결재판 들고 문 앞 대기: 「{q}」")
+        if q.trim().is_empty() {
+            "결재판 들고 문 앞 대기".to_string()
+        } else {
+            format!("결재판 들고 문 앞 대기: 「{}」", cut(q, QUOTE))
+        }
+    }
+    pub fn escalated(call: &PendingCall) -> String {
+        format!("{} 결재판 들고 문 앞 대기 중인 듯", subject(call))
+    }
+    pub fn incident() -> String {
+        "장애 상황실 소집, 무재해 기록 0분".to_string()
+    }
+    pub fn incident_over() -> String {
+        "장애 해제".to_string()
     }
     pub fn thinking(duck: bool) -> String {
         if duck {

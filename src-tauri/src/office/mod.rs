@@ -5,7 +5,7 @@ pub mod names;
 pub mod rank;
 pub mod stats;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -117,6 +117,13 @@ pub struct Employee {
     pub confidence: Confidence,
     /// 서브 종료 추정용: 마지막 레코드가 tool_use 없는 assistant 였나 (4.7.2)
     pub last_was_text: bool,
+    /// 파일별 수정 호출 시각. 반복 수정 문장(3.5, S43)이 쓴다
+    // ponytail: "오늘 n번째"는 직원 수명 동안 센다, 실적 칸의 자정 리셋을 정할 때 같이 올린다
+    pub edits: HashMap<String, Vec<DateTime<Utc>>>,
+    /// 직전 Test 가 실패했으면 (실패한 테스트, 연속 실패 수). 다음 Test·Edit 이 "빨간불 끄는 중"
+    pub red: Option<(String, u32)>,
+    /// 리뷰실에 들어온 뒤 응답에서 센 `파일:줄` 지적 수 (빨간펜)
+    pub review_pens: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,3 +226,6 @@ pub struct Team {
     pub incident: Option<Incident>,
     pub stats: stats::TeamStats,
 }
+
+#[cfg(test)]
+mod tests;

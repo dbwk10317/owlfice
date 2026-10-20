@@ -48,3 +48,20 @@ test("티커 DOM: 비면 조용한 밤, 있으면 두 번 이어 붙이고 클�
   t.setEvents([]);
   expect(t.el.textContent).toContain("조용한 밤입니다");
 });
+
+test("숨은 동안 폭이 0이었다가 보이면 흐름 길이를 다시 잰다", () => {
+  const t = createTicker(document, vi.fn());
+  document.body.append(t.el);
+  const width = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get");
+  width.mockReturnValue(0);
+  const c = createEventCollector();
+  c.ingest(withRecent(1, "o", [act({ since: iso(14, 1) })]), false);
+  t.setEvents(c.events());
+  const track = t.el.querySelector<HTMLElement>(".ow-ticker__track")!;
+  expect(track.style.animationDuration).toBe("");
+  width.mockReturnValue(800);
+  t.remeasure();
+  expect(track.style.animationDuration).toBe("10s");
+  width.mockRestore();
+  t.el.remove();
+});

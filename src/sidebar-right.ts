@@ -1,5 +1,4 @@
-/// <reference types="vite/client" />
-// 오른쪽 직원 현황판 (PLAN 3.5, 4.9, HANDOFF 4.5). 카드는 agent_id 키로 재사용하고 바뀐 칸만 고친다.
+// 오른쪽 직원 현황판 (PLAN 3.5, 4.9, HANDOFF 4.5). 카드는 agent_id 키로 재사용한다.
 import "../design/handoff/tokens.css";
 import "./styles/panel.css";
 import phrases from "../design/handoff/phrases.ko.json";
@@ -23,7 +22,7 @@ import roomPantry from "../design/handoff/icons/room-pantry.svg?raw";
 import roomReview from "../design/handoff/icons/room-review.svg?raw";
 import roomShipping from "../design/handoff/icons/room-shipping.svg?raw";
 import roomTest from "../design/handoff/icons/room-test.svg?raw";
-import { createEventCollector, createTicker, fill, hhmm, rankLabel } from "./ticker.ts";
+import { createEventCollector, createTicker, fill, hhmm, rankLabel, teamName } from "./ticker.ts";
 import type {
   Activity,
   CueDto,
@@ -42,7 +41,7 @@ const COMPACT_BELOW = 640;
 const FLASH_MS = 1000;
 const TOAST_MS = 3000;
 const NEW_MS = 300;
-const HIGHLIGHT_MS = 1500;
+const HIGHLIGHT_MS = 2000;
 const QUOTE_MAX = 60;
 const CTX_CELLS = 5;
 const CTX_DEFAULT_WINDOW = 200_000;
@@ -110,9 +109,7 @@ export interface PanelOptions {
 
 export interface PanelHandle {
   openDrawer(): void;
-  closeDrawer(): void;
   toggleDrawer(): void;
-  isDrawerOpen(): boolean;
   destroy(): void;
 }
 
@@ -150,6 +147,16 @@ function setRich(node: HTMLElement, text: string): void {
     if (!seg) return;
     node.append(i % 2 ? h(doc, "span", "ow-code", seg) : seg);
   });
+}
+
+/** 시간이 흐르는 문장의 `{elapsed}` 를 채운다. 백틱 코드 조각 안은 그대로 둔다 */
+function fillElapsed(sentence: string, sec: number | null): string {
+  if (!sentence.includes("{elapsed}")) return sentence;
+  const value = sec === null ? "" : fmtSec(sec);
+  return sentence
+    .split("`")
+    .map((seg, i) => (i % 2 ? seg : seg.split("{elapsed}").join(value)))
+    .join("`");
 }
 
 function fmtSec(sec: number): string {
@@ -194,7 +201,6 @@ interface CardEntry {
   last: Map<string, string>;
   timers: Map<string, ReturnType<typeof setTimeout>>;
   ref: {
-    avatar: HTMLElement;
     name: HTMLElement;
     rank: HTMLElement;
     reject: HTMLElement;
@@ -208,7 +214,6 @@ interface CardEntry {
     statusLabel: HTMLElement;
     statusEst: HTMLElement;
     nowText: HTMLElement;
-    nowTail: HTMLElement;
     progress: HTMLElement;
     bar: HTMLElement;
     barCaption: HTMLElement;
@@ -217,8 +222,10 @@ interface CardEntry {
     stats: HTMLElement[];
     quote: HTMLElement;
   };
-  /** 1초 틱이 쓰는 것 */
-  run: { sinceMs: number; expected: number } | null;
+  sentence: string;
+  sinceMs: number;
+  /** 진행 막대용 평균 소요(초). 없으면 막대를 숨긴다 */
+  expected: number;
 }
 
 function createCard(doc: Document, agentId: string): CardEntry {
@@ -234,7 +241,10 @@ function createCard(doc: Document, agentId: string): CardEntry {
   const reject = icon(doc, iconApproval);
   reject.classList.add("ow-card__reject");
   reject.hidden = true;
+  // icon() 이 aria-hidden 을 달지만 반려 아이콘은 뜻을 전하므로 이름을 준다
+  reject.removeAttribute("aria-hidden");
   reject.setAttribute("role", "img");
+  reject.setAttribute("aria-label", phrases.sentence.rejected.split(":")[0]);
   const sub = h(doc, "span", "ow-card__sub");
   const id = h(
     doc,
@@ -257,8 +267,7 @@ function createCard(doc: Document, agentId: string): CardEntry {
   const status = h(doc, "span", "ow-status", statusIcon, statusLabel, statusEst);
 
   const nowText = h(doc, "span", "ow-now__text");
-  const nowTail = h(doc, "span", "ow-now__tail");
-  const now = h(doc, "span", "ow-now", nowText, nowTail);
+  const now = h(doc, "span", "ow-now", nowText);
 
   const bar = h(doc, "span", "ow-progress__bar");
   const barCaption = h(doc, "span");
@@ -281,6 +290,7 @@ function createCard(doc: Document, agentId: string): CardEntry {
     const n = h(doc, "span", "ow-stats__n");
     const cell = h(doc, "span", "", icon(doc, s.icon), n);
     cell.title = s.title;
+    cell.setAttribute("role", "img");
     return cell;
   });
   const quote = h(doc, "span", "ow-quote");
@@ -300,7 +310,6 @@ function createCard(doc: Document, agentId: string): CardEntry {
     last: new Map(),
     timers: new Map(),
     ref: {
-      avatar,
       name,
       rank,
       reject,
@@ -314,7 +323,6 @@ function createCard(doc: Document, agentId: string): CardEntry {
       statusLabel,
       statusEst,
       nowText,
-      nowTail,
       progress,
       bar,
       barCaption,
@@ -323,12 +331,13 @@ function createCard(doc: Document, agentId: string): CardEntry {
       stats,
       quote,
     },
-    run: null,
+    sentence: "",
+    sinceMs: NaN,
+    expected: 0,
   };
 }
 
-/** 값이 바뀐 칸만 DOM 을 만진다 */
-function changed(c: CardEntry, key: string, value: string): boolean {
+function changed(c: { last: Map<string, string> }, key: string, value: string): boolean {
   if (c.last.get(key) === value) return false;
   c.last.set(key, value);
   return true;
@@ -346,13 +355,14 @@ function updateCard(
   c: CardEntry,
   e: EmployeeDto,
   isBoss: boolean,
+  off: boolean,
   small: boolean,
   byId: Map<string, EmployeeDto>,
 ): void {
   const r = c.ref;
   const act: Activity = e.activity;
   c.el.classList.toggle("is-boss", isBoss);
-  c.el.classList.toggle("is-idle", act.room === "Pantry");
+  c.el.classList.toggle("is-idle", act.room === "Pantry" || off);
 
   setText(c, "name", r.name, e.name);
   setText(c, "rank", r.rank, rankLabel(e.rank));
@@ -413,15 +423,16 @@ function updateCard(
     r.statusEst.hidden = !estimate;
   }
 
-  setRichCached(c, "now", r.nowText, act.sentence);
-  const since = Date.parse(act.since);
+  c.sentence = act.sentence;
+  c.sinceMs = Date.parse(act.since);
   const expected =
     act.expectedSecs !== null && act.expectedSecs > 0 ? Math.round(act.expectedSecs) : 0;
-  c.run = expected > 0 && !Number.isNaN(since) ? { sinceMs: since, expected } : null;
+  c.expected = Number.isNaN(c.sinceMs) ? 0 : expected;
 
-  // 최근 행적 3줄. 최신이 먼저
+  // 끝난 일이 곧바로 recent 맨 앞에 들어오므로 지금 활동과 같은 줄은 뺀다. 최신이 먼저
+  const trail = e.recent.filter((a) => a.sentence !== act.sentence || a.since !== act.since);
   r.trail.forEach((t, i) => {
-    const a = e.recent[i];
+    const a = trail[i];
     const key = a ? `${a.since}|${a.sentence}` : "";
     if (!changed(c, `trail${i}`, key)) return;
     t.row.hidden = !a;
@@ -431,9 +442,12 @@ function updateCard(
     setRich(t.text, a.sentence);
   });
 
-  STATS.forEach((s, i) =>
-    setText(c, `stat${i}`, r.stats[i].lastElementChild as HTMLElement, cap99(e.counters[s.key])),
-  );
+  STATS.forEach((s, i) => {
+    const value = cap99(e.counters[s.key]);
+    if (!changed(c, `stat${i}`, value)) return;
+    (r.stats[i].lastElementChild as HTMLElement).textContent = value;
+    r.stats[i].setAttribute("aria-label", `${s.title} ${value}`);
+  });
 
   const say = e.lastSay === null ? "" : e.lastSay;
   if (changed(c, "say", say)) {
@@ -444,30 +458,26 @@ function updateCard(
   }
 }
 
-/** 매초: 경과와 진행 막대만 고친다 */
+/** 매초: 경과가 든 문장과 진행 막대만 고친다 */
 function tickCard(c: CardEntry, nowMs: number): void {
   const r = c.ref;
-  if (!c.run) {
-    c.last.delete("bar");
-    if (changed(c, "tail", "")) {
-      r.nowTail.textContent = "";
-      r.progress.hidden = true;
-    }
+  const sec = Number.isNaN(c.sinceMs) ? null : Math.max(0, Math.floor((nowMs - c.sinceMs) / 1000));
+  setRichCached(c, "now", r.nowText, fillElapsed(c.sentence, sec));
+  if (c.expected === 0 || sec === null) {
+    if (changed(c, "prog", "off")) r.progress.hidden = true;
     return;
   }
-  const { sinceMs, expected } = c.run;
-  const sec = Math.max(0, Math.floor((nowMs - sinceMs) / 1000));
-  const over = sec > expected;
-  const tail = ` · ${fill(phrases.units.elapsed, { value: fmtSec(sec) })} (평소 ${fmtSec(expected)})`;
-  if (changed(c, "tail", tail)) r.nowTail.textContent = tail;
-  const width = `${Math.min(100, Math.round((sec / expected) * 100))}%`;
+  if (changed(c, "prog", "on")) r.progress.hidden = false;
+  const over = sec > c.expected;
+  const width = `${Math.min(100, Math.round((sec / c.expected) * 100))}%`;
   if (changed(c, "bar", `${width}|${over}`)) {
-    r.progress.hidden = false;
     r.bar.style.width = width;
     r.progress.classList.toggle("is-over", over);
     r.barLong.hidden = !over;
-    r.barCaption.textContent = fill(phrases.card.progress, { sec, avg: expected });
   }
+  // 캡션은 막대 비율과 따로 매초 바뀐다: 평균이 길거나 넘겼어도 멈추지 않게
+  if (changed(c, "cap", `${sec}|${c.expected}`))
+    r.barCaption.textContent = fill(phrases.card.progress, { sec, avg: c.expected });
 }
 
 // ---- 팀 머리글 (중소기업) ----
@@ -496,22 +506,14 @@ function createHead(doc: Document): HeadEntry {
 }
 
 function updateHead(hd: HeadEntry, t: TeamDto, color: number): void {
-  const boss = t.employees[0];
-  const title = boss ? `${boss.name} ${rankLabel("Bujang")} 팀` : t.title;
-  const set = (key: string, value: string, apply: () => void) => {
-    if (hd.last.get(key) !== value) {
-      hd.last.set(key, value);
-      apply();
-    }
-  };
-  set("name", title, () => (hd.name.textContent = title));
-  set("color", String(color), () =>
-    hd.square.style.setProperty("--ow-square", `var(--ow-team-${color})`),
-  );
-  set("host", t.hostBadge ?? "", () => {
+  const title = teamName(t);
+  if (changed(hd, "name", title)) hd.name.textContent = title;
+  if (changed(hd, "color", String(color)))
+    hd.square.style.setProperty("--ow-square", `var(--ow-team-${color})`);
+  if (changed(hd, "host", t.hostBadge ?? "")) {
     hd.host.textContent = t.hostBadge ?? "";
     hd.host.hidden = t.hostBadge === null;
-  });
+  }
   const state = t.incident
     ? "incident"
     : t.phase === "Working"
@@ -519,7 +521,7 @@ function updateHead(hd: HeadEntry, t: TeamDto, color: number): void {
       : t.phase === "Dozing"
         ? "sleepy"
         : "off";
-  set("dot", state, () => hd.dot.setAttribute("data-state", state));
+  if (changed(hd, "dot", state)) hd.dot.setAttribute("data-state", state);
   hd.startedMs = Date.parse(t.started);
   hd.folder = t.folder;
 }
@@ -529,10 +531,7 @@ function tickHead(hd: HeadEntry, nowMs: number): void {
     ? ""
     : fmtTeamElapsed(Math.max(0, Math.floor((nowMs - hd.startedMs) / 1000)));
   const text = elapsed ? `${hd.folder} · ${elapsed}` : hd.folder;
-  if (hd.last.get("meta") !== text) {
-    hd.last.set("meta", text);
-    hd.meta.textContent = text;
-  }
+  if (changed(hd, "meta", text)) hd.meta.textContent = text;
 }
 
 // ---- 현황판 ----
@@ -649,7 +648,8 @@ export function mountPanel(
     }
 
     const small = info?.scale === "Small";
-    const first = office.officeId !== lastOfficeId;
+    // 처음 그리기와 조용한 재구성(PLAN 4.5)에는 토스트·연출을 내지 않는다
+    const quiet = office.officeId !== lastOfficeId || office.rebuilt;
     lastOfficeId = office.officeId;
 
     const summary = info?.offices.find((o) => o.officeId === office.officeId);
@@ -685,9 +685,9 @@ export function mountPanel(
         if (!c) {
           cards.set(e.agentId, (c = createCard(doc, e.agentId)));
           c.el.classList.toggle("is-compact", compact);
-          if (!first) fresh.push(e);
+          if (!quiet) fresh.push(e);
         }
-        updateCard(c, e, i === 0, small, all);
+        updateCard(c, e, i === 0, t.phase === "Off", small, all);
         tickCard(c, Date.now());
         liveCards.add(e.agentId);
         desired.push(c.el);
@@ -708,10 +708,13 @@ export function mountPanel(
     // 퇴근한 팀의 색은 반납한다
     for (const id of teamColor.keys()) if (!liveHeads.has(id)) teamColor.delete(id);
 
-    // 순서만 바꾼다: 자리가 다른 것만 옮긴다
+    // 옮기면 초점이 풀리는 브라우저가 있어 옮긴 뒤 되돌린다
+    const focused = doc.activeElement;
     desired.forEach((el, i) => {
       if (list.children[i] !== el) list.insertBefore(el, list.children[i] ?? null);
     });
+    if (focused instanceof HTMLElement && list.contains(focused) && doc.activeElement !== focused)
+      focused.focus({ preventScroll: true });
 
     for (const e of fresh) {
       const c = cards.get(e.agentId);
@@ -724,7 +727,7 @@ export function mountPanel(
     const cueKey = `${office.officeId}|${office.stateSeq}`;
     if (cueKey !== lastCueKey) {
       lastCueKey = cueKey;
-      office.cues.forEach(applyCue);
+      if (!quiet) office.cues.forEach(applyCue);
     }
 
     count.hidden = false;
@@ -769,6 +772,7 @@ export function mountPanel(
     aside.hidden = narrow && !drawerOpen;
     closeBtn.hidden = !narrow;
     ticker.el.hidden = compact;
+    ticker.remeasure();
   }
 
   function onResize(): void {
@@ -786,6 +790,15 @@ export function mountPanel(
   }
 
   closeBtn.addEventListener("click", () => setDrawer(false));
+  list.addEventListener("keydown", (ev) => {
+    if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+    const all = [...list.querySelectorAll<HTMLElement>(".ow-card")];
+    const at = all.findIndex((c) => c === doc.activeElement);
+    const next = all[at + (ev.key === "ArrowDown" ? 1 : -1)];
+    if (at < 0 || !next) return;
+    ev.preventDefault();
+    next.focus();
+  });
   const unsubscribe = store.subscribe(render);
   const unsubscribeViewport = viewport.subscribe(onResize);
   // 경과 시간은 1초마다 그 칸만 (상태를 매초 다시 받지 않는다)
@@ -800,9 +813,7 @@ export function mountPanel(
 
   return {
     openDrawer: () => setDrawer(true),
-    closeDrawer: () => setDrawer(false),
     toggleDrawer: () => setDrawer(!drawerOpen),
-    isDrawerOpen: () => drawerOpen,
     destroy() {
       unsubscribe();
       unsubscribeViewport();

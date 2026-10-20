@@ -12,6 +12,7 @@ export function act(over: Partial<Activity> = {}): Activity {
     expectedSecs: null,
     pose: "Type",
     confidence: "Confirmed",
+    extra: 0,
     ...over,
   };
 }
@@ -36,6 +37,7 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
     confidence: "Confirmed",
     contextUsed: null,
     contextWindow: null,
+    bubble: null,
     ...over,
   };
 }

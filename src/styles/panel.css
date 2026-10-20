@@ -92,9 +92,6 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.ow-now__tail {
-  color: var(--ow-ink-2);
-}
 .ow-trail__row {
   display: block;
   overflow: hidden;

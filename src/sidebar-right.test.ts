@@ -133,13 +133,13 @@ test("추정은 점선 칩과 추정 꼬리표", () => {
   expect(tag.hidden).toBe(true);
 });
 
-test("경과 시간은 1초마다 그 칸만 바뀌고, 평균을 넘으면 길어지네", () => {
+test("{elapsed} 는 1초마다 채우고 코드 조각 안은 그대로, 평균을 넘으면 길어지네", () => {
   const run = (sec: number) =>
     office("o", 1, [
       team("t", [
         emp("boss", {
           activity: act({
-            sentence: "`cargo test` 돌리는 중",
+            sentence: "`cargo {elapsed}` 돌리는 중 · {elapsed}째 (평소 40초)",
             since: new Date(NOW.getTime() - sec * 1000).toISOString(),
             expectedSecs: 40,
           }),
@@ -147,24 +147,58 @@ test("경과 시간은 1초마다 그 칸만 바뀌고, 평균을 넘으면 길�
       ]),
     ]);
   const s = setup(run(34));
-  const tail = s.q(".ow-now__tail")!;
   const text = s.q(".ow-now__text")!;
-  expect(tail.textContent).toContain("34초째");
-  expect(tail.textContent).toContain("평소 40초");
+  expect(text.textContent).toBe("cargo {elapsed} 돌리는 중 · 34초째 (평소 40초)");
   expect(s.q(".ow-progress")!.classList.contains("is-over")).toBe(false);
-  expect(s.q(".ow-code")?.textContent).toBe("cargo test");
-  const textChildren = [...text.childNodes];
+  expect(s.q(".ow-code")?.textContent).toBe("cargo {elapsed}");
   vi.advanceTimersByTime(7000);
-  expect(tail.textContent).toContain("41초째");
+  expect(text.textContent).toBe("cargo {elapsed} 돌리는 중 · 41초째 (평소 40초)");
   expect(s.q(".ow-progress")!.classList.contains("is-over")).toBe(true);
   expect(s.q<HTMLElement>(".ow-progress__long")!.hidden).toBe(false);
-  expect([...text.childNodes]).toEqual(textChildren);
 });
 
-test("평균이 없으면 막대와 경과가 없다", () => {
+test("진행 캡션은 비율이 같아도 매초 바뀌고 평균을 넘긴 뒤에도 바뀐다", () => {
+  const s = setup(
+    office("o", 1, [
+      team("t", [
+        emp("boss", {
+          activity: act({
+            since: NOW.toISOString(),
+            expectedSecs: 600,
+          }),
+        }),
+      ]),
+    ]),
+  );
+  const caption = s.q(".ow-progress__caption span")!;
+  expect(caption.textContent).toBe("0초 / 평균 600초");
+  vi.advanceTimersByTime(1000);
+  expect(caption.textContent).toBe("1초 / 평균 600초");
+  vi.advanceTimersByTime(700_000);
+  expect(caption.textContent).toBe("701초 / 평균 600초");
+  vi.advanceTimersByTime(1000);
+  expect(caption.textContent).toBe("702초 / 평균 600초");
+});
+
+test("행적에서 지금 활동과 같은 줄은 뺀다", () => {
+  const now = act({ sentence: "빌드 끝", since: iso(14, 30) });
+  const s = setup(
+    office("o", 1, [
+      team("t", [
+        emp("boss", {
+          activity: now,
+          recent: [now, act({ sentence: "앞 일", since: iso(14, 20) })],
+        }),
+      ]),
+    ]),
+  );
+  const rows = [...s.root.querySelectorAll(".ow-trail__row:not([hidden]) .ow-trail__text")];
+  expect(rows.map((r) => r.textContent)).toEqual(["앞 일"]);
+});
+
+test("평균이 없으면 막대가 없다", () => {
   const s = setup(office("o", 1, [team("t", [emp("boss")])]));
   expect(s.q<HTMLElement>(".ow-progress")!.hidden).toBe(true);
-  expect(s.q(".ow-now__tail")!.textContent).toBe("");
 });
 
 test("컨텍스트 눈금: 켜진 칸, 80% 이상 주황, 창 크기를 모르면 ?", () => {
@@ -262,7 +296,6 @@ test("너비 1100 미만은 드로어, 높이 640 미만은 압축형과 티커 
   expect(s.onDrawerChange).toHaveBeenLastCalledWith(true);
   s.q<HTMLElement>(".ow-panel__close")!.click();
   expect(aside.hidden).toBe(true);
-  expect(s.panel.isDrawerOpen()).toBe(false);
 
   s.vp.set(1280, 600);
   expect(aside.hidden).toBe(false);
@@ -289,6 +322,75 @@ test("티커 항목을 누르면 카드로 스크롤하고 강조한다", () => 
   const card = s.cards()[1];
   expect(scrollIntoView).toHaveBeenCalled();
   expect(card.classList.contains("is-highlight")).toBe(true);
-  vi.advanceTimersByTime(1500);
+  vi.advanceTimersByTime(1999);
+  expect(card.classList.contains("is-highlight")).toBe(true);
+  vi.advanceTimersByTime(1);
   expect(card.classList.contains("is-highlight")).toBe(false);
+});
+
+test("조용한 재구성과 첫 그리기에는 cue 도 입사 토스트도 없다", () => {
+  const base = [team("t", [emp("boss"), emp("a")])];
+  const cues: OfficeDto["cues"] = [{ teamId: "t", kind: "Shake", agent: "a" }];
+  const s = setup({ ...office("o", 1, base, cues) });
+  expect(s.cards()[1].classList.contains("is-hit")).toBe(false);
+  const rebuilt = {
+    ...office("o", 2, [team("t", [emp("boss"), emp("a"), emp("n")])], cues),
+    rebuilt: true,
+  };
+  s.push(rebuilt);
+  expect(s.cards()[1].classList.contains("is-hit")).toBe(false);
+  expect(s.q(".ow-panel__toast")).toBeNull();
+  expect(
+    s
+      .cards()
+      .find((c) => c.dataset.agentId === "n")!
+      .classList.contains("is-new"),
+  ).toBe(false);
+});
+
+test("재정렬해도 초점은 그 카드에 남는다", () => {
+  const o = (seq: number, a: number, b: number) =>
+    office("o", seq, [
+      team("t", [
+        emp("boss"),
+        emp("a", { activity: act({ since: iso(14, a) }) }),
+        emp("b", { activity: act({ since: iso(14, b) }) }),
+      ]),
+    ]);
+  const s = setup(o(1, 1, 2));
+  const a = s.cards().find((c) => c.dataset.agentId === "a")!;
+  a.focus();
+  s.push(o(2, 5, 2));
+  expect(s.ids()).toEqual(["boss", "a", "b"]);
+  expect(document.activeElement).toBe(a);
+});
+
+test("카드에서 위아래 화살표는 이웃 카드로 초점을 옮긴다", () => {
+  const s = setup(office("o", 1, [team("t", [emp("boss"), emp("a"), emp("b")])]));
+  const [boss, a, b] = s.cards();
+  const key = (el: HTMLElement, k: string) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+  boss.focus();
+  key(boss, "ArrowDown");
+  expect(document.activeElement).toBe(a);
+  key(a, "ArrowDown");
+  expect(document.activeElement).toBe(b);
+  key(b, "ArrowDown");
+  expect(document.activeElement).toBe(b);
+  key(b, "ArrowUp");
+  expect(document.activeElement).toBe(a);
+});
+
+test("퇴근한 팀의 카드는 회색", () => {
+  const o = (phase: "Working" | "Off") => office("o", 1, [team("t", [emp("boss")], { phase })]);
+  expect(setup(o("Working")).cards()[0].classList.contains("is-idle")).toBe(false);
+  expect(setup(o("Off")).cards()[0].classList.contains("is-idle")).toBe(true);
+});
+
+test("접근성: 반려 아이콘과 실적 칸에 이름이 있다", () => {
+  const s = setup(office("o", 1, [team("t", [emp("boss")])]));
+  const reject = s.q(".ow-card__reject")!;
+  expect(reject.getAttribute("aria-hidden")).toBeNull();
+  expect(reject.getAttribute("aria-label")).toBe("반려됨");
+  expect(s.q(".ow-stats > span")!.getAttribute("aria-label")).toBe("읽은 파일 1");
 });

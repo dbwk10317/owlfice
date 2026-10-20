@@ -1271,7 +1271,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 #### 4.7.6 오늘의 업무 (`work_type`)
 
-첫 사용자 메시지 키워드와 첫 20개 도구 호출 패턴:
+첫 사용자 메시지 키워드와 첫 20개 도구 호출 패턴. 메시지와 호출 모두 **부장 것만** 본다 (서브 파일을 읽는 순서와 무관해지고, 일을 정하는 것은 부장이 받은 지시다). 표의 "먼저" 는 첫 쓰기(FileWrite·FileEdit)보다 먼저다:
 
 | 조건 | 유형 |
 |---|---|

@@ -1252,11 +1252,11 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | 순서 | 토큰 | 직급 |
 |---|---|---|
 | 1 | `haiku`, `mini`, `nano`, `lite`, 모델 없음 | 사원 |
-| 2 | `opus`, `fable`, `mythos`, `o3`, (`gemini` 와 `pro` 둘 다 포함), (연속 토큰 `gpt`,`5` 이고 effort `high` 이상. `xhigh` 포함) | 과장 |
+| 2 | `opus`, `fable`, `mythos`, `o3`, `argon`(Gemini 최상위), `sol`·`astra`(GPT-6 최상위), (`gemini` 와 `pro` 둘 다 포함), (연속 토큰 `gpt`,`5` 이고 effort `high` 이상. `xhigh` 포함) | 과장 |
 | 3 | `sonnet`, (연속 토큰 `gpt`,`5`), (연속 토큰 `gpt`,`4`,`1`), (`gemini` 와 `flash` 둘 다 포함) | 대리 |
 | 4 | 그 외 | 대리 |
 
-계열 조건은 단일 토큰이 아니라 **연속 토큰 조합**이다. `gpt-5` 는 토큰화하면 `[gpt, 5]` 라 단일 토큰으로는 걸리지 않는다. 예: `gemini-2.5-flash-lite` → lite → 사원. `gemini-2.5-pro` → 과장. `gemini-2.5-flash` → 대리. `gpt-5-mini`, `o3-mini` → mini → 사원. `gpt-5` + effort high → 과장, `gpt-5` → 대리, `gpt-4.1` → `[gpt, 4, 1]` → 대리. `claude-opus-5-5` → 과장. 이 여덟을 단위 테스트에 넣는다. Claude 서브는 `resolvedModel` 을 쓴다 (`input.model` 은 "opus" 같은 별칭). effort는 Codex `turn_context` 에 있을 때만 (6부).
+계열 조건은 단일 토큰이 아니라 **연속 토큰 조합**이다. `gpt-5` 는 토큰화하면 `[gpt, 5]` 라 단일 토큰으로는 걸리지 않는다. 예: `gemini-2.5-flash-lite` → lite → 사원. `gemini-2.5-pro` → 과장. `gemini-2.5-flash` → 대리. `gpt-5-mini`, `o3-mini` → mini → 사원. `gpt-5` + effort high → 과장, `gpt-5` → 대리, `gpt-4.1` → `[gpt, 4, 1]` → 대리. `claude-opus-5-5` → 과장. `gpt-6.1-sol`·`gpt-6-astra`·`gemini-4-argon-trial` → 과장, `gpt-6.1-sol-mini` → 사원 (2026-10-20 사용자 결정). 이것들을 단위 테스트에 넣는다. Claude 서브는 `resolvedModel` 을 쓴다 (`input.model` 은 "opus" 같은 별칭). effort는 Codex `turn_context` 에 있을 때만 (6부).
 
 #### 4.7.5 담당 (`role`)
 
@@ -1494,7 +1494,6 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 기존 공개 도구 재사용 | 조사함. 그대로 쓸 의존성 없음: agent-sessions(Rust, MIT)는 신생·SQLite 번들·서브에이전트 파일 미지원. pixtuoid(Rust, MIT, 터미널 픽셀 사무실)는 디코더 원문을 대조했다: JSONL에서 읽는 것이 tool_use/tool_result 짝·모델·토큰뿐이고 결과 성패·도구 종류·서브 생명주기가 없다 (생명주기는 hook + pid 생존 확인, Windows 미구현). 가져올 코드는 없고 가장자리 사례만 4.4.1·4.6.1·4.6.2에 반영했다 | 파서 티켓에서 포맷 대조 자료로만 쓴다 (4.6) | T07 T08 T32 |
 | 훅 수집 (2차 후보) | 1차는 기록 파일만 읽는다. Claude·Codex 훅(`PermissionRequest`·`SessionEnd`·`SubagentStop`)을 받으면 허가 대기·세션 종료가 추정 아닌 확인이 되지만, 사용자의 `settings.json`·`config.toml` 을 고쳐야 하고(1.3) 수신 파이프와 훅·기록 중복 제거가 생긴다 | Claude Desktop Code 탭과 Codex 앱에서 훅이 발화하는지 확인 뒤 2차에서 결정 | 2차 |
 | Codex exec 분류 | `cmd:` 리터럴을 뽑아 classify_command (4.6.2). 변수·템플릿 문자열로 만든 명령은 못 뽑는다. CLI 표본에서 명령 하나의 CommandExecution item이 빠진 일이 있다 (`git init` 이 읽기 전용 파일시스템에서 실패) | 실제 사용에서 Script로 떨어진 비율 보기 (미대응 로그), 같은 명령을 쓰기 가능한 폴더에서 다시 | T08, T38 |
-| 직급 표의 모델명 | 표본 모델명은 `gpt-6.1-sol`, `gemini-4-argon-trial` 로 4.7.4 예시보다 새것이다. Codex effort는 `turn_context.effort` (앱만 늘 있다, `xhigh`)와 `SubAgentActivity.reasoning_effort` (`low`) | 4.7.4 토큰 표를 지금 모델명으로 다시 보기 | T09 |
 | 세션 등록부 허가 대기 `status` | `idle`·`busy` 확인. 허가 창이 떠 있을 때의 값은 미확인. 타 프로젝트(c9watch) fixture는 `waiting` + `waitingFor` (CC 2.1.280, macOS CLI) | 허가 창을 띄운 채 등록부 보기 (Desktop Code 탭·Windows에서). 확인되면 4.7.2의 Claude 허가 대기 행이 Confirmed로 산다 | T02, T11 |
 | 등록부 pid 재사용·`procStart` | `startedAt` 과 프로세스 생성 시각 비교로 재사용을 거른다 (4.4.1). Windows 생성 시각은 `GetProcessTimes` 라 `windows-sys` 직접 의존이 필요할 수 있다 | T02에서 std로 되는지 먼저 본다. 안 되면 crate 추가는 메인 허락 | T02 |
 | WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T03, T12 |

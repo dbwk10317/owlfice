@@ -53,7 +53,7 @@
 - 에이전트를 조종하지 않는다. 세션 파일을 쓰지 않는다. 읽기 전용이다. 꺼진 WSL 배포판을 깨우지도 않는다.
 - 외부 서버에 연결하지 않고 포트를 열지 않는다. WSL 파일은 `\\wsl.localhost` 루프백 공유로 읽는다. 이것이 유일한 네트워크 사용이다.
 - 과거 세션을 재생하지 않는다 (1차 범위 밖).
-- 세 회사(Anthropic, OpenAI, Google) 제품 외의 에이전트는 지원하지 않는다. 1차 범위는 Claude Desktop(Code 탭), Claude Code CLI, Codex 앱이다. Codex CLI는 레코드 확인 후 같은 파서로 지원한다. Gemini CLI는 포맷 확인 후, Gemini 앱(Antigravity)은 저장 형식이 DB라 1차 범위 밖이다 (4.4.1, 6부).
+- 세 회사(Anthropic, OpenAI, Google) 제품 외의 에이전트는 지원하지 않는다. 1차 범위는 Claude Desktop(Code 탭), Claude Code CLI, Codex 앱이다. Codex CLI는 레코드 확인 후 같은 파서로 지원한다. Google 쪽은 Antigravity CLI(`agy`)를 표본 확인 후 지원한다 (T32). Gemini CLI는 2026-06-18 개인 사용자 서비스가 끝나 지원하지 않는다. Antigravity 앱(IDE)은 1차 범위 밖이다 (4.4.1, 6부).
 
 ---
 
@@ -82,7 +82,7 @@
 |---|---|---|
 | **팀** | 활성 세션 하나 | 부장 1명 + 그 세션의 서브에이전트. 규모와 무관한 기본 단위 |
 | **회사** | 이 앱 전체 | 회사 이름은 Owlfice |
-| **동** | 제품 (대기업) | A동 Claude Desktop(Code 탭), B동 Claude Code CLI, C동 Codex 앱, D동 Codex CLI, E동 Gemini 앱(Antigravity), F동 Gemini CLI. 동은 세션마다 정한다 (4.4.1). 같은 폴더에 A동 세션과 B동 세션이 섞여 있다 |
+| **동** | 제품 (대기업) | A동 Claude Desktop(Code 탭), B동 Claude Code CLI, C동 Codex 앱, D동 Codex CLI, E동 Antigravity 앱(IDE), F동 Antigravity CLI. 동은 세션마다 정한다 (4.4.1). 같은 폴더에 A동 세션과 B동 세션이 섞여 있다 |
 | **층** | 대기업: 호스트. 중소기업: 제조사 | 대기업 1층 Windows, 2층·3층 … WSL 배포판(처음 본 순서로 매겨 저장. 바뀌지 않는다) / 중소기업 1층 Claude, 2층 Codex, 3층 Gemini |
 | **호** | 대기업: 팀 하나 | 층 숫자 + 두 자리 순번. `203호` = 2층(WSL) 3번째 방. 중소기업에는 호가 없다 |
 | **사무실** | 화면 하나에 그리는 단위 | 대기업: 팀 1개 (`B동 203호`). 중소기업: 층의 팀 전부 (`2층 Codex 사무실`) |
@@ -677,7 +677,7 @@ owlfice/
 │       │   ├── mod.rs           ← Event enum, Parser trait, classify_command
 │       │   ├── claude.rs
 │       │   ├── codex.rs
-│       │   └── gemini.rs
+│       │   └── antigravity.rs
 │       ├── office/              ← 상태 기계
 │       │   ├── mod.rs           ← Team, Employee, Room
 │       │   ├── world.rs         ← OfficeWorld: 규모에 따라 팀을 사무실로 합성, seq
@@ -761,8 +761,8 @@ gemini = %USERPROFILE%\.gemini
 | Claude Code CLI | B | 같은 폴더 | jsonl append | `entrypoint: "cli"` | 지원 (확인됨, 표본 적음) |
 | Codex 앱 | C | `<codex>\sessions\YYYY\MM\DD\rollout-<시각>-<uuid>.jsonl` | jsonl append | `session_meta.payload.originator: "Codex Desktop"` | 지원 (확인됨) |
 | Codex CLI | D | 같은 폴더 | jsonl append | `originator`가 그 외 | 지원 예정 (레코드 미확인) |
-| Gemini 앱 (Antigravity) | E | `<gemini>\antigravity\conversations\<uuid>.db`, `brain\<uuid>\`, `%APPDATA%\Antigravity` | DB·protobuf | — | 1차 범위 밖 |
-| Gemini CLI | F | `<gemini>\tmp\…` (미확인. 개발 PC에 세션 없음) | JSON 전체 파일 (가정) | — | 포맷 확인 후 |
+| Antigravity 앱 (IDE) | E | `<gemini>\antigravity\conversations\<uuid>.db`, `brain\<uuid>\`, `%APPDATA%\Antigravity` | DB·protobuf | — | 1차 범위 밖 |
+| Antigravity CLI (`agy`) | F | `<gemini>\antigravity-cli\brain\<uuid>\.system_generated\logs\transcript_full.jsonl` | jsonl (append 전용인지 미확인) | 경로 (`antigravity-cli`) | 표본 확인 후 (T32). WSL에서 확인됨 |
 
 Claude 세션 폴더의 구조 (확인됨):
 - `<프로젝트폴더>\<uuid>.jsonl` 이 세션 본체.
@@ -772,6 +772,12 @@ Claude 세션 폴더의 구조 (확인됨):
 **동(제품)은 Site가 아니라 세션마다 정한다.** Claude Desktop과 CLI는 같은 폴더를 쓰고, Codex 앱과 CLI도 같은 폴더를 쓴다. 파서가 첫 레코드에서 `Product`를 정해 `SessionMeta`에 담는다.
 - Claude: `entrypoint` 필드. 이 PC 표본 5,777건이 `claude-desktop`, 42건이 `cli`였다. `<uuid>.desktop-released.json` 사이드카는 세션을 삭제·보관했을 때 생기는 표식(`{"v":1,"releasedAt":…,"reason":"delete"}`)이라 활성 세션에는 없다. 구분에 쓰지 않는다.
 - Codex: `session_meta.payload.originator`. `source` 필드(`vscode`)는 참고만.
+
+Antigravity CLI 폴더의 구조 (확인됨, WSL 표본 하나):
+- `brain\<uuid>\.system_generated\logs\transcript_full.jsonl` 이 대화 기록. 레코드 키 `type, step_index, created_at, status, source, content`. 확인한 type은 `USER_INPUT`, `PLANNER_RESPONSE` 뿐이다. 같은 폴더의 `transcript.jsonl` 과 `chunks\` 는 같은 내용의 다른 판으로 보인다 (미확인).
+- 제목은 `annotations\<uuid>.pbtxt` 의 `title` (텍스트 protobuf).
+- `conversations\<uuid>.db` (SQLite, `steps` 테이블)와 `conversation_summaries.db` (`parent_conversation_id`, `nesting_depth` 가 서브에이전트 단서)가 원본이다. SQLite crate를 들이지 않으려고 1차에서는 읽지 않는다.
+- Gemini CLI의 옛 `<gemini>\tmp\<사용자>\chats\` 는 서비스 종료로 보지 않는다.
 
 **세션 등록부** (확인됨): `<home>\sessions\<pid>.json`. 살아 있는 Claude 프로세스마다 하나. 필드: `pid, sessionId, cwd, entrypoint, kind, name, nameSource, status, startedAt, updatedAt, version`. 쓰임:
 1. 활성 판정. 등록부에 있고 pid가 살아 있으면 퇴근이 아니다 (2.4).
@@ -789,7 +795,7 @@ AI 없이 기계적으로 따라가는 체인이다. 1번은 개발 PC에서 확
 2. **켜진 배포판만 다룬다.** Probe 주기(30초)마다 `wsl.exe -l --running -q` 를 한 번 실행해(약 100ms) 켜진 목록을 얻는다. 3초 Scan에서는 프로세스를 띄우지 않는다. 꺼진 배포판은 "소등"으로 표시하고 UNC를 건드리지 않는다. UNC 첫 접근은 VM을 부팅시키기 때문이다 (1.3).
 3. 배포판 루트는 `\\wsl.localhost\<DistributionName>\`. `BasePath` 의 vhdx는 열지 않는다. 구버전 호환으로 `\\wsl$\<이름>\` 도 시도한다.
 4. `\\wsl.localhost\<이름>\etc\passwd` 를 읽어 세 번째 필드가 `DefaultUid` 와 같은 줄의 여섯 번째 필드가 홈 디렉터리.
-5. 홈 아래 `.claude/projects`, `.codex/sessions`, `.gemini/tmp` 존재 확인.
+5. 홈 아래 `.claude/projects`, `.codex/sessions`, `.gemini/antigravity-cli/brain` 존재 확인.
 6. 못 찾으면 폴백: `wsl.exe -d <이름> -- printenv HOME CLAUDE_CONFIG_DIR CODEX_HOME` 을 한 번 실행한다. 로그인 셸(`sh -lc`)은 느리고 프로필 출력이 섞이므로 쓰지 않는다. 그래도 없으면 설정의 수동 경로.
 
 **깨우지 않기의 한계와 완화.** 경로 기반 UNC 접근은 어떤 주기로 켜짐을 확인해도 "확인 직후 종료"의 창이 남는다. 그래서:
@@ -813,7 +819,7 @@ pub struct Site {                 // 세션 루트 하나. 동은 모른다
     pub root: PathBuf,             // UNC 또는 로컬
     pub read_mode: ReadMode,       // Append (jsonl) | WholeFile (Gemini 가정)
 }
-pub enum Product { ClaudeDesktop, ClaudeCli, CodexApp, CodexCli, GeminiApp, GeminiCli }  // 세션마다 파서가 정한다
+pub enum Product { ClaudeDesktop, ClaudeCli, CodexApp, CodexCli, AntigravityApp, AntigravityCli }  // 세션마다 파서가 정한다
 impl Product { pub fn building(&self) -> char /* 'A'..='F' */; pub fn vendor(&self) -> Vendor }
 ```
 
@@ -1026,9 +1032,9 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 
 `~/.codex/session_index.jsonl` (`{ id, thread_name, updated_at }`) 과 `history.jsonl` (`{ session_id, ts, text }`) 은 Scan 단계에서 세션 목록·제목·첫 요청을 얻는 데 쓴다 (확인됨).
 
-#### 4.6.3 Gemini 파서 (`parse/gemini.rs`)
+#### 4.6.3 Antigravity 파서 (`parse/antigravity.rs`)
 
-포맷 미확인. 개발 PC에 Gemini CLI 세션이 없다 (6부). 문서의 가정(`session-*.json` 에 messages 배열)이 맞으면 jsonl tail이 아니라 **파일 전체를 다시 읽어 이전 길이와 비교**하는 방식이 필요하다. `Site.read_mode = WholeFile` 로 분리한다. 뼈대만 두고 `UserMessage` / `AssistantText` / `ToolCall` 세 종류부터.
+Antigravity CLI의 `transcript_full.jsonl` 을 Claude·Codex처럼 jsonl로 tail한다 (`ReadMode::Append`, 4.4.1). 파일이 다시 쓰이면 TailReader의 Reset 규칙(4.5)이 잡는다. 표본은 레코드 2줄뿐이라 도구 호출 type은 미확인이다 (6부). 뼈대는 `USER_INPUT` → UserMessage, `PLANNER_RESPONSE` → AssistantText 두 종류부터. append 전용이 확인되면 `ReadMode::WholeFile` 은 쓸 곳이 없으니 지운다.
 
 #### 4.6.4 명령 분류 (`classify_command`)
 
@@ -1360,7 +1366,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 |---|---|---|---|---|
 | T01 | 저장소 초기화. Tauri 2 템플릿, MSVC 빌드(기본)와 GNU 폴백 빌드, `.cargo/config.toml`, NSIS 설정, `build-gnu.sh`, `docs/BUILD.md` | 상 | 없음 | Visual Studio Build Tools로 `npm run tauri build` → NSIS 설치 파일 → 개발 도구가 없는 Windows 11 VM에서 설치·실행·빈 창. `dumpbin /dependents` 로 의존 DLL이 시스템 DLL뿐. Rust·Tauri·Visual Studio 버전과 검증 명령을 `docs/BUILD.md` 에 기록. 폴백 경로(4.1)를 쓴 PC면 그 버전과 절차, `tauri dev` 동작 여부도 함께 |
 | T02 | `discover/windows.rs` + `registry.rs`: 환경변수와 홈에서 Site 목록, 세션 등록부 읽기 | 하 | T01 | 개발 PC에서 Claude·Codex Site 반환. 등록부에서 살아 있는 세션 목록. 단위 테스트에 가짜 홈 폴더 |
-| T03 | `discover/wsl.rs`: 레지스트리 → 켜진 배포판 → passwd → 홈 → Site | 중 | T01 | 개발 PC에서 Rocky-9 Site 반환. 레지스트리 없을 때 빈 목록. 꺼진 배포판은 UNC를 건드리지 않음 (프로세스 목록으로 검증). 감시 중 `wsl --terminate` 로 배포판을 끄면 다음 Hot·Scan 뒤에도 꺼진 상태가 유지됨 (핸들·의심 상태, 4.4.2). 핸들 모드에서 같은 경로의 파일을 바꿔치기하면 다음 Scan에서 Reset. I/O를 멈추게 하면(공유 끊기) 감시자가 2초 안에 의심으로 전환하고, 재개 뒤 멈춘 동안 append된 줄이 하나도 빠지지 않음(2단계 commit). 경로 접근이 꺼진 배포판을 재시작하는지 결과를 6부에 기록 |
+| T03 | `discover/wsl.rs`: 레지스트리 → 켜진 배포판 → passwd → 홈 → Site | 중 | T01 | 개발 PC에서 WSL 배포판의 Claude·Codex Site 반환. 레지스트리 없을 때 빈 목록. 꺼진 배포판은 UNC를 건드리지 않음 (프로세스 목록으로 검증). 경로 접근이 꺼진 배포판을 재시작하는지 결과를 6부에 기록. 감시 중 동작(핸들·의심 상태)은 T12에서 |
 | T04 | `tail/mod.rs` TailReader | 하 | T01 | 4.12의 TailReader 단위 테스트 전부 |
 | T05 | `parse/mod.rs` Event 모델 + `classify_command` | 하 | T01 | 4.6.4 표 전체 + 복합 명령 우선순위 + `command_key` 테스트 |
 | T06 | `tools/anonymize.py` + fixture 1차 세트 | 하 | 없음 | 4.12 최소 세트. 원본의 경로·비밀이 없음을 grep으로 확인 |
@@ -1369,7 +1375,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | T09 | `office/rank.rs`, `names.rs`, 방 번호 | 하 | T05 | 결정성 테스트: 같은 입력 같은 출력. names.json·rooms.json 저장·복원. 4.7.4의 여덟 예 (`gemini-2.5-pro` → 과장, `gemini-2.5-flash-lite` → 사원, `gpt-5` + high → 과장 포함) |
 | T10 | `owlfice-probe` + `owlfice-replay` CLI | 하 | T07 T08 | probe가 탐색 결과·이벤트 열을 JSON으로 출력. replay가 fixture를 속도 조절해 append하고 `--shift-to-now` 로 시각을 옮긴다. 디자이너·QA가 UI 없이 데이터 확인 가능 |
 | T11 | `office/classify.rs` + `stats.rs`: Team 상태 기계, 문장 생성, pending 목록, 시간 전이, 추정 표시, 장애 판정 | 상 | T07 T08 T09 T10 | replay로 fixture를 재생해 room·sentence·confidence 스냅샷 일치. 병렬 역순 결과, 반려, compaction, 서브 종료 추정, 동기 서브(사전 등록·임시 직원), 서브 파일만 삭제 시 팀 유지 포함 |
-| T12 | `tail/scheduler.rs` 호스트별 스레드 (Hot/Warm/Scan/Probe/Cold) + `office/world.rs` (OfficeWorld, office_of, seq) | 상 | T10 T11 | probe가 실제 세션 변화를 500ms 내 출력. 새 세션 파일 생성 후 3.5초(WSL 35초) 내 Team 생성과 출근 판정. WSL 스레드 멈춤을 주입하면 감시자가 2초 안에 의심으로 바꾸고 Windows 갱신은 유지. 논리 시계 주입 아래 전체 읽기와 append 결과 동일. 규모 변경 절차(4.7.9) 테스트. 유휴 CPU 2% 미만 (측정 조건 4.10) |
+| T12 | `tail/scheduler.rs` 호스트별 스레드 (Hot/Warm/Scan/Probe/Cold) + `office/world.rs` (OfficeWorld, office_of, seq) | 상 | T10 T11 | probe가 실제 세션 변화를 500ms 내 출력. 새 세션 파일 생성 후 3.5초(WSL 35초) 내 Team 생성과 출근 판정. WSL 스레드 멈춤을 주입하면 감시자가 2초 안에 의심으로 바꾸고 Windows 갱신은 유지. 감시 중 `wsl --terminate` 로 배포판을 끄면 다음 Hot·Scan 뒤에도 꺼진 상태가 유지됨 (핸들·의심 상태, 4.4.2). 핸들 모드에서 같은 경로의 파일을 바꿔치기하면 다음 Scan에서 Reset. I/O를 멈추게 하면(공유 끊기) 재개 뒤 멈춘 동안 append된 줄이 하나도 빠지지 않음 (2단계 commit). 논리 시계 주입 아래 전체 읽기와 append 결과 동일. 규모 변경 절차(4.7.9) 테스트. 유휴 CPU 2% 미만 (측정 조건 4.10) |
 | T13 | WSL 폴링 측정 (핸들 기반 Hot stat·read, Probe 직후 나열) | 중 | T12 | UNC stat/read/나열 평균·p99 기록. stat 20ms 초과면 T31 착수 |
 | T38 | `diag.rs` 미대응 동작 로그 + `owlfice-probe unhandled` 요약 (번호는 뒤지만 파서 다음에 바로 착수. `state_conflict`·`scenario_gap` 두 kind만 T11 뒤. 설정 버튼은 T30에서) | 하 | T07 T08 | 4.12의 미대응 로그 테스트 통과. 기본 설정에서 원문이 한 글자도 저장되지 않음 |
 
@@ -1405,7 +1411,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 | 티켓 | 내용 | 난이도 | 선행 | 완료 기준 |
 |---|---|---|---|---|
 | T31 | WSL 스트리밍 폴백 (`wsl tail -F`), T13 결과에 따라 | 상 | T13 | 폴백 전환 자동. 틱 p99 20ms 이내 |
-| T32 | Gemini CLI 포맷 확인 후 `parse/gemini.rs` (WholeFile 읽기) | 중 | T05 | fixture 일치 |
+| T32 | Antigravity CLI 표본(도구 호출·서브에이전트 포함) 확인 후 `parse/antigravity.rs` | 중 | T05 | fixture 일치 |
 | T33 | Codex 서브에이전트 자식 파일 위치 확인 후 지원 | 중 | T08 | fixture 일치 |
 | T34 | 효과음 (기본 꺼짐) | 하 | T30 | 설정 토글 |
 | T35 | 최종 아트 교체, 야근 모드 팔레트 | 중 | T19 | 디자이너 승인 |
@@ -1425,10 +1431,10 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. 프론트의 `types.ts` 는 
 
 | 항목 | 현재 가정 | 확인 방법 | 영향 |
 |---|---|---|---|
-| Gemini CLI 세션 포맷 | 미확인. 개발 PC에 세션 없음 | Gemini CLI로 세션 하나 만들고 폴더 열어 보기 | T32 |
-| Gemini 앱 (Antigravity) 저장 형식 | `~/.gemini/antigravity/conversations/*.db`. 1차 범위 밖 | DB 스키마 열어 보기. 읽을 만하면 2차 | 없음 (1차) |
+| Antigravity CLI 레코드 | `USER_INPUT`·`PLANNER_RESPONSE` 만 확인 (WSL 표본 1개, 2줄). 도구 호출 type, append 전용 여부, 서브에이전트 기록 위치 미확인 | 파일 읽기·수정·셸·서브에이전트를 쓰는 agy 세션 하나 | T32 |
+| Antigravity 앱(IDE) 저장 형식 | `~/.gemini/antigravity/conversations/*.db`. 1차 범위 밖. CLI와 같은 `brain/<uuid>/.system_generated/logs/transcript_full.jsonl` 을 쓰는지 미확인 | IDE 세션 폴더를 CLI와 비교 | 없음 (1차) |
 | Codex 서브에이전트 자식 파일 | `spawn_agent`·`turn_attribution` 은 확인됨. 자식이 별도 rollout인지 미확인 | 서브를 쓰는 Codex 세션의 rollout 폴더 비교 | T33 |
-| Codex CLI 레코드 | Desktop 레코드만 확인. CLI의 `shell` function_call 형태, `originator` 값 미확인 | Codex CLI 세션 하나 | T08 |
+| Codex CLI 레코드 | Desktop 레코드만 대조함. WSL에 Codex CLI 세션 표본 1개가 생겼다. CLI의 `shell` function_call 형태, `originator` 값 미확인 | 그 표본 대조 | T08 |
 | Codex 앱 `exec` JS 세분 매핑 | Script로 뭉뚱그림 | 자주 나오는 `tools.*` 호출 목록 수집 | T11 |
 | Codex `turn_context` effort 필드 | 있으면 직급에 반영 | turn_context 레코드 키 확인 | T09 |
 | 세션 등록부 `status` 값 | `busy` 만 확인. idle·허가 대기 값 미확인 | 결재·허가 대기 중에 등록부 파일 보기 | T02, T11 |

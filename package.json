@@ -8,6 +8,7 @@
     "build": "vp check --no-fmt && vp build",
     "check": "vp check",
     "fmt": "vp fmt",
+    "test": "vp test",
     "lint": "vp lint",
     "tauri": "tauri"
   },

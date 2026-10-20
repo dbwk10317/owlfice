@@ -352,8 +352,12 @@ fn scan(cmd: &str) -> Scan {
                     // 리다이렉트 `2>&1`, `&>`
                     cur.push(c);
                     has_tok = true;
-                } else if seg.is_empty() && !has_tok && next != Some('&') {
-                    // 세그먼트 첫 토큰의 `&` 는 PowerShell 호출 연산자. 비동기가 아니다
+                } else if next != Some('&')
+                    && ((seg.is_empty() && !has_tok)
+                        || (has_tok && cur.ends_with(['{', '(']))
+                        || (!has_tok && seg.last().is_some_and(|t| t.ends_with(['{', '(']))))
+                {
+                    // 세그먼트 첫 토큰이나 `{`·`(` 바로 뒤의 `&` 는 PowerShell 호출 연산자. 비동기가 아니다
                 } else if next == Some('&') {
                     flush(&mut seg, &mut cur, &mut has_tok);
                     end(&mut s.segs, &mut seg);
@@ -888,6 +892,13 @@ mod tests {
         assert!(c.async_unknown);
         assert_eq!(c.kind, GitPush);
         assert!(!classify_command("a && b 2>&1").async_unknown);
+    }
+
+    #[test]
+    fn ampersand_after_open_brace_or_paren_is_call_operator() {
+        assert!(!classify_command("{ & $x }").async_unknown);
+        assert!(!classify_command("(& x)").async_unknown);
+        assert!(classify_command("git push &").async_unknown);
     }
 
     #[test]

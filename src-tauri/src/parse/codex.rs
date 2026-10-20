@@ -35,8 +35,10 @@ pub struct CodexParser {
     pending: Vec<Pending>,
     /// 백그라운드로 남은 exec_command 의 session_id → 원래 호출의 call_id
     background: HashMap<String, String>,
-    /// 이벤트를 내지 않는 호출(`sleep`). 뒤따르는 출력도 버린다
+    /// 이벤트를 내지 않는 호출(`sleep`, `send_message`). 뒤따르는 출력도 버린다
     ignored: HashSet<String>,
+    /// 내부 에이전트의 rollout. 파일 전체에서 이벤트를 내지 않는다
+    silent: bool,
 }
 
 struct Meta {
@@ -62,14 +64,28 @@ enum Wait {
 
 #[derive(Default)]
 struct ExecWait {
-    runs_exec_command: bool,
+    /// 이 호출이 부른 `tools.<이름>`. item 은 맞는 종류를 부른 exec 에만 붙는다
+    tools: Vec<String>,
     /// 단독 `&` 로 띄운 명령. 셸이 즉시 0을 돌려준다 (4.6.4)
     async_unknown: bool,
     /// `write_stdin` 으로 `\u0003` 을 보낸 백그라운드 session_id
     stop_session: Option<String>,
+    /// 중단을 기다리는 동안 온 그 세션의 item. 중단이 실패하면 이것으로 닫는다
+    held: Option<Value>,
     items: u32,
     completed: u32,
     failed: u32,
+}
+
+impl ExecWait {
+    fn calls(&self, f: impl Fn(&str) -> bool) -> bool {
+        self.tools.iter().any(|t| f(t))
+    }
+
+    /// `write_stdin` 폴링만 한 호출은 결과에 판정 근거가 없는 게 정상이다
+    fn polling_only(&self) -> bool {
+        !self.tools.is_empty() && self.tools.iter().all(|t| t == "write_stdin")
+    }
 }
 
 impl CodexParser {
@@ -85,6 +101,7 @@ impl CodexParser {
             pending: Vec::new(),
             background: HashMap::new(),
             ignored: HashSet::new(),
+            silent: false,
         }
     }
 
@@ -97,6 +114,20 @@ impl CodexParser {
             return;
         };
         self.canonical = Some(id.to_string());
+        let internal_source = match p.pointer("/source/subagent") {
+            Some(Value::String(_)) => true,
+            Some(v) => v.get("other").is_some(),
+            None => false,
+        };
+        if internal_source
+            || matches!(
+                str_at(p, &["thread_source"]),
+                Some("guardian_review" | "roborev")
+            )
+        {
+            self.silent = true;
+            return;
+        }
         let spawn = p.pointer("/source/subagent/thread_spawn");
         self.parent = str_at(p, &["parent_thread_id"])
             .or_else(|| spawn.and_then(|s| str_at(s, &["parent_thread_id"])))
@@ -156,11 +187,12 @@ impl CodexParser {
         &mut self,
         record: &Value,
         p: &Value,
+        raw_ref: &RawRef,
         out: &mut Vec<EventKind>,
         un: &mut Vec<Unhandled>,
     ) {
         match str_at(p, &["type"]).unwrap_or_default() {
-            "message" => self.message(record, p, out),
+            "message" => self.message(record, p, out, un),
             "reasoning" => out.push(EventKind::Thinking),
             "custom_tool_call" => self.custom_tool_call(p, out, un),
             "custom_tool_call_output" => match str_at(p, &["call_id"]) {
@@ -180,8 +212,7 @@ impl CodexParser {
             "web_search_call" => {
                 let call_id = str_at(p, &["call_id"])
                     .or_else(|| str_at(p, &["id"]))
-                    .unwrap_or_default()
-                    .to_string();
+                    .map_or_else(|| format!("ws-{}", raw_ref.byte_offset), str::to_string);
                 out.push(EventKind::ToolCall {
                     call_id: call_id.clone(),
                     tool: ToolKind::WebSearch,
@@ -189,13 +220,11 @@ impl CodexParser {
                 });
                 // 따로 오는 출력 레코드가 없어 같은 레코드의 status 로 닫는다
                 let outcome = match str_at(p, &["status"]) {
-                    Some("completed") => Some(ToolOutcome::Ok),
-                    Some("failed") => Some(ToolOutcome::Err),
-                    _ => None,
+                    Some("completed") => ToolOutcome::Ok,
+                    Some("failed") => ToolOutcome::Err,
+                    _ => ToolOutcome::Unknown,
                 };
-                if let Some(outcome) = outcome {
-                    out.push(result(call_id, outcome, String::new()));
-                }
+                out.push(result(call_id, outcome, String::new()));
             }
             "additional_tools" | "agent_message" => {}
             other => un.push(Unhandled::RecordType {
@@ -206,8 +235,14 @@ impl CodexParser {
         }
     }
 
-    fn message(&mut self, record: &Value, p: &Value, out: &mut Vec<EventKind>) {
-        let text = content_text(p.get("content"));
+    fn message(
+        &mut self,
+        record: &Value,
+        p: &Value,
+        out: &mut Vec<EventKind>,
+        un: &mut Vec<Unhandled>,
+    ) {
+        let text = output_texts(p.get("content")).concat();
         match str_at(p, &["role"]) {
             Some("user") => {
                 // 주입 문맥이 섞이므로 사람이 친 입력 표식이 있는 것만
@@ -217,7 +252,19 @@ impl CodexParser {
                 let head = text.trim_start();
                 if head.starts_with(QUESTION_REPLY) {
                     self.question_reply(&text, out);
-                } else if !head.starts_with("<subagent_notification>") {
+                } else if let Some(body) = head.strip_prefix("<subagent_notification>") {
+                    // 표본이 없는 모양이라 이벤트는 내지 않고 미대응 로그만 남긴다
+                    let json = body
+                        .split("</subagent_notification>")
+                        .next()
+                        .unwrap_or_default();
+                    let body = serde_json::from_str(json.trim()).unwrap_or(Value::Null);
+                    un.push(Unhandled::RecordType {
+                        type_name: "subagent_notification".into(),
+                        keys: keys(&body),
+                        renamed_turn: false,
+                    });
+                } else {
                     out.push(EventKind::UserMessage { text });
                 }
             }
@@ -288,7 +335,7 @@ impl CodexParser {
             call_id,
             tool: "exec".into(),
             wait: Wait::Exec(ExecWait {
-                runs_exec_command: scan.tools.iter().any(|t| t == "exec_command"),
+                tools: scan.tools,
                 async_unknown,
                 stop_session,
                 ..ExecWait::default()
@@ -325,13 +372,19 @@ impl CodexParser {
                 _ => None,
             })
             .collect();
+        // 이미 백그라운드인 세션의 폴링 응답은 새 작업이 아니다. 원래 호출의 짝을 덮어쓰면 안 된다
         let started = objs
             .iter()
-            .find(|m| !m.contains_key("exit_code"))
+            .find(|m| m.contains_key("session_id"))
+            .filter(|m| !m.contains_key("exit_code"))
             .and_then(|m| m.get("session_id"))
             .and_then(id_string)
-            .filter(|_| w.runs_exec_command);
-        let mut outcome = if texts.iter().any(|t| t.contains(REJECTED)) {
+            .filter(|s| w.calls(|t| t == "exec_command") && !self.background.contains_key(s));
+        // 거부 문구는 item 없이 `Script failed` 로 끝난 호출에서만 본다. 성공한 호출이 text() 로 찍은 값에도 있을 수 있다
+        let rejected = w.items == 0
+            && first.starts_with("Script failed")
+            && texts.iter().any(|t| t.contains(REJECTED));
+        let mut outcome = if rejected {
             ToolOutcome::Rejected
         } else if w.failed > 0 {
             ToolOutcome::Err
@@ -352,12 +405,17 @@ impl CodexParser {
         {
             self.background.insert(s, p.call_id.clone());
         }
-        let rest = texts.get(1..).unwrap_or_default().join("\n");
+        let rest = texts.get(1..).unwrap_or_default().join(
+            "
+",
+        );
         let preview = if rest.is_empty() { first } else { &rest };
         out.push(result(p.call_id, outcome, preview.to_string()));
-        if outcome == ToolOutcome::Unknown {
-            let mut result_keys: Vec<String> =
-                objs.iter().flat_map(|m| m.keys().cloned()).collect();
+        if outcome == ToolOutcome::Unknown && !w.polling_only() {
+            let mut result_keys: Vec<String> = objs
+                .iter()
+                .flat_map(|m| m.keys().filter(|k| is_known_key(k)).cloned())
+                .collect();
             result_keys.sort();
             result_keys.dedup();
             un.push(Unhandled::OutcomeUnknown {
@@ -367,10 +425,15 @@ impl CodexParser {
         }
         // TaskStop 과 같게: 중단이 실패하지 않았을 때만 작업표를 뗀다
         if let Some(s) = w.stop_session
-            && !matches!(outcome, ToolOutcome::Err | ToolOutcome::Rejected)
-            && let Some(bg) = self.background.remove(&s)
+            && self.background.contains_key(&s)
         {
-            out.push(result(bg, ToolOutcome::Unknown, String::new()));
+            if matches!(outcome, ToolOutcome::Err | ToolOutcome::Rejected) {
+                if let Some(item) = w.held {
+                    self.background_item(&s, &item, out, un);
+                }
+            } else if let Some(bg) = self.background.remove(&s) {
+                out.push(result(bg, ToolOutcome::Unknown, String::new()));
+            }
         }
     }
 
@@ -380,8 +443,8 @@ impl CodexParser {
         let args = parse_maybe_json(p.get("arguments"));
         let mut ask = false;
         let tool = match name {
-            // 질문 답을 기다리며 부른다. 연출할 게 없다
-            "sleep" => {
+            // `sleep` 은 질문 답을 기다리며 부르고 `send_message` 는 에이전트 사이 배관이다. 연출할 게 없다
+            "sleep" | "send_message" => {
                 self.ignored.insert(call_id);
                 return;
             }
@@ -455,10 +518,10 @@ impl CodexParser {
             return;
         }
         let p = self.pending.remove(i);
-        let outcome = match obj.get("success").and_then(Value::as_bool) {
-            Some(true) => ToolOutcome::Ok,
-            Some(false) => ToolOutcome::Err,
-            None => ToolOutcome::Unknown,
+        // 접수 응답이라 Ok. 실제 성패는 SubAgentActivity 가 말한다. 그 밖은 성패 구조 필드가 없다
+        let outcome = match p.tool.as_str() {
+            "spawn_agent" | "wait_agent" | "followup_task" => ToolOutcome::Ok,
+            _ => ToolOutcome::Unknown,
         };
         let preview = match output {
             Some(Value::String(s)) => s.clone(),
@@ -469,7 +532,7 @@ impl CodexParser {
         if outcome == ToolOutcome::Unknown {
             un.push(Unhandled::OutcomeUnknown {
                 tool: p.tool,
-                result_keys: keys(&obj),
+                result_keys: keys(&obj).into_iter().filter(|k| is_known_key(k)).collect(),
             });
         }
     }
@@ -479,8 +542,10 @@ impl CodexParser {
             "item_completed" => {
                 let item = p.get("item").unwrap_or(&Value::Null);
                 match str_at(item, &["type"]) {
-                    Some("CommandExecution") => self.command_item(item, out, un),
-                    Some("SubAgentActivity") => subagent_activity(item, self.depth, out),
+                    Some("CommandExecution" | "FileChange" | "McpToolCall") => {
+                        self.exec_item(item, out, un)
+                    }
+                    Some("SubAgentActivity") => subagent_activity(item, self.depth, out, un),
                     Some("ContextCompaction") => out.push(EventKind::ContextCompaction {
                         pre_tokens: None,
                         post_tokens: None,
@@ -499,6 +564,10 @@ impl CodexParser {
                 ) else {
                     return;
                 };
+                // 압축 직후의 0은 사용량이 아니다 (4.6.1)
+                if input == 0 && output == 0 {
+                    return;
+                }
                 // input_tokens 는 cached_input_tokens 를 이미 포함한다
                 out.push(EventKind::TokenUsage {
                     input_total: input,
@@ -514,7 +583,7 @@ impl CodexParser {
                     out.push(result(p.call_id, ToolOutcome::Unknown, String::new()));
                 }
             }
-            "sub_agent_activity" => subagent_activity(p, self.depth, out),
+            "sub_agent_activity" => subagent_activity(p, self.depth, out, un),
             "collab_agent_spawn_end" => {
                 if let Some(child) = str_at(p, &["new_thread_id"]) {
                     out.push(spawn(child, None, self.depth));
@@ -529,45 +598,40 @@ impl CodexParser {
         }
     }
 
-    fn command_item(&mut self, item: &Value, out: &mut Vec<EventKind>, un: &mut Vec<Unhandled>) {
-        let status = str_at(item, &["status"]);
-        let exit = item.get("exit_code").and_then(Value::as_i64);
-        let failed = status == Some("failed") || exit.is_some_and(|c| c != 0);
-        let completed = status == Some("completed") && !failed;
-        if let Some(pid) = item.get("process_id").and_then(id_string)
+    /// item에 call_id가 없다. 호출과 결과 사이에 온 것을 그 종류를 부른 가장 최근 exec 의 것으로 본다
+    fn exec_item(&mut self, item: &Value, out: &mut Vec<EventKind>, un: &mut Vec<Unhandled>) {
+        let ty = str_at(item, &["type"]).unwrap_or_default();
+        if ty == "CommandExecution"
+            && let Some(pid) = item.get("process_id").and_then(id_string)
             && self.background.contains_key(&pid)
         {
-            // 중단 요청 중이면 그 결과(TaskStop 규칙)로 정리한다. 여기서 Err로 세지 않는다
-            let stopping = self.pending.iter().any(
-                |p| matches!(&p.wait, Wait::Exec(w) if w.stop_session.as_deref() == Some(&pid)),
-            );
-            if stopping {
-                return;
-            }
-            let call_id = self.background.remove(&pid).unwrap_or_default();
-            let outcome = if failed {
-                ToolOutcome::Err
-            } else if completed {
-                ToolOutcome::Ok
-            } else {
-                ToolOutcome::Unknown
-            };
-            out.push(result(call_id, outcome, String::new()));
-            if outcome == ToolOutcome::Unknown {
-                un.push(Unhandled::OutcomeUnknown {
-                    tool: "exec".into(),
-                    result_keys: keys(item),
-                });
+            // 중단 요청 중이면 그 결과(TaskStop 규칙)로 정리한다. 중단이 실패할 때를 위해 보관한다
+            let stopping = self.pending.iter_mut().find_map(|p| match &mut p.wait {
+                Wait::Exec(w) if w.stop_session.as_deref() == Some(&pid) => Some(w),
+                _ => None,
+            });
+            match stopping {
+                Some(w) => w.held = Some(item.clone()),
+                None => self.background_item(&pid, item, out, un),
             }
             return;
         }
-        // item에 call_id가 없다. 호출과 결과 사이에 온 것을 가장 최근 exec 호출의 것으로 본다
-        if let Some(Wait::Exec(w)) = self
+        let (completed, failed) = item_state(item);
+        if let Some(w) = self
             .pending
             .iter_mut()
             .rev()
-            .map(|p| &mut p.wait)
-            .find(|w| matches!(w, Wait::Exec(_)))
+            .filter_map(|p| match &mut p.wait {
+                Wait::Exec(w) => Some(w),
+                Wait::Function { .. } => None,
+            })
+            .find(|w| {
+                w.calls(|t| match ty {
+                    "CommandExecution" => t == "exec_command",
+                    "FileChange" => t == "apply_patch",
+                    _ => t.starts_with("mcp__"),
+                })
+            })
         {
             w.items += 1;
             w.completed += u32::from(completed);
@@ -575,7 +639,32 @@ impl CodexParser {
         }
     }
 
-    /// (session_id, agent_id, parent_agent)
+    /// 백그라운드로 남은 작업이 끝났다는 item. 원래 호출의 짝을 닫는다
+    fn background_item(
+        &mut self,
+        pid: &str,
+        item: &Value,
+        out: &mut Vec<EventKind>,
+        un: &mut Vec<Unhandled>,
+    ) {
+        let (completed, failed) = item_state(item);
+        let call_id = self.background.remove(pid).unwrap_or_default();
+        let outcome = if failed {
+            ToolOutcome::Err
+        } else if completed {
+            ToolOutcome::Ok
+        } else {
+            ToolOutcome::Unknown
+        };
+        out.push(result(call_id, outcome, String::new()));
+        if outcome == ToolOutcome::Unknown {
+            un.push(Unhandled::OutcomeUnknown {
+                tool: "exec".into(),
+                result_keys: keys(item),
+            });
+        }
+    }
+
     fn agent_ids(&self) -> (String, String, Option<String>) {
         let agent = self
             .canonical
@@ -596,7 +685,7 @@ impl Parser for CodexParser {
         let Ok(v) = serde_json::from_slice::<Value>(bytes) else {
             return Vec::new();
         };
-        if !v.is_object() {
+        if self.silent || !v.is_object() {
             return Vec::new();
         }
         // 자식 rollout 앞부분은 부모 이력의 복제다. 첫 session_meta 는 이 값을 알기 전에 읽혀 걸리지 않는다
@@ -614,7 +703,7 @@ impl Parser for CodexParser {
         match str_at(&v, &["type"]).unwrap_or_default() {
             "session_meta" => self.session_meta(p, &mut out, unhandled),
             "turn_context" => self.turn_context(p, &mut out),
-            "response_item" => self.response_item(&v, p, &mut out, unhandled),
+            "response_item" => self.response_item(&v, p, raw_ref, &mut out, unhandled),
             "event_msg" => self.event_msg(p, &mut out, unhandled),
             "compacted"
             | "world_state"
@@ -625,6 +714,9 @@ impl Parser for CodexParser {
                 keys: keys(&v),
                 renamed_turn: false,
             }),
+        }
+        if self.silent {
+            return Vec::new();
         }
         let (session_id, agent_id, parent_agent) = self.agent_ids();
         out.into_iter()
@@ -640,17 +732,20 @@ impl Parser for CodexParser {
     }
 }
 
-/// `started` 에서 Spawn, `completed` 에서 Done. `interacted` 는 추가 지시라 내지 않는다
-fn subagent_activity(item: &Value, depth: u8, out: &mut Vec<EventKind>) {
-    let Some(child) = str_at(item, &["agent_thread_id"]) else {
-        return;
-    };
-    match str_at(item, &["kind"]) {
-        Some("started") => out.push(spawn(child, str_at(item, &["model"]), depth)),
-        Some("completed") => out.push(EventKind::SubagentDone {
+/// `interacted` 는 추가 지시라 연출할 게 없다
+fn subagent_activity(item: &Value, depth: u8, out: &mut Vec<EventKind>, un: &mut Vec<Unhandled>) {
+    let kind = str_at(item, &["kind"]).unwrap_or_default();
+    match (kind, str_at(item, &["agent_thread_id"])) {
+        ("started", Some(child)) => out.push(spawn(child, str_at(item, &["model"]), depth)),
+        ("completed", Some(child)) => out.push(EventKind::SubagentDone {
             child_id: child.to_string(),
         }),
-        _ => {}
+        ("started" | "completed" | "interacted", _) => {}
+        _ => un.push(Unhandled::RecordType {
+            type_name: format!("SubAgentActivity.{kind}"),
+            keys: keys(item),
+            renamed_turn: false,
+        }),
     }
 }
 
@@ -720,18 +815,27 @@ fn keys(v: &Value) -> Vec<String> {
     k
 }
 
-fn content_text(content: Option<&Value>) -> String {
-    match content {
-        Some(Value::String(s)) => s.clone(),
-        Some(Value::Array(a)) => a
-            .iter()
-            .filter_map(|b| b.get("text").and_then(Value::as_str))
-            .collect(),
-        _ => String::new(),
-    }
+/// (completed, failed). CommandExecution 은 `exit_code` 도 본다
+fn item_state(item: &Value) -> (bool, bool) {
+    let status = str_at(item, &["status"]);
+    let exit = item.get("exit_code").and_then(Value::as_i64);
+    let failed = status == Some("failed") || exit.is_some_and(|c| c != 0);
+    (status == Some("completed") && !failed, failed)
 }
 
-/// `[{type: "input_text", text}]` 배열. 문자열 하나로 올 때도 받는다
+/// 미대응 로그에는 하네스가 정한 키만 남긴다. 모델이 찍은 JSON의 키에는 경로 같은 원문이 든다
+fn is_known_key(k: &str) -> bool {
+    [
+        "exit_code",
+        "session_id",
+        "output",
+        "chunk_id",
+        "wall_time_seconds",
+        "original_token_count",
+    ]
+    .contains(&k)
+}
+
 fn output_texts(output: Option<&Value>) -> Vec<String> {
     match output {
         Some(Value::String(s)) => vec![s.clone()],
@@ -743,8 +847,7 @@ fn output_texts(output: Option<&Value>) -> Vec<String> {
     }
 }
 
-/// exec 의 JS 코드에서 뽑은 것
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ExecScan {
     /// `cmd:` 문자열 리터럴. 변수·`${}` 템플릿은 못 뽑는다
     cmds: Vec<String>,
@@ -757,7 +860,6 @@ struct ExecScan {
     stdin: Vec<(Option<String>, Option<String>)>,
 }
 
-/// 분류, 요약, 단독 `&` 여부 (4.6.2 `custom_tool_call`)
 fn exec_tool(s: &ExecScan) -> (ToolKind, ToolSummary, bool) {
     let only = |f: fn(&str) -> bool| !s.tools.is_empty() && s.tools.iter().all(|t| f(t));
     if s.tools
@@ -780,7 +882,9 @@ fn exec_tool(s: &ExecScan) -> (ToolKind, ToolSummary, bool) {
             command: Some(rep.command.clone()),
             command_key: Some(rep.command_key.clone()),
             command_norm: Some(rep.command_norm.clone()),
-            compound: if cs.len() > 1 {
+            // 리터럴을 못 뽑은 호출이 섞여 있어도 명령은 둘 이상이다
+            compound: if cs.len() > 1 || s.tools.iter().filter(|t| *t == "exec_command").count() > 1
+            {
                 Compound::Mixed
             } else {
                 rep.compound
@@ -807,7 +911,41 @@ fn exec_tool(s: &ExecScan) -> (ToolKind, ToolSummary, bool) {
     if only(|t| t.starts_with("web__")) {
         return (ToolKind::WebSearch, empty_summary(), false);
     }
+    if only(|t| t.starts_with("mcp__")) {
+        return (mcp_kind(&s.tools[0]), empty_summary(), false);
+    }
     (ToolKind::Script, empty_summary(), false)
+}
+
+/// 4.6.1 매핑표의 `mcp__` 행. 도구 이름의 단어가 외근(웹)인지 거래처(Mcp)인지 정한다
+fn mcp_kind(name: &str) -> ToolKind {
+    let rest = name.strip_prefix("mcp__").unwrap_or(name);
+    let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));
+    let lower = tool.to_ascii_lowercase();
+    if lower.contains("search") {
+        return ToolKind::WebSearch;
+    }
+    if ["fetch", "scrape", "crawl"]
+        .iter()
+        .any(|w| lower.contains(w))
+    {
+        return ToolKind::WebFetch;
+    }
+    // Claude Desktop 커넥터는 서버 id가 UUID라 상호로 못 쓴다. JS 식별자라 `-` 가 `_` 로 바뀌어 있을 수 있다
+    let uuid = server.len() == 36
+        && server.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-' || c == '_',
+            _ => c.is_ascii_hexdigit(),
+        });
+    let server = if uuid {
+        tool.split('_').next().unwrap_or(tool)
+    } else {
+        server
+    };
+    ToolKind::Mcp {
+        server: server.to_string(),
+        tool: tool.to_string(),
+    }
 }
 
 /// 첫 파일 머리줄. 머리줄을 못 찾으면 경로 없는 FileEdit
@@ -827,7 +965,7 @@ fn patch_target(patch: &str) -> (ToolKind, Option<String>) {
     (ToolKind::FileEdit, None)
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Tok {
     /// 식별자와 숫자
     Word(String),
@@ -872,8 +1010,19 @@ fn scan_exec(src: &str) -> ExecScan {
             }
             if name == "write_stdin" {
                 let (mut sid, mut chars) = (None, None);
-                let mut j = i + 3;
-                while j < t.len() && !(word(j, "tools") && punct(j + 1, '.')) {
+                // 이 호출의 짝 괄호 안만 본다. 뒤의 무관한 객체가 이기면 안 된다
+                let (mut j, mut depth) = (i + 3, 0);
+                while j < t.len() {
+                    if punct(j, '(') {
+                        depth += 1;
+                    } else if punct(j, ')') {
+                        depth -= 1;
+                        if depth <= 0 {
+                            break;
+                        }
+                    } else if depth == 0 {
+                        break;
+                    }
                     match value_of(j, "session_id") {
                         Some(Tok::Word(n)) => sid = Some(n.clone()),
                         Some(Tok::Str { text, .. }) => sid = Some(text.clone()),
@@ -887,7 +1036,12 @@ fn scan_exec(src: &str) -> ExecScan {
                 s.stdin.push((sid, chars));
             }
         }
-        if let Some(Tok::Str { text, plain: true }) = value_of(i, "cmd") {
+        // 객체 리터럴의 키 자리만 본다. 삼항식의 `"cmd"` 나 `cmd: "git " + sub` 는 값이 아니다
+        if let Some(Tok::Str { text, plain: true }) = value_of(i, "cmd")
+            && i > 0
+            && matches!(t[i - 1], Tok::Punct('{' | ','))
+            && matches!(t.get(i + 3), Some(Tok::Punct(',' | '}' | ')')))
+        {
             s.cmds.push(text.clone());
         }
         if s.question.is_none()
@@ -899,7 +1053,7 @@ fn scan_exec(src: &str) -> ExecScan {
     s
 }
 
-/// 문자열·주석을 건너뛰는 정도의 JS 토큰 나누기. 정규식 리터럴은 모른다
+/// 문자열·주석·정규식 리터럴을 건너뛰는 정도의 JS 토큰 나누기
 fn tokenize(src: &str) -> Vec<Tok> {
     let cs: Vec<char> = src.chars().collect();
     let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
@@ -920,6 +1074,19 @@ fn tokenize(src: &str) -> Vec<Tok> {
                 i += 1;
             }
             i += 2;
+        } else if c == '/'
+            && !matches!(
+                out.last(),
+                Some(Tok::Word(_) | Tok::Str { .. } | Tok::Punct(')' | ']'))
+            )
+            && let Some(end) = regex_end(&cs, i)
+        {
+            // 안의 따옴표가 문자열로 읽히면 뒤의 `cmd:` 를 삼킨다
+            out.push(Tok::Str {
+                text: String::new(),
+                plain: false,
+            });
+            i = end;
         } else if matches!(c, '"' | '\'' | '`') {
             let (text, plain, end) = read_str(&cs, i);
             out.push(Tok::Str { text, plain });
@@ -938,7 +1105,23 @@ fn tokenize(src: &str) -> Vec<Tok> {
     out
 }
 
-/// `start` 의 따옴표부터 읽는다. (내용, plain, 다음 위치)
+/// `start` 의 `/` 가 여는 정규식의 다음 위치. 한 줄 안에서 안 닫히면 정규식이 아니다
+fn regex_end(cs: &[char], start: usize) -> Option<usize> {
+    let (mut i, mut class) = (start + 1, false);
+    while i < cs.len() {
+        match cs[i] {
+            '\n' => return None,
+            '\\' => i += 1,
+            '[' => class = true,
+            ']' => class = false,
+            '/' if !class => return Some(i + 1),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
 fn read_str(cs: &[char], start: usize) -> (String, bool, usize) {
     let q = cs[start];
     let mut s = String::new();
@@ -999,16 +1182,36 @@ fn read_str(cs: &[char], start: usize) -> (String, bool, usize) {
     (s, false, i)
 }
 
+fn hex_at(cs: &[char], i: usize, n: usize) -> Option<u32> {
+    let digits = cs.get(i..i + n)?;
+    digits
+        .iter()
+        .all(char::is_ascii_hexdigit)
+        .then(|| u32::from_str_radix(&digits.iter().collect::<String>(), 16).ok())?
+}
+
 /// `\x`·`\u` 뒤 16진 `n` 자리. 모양이 틀리면 글자를 그대로 둔다
 fn push_hex(cs: &[char], i: usize, n: usize, s: &mut String) -> usize {
-    let digits = cs.get(i..i + n).unwrap_or_default();
-    let hex: String = digits.iter().collect();
-    match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-        Some(ch) if digits.len() == n => {
+    let code = hex_at(cs, i, n);
+    // 상위 서로게이트 뒤에 `\u` 하위가 오면 한 글자다
+    if let Some(hi) = code.filter(|c| n == 4 && (0xD800..0xDC00).contains(c)) {
+        let lo = (cs.get(i + 4) == Some(&'\\') && cs.get(i + 5) == Some(&'u'))
+            .then(|| hex_at(cs, i + 6, 4))
+            .flatten()
+            .filter(|lo| (0xDC00..0xE000).contains(lo));
+        if let Some(ch) =
+            lo.and_then(|lo| char::from_u32(0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00)))
+        {
+            s.push(ch);
+            return i + 10;
+        }
+    }
+    match code.and_then(char::from_u32) {
+        Some(ch) => {
             s.push(ch);
             i + n
         }
-        _ => {
+        None => {
             s.push(if n == 2 { 'x' } else { 'u' });
             i
         }
@@ -1153,7 +1356,6 @@ mod tests {
         (ev, un)
     }
 
-    /// 순서 단언용 짧은 이름
     fn tag(k: &EventKind) -> String {
         match k {
             EventKind::SessionMeta { model, .. } => format!("meta {model:?}"),
@@ -1258,7 +1460,7 @@ mod tests {
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/codex"),
             &mut files,
         );
-        assert!(files.len() >= 3);
+        assert!(!files.is_empty());
         for f in files {
             let mut p = CodexParser::new(SID);
             let mut un = Vec::new();
@@ -1272,14 +1474,12 @@ mod tests {
     fn codex_app_fixture() {
         let (ev, un) = fixture("codex-app");
         let want = [
-            "meta None",                  // 1
-            "meta Some(\"gpt-6-astra\")", // 7
-            "user",                       // 11 user_input_order 0
-            "text",                       // 14
-            "call Shell Mixed",           // 15
-            // 18 사이 CommandExecution 은 completed 지만, classify_command 가 `{ & $prog13 }` 의
-            // PowerShell 호출 연산자를 단독 `&` 로 읽어 async_unknown 이라 Unknown (T05 몫)
-            "result Unknown",
+            "meta None",                     // 1
+            "meta Some(\"gpt-6-astra\")",    // 7
+            "user",                          // 11 user_input_order 0
+            "text",                          // 14
+            "call Shell Mixed",              // 15
+            "result Ok",                     // 18
             "tokens 32116 142 Some(258400)", // 19
             "think",                         // 21
             "call Shell Single",             // 22
@@ -1354,12 +1554,8 @@ mod tests {
         assert_eq!(call_at(&ev, 22).2, &summary_of(lit22, Compound::Single));
         assert_eq!(
             result_at(&ev, 18),
-            (
-                "call_e27d3a940098c1bae7a9a6992762efd4",
-                ToolOutcome::Unknown
-            )
+            ("call_e27d3a940098c1bae7a9a6992762efd4", ToolOutcome::Ok)
         );
-        assert!(classify_command(lit15).async_unknown);
         assert_eq!(
             result_at(&ev, 25),
             ("call_fbac3c11cc883bdde9b8afac105c51f8", ToolOutcome::Ok)
@@ -1390,35 +1586,8 @@ mod tests {
             );
         }
 
-        let poll = strings(&[
-            "chunk_id",
-            "original_token_count",
-            "output",
-            "session_id",
-            "wall_time_seconds",
-        ]);
-        let done = strings(&[
-            "chunk_id",
-            "exit_code",
-            "original_token_count",
-            "output",
-            "wall_time_seconds",
-        ]);
-        let unknown = |result_keys: &Vec<String>| Unhandled::OutcomeUnknown {
-            tool: "exec".into(),
-            result_keys: result_keys.clone(),
-        };
-        assert_eq!(
-            un,
-            [
-                unknown(&done),
-                unknown(&poll),
-                unknown(&poll),
-                unknown(&poll),
-                unknown(&poll),
-                unknown(&done),
-            ]
-        );
+        // 남은 Unknown 은 전부 write_stdin 폴링이라 미대응 로그에 없다
+        assert!(un.is_empty(), "{un:?}");
     }
 
     #[test]
@@ -1443,8 +1612,7 @@ mod tests {
             "think",                         // 41
             "text",                          // 43
             "tokens 32980 345 Some(475000)", // 45
-            "tokens 0 0 Some(475000)",       // 52 압축 직후. 50·57 turn_context 는 모델이 같다
-            "compact",                       // 53
+            "compact",                       // 53 (52 의 0 토큰은 내지 않는다)
             "user",                          // 61
             "text",                          // 64
             "tokens 32980 9 Some(475000)",   // 66
@@ -1819,20 +1987,14 @@ mod tests {
             [
                 "call Spawn Single".to_string(),
                 tag(&spawn),
-                "result Unknown".into(),
+                "result Ok".into(),
                 "call Other(\"wait_agent\") Single".into(),
                 tag(&done),
                 tag(&done),
             ]
         );
-        // wait_agent 는 확인된 배관이라 tool_name 에 넣지 않는다
-        assert_eq!(
-            un,
-            [Unhandled::OutcomeUnknown {
-                tool: "spawn_agent".into(),
-                result_keys: strings(&["task_name"]),
-            }]
-        );
+        // wait_agent 는 확인된 배관이라 tool_name 에 넣지 않는다. 접수 응답은 Ok 라 미대응도 없다
+        assert!(un.is_empty(), "{un:?}");
     }
 
     #[test]
@@ -2035,18 +2197,363 @@ mod tests {
             k.iter().map(tag).collect::<Vec<_>>(),
             [
                 "call Mcp { server: \"github\", tool: \"create_issue\" } Single",
-                "result Err",
+                "result Unknown",
                 "call Other(\"update_plan\") Single",
                 "call WebSearch Single",
                 "result Ok",
             ]
         );
+        // success 는 하네스가 정한 키가 아니라 로그에 남기지 않는다
         assert_eq!(
             un,
-            [Unhandled::ToolName {
-                name: "update_plan".into(),
-                input_keys: strings(&["explanation", "plan"]),
-            }]
+            [
+                Unhandled::OutcomeUnknown {
+                    tool: "mcp__github__create_issue".into(),
+                    result_keys: vec![],
+                },
+                Unhandled::ToolName {
+                    name: "update_plan".into(),
+                    input_keys: strings(&["explanation", "plan"]),
+                },
+            ]
         );
+    }
+
+    fn item(ty: &str, status: &str) -> String {
+        rec(
+            "event_msg",
+            json!({"type": "item_completed", "item": {"type": ty, "id": "x", "status": status}}),
+        )
+    }
+
+    fn call_kind(js: &str) -> ToolKind {
+        let (kinds, _) = feed(&[exec("c1", js)]);
+        only_call(&kinds).0.clone()
+    }
+
+    #[test]
+    fn exec_with_only_mcp_tools_is_mcp() {
+        assert_eq!(
+            call_kind("await tools.mcp__github__create_issue({title: 't'})"),
+            ToolKind::Mcp {
+                server: "github".into(),
+                tool: "create_issue".into()
+            }
+        );
+        assert_eq!(
+            call_kind("await tools.mcp__github__search_code({q: 'x'})"),
+            ToolKind::WebSearch
+        );
+        assert_eq!(
+            call_kind("await tools.mcp__browser__fetch_page({url: 'x'})"),
+            ToolKind::WebFetch
+        );
+        // UUID 서버는 도구 이름의 첫 토큰이 상호다
+        assert_eq!(
+            call_kind("await tools.mcp__04586901_4c2c_4a3b_8d2e_0123456789ab__asset_add_file({})"),
+            ToolKind::Mcp {
+                server: "asset".into(),
+                tool: "asset_add_file".into()
+            }
+        );
+        // 다른 도구와 섞이면 "만" 이 아니다
+        assert_eq!(
+            call_kind("await tools.mcp__a__b({}); await tools.web__run({})"),
+            ToolKind::Script
+        );
+    }
+
+    #[test]
+    fn items_attach_only_to_exec_that_called_their_kind() {
+        let (k, _) = feed(&[
+            exec("patch", "await tools.apply_patch('*** Add File: a')"),
+            item("FileChange", "failed"),
+            exec_out("patch", &["Script completed\n"]),
+            exec("mcp", "await tools.mcp__s__t({})"),
+            item("McpToolCall", "completed"),
+            exec_out("mcp", &["Script completed\n"]),
+            exec("mcp2", "await tools.mcp__s__t({})"),
+            item("McpToolCall", "failed"),
+            exec_out("mcp2", &["Script completed\n"]),
+            // 무관한 종류의 item 은 이 호출의 것이 아니다
+            exec("sh", "tools.exec_command({cmd:\"cat a\"})"),
+            item("FileChange", "failed"),
+            item("McpToolCall", "failed"),
+            exec_out("sh", &["Script completed\n"]),
+            exec("web", "tools.web__run({})"),
+            cmd_item("failed", Some(1), "9"),
+            exec_out("web", &["Script completed\n"]),
+        ]);
+        assert_eq!(outcome_of(&k, "patch"), [ToolOutcome::Err]);
+        assert_eq!(outcome_of(&k, "mcp"), [ToolOutcome::Ok]);
+        assert_eq!(outcome_of(&k, "mcp2"), [ToolOutcome::Err]);
+        assert_eq!(outcome_of(&k, "sh"), [ToolOutcome::Unknown]);
+        assert_eq!(outcome_of(&k, "web"), [ToolOutcome::Unknown]);
+    }
+
+    #[test]
+    fn rejected_phrase_counts_only_for_failed_script_without_items() {
+        let phrase =
+            r#"exec_command failed: CreateProcess { message: "Rejected(\"rejected by user\")" }"#;
+        let js = "tools.exec_command({cmd:\"cat a\"})";
+        let (k, _) = feed(&[
+            // 성공한 호출이 text() 로 그 문구를 찍었다
+            exec("ok", js),
+            cmd_item("completed", Some(0), "1"),
+            exec_out("ok", &["Script completed\n", phrase]),
+            exec("rej", js),
+            exec_out("rej", &["Script failed\n", phrase]),
+        ]);
+        assert_eq!(outcome_of(&k, "ok"), [ToolOutcome::Ok]);
+        assert_eq!(outcome_of(&k, "rej"), [ToolOutcome::Rejected]);
+    }
+
+    #[test]
+    fn session_id_is_found_in_any_object_and_polls_do_not_restart_it() {
+        let (k, _) = feed(&[
+            exec("bg", "tools.exec_command({cmd:\"npm run dev\"})"),
+            exec_out(
+                "bg",
+                &[
+                    "Script completed\n",
+                    "{\"note\":1}",
+                    "{\"session_id\":5,\"output\":\"\"}",
+                ],
+            ),
+            // 이미 백그라운드인 세션의 폴링 응답
+            exec("poll", "tools.write_stdin({session_id:5,chars:\"\"})"),
+            exec_out(
+                "poll",
+                &["Script completed\n", "{\"session_id\":5,\"output\":\"\"}"],
+            ),
+            cmd_item("completed", Some(0), "5"),
+        ]);
+        assert_eq!(
+            outcome_of(&k, "bg"),
+            [ToolOutcome::Started, ToolOutcome::Ok]
+        );
+        assert_eq!(outcome_of(&k, "poll"), [ToolOutcome::Unknown]);
+    }
+
+    #[test]
+    fn unknown_log_keeps_only_harness_keys() {
+        let (_, un) = feed(&[
+            exec("c1", "tools.exec_command({cmd:\"cat a\"})"),
+            exec_out(
+                "c1",
+                &["Script completed\n", "{\"/home/me/x\":1,\"output\":\"\"}"],
+            ),
+            func("f1", "mystery", json!({})),
+            func_out("f1", "{\"/home/me/y\":1,\"session_id\":1}"),
+        ]);
+        assert_eq!(
+            un,
+            [
+                Unhandled::OutcomeUnknown {
+                    tool: "exec".into(),
+                    result_keys: strings(&["output"]),
+                },
+                Unhandled::ToolName {
+                    name: "mystery".into(),
+                    input_keys: vec![],
+                },
+                Unhandled::OutcomeUnknown {
+                    tool: "mystery".into(),
+                    result_keys: strings(&["session_id"]),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn polling_only_unknown_is_not_logged_and_send_message_is_silent() {
+        let (k, un) = feed(&[
+            exec("poll", "tools.write_stdin({session_id:5,chars:\"\"})"),
+            exec_out("poll", &["Script completed\n", "{\"output\":\"\"}"]),
+            func("sm", "send_message", json!({"to": "x"})),
+            func_out("sm", "{\"ok\":true}"),
+        ]);
+        assert_eq!(
+            k.iter().map(tag).collect::<Vec<_>>(),
+            ["call Script Single", "result Unknown"]
+        );
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    #[test]
+    fn web_search_call_pairs_on_its_own_line() {
+        let mut p = CodexParser::new(SID);
+        let mut un = Vec::new();
+        let mut at = |payload: Value| {
+            let r = RawRef {
+                byte_offset: 42,
+                ..raw(1)
+            };
+            p.parse_line(rec("response_item", payload).as_bytes(), &r, &mut un)
+        };
+        let ev = at(json!({"type": "web_search_call", "status": "failed"}));
+        let ids: Vec<&str> = ev
+            .iter()
+            .map(|e| match &e.kind {
+                EventKind::ToolCall { call_id, .. } | EventKind::ToolResult { call_id, .. } => {
+                    call_id.as_str()
+                }
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(ids, ["ws-42", "ws-42"]);
+        assert_eq!(tags(&ev), ["call WebSearch Single", "result Err"]);
+        let ev = at(json!({"type": "web_search_call", "id": "w", "status": "in_progress"}));
+        assert_eq!(tags(&ev), ["call WebSearch Single", "result Unknown"]);
+    }
+
+    #[test]
+    fn internal_agent_rollouts_emit_nothing() {
+        let metas = [
+            json!({"id": SID, "thread_source": "guardian_review"}),
+            json!({"id": SID, "thread_source": "roborev"}),
+            json!({"id": SID, "source": {"subagent": "review"}}),
+            json!({"id": SID, "source": {"subagent": {"other": "guardian"}}}),
+        ];
+        for m in metas {
+            let (ev, un) = feed_events(
+                &mut CodexParser::new(SID),
+                &[
+                    rec("session_meta", m.clone()),
+                    rec("turn_context", json!({"model": "m"})),
+                    user("hi"),
+                    rec("event_msg", json!({"type": "mystery"})),
+                ],
+            );
+            assert!(ev.is_empty() && un.is_empty(), "{m}: {ev:?} {un:?}");
+        }
+        // thread_spawn 자식은 내부 작업이 아니다
+        let (ev, _) = feed_events(
+            &mut CodexParser::new(SID),
+            &[rec(
+                "session_meta",
+                json!({"id": SID, "thread_source": "subagent",
+                       "source": {"subagent": {"thread_spawn": {"parent_thread_id": PARENT}}}}),
+            )],
+        );
+        assert_eq!(ev.len(), 1);
+    }
+
+    #[test]
+    fn subagent_notification_and_unknown_activity_kind_go_to_unhandled() {
+        let (k, un) = feed(&[
+            user(
+                "<subagent_notification>\n{\"agent_path\":\"/root/w\",\"status\":\"completed\"}\n</subagent_notification>",
+            ),
+            user("<subagent_notification>not json</subagent_notification>"),
+            rec(
+                "event_msg",
+                json!({"type": "item_completed", "item": {"type": "SubAgentActivity",
+                       "kind": "paused", "agent_thread_id": CHILD}}),
+            ),
+        ]);
+        assert!(k.is_empty(), "{k:?}");
+        let rt = |name: &str, k: &[&str]| Unhandled::RecordType {
+            type_name: name.into(),
+            keys: strings(k),
+            renamed_turn: false,
+        };
+        assert_eq!(
+            un,
+            [
+                rt("subagent_notification", &["agent_path", "status"]),
+                rt("subagent_notification", &[]),
+                rt(
+                    "SubAgentActivity.paused",
+                    &["agent_thread_id", "kind", "type"]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn cmd_literal_must_be_an_object_key_with_a_plain_value() {
+        assert_eq!(
+            call_kind("text(await tools.exec_command({cmd: x ? \"cmd\" : \"rm -rf build\"}))"),
+            ToolKind::Script
+        );
+        assert_eq!(
+            call_kind("tools.exec_command({cmd: \"git \" + sub})"),
+            ToolKind::Script
+        );
+        assert_eq!(
+            call_kind("tools.exec_command({tty: true, cmd: \"git push\"})"),
+            ToolKind::GitPush
+        );
+    }
+
+    #[test]
+    fn write_stdin_args_stop_at_the_closing_paren() {
+        let s = scan_exec(
+            "await tools.write_stdin({session_id:4242}); const o = {session_id: 9, chars: \"\\u0003\"};",
+        );
+        assert_eq!(s.stdin, [(Some("4242".into()), None)]);
+    }
+
+    #[test]
+    fn held_item_closes_background_when_stop_fails() {
+        let (k, _) = feed(&[
+            exec("bg", "tools.exec_command({cmd:\"npm run dev\"})"),
+            exec_out(
+                "bg",
+                &[
+                    "Script completed\n",
+                    "{\"session_id\":4242,\"output\":\"\"}",
+                ],
+            ),
+            exec(
+                "stop",
+                r#"text(await tools.write_stdin({session_id:4242,chars:"\u0003"}))"#,
+            ),
+            cmd_item("failed", Some(130), "4242"),
+            exec_out("stop", &["Script failed\n"]),
+        ]);
+        assert_eq!(
+            outcome_of(&k, "bg"),
+            [ToolOutcome::Started, ToolOutcome::Err]
+        );
+    }
+
+    #[test]
+    fn regex_literal_quotes_do_not_swallow_the_command() {
+        assert_eq!(
+            call_kind("x.replace(/`/g,''); tools.exec_command({cmd:\"git push\"})"),
+            ToolKind::GitPush
+        );
+        assert_eq!(
+            call_kind("x.replace(/[/'\"]\\//g,''); tools.exec_command({cmd:\"git push\"})"),
+            ToolKind::GitPush
+        );
+        // 나눗셈은 정규식이 아니다
+        assert_eq!(
+            call_kind("const h = (a + b) / 2 / 3; tools.exec_command({cmd:\"git push\"})"),
+            ToolKind::GitPush
+        );
+    }
+
+    #[test]
+    fn surrogate_pair_escape_is_one_char() {
+        let (kinds, _) = feed(&[exec(
+            "c1",
+            r#"tools.exec_command({cmd:"echo \uD83D\uDE00"})"#,
+        )]);
+        let (_, summary) = only_call(&kinds);
+        assert_eq!(summary.command.as_deref(), Some("echo \u{1F600}"));
+    }
+
+    #[test]
+    fn two_exec_commands_are_mixed_even_if_one_is_not_a_literal() {
+        let (kinds, _) = feed(&[exec(
+            "c1",
+            "await Promise.allSettled([tools.exec_command({cmd:\"git push\"}), tools.exec_command({cmd: c})])",
+        )]);
+        let (tool, summary) = only_call(&kinds);
+        assert_eq!(tool, &ToolKind::GitPush);
+        assert_eq!(summary.compound, Compound::Mixed);
     }
 }

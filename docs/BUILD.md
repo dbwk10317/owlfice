@@ -40,6 +40,7 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 10 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |
 | 프론트 IPC 타입 다시 만들기 (`ipc.rs` 를 고친 뒤. 낡으면 Rust 테스트가 실패한다) | `OWLFICE_WRITE_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml ts_bindings` (PowerShell은 `$env:OWLFICE_WRITE_TYPES=1` 를 먼저) |
 | 프론트 포맷·린트·타입 검사 | `npm run check` (포맷만 고치기 `npm run fmt`) |
+| 프론트 테스트 | `npm test` (DOM 이 필요한 테스트 파일은 첫 줄에 `// @vitest-environment jsdom`) |
 | 프론트 빌드 | `npm run build` (린트·타입 검사 후 빌드) |
 | Python 린트·포맷 검사 | `uvx ruff check tools`, `uvx ruff format --check tools` |
 | 개발 실행 | `npm run tauri dev` |

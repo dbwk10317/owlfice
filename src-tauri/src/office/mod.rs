@@ -96,6 +96,8 @@ pub struct Employee {
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     pub retired_at: Option<DateTime<Utc>>,
+    /// 개발실·임시 책상 자리 번호. world 가 사무실 단위로 준다 (4.7.9)
+    pub seat: Option<u8>,
     /// 결과 안 온 호출 전부. 대표는 마지막
     pub pending: Vec<PendingCall>,
     /// Started 로 끝난 호출 (작업표)
@@ -220,6 +222,8 @@ pub struct Team {
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
     pub alive_in_registry: bool,
+    /// 팀장석 번호. 0~3 팀장석, 4~5 간이 책상, None 은 카드만. world 가 입장 때 준다 (4.7.9)
+    pub desk_slot: Option<u8>,
     /// 첫 번째가 부장
     pub employees: Vec<Employee>,
     pub props: TeamProps,

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 pub mod registry;
 mod windows;
+pub mod wsl;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Host {
@@ -62,4 +63,9 @@ pub fn live_claude_sessions() -> Vec<registry::RegistryEntry> {
     windows::claude_home(&|k| std::env::var(k).ok())
         .map(|h| registry::live_sessions(&h))
         .unwrap_or_default()
+}
+
+/// 실제 환경의 WSL 배포판. 꺼진 배포판은 sites 없이 남는다
+pub fn discover_wsl() -> Vec<wsl::WslDistro> {
+    wsl::discover()
 }

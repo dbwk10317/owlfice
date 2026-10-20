@@ -1298,7 +1298,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 #### 4.7.9 사무실 합성 (`world.rs`)
 
-- 팀 키는 `(host.id, product, session_id)` 다. 같은 원시 id가 다른 호스트·제품에서 와도 충돌하지 않는다 (WSL 홈이 `/mnt/c` 심링크인 구성은 6부).
+- 팀 키는 `(host.id, vendor, session_id)` 다 (product 는 첫 레코드를 읽어야 알아서, 파일을 찾은 시점에 아는 vendor 로 둔다). 같은 원시 id가 다른 호스트·제품에서 와도 충돌하지 않는다 (WSL 홈이 `/mnt/c` 심링크인 구성은 6부).
 - 대기업: `office_id = session_id`. 층 = 호스트 번호 (Windows 1, WSL은 처음 본 순서로 2, 3 … `rooms.json` 에 저장, 4.4.2).
 - 중소기업: `office_id = vendor`. 층 = Claude 1, Codex 2, Gemini 3. 그 vendor의 모든 팀이 한 사무실.
 - 팀장석: 팀이 사무실에 들어올 때 비어 있는 첫 번호(0~3)를 `desk_slot` 에 주고 유지한다. 활동 순서로 바꾸지 않는다 (바꾸면 부장들이 책상을 옮겨 다닌다). 네 자리가 찼을 때 새 팀이 오면 가장 오래 조용한 팀이 간이 책상(4~5)으로 내려가고 그 자리를 넘긴다. 간이 책상도 찼으면 카드만. 카드 정렬은 3.5대로 활동 순이고 좌석과 무관하다.

@@ -1320,7 +1320,7 @@ Tauri 커맨드 (프론트 → 백엔드):
 | 커맨드 | 인자 | 반환 |
 |---|---|---|
 | `get_world_snapshot` | 없음 | `WorldDto { list_seq, scale, offices: [OfficeSummaryDto], selected: Option<OfficeDto> }`. `OfficeDto` 는 `state_seq` 를 포함한다 |
-| `select_office` | `office_id, request_id` | `OfficeDto`(state_seq 포함) + `request_id`. 프론트는 마지막으로 보낸 request_id의 응답만 받아들이고, 그 사무실의 마지막 state_seq **미만**이면 버린다. 같으면 멱등이라 적용한다 (A→B→A처럼 변경 없는 사무실로 돌아올 때 화면을 채워야 한다). 늦게 온 응답이 이미 받은 이벤트보다 과거라 화면을 되돌리는 것만 막는다 |
+| `select_office` | `office_id, request_id` | `OfficeDto`(state_seq 포함) + `request_id`. 프론트는 마지막으로 보낸 request_id의 응답만 받아들이고, 그 사무실의 마지막 state_seq **미만**이면 버린다. 같으면 멱등이라 적용한다 (A→B→A처럼 변경 없는 사무실로 돌아올 때 화면을 채워야 한다). 늦게 온 응답이 이미 받은 이벤트보다 과거라 화면을 되돌리는 것만 막는다 `request_id` 는 단조 증가 숫자다. 백엔드는 마지막으로 처리한 번호보다 작은 요청을 무시한다 (두 요청이 뒤바뀌어 처리되면 백엔드와 프론트의 선택이 어긋난다) |
 | `get_employee_timeline` | `office_id, agent_id, before: Option<{generation, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 RawRef로 읽어 온 한 페이지. 커서는 (파일 세대, 오프셋)이다. Reset으로 generation이 바뀌었으면 `cursor_invalid` 를 돌려주고 프론트는 첫 페이지부터 다시 연다 |
 | `get_session_detail` | `office_id, team_id` | `SessionDetailDto` |
 | `open_path` | `path` | 탐색기로 열기 |
@@ -1332,12 +1332,12 @@ Tauri 커맨드 (프론트 → 백엔드):
 | 이벤트 | 페이로드 | 빈도 |
 |---|---|---|
 | `startup-progress` | `{step: 0..7, state: "running"|"done"|"warn"|"error", summary, detail?}` | 시작 시 |
-| `office-list` | `{list_seq, rebuilt: bool, offices: [OfficeSummaryDto { office_id, floor, label, phase, dot, badge, teams: [TeamSummaryDto] }]}` | 바뀔 때만. **전체 목록** (변경분 아님). 중소기업의 팀 행은 `teams` 로 |
+| `office-list` | `{list_seq, rebuilt: bool, selected_id, select_request, offices: [OfficeSummaryDto { office_id, floor, label, phase, dot, badge, teams: [TeamSummaryDto] }]}` | 바뀔 때만. **전체 목록** (변경분 아님). 중소기업의 팀 행은 `teams` 로 백엔드가 선택을 스스로 바꾸면(팀 제거, 규모 변경 4.7.9) `selected_id` 로 알린다. 프론트는 `select_request` 가 자기 마지막 요청 번호 이상일 때만 받아들인다 |
 | `office-state` | `{state_seq, office_id, rebuilt: bool, teams: [TeamDto { team, employees, props, incident }], shared: SharedPropsDto, cues: [AnimCue]}` | 선택 사무실, 바뀔 때만 (최대 5회/초로 병합). **전체 상태**. 목록에 없는 직원은 삭제된 것 |
 | `ticker` | `{ts, office_id, team_id, agent_id, text}` | 사건마다 |
 | `toast` | `{text, kind}` | 입주·퇴거·퇴근·재출근·팀 출근 등 |
 
-`AnimCue` 는 프론트가 재생할 연출 지시다. 예: `{kind: "move", agent, to: "archive"}`, `{kind: "boss_visit", team, text}`, `{kind: "stamp", result: "pass", pass: 12, fail: 0}`, `{kind: "truck"}`, `{kind: "return"}` (반송), `{kind: "reject", agent}` (반려), `{kind: "siren", on: true}`, `{kind: "frame_swap", title}`, `{kind: "repot", team}`, `{kind: "team_enter", team}`, `{kind: "team_leave", team}`, `{kind: "paper", agent, on: true}` (작업표), `{kind: "rehire", agent}` (재출근). 상태(어디 있나)는 `EmployeeDto` 가 진실이고 `AnimCue` 는 "어떻게 거기 갔는지"를 꾸미는 힌트다. 큐를 놓쳐도 다음 상태로 자리는 맞는다. 조용한 재구성(`rebuilt: true`) 중에는 cues가 비어 있다.
+`AnimCue` 는 프론트가 재생할 연출 지시다. 예: `{kind: "move", agent, to: "archive"}`, `{kind: "boss_visit", team, text}`, `{kind: "stamp", result: "pass", pass: 12, fail: 0}`, `{kind: "truck"}`, `{kind: "return"}` (반송), `{kind: "reject", agent}` (반려), `{kind: "siren", on: true}`, `{kind: "frame_swap", title}`, `{kind: "repot", team}`, `{kind: "team_enter", team}`, `{kind: "team_leave", team}`, `{kind: "paper", agent, on: true}` (작업표), `{kind: "rehire", agent}` (재출근). 상태(어디 있나)는 `EmployeeDto` 가 진실이고 `AnimCue` 는 "어떻게 거기 갔는지"를 꾸미는 힌트다. 큐를 놓쳐도 다음 상태로 자리는 맞는다. 조용한 재구성(`rebuilt: true`) 중에는 cues가 비어 있다. 팀 단위 cue 는 `team_id` 를 단다 (중소기업 사무실에는 팀이 여럿이다).
 
 프론트 수신 규칙: 스트림마다 따로 센다. `office-list` 는 `list_seq` < 마지막 list_seq → 버림. `office-state` 는 `state_seq` < 그 사무실의 마지막 state_seq → 버림 (같으면 멱등 적용), `office_id` ≠ 현재 선택 → 버림. `rebuilt` → 애니메이션 없이 즉시 배치. `select_office` 응답과 스냅샷의 `selected` 도 `office-state` 와 같은 state_seq 규칙을 거친다. 시작 순서는 4.3 (구독 먼저, 스냅샷 다음, 스냅샷 seq 이하의 버퍼 이벤트 폐기).
 

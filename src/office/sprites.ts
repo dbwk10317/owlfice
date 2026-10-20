@@ -1,5 +1,6 @@
 // 사무실 시트를 읽고 시트 규약(HANDOFF 6.3)대로 스프라이트를 만든다.
 import { Assets, Sprite, Spritesheet, Texture } from "pixi.js";
+import type { OwlMeta, Owls } from "./actors.ts";
 import { hexToRgb, parseFloorplan, type Floorplan } from "./floorplan.ts";
 
 interface FrameData {
@@ -22,6 +23,14 @@ export async function loadOfficeAssets(): Promise<OfficeAssets> {
     }),
   ]);
   return { sheet, floorplan: parseFloorplan(raw) };
+}
+
+/** 올빼미 시트. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (PLAN 4.9). */
+export async function loadOwls(): Promise<Owls> {
+  const sheet = await Assets.load<Spritesheet>("/owls.json");
+  const meta = (sheet.data as { owlfice?: OwlMeta }).owlfice;
+  if (!meta) throw new Error("owls.json 에 owlfice 메타 없음");
+  return { textures: sheet.textures, meta };
 }
 
 function frameData(sheet: Spritesheet, key: string): FrameData {

@@ -1,6 +1,7 @@
 // 사무실 캔버스: PixiJS 초기화, 정수 배율, 그리기 순서, 패닝·미니맵, 방 이름표 (HANDOFF 6.1, 6.2, 4.4, 2.2).
 import { Application, Container, TextureStyle, UPDATE_PRIORITY } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
+import { ActorLayer } from "./actors.ts";
 import type { OfficeDto, OfficeListDto } from "../types/ipc.ts";
 import {
   CANVAS_H,
@@ -15,7 +16,13 @@ import {
   type LightName,
   type Theme,
 } from "./floorplan.ts";
-import { loadOfficeAssets, placeSprite, tintedTexture, type OfficeAssets } from "./sprites.ts";
+import {
+  loadOfficeAssets,
+  loadOwls,
+  placeSprite,
+  tintedTexture,
+  type OfficeAssets,
+} from "./sprites.ts";
 
 const MINI_W = 120;
 const MINI_H = 74;
@@ -83,6 +90,8 @@ export interface Scene {
   root: Container;
   /** 조명 색을 곱하는 컨테이너. 창문과 장애 빛은 빠진다 (HANDOFF 6.2 7번) */
   lit: Container[];
+  /** depth 로 정렬하는 월드. 직원 액터가 여기 들어간다 */
+  world: Container;
 }
 
 /** render_scene 의 그리기 순서 그대로. 소품은 평면도의 기본 상태 (상태 반영은 T23). */
@@ -134,7 +143,7 @@ export function buildScene(
 
   const root = new Container();
   root.addChild(base, win, world, over);
-  return { root, lit: [base, world] };
+  return { root, lit: [base, world], world };
 }
 
 /** store 에서 렌더러가 읽는 부분만. */
@@ -151,12 +160,20 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
   const app = await createOfficeApp();
   const assets = await loadOfficeAssets();
   const fp = assets.floorplan;
+  const owls = await loadOwls().catch((e) => {
+    console.error("owls.json 을 못 읽어 대체 몸체로 그린다", e);
+    return null;
+  });
 
   const wrap = document.createElement("div");
   wrap.className = "ow-canvas-wrap";
   const overlay = document.createElement("div");
   overlay.className = "ow-overlay";
-  wrap.append(app.canvas, overlay);
+  // 직원 이름표·Zzz 는 방 이름표 위, 장면을 새로 지어도 지워지지 않게 따로 둔다
+  const actorOverlay = document.createElement("div");
+  actorOverlay.className = "ow-overlay";
+  wrap.append(app.canvas, overlay, actorOverlay);
+  const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay);
   const minimap = document.createElement("div");
   minimap.className = "ow-minimap";
   minimap.hidden = true;
@@ -225,6 +242,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
     if (key !== sceneKey) {
       // 새 장면을 다 지은 뒤에 옛것을 지운다. 짓다 던져도 화면은 옛 장면이 남는다
       const next = buildScene(assets, kind, theme, incident);
+      actors.attach(next.world);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);
@@ -232,6 +250,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
       buildLabels(kind);
     }
     officeId = office?.officeId ?? "";
+    actors.sync(office, kind, Date.now());
     // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
     const off = !office || office.teams.every((t) => t.phase === "Off");
     setLight(off ? "off" : office.shared.night ? "night" : null, switched);
@@ -271,6 +290,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
       el.style.height = `${fit.cssH}px`;
     }
     placeLabels();
+    actors.placeOverlay((x, y) => toCss(x, y, fit.scale, dpr));
     const lim = panLimits(fit.backingW, fit.backingH, avail.w, avail.h, dpr);
     pan.maxX = lim.maxX;
     pan.maxY = lim.maxY;
@@ -352,6 +372,7 @@ export async function mountOffice(stage: HTMLElement, store: OfficeStore): Promi
         }
       }
       if (lightT < 1) stepLight(t.deltaMS);
+      actors.update(Date.now());
     },
     undefined,
     UPDATE_PRIORITY.HIGH,

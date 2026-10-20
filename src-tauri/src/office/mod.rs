@@ -131,7 +131,8 @@ pub struct Employee {
     pub review_pens: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+/// 선언 순서가 활발한 순서다. 사무실 단계는 팀 중 최솟값
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum TeamPhase {
     Working,
     Dozing,
@@ -153,6 +154,8 @@ pub struct TeamProps {
     /// 화분 성장도 = 부장 컨텍스트 사용률 (0~1). 분갈이 직후 0
     pub plant: Option<f32>,
     pub light: Light,
+    /// 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (4.7.9)
+    pub light_at: DateTime<Utc>,
     pub trash: u32,
     /// 무재해 전광판의 시작 시각
     pub safe_since: DateTime<Utc>,
@@ -240,6 +243,7 @@ pub struct Team {
     file_ts: HashMap<PathBuf, DateTime<Utc>>,
     /// 노랑으로 켜기 전 색. 확정 결과 없이 끝나면 이 색으로 돌아간다
     light_before: Light,
+    light_at_before: DateTime<Utc>,
     /// 마지막으로 퇴근에서 깨어난 때와 그때의 피자 수 (4.7.2 피자)
     awake_since: DateTime<Utc>,
     pizza_at_wake: u32,

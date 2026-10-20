@@ -120,6 +120,7 @@ impl TeamProps {
             boss_visit: None,
             plant: None,
             light: Light::Off,
+            light_at: at,
             trash: 0,
             safe_since: at,
             pizza: 0,
@@ -151,6 +152,7 @@ impl Team {
             stats: TeamStats::default(),
             file_ts: HashMap::new(),
             light_before: Light::Off,
+            light_at_before: started,
             awake_since: started,
             pizza_at_wake: 0,
         }
@@ -295,8 +297,10 @@ impl Team {
                 if lights(tool, summary) {
                     if self.props.light != Light::Yellow {
                         self.light_before = self.props.light;
+                        self.light_at_before = self.props.light_at;
                     }
                     self.props.light = Light::Yellow;
+                    self.props.light_at = ts;
                 }
                 let e = &mut self.employees[i];
                 e.waiting_user_since = None;
@@ -676,6 +680,7 @@ impl Team {
                 match (&call.tool, declares) {
                     (ToolKind::Test, true) => {
                         self.props.light = Light::Green;
+                        self.props.light_at = ts;
                         let t = test_result.unwrap_or(TestResult {
                             passed: 0,
                             failed: 0,
@@ -695,7 +700,10 @@ impl Team {
                             });
                         }
                     }
-                    (ToolKind::Build, true) => self.props.light = Light::Green,
+                    (ToolKind::Build, true) => {
+                        self.props.light = Light::Green;
+                        self.props.light_at = ts;
+                    }
                     (ToolKind::GitPush | ToolKind::PrCreate, true) => cues.push(Cue::Truck),
                     (ToolKind::Release, true) => cues.push(Cue::Fireworks),
                     _ => {}
@@ -733,9 +741,13 @@ impl Team {
                 self.props.trash += 1;
                 self.props.safe_since = ts;
                 match &call.tool {
-                    ToolKind::Build => self.props.light = Light::Red,
+                    ToolKind::Build => {
+                        self.props.light = Light::Red;
+                        self.props.light_at = ts;
+                    }
                     ToolKind::Test => {
                         self.props.light = Light::Red;
+                        self.props.light_at = ts;
                         let fails = e.red.as_ref().map_or(0, |r| r.1);
                         e.red = Some((sentence::failed_test(&call, preview), fails + 1));
                         if let Some(t) = test_result {
@@ -846,6 +858,7 @@ impl Team {
             .any(|c| lights(&c.tool, &c.summary));
         if lights(&call.tool, &call.summary) && !running && self.props.light == Light::Yellow {
             self.props.light = self.light_before;
+            self.props.light_at = self.light_at_before;
         }
     }
 

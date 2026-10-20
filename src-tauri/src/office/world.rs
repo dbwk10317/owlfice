@@ -6,7 +6,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 
 use super::names::{NameBook, NamesSave};
 use super::{Cue, Team, TeamPhase};
-use crate::discover::Vendor;
+use crate::discover::{Host, Vendor};
 use crate::parse::Event;
 
 /// 개발실 6 + 임시 책상 4 (4.9 floorplan)
@@ -56,8 +56,11 @@ pub struct OfficeWorld {
     pub suspect_hosts: BTreeSet<String>,
     /// 야근 판정 시간대 (4.7.2)
     pub local: FixedOffset,
-    /// 아직 프론트에 보내지 않은 연출 신호. 호스트 스레드가 틱마다 넣고 발행기가 비운다 (4.8)
-    pub outbox: Vec<(OfficeId, Cue)>,
+    /// 아직 프론트에 보내지 않은 연출 신호와 그 팀. 상태 번호를 올린 같은 잠금 안에서 넣고 발행기가 비운다 (4.8).
+    /// 따로 넣으면 발행기가 그 사이에 돌아 번호만 먼저 나가고 연출이 늦게 붙는다
+    pub outbox: Vec<(OfficeId, TeamKey, Cue)>,
+    /// 호스트 id → Host. 호스트 스레드가 만들어질 때 등록한다. 층 번호·배지가 종류를 본다
+    pub hosts: HashMap<String, Host>,
     /// 조용히 다시 만들었거나 규모를 바꾼 뒤 아직 발행하지 않은 사무실. 다음 office-state 가 rebuilt 로 나간다 (4.3, 4.7.9)
     pub rebuilt: HashSet<OfficeId>,
     /// 규모를 바꾼 뒤 아직 발행하지 않은 목록 (4.7.9 5번)
@@ -88,6 +91,7 @@ impl OfficeWorld {
             suspect_hosts: BTreeSet::new(),
             local,
             outbox: Vec::new(),
+            hosts: HashMap::new(),
             rebuilt: HashSet::new(),
             list_rebuilt: false,
             names,
@@ -98,10 +102,12 @@ impl OfficeWorld {
         office_for(self.scale, key)
     }
 
-    /// 새 세션·Reset 뒤 처음부터 다시 만든 팀을 통째로 넣는다. 재구성은 조용해서 cue 가 없다 (4.3).
+    /// 처음부터 다시 만든 팀을 통째로 넣는다. 재구성은 조용해서 cue 가 없다 (4.3).
+    /// `quiet` 는 시작·새 세션·Reset 의 조용한 재구성이라 다음 office-state 를 rebuilt 로 낸다.
+    /// 서브 파일이 새로 보여 다시 만든 것은 아니다. 진행 중 연출을 끊으면 안 된다
     /// 재구성은 마지막 이벤트 시각에서 끝나므로 여기서 now 까지 조용히 따라잡는다. 안 하면 다음 tick 이 cue 를 낸다.
     /// 다시 만든 팀도 자리는 그대로다. 바꾸면 Reset 마다 부장·직원이 자리를 옮긴다
-    pub fn put_team(&mut self, key: TeamKey, mut team: Team, now: DateTime<Utc>) {
+    pub fn put_team(&mut self, key: TeamKey, mut team: Team, now: DateTime<Utc>, quiet: bool) {
         team.tick(now, self.local, &mut Vec::new());
         let arrived = match self.teams.get(&key) {
             Some(old) => {
@@ -124,7 +130,9 @@ impl OfficeWorld {
         self.name_employees(&key, now);
         self.seat(&self.office_of(&key));
         self.bump(&key, true);
-        self.rebuilt.insert(self.office_of(&key));
+        if quiet {
+            self.rebuilt.insert(self.office_of(&key));
+        }
     }
 
     pub fn remove_team(&mut self, key: &TeamKey) {
@@ -141,7 +149,7 @@ impl OfficeWorld {
         }
     }
 
-    /// 호스트의 의심 상태가 바뀌면 목록 번호를 올린다
+    /// 호스트의 의심 상태가 바뀌면 목록 번호와 그 호스트 팀들의 사무실 번호를 올린다 (S46 구름)
     pub fn set_suspect(&mut self, host: &str, on: bool) {
         let changed = if on {
             self.suspect_hosts.insert(host.to_string())
@@ -150,16 +158,30 @@ impl OfficeWorld {
         };
         if changed {
             self.list_seq += 1;
+            let offices: BTreeSet<OfficeId> = self
+                .teams
+                .keys()
+                .filter(|k| k.host == host)
+                .map(|k| self.office_of(k))
+                .collect();
+            for o in offices {
+                *self.state_seq.entry(o).or_default() += 1;
+            }
         }
+    }
+
+    /// 연출 신호를 그 팀의 사무실 앞으로 넣는다
+    pub fn cue(&mut self, key: &TeamKey, cue: Cue) {
+        self.outbox.push((self.office_of(key), key.clone(), cue));
     }
 
     /// 실행 중 append 된 이벤트를 적용한다 (4.3). 잠금 안에서는 이것만 한다.
     /// 이벤트마다 적용하기 전에 그 ts 로 tick 한다. 재구성(replay)과 같은 순서라서
     /// 몇 줄씩 묶어 읽혔든 한 줄씩 읽혔든 같은 상태가 된다 (4.3 시계)
-    pub fn apply(&mut self, key: &TeamKey, events: &[Event], now: DateTime<Utc>) -> Vec<Cue> {
+    pub fn apply(&mut self, key: &TeamKey, events: &[Event], now: DateTime<Utc>) {
         let local = self.local;
         let Some(team) = self.teams.get_mut(key) else {
-            return Vec::new();
+            return;
         };
         let before = team.clone();
         let mut cues = Vec::new();
@@ -170,24 +192,23 @@ impl OfficeWorld {
             team.apply(ev, &mut cues);
         }
         self.settle(key, &before, now, !cues.is_empty());
-        cues
+        for c in cues {
+            self.cue(key, c);
+        }
     }
 
     /// 서브 파일·meta.json 이 사라진 직원을 퇴장시킨다 (4.5 신규 세션 발견 5번)
-    pub fn retire_employee(
-        &mut self,
-        key: &TeamKey,
-        agent_id: &str,
-        at: DateTime<Utc>,
-    ) -> Vec<Cue> {
+    pub fn retire_employee(&mut self, key: &TeamKey, agent_id: &str, at: DateTime<Utc>) {
         let Some(team) = self.teams.get_mut(key) else {
-            return Vec::new();
+            return;
         };
         let before = team.clone();
         let mut cues = Vec::new();
         team.retire_employee(agent_id, at, &mut cues);
         self.settle(key, &before, at, !cues.is_empty());
-        cues
+        for c in cues {
+            self.cue(key, c);
+        }
     }
 
     /// 바뀐 팀에 이름·자리를 주고 번호를 올린다. 보낼 상태 전체를 비교해 소품·실적만 바뀌어도 올린다
@@ -262,7 +283,7 @@ impl OfficeWorld {
 
     /// 시간 전이 (4.7.2). `host` 의 팀만 돌린다. 다른 호스트의 팀은 그 스레드가 돌리고,
     /// 의심 중인 호스트의 팀은 못 읽은 줄이 있을 수 있어 멈춘다 (4.3 시계). 바뀐 팀의 사무실만 번호를 올린다
-    pub fn tick(&mut self, now: DateTime<Utc>, host: &str) -> Vec<(OfficeId, Cue)> {
+    pub fn tick(&mut self, now: DateTime<Utc>, host: &str) {
         let mut out = Vec::new();
         let mut bumps = Vec::new();
         for (key, team) in self.teams.iter_mut().filter(|(k, _)| k.host == host) {
@@ -274,14 +295,14 @@ impl OfficeWorld {
                 bumps.push((key.clone(), list_changed));
             }
             let office = office_for(self.scale, key);
-            out.extend(cues.into_iter().map(|c| (office.clone(), c)));
+            out.extend(cues.into_iter().map(|c| (office.clone(), key.clone(), c)));
         }
         for (key, list_changed) in bumps {
             // 퇴장·퇴근한 직원의 자리를 비운다
             self.seat(&self.office_of(&key));
             self.bump(&key, list_changed);
         }
-        out
+        self.outbox.extend(out);
     }
 
     /// 아직 저장하지 않은 이름. 부르는 쪽이 잠금을 놓은 뒤 쓴다 (4.7.7)
@@ -473,10 +494,10 @@ mod tests {
             key(Vendor::Claude, "c"),
         );
         let x = key(Vendor::Codex, "x");
-        w.put_team(a.clone(), team("a", 3, 0), t0());
-        w.put_team(b.clone(), team("b", 2, 10), t0());
-        w.put_team(c.clone(), team("c", 1, 5), t0());
-        w.put_team(x.clone(), team("x", 2, 1), t0());
+        w.put_team(a.clone(), team("a", 3, 0), t0(), true);
+        w.put_team(b.clone(), team("b", 2, 10), t0(), true);
+        w.put_team(c.clone(), team("c", 1, 5), t0(), true);
+        w.put_team(x.clone(), team("x", 2, 1), t0(), true);
         assert_no_overlap(&w);
         // 대기업은 팀마다 0번부터
         assert_eq!(w.teams[&a].employees[1].seat, Some(0));
@@ -505,19 +526,19 @@ mod tests {
         assert_no_overlap(&w);
         // 네 자리가 찼을 때 새 팀이 오면 가장 오래 조용한 팀(a)이 간이 책상으로 내려가고 자리를 넘긴다
         let d = key(Vendor::Claude, "d");
-        w.put_team(d.clone(), team("d", 1, 20), t0());
+        w.put_team(d.clone(), team("d", 1, 20), t0(), true);
         assert_eq!(desk(&w, &d), Some(3));
         let e = key(Vendor::Claude, "e");
-        w.put_team(e.clone(), team("e", 1, 30), t0());
+        w.put_team(e.clone(), team("e", 1, 30), t0(), true);
         assert_eq!((desk(&w, &e), desk(&w, &a)), (Some(0), Some(4)));
         // 새 팀이 가장 조용하면 자기가 간이 책상으로 간다
         let old = key(Vendor::Claude, "old");
-        w.put_team(old.clone(), team("old", 0, -60), t0());
+        w.put_team(old.clone(), team("old", 0, -60), t0(), true);
         assert_eq!(desk(&w, &old), Some(5));
         assert_no_overlap(&w);
         // 다시 만든 팀은 자리를 그대로 둔다
         let before: Vec<Option<u8>> = w.teams[&b].employees.iter().map(|e| e.seat).collect();
-        w.put_team(b.clone(), team("b", 2, 10), t0());
+        w.put_team(b.clone(), team("b", 2, 10), t0(), true);
         let after: Vec<Option<u8>> = w.teams[&b].employees.iter().map(|e| e.seat).collect();
         assert_eq!((before, Some(2)), (after, desk(&w, &b)));
     }
@@ -535,7 +556,7 @@ mod tests {
     fn prop_only_change_bumps_state_seq() {
         let mut w = world(Scale::Large);
         let a = key(Vendor::Claude, "a");
-        w.put_team(a.clone(), team("a", 0, 0), t0());
+        w.put_team(a.clone(), team("a", 0, 0), t0(), true);
         let usage = |input_total, secs| Event {
             ts: Some(t0() + Duration::seconds(secs)),
             session_id: "a".into(),
@@ -556,9 +577,10 @@ mod tests {
         let office = w.office_of(&a);
         let seq = |w: &OfficeWorld| w.state_seq[&office];
         let s0 = seq(&w);
-        assert!(w.apply(&a, &[usage(347, 1)], t0()).is_empty());
+        w.apply(&a, &[usage(347, 1)], t0());
         let s1 = seq(&w);
-        assert!(w.apply(&a, &[usage(750, 2)], t0()).is_empty());
+        w.apply(&a, &[usage(750, 2)], t0());
+        assert!(w.outbox.is_empty());
         assert_eq!(w.teams[&a].props.plant, Some(0.75));
         assert!(s0 < s1 && s1 < seq(&w));
     }
@@ -568,8 +590,8 @@ mod tests {
     fn remove_team_bumps_shared_office_state() {
         let mut w = world(Scale::Small);
         let (a, b) = (key(Vendor::Claude, "a"), key(Vendor::Claude, "b"));
-        w.put_team(a.clone(), team("a", 1, 0), t0());
-        w.put_team(b.clone(), team("b", 1, 1), t0());
+        w.put_team(a.clone(), team("a", 1, 0), t0(), true);
+        w.put_team(b.clone(), team("b", 1, 1), t0(), true);
         let office = OfficeId::Vendor(Vendor::Claude);
         let (before, list) = (w.state_seq[&office], w.list_seq);
         w.remove_team(&a);

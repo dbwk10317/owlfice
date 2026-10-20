@@ -7,7 +7,15 @@ export type WorldDto = { selected: OfficeDto | null, listSeq: number, rebuilt: b
 /**
  * 사이드바 구조(동별 목록, 층 고정 행)가 규모로 갈린다
  */
-scale: Scale, offices: Array<OfficeSummaryDto>, };
+scale: Scale, offices: Array<OfficeSummaryDto>, 
+/**
+ * 백엔드의 현재 선택. 팀이 나가거나 규모가 바뀌면 백엔드가 스스로 바꾼다
+ */
+selectedId: string | null, 
+/**
+ * 그 선택을 만든 마지막 `select_office` 요청 번호. store 는 자기 마지막 요청 이상일 때만 선택을 따른다
+ */
+selectRequest: number, };
 
 /**
  * `office-list` 페이로드
@@ -16,7 +24,15 @@ export type OfficeListDto = { listSeq: number, rebuilt: boolean,
 /**
  * 사이드바 구조(동별 목록, 층 고정 행)가 규모로 갈린다
  */
-scale: Scale, offices: Array<OfficeSummaryDto>, };
+scale: Scale, offices: Array<OfficeSummaryDto>, 
+/**
+ * 백엔드의 현재 선택. 팀이 나가거나 규모가 바뀌면 백엔드가 스스로 바꾼다
+ */
+selectedId: string | null, 
+/**
+ * 그 선택을 만든 마지막 `select_office` 요청 번호. store 는 자기 마지막 요청 이상일 때만 선택을 따른다
+ */
+selectRequest: number, };
 
 /**
  * 사이드바 한 줄 (3.3). 대기업은 팀 하나, 중소기업은 층 하나
@@ -37,7 +53,11 @@ phase: TeamPhase,
 /**
  * 팀 중 가장 급한 점 (3.3 중소기업 층 점)
  */
-dot: Dot, asking: boolean, border: Border, delayed: boolean, teams: Array<TeamSummaryDto>, };
+dot: Dot, 
+/**
+ * 허가 대기는 점이 아니라 결재판 아이콘이라(3.3 범례) 점 우선순위에 넣지 않고 따로 둔다
+ */
+asking: boolean, border: Border, delayed: boolean, teams: Array<TeamSummaryDto>, };
 
 /**
  * 팀 한 줄 (3.3). 대기업에서는 사무실 줄의 둘째 줄 재료
@@ -69,23 +89,36 @@ delayed: boolean,
 hostBadge: string | null, };
 
 /**
- * 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근)
+ * 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
  */
 export type Dot = "Incident" | "Working" | "Waiting" | "Dozing" | "Off";
 
 /**
- * 줄 테두리 (3.3 범례)
+ * 줄 테두리 (3.3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
  */
 export type Border = "Plain" | "Failed" | "Running";
 
 /**
  * `office-state` 페이로드. 스냅샷의 `selected`, `select_office` 응답도 같은 꼴이다
  */
-export type OfficeDto = { stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, cues: Array<AnimCue>, };
+export type OfficeDto = { stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, cues: Array<CueDto>, };
 
-export type SelectResponseDto = { requestId: string, stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, cues: Array<AnimCue>, };
+/**
+ * 연출 신호와 그 팀. 중소기업은 한 사무실에 팀이 여럿이라 팀 단위 연출(사장님 방문, 분갈이 등)에 필요하다
+ */
+export type CueDto = { teamId: string, } & ({ "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Stamp", passed: number, failed: number, estimated: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Paper", agent: string, on: boolean, });
 
-export type TeamDto = { teamId: string, title: string, product: Product, building: string, hostBadge: string | null, folder: string, started: string, lastActivity: string, phase: TeamPhase, 
+export type SelectResponseDto = { requestId: number, stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, cues: Array<CueDto>, };
+
+export type TeamDto = { teamId: string, title: string, 
+/**
+ * 동 글자 (A~F) = 제품
+ */
+building: string, hostBadge: string | null, 
+/**
+ * 통신 지연 구름 (S46)
+ */
+delayed: boolean, folder: string, started: string, lastActivity: string, phase: TeamPhase, 
 /**
  * 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (4.7.9)
  */
@@ -117,7 +150,7 @@ parent: string | null, depth: number, confidence: Confidence, contextUsed: numbe
  */
 export type SharedPropsDto = { 
 /**
- * 가장 최근 활동한 팀 중 신호등이 켜진 팀의 색
+ * 가장 최근 빌드·테스트 결과 = 신호등을 가장 늦게 바꾼 팀의 색
  */
 light: Light, 
 /**
@@ -152,7 +185,11 @@ export type TeamProps = { bossVisit: string | null,
 /**
  * 화분 성장도 = 부장 컨텍스트 사용률 (0~1). 분갈이 직후 0
  */
-plant: number | null, light: Light, trash: number, 
+plant: number | null, light: Light, 
+/**
+ * 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (4.7.9)
+ */
+lightAt: string, trash: number, 
 /**
  * 무재해 전광판의 시작 시각
  */
@@ -180,13 +217,14 @@ export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" 
  */
 export type Pose = "Sit" | "Type" | "Think" | "Duck" | "Squat" | "Sleep";
 
+/**
+ * 선언 순서가 활발한 순서다. 사무실 단계는 팀 중 최솟값
+ */
 export type TeamPhase = "Working" | "Dozing" | "Off";
 
 export type Light = "Off" | "Yellow" | "Green" | "Red";
 
 export type Scale = "Large" | "Small";
-
-export type Product = "ClaudeDesktop" | "ClaudeCli" | "CodexApp" | "CodexCli" | "AntigravityApp" | "AntigravityCli";
 
 /**
  * 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)

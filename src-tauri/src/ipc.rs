@@ -10,7 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use ts_rs::TS;
 
-use crate::discover::{Host, HostKind, Product, Vendor, windows_host};
+use crate::discover::{Host, HostKind, Product, Vendor};
 use crate::office::names::RoomBook;
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
@@ -30,6 +30,10 @@ pub struct OfficeListDto {
     /// 사이드바 구조(동별 목록, 층 고정 행)가 규모로 갈린다
     pub scale: Scale,
     pub offices: Vec<OfficeSummaryDto>,
+    /// 백엔드의 현재 선택. 팀이 나가거나 규모가 바뀌면 백엔드가 스스로 바꾼다
+    pub selected_id: Option<String>,
+    /// 그 선택을 만든 마지막 `select_office` 요청 번호. store 는 자기 마지막 요청 이상일 때만 선택을 따른다
+    pub select_request: u64,
 }
 
 /// `get_world_snapshot` 반환. 목록 필드를 그대로 품어 store 가 목록처럼 받는다
@@ -56,6 +60,7 @@ pub struct OfficeSummaryDto {
     pub phase: TeamPhase,
     /// 팀 중 가장 급한 점 (3.3 중소기업 층 점)
     pub dot: Dot,
+    /// 허가 대기는 점이 아니라 결재판 아이콘이라(3.3 범례) 점 우선순위에 넣지 않고 따로 둔다
     pub asking: bool,
     pub border: Border,
     pub delayed: bool,
@@ -86,7 +91,7 @@ pub struct TeamSummaryDto {
     pub host_badge: Option<String>,
 }
 
-/// 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근)
+/// 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Dot {
     Incident,
@@ -97,8 +102,8 @@ pub enum Dot {
     Off,
 }
 
-/// 줄 테두리 (3.3 범례)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+/// 줄 테두리 (3.3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Border {
     Plain,
     /// 마지막 빌드·테스트 실패
@@ -116,7 +121,16 @@ pub struct OfficeDto {
     pub rebuilt: bool,
     pub teams: Vec<TeamDto>,
     pub shared: SharedPropsDto,
-    pub cues: Vec<Cue>,
+    pub cues: Vec<CueDto>,
+}
+
+/// 연출 신호와 그 팀. 중소기업은 한 사무실에 팀이 여럿이라 팀 단위 연출(사장님 방문, 분갈이 등)에 필요하다
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CueDto {
+    pub team_id: String,
+    #[serde(flatten)]
+    pub cue: Cue,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -124,7 +138,7 @@ pub struct OfficeDto {
 pub struct SelectResponseDto {
     #[serde(flatten)]
     pub office: OfficeDto,
-    pub request_id: String,
+    pub request_id: u64,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -132,9 +146,11 @@ pub struct SelectResponseDto {
 pub struct TeamDto {
     pub team_id: String,
     pub title: String,
-    pub product: Product,
+    /// 동 글자 (A~F) = 제품
     pub building: String,
     pub host_badge: Option<String>,
+    /// 통신 지연 구름 (S46)
+    pub delayed: bool,
     pub folder: String,
     pub started: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
@@ -177,7 +193,7 @@ pub struct EmployeeDto {
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedPropsDto {
-    /// 가장 최근 활동한 팀 중 신호등이 켜진 팀의 색
+    /// 가장 최근 빌드·테스트 결과 = 신호등을 가장 늦게 바꾼 팀의 색
     pub light: Light,
     /// 무재해 = 팀 중 최솟값이라 가장 늦은 시작 시각
     pub safe_since: DateTime<Utc>,
@@ -200,6 +216,7 @@ pub fn office_id_str(id: &OfficeId) -> String {
     }
 }
 
+/// 팀 id. 방 번호 키로도 쓴다 (같은 세션 id 가 다른 호스트·제조사에서 와도 번호를 나누지 않게)
 fn team_id_str(k: &TeamKey) -> String {
     format!("team/{}/{}/{}", vendor_str(k.vendor), k.session, k.host)
 }
@@ -255,24 +272,11 @@ fn building(p: Product) -> &'static str {
     }
 }
 
-/// RoomBook 은 호스트 종류와 id 만 본다
-fn host_of(id: &str) -> Host {
-    let win = windows_host();
-    if id == win.id {
-        return win;
-    }
-    let distro = id.strip_prefix("wsl:").unwrap_or(id).to_string();
-    Host {
-        id: id.to_string(),
-        kind: HostKind::Wsl {
-            distro: distro.clone(),
-        },
-        label: distro,
-    }
-}
-
-fn host_badge(host: &str) -> Option<String> {
-    (host != windows_host().id).then(|| "WSL".to_string())
+fn host_badge(w: &OfficeWorld, host: &str) -> Option<String> {
+    w.hosts
+        .get(host)
+        .filter(|h| matches!(h.kind, HostKind::Wsl { .. }))
+        .map(|_| "WSL".to_string())
 }
 
 fn folder(t: &Team) -> String {
@@ -324,15 +328,6 @@ fn border(light: Light) -> Border {
     }
 }
 
-/// 목록 정렬과 사무실 단계 합성용. 활발한 것이 작다
-fn phase_rank(p: TeamPhase) -> u8 {
-    match p {
-        TeamPhase::Working => 0,
-        TeamPhase::Dozing => 1,
-        TeamPhase::Off => 2,
-    }
-}
-
 fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamSummaryDto {
     TeamSummaryDto {
         team_id: team_id_str(k),
@@ -346,7 +341,7 @@ fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> T
         asking: team_asking(t, now),
         border: border(t.props.light),
         delayed: w.suspect_hosts.contains(&k.host),
-        host_badge: host_badge(&k.host),
+        host_badge: host_badge(w, &k.host),
     }
 }
 
@@ -377,7 +372,7 @@ fn summaries(
             let (building, floor, room, label) = match &id {
                 OfficeId::Team(k) => {
                     let b = building(teams[0].1.product);
-                    let room = rooms.get(&k.session).copied();
+                    let room = rooms.get(&team_id_str(k)).copied();
                     let label = match room {
                         Some(r) => format!("{b}동 {r}호"),
                         None => format!("{b}동"),
@@ -389,27 +384,16 @@ fn summaries(
                     (None, Some(f), None, format!("{f}층 {v:?}"))
                 }
             };
-            let border = if rows.iter().any(|r| r.border == Border::Running) {
-                Border::Running
-            } else if rows.iter().any(|r| r.border == Border::Failed) {
-                Border::Failed
-            } else {
-                Border::Plain
-            };
             OfficeSummaryDto {
                 office_id: office_id_str(&id),
                 building,
                 floor,
                 room,
                 label,
-                phase: rows
-                    .iter()
-                    .map(|r| r.phase)
-                    .min_by_key(|p| phase_rank(*p))
-                    .unwrap_or(TeamPhase::Off),
+                phase: rows.iter().map(|r| r.phase).min().unwrap_or(TeamPhase::Off),
                 dot: rows.iter().map(|r| r.dot).min().unwrap_or(Dot::Off),
                 asking: rows.iter().any(|r| r.asking),
-                border,
+                border: rows.iter().map(|r| r.border).max().unwrap_or(Border::Plain),
                 delayed: rows.iter().any(|r| r.delayed),
                 teams: rows,
             }
@@ -448,13 +432,13 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
     }
 }
 
-fn team_dto(k: &TeamKey, t: &Team) -> TeamDto {
+fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team) -> TeamDto {
     TeamDto {
         team_id: team_id_str(k),
         title: t.title.clone(),
-        product: t.product,
         building: building(t.product).to_string(),
-        host_badge: host_badge(&k.host),
+        host_badge: host_badge(w, &k.host),
+        delayed: w.suspect_hosts.contains(&k.host),
         folder: folder(t),
         started: t.started,
         last_activity: t.last_activity,
@@ -474,10 +458,10 @@ fn shared(teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
     SharedPropsDto {
         light: teams
             .iter()
-            .map(|(_, t)| *t)
-            .filter(|t| t.props.light != Light::Off)
-            .max_by_key(|t| t.last_activity)
-            .map_or(Light::Off, |t| t.props.light),
+            .map(|(_, t)| &t.props)
+            .filter(|p| p.light != Light::Off)
+            .max_by_key(|p| p.light_at)
+            .map_or(Light::Off, |p| p.light),
         safe_since: teams
             .iter()
             .map(|(_, t)| t.props.safe_since)
@@ -497,27 +481,32 @@ pub fn office_dto(
     w: &OfficeWorld,
     id: &OfficeId,
     rebuilt: bool,
-    cues: Vec<Cue>,
+    cues: Vec<CueDto>,
 ) -> Option<OfficeDto> {
     let teams = grouped(w).remove(id)?;
     Some(OfficeDto {
         state_seq: w.state_seq.get(id).copied().unwrap_or(0),
         office_id: office_id_str(id),
         rebuilt,
-        teams: teams.iter().map(|(k, t)| team_dto(k, t)).collect(),
+        teams: teams.iter().map(|(k, t)| team_dto(w, k, t)).collect(),
         shared: shared(&teams),
         cues,
     })
 }
 
-/// 방 번호와 마지막으로 만든 목록. world 잠금 다음에 잡는다
+/// 목록에서 번호 말고 바뀌었는지 볼 부분
+type ListBody = (Vec<OfficeSummaryDto>, Option<String>, u64);
+
+/// 방 번호, 마지막 목록, 마지막 선택 요청. world 잠금 다음에 잡거나 혼자 잡는다. 잡은 채로 파일을 쓰지 않는다
 struct Books {
     book: RoomBook,
-    /// session_id → 방 번호. 처음 볼 때 한 번 받는다
+    /// 팀 id → 방 번호. 처음 볼 때 한 번 받는다
     // ponytail: 7일 회수를 위한 last_seen 은 처음 볼 때만 갱신한다, 앱을 일주일 넘게 켜 둘 일이 보이면 주기적으로 부른다
     rooms: HashMap<String, u32>,
-    last_list: Option<Vec<OfficeSummaryDto>>,
+    last_list: Option<ListBody>,
     last_list_seq: u64,
+    /// 마지막으로 처리한 select_office 요청 번호
+    last_select: u64,
 }
 
 /// 커맨드와 발행기가 함께 쓰는 상태 (Tauri `State`)
@@ -546,51 +535,64 @@ impl Ipc {
                 rooms: HashMap::new(),
                 last_list: None,
                 last_list_seq: 0,
+                last_select: 0,
             }),
         }
     }
 
-    /// 새 팀에 방 번호를 준다. rooms.json 쓰기가 있어 world 잠금 밖에서 한다
+    /// 새 팀에 방 번호를 준다. world 를 잡고 팀을 모은 뒤 놓고, books 안에서는 메모리 배정만,
+    /// rooms.json 쓰기는 두 잠금 밖에서 한다. 쓰는 동안 스냅샷·발행이 books 를 기다리지 않게
     fn assign_rooms(&self, now: DateTime<Utc>) {
-        let missing: Vec<(String, String)> = {
+        let teams: Vec<(String, Host)> = {
             let w = lock(&self.world);
-            let b = lock(&self.books);
             w.teams
                 .keys()
-                .filter(|k| !b.rooms.contains_key(&k.session))
-                .map(|k| (k.session.clone(), k.host.clone()))
+                .filter_map(|k| Some((team_id_str(k), w.hosts.get(&k.host)?.clone())))
                 .collect()
         };
-        if missing.is_empty() {
-            return;
-        }
-        let mut b = lock(&self.books);
-        for (session, host) in missing {
-            let a = b.book.room_of(&session, &host_of(&host), now);
-            if let Err(e) = a.saved {
-                // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-                eprintln!("방 번호 저장 실패: {e}");
+        let save = {
+            let mut b = lock(&self.books);
+            for (id, host) in teams {
+                if b.rooms.contains_key(&id) {
+                    continue;
+                }
+                let (number, reused) = b.book.room_of_unsaved(&id, &host, now);
+                if reused {
+                    // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
+                    eprintln!("방 번호 재사용: {}층이 99팀을 넘었다", number / 100);
+                }
+                b.rooms.insert(id, number);
             }
-            b.rooms.insert(session, a.number);
+            b.book.unsaved()
+        };
+        if let Some(Err(e)) = save.map(|s| s.write()) {
+            eprintln!("방 번호 저장 실패: {e}");
         }
     }
 
     /// 목록을 만들고, 내용이 바뀌었는데 world 가 번호를 안 올렸으면 올린다.
-    /// 점·결재판은 시간으로도 바뀌어서(3초 디바운스 등) world 의 목록 번호만으로는 모자란다
+    /// 점·결재판은 시간으로도 바뀌고(3초 디바운스 등) 선택은 커맨드가 바꿔서 world 의 목록 번호만으로는 모자란다
     fn sync_list(w: &mut OfficeWorld, b: &mut Books, now: DateTime<Utc>) -> OfficeListDto {
-        let offices = summaries(w, &b.rooms, now);
-        if b.last_list.as_ref() != Some(&offices) {
+        let body: ListBody = (
+            summaries(w, &b.rooms, now),
+            w.selected.as_ref().map(office_id_str),
+            b.last_select,
+        );
+        if b.last_list.as_ref() != Some(&body) {
             if w.list_seq == b.last_list_seq {
                 w.list_seq += 1;
             }
-            b.last_list = Some(offices.clone());
+            b.last_list = Some(body.clone());
         }
         b.last_list_seq = w.list_seq;
+        let (offices, selected_id, select_request) = body;
         OfficeListDto {
             list_seq: w.list_seq,
             rebuilt: false,
             scale: w.scale,
             offices,
+            selected_id,
+            select_request,
         }
     }
 
@@ -613,14 +615,20 @@ impl Ipc {
         }
     }
 
-    /// 선택을 바꾸고 그 사무실 상태를 바로 돌려준다. 상태는 이미 있다 (4.5 선택 전환)
-    pub fn select(&self, office_id: &str, request_id: String) -> Result<SelectResponseDto, String> {
+    /// 선택을 바꾸고 그 사무실 상태를 바로 돌려준다. 상태는 이미 있다 (4.5 선택 전환).
+    /// 두 요청이 뒤바뀌어 오면 늦은 옛 요청을 무시한다. 안 그러면 백엔드 선택이 store 와 어긋난다
+    pub fn select(&self, office_id: &str, request_id: u64) -> Result<SelectResponseDto, String> {
         let id =
             parse_office_id(office_id).ok_or_else(|| "사무실 id 형식이 아닙니다".to_string())?;
         let mut w = lock(&self.world);
+        let mut b = lock(&self.books);
+        if request_id < b.last_select {
+            return Err("더 새 선택 요청이 이미 처리됐습니다".to_string());
+        }
         if !w.select(Some(id.clone())) {
             return Err("없는 사무실입니다".to_string());
         }
+        b.last_select = request_id;
         let office = office_dto(&w, &id, true, Vec::new()).ok_or("없는 사무실입니다")?;
         Ok(SelectResponseDto { office, request_id })
     }
@@ -649,10 +657,13 @@ impl Ipc {
         let state = w.selected.clone().and_then(|sel| {
             let quiet = rebuilt.contains(&sel);
             // 조용한 재구성에서는 방금 시작된 세션의 출근만 낸다 (4.3)
-            let cues: Vec<Cue> = outbox
+            let cues: Vec<CueDto> = outbox
                 .into_iter()
-                .filter(|(o, c)| *o == sel && (!quiet || matches!(c, Cue::Enter { .. })))
-                .map(|(_, c)| c)
+                .filter(|(o, _, c)| *o == sel && (!quiet || matches!(c, Cue::Enter { .. })))
+                .map(|(_, k, cue)| CueDto {
+                    team_id: team_id_str(&k),
+                    cue,
+                })
                 .collect();
             let seq = w.state_seq.get(&sel).copied().unwrap_or(0);
             let at = Some((sel.clone(), seq));
@@ -675,7 +686,7 @@ pub fn get_world_snapshot(ipc: State<'_, Arc<Ipc>>) -> WorldDto {
 pub fn select_office(
     ipc: State<'_, Arc<Ipc>>,
     office_id: String,
-    request_id: String,
+    request_id: u64,
 ) -> Result<SelectResponseDto, String> {
     ipc.select(&office_id, request_id)
 }
@@ -684,34 +695,18 @@ pub fn select_office(
 pub fn spawn_publisher(app: AppHandle, ipc: Arc<Ipc>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut sent = Sent::default();
-        // 디버그 빌드에서만 개수를 찍는다. 내용은 실제 세션이라 찍지 않는다
-        #[cfg(debug_assertions)]
-        let (mut lists, mut states, mut logged) = (0u64, 0u64, Instant::now());
         loop {
             let start = Instant::now();
             let (list, state) = ipc.poll(&mut sent, Utc::now());
-            if let Some(l) = list {
-                if let Err(e) = app.emit("office-list", &l) {
-                    eprintln!("office-list 발행 실패: {e}");
-                }
-                #[cfg(debug_assertions)]
-                {
-                    lists += 1;
-                }
+            if let Some(l) = list
+                && let Err(e) = app.emit("office-list", &l)
+            {
+                eprintln!("office-list 발행 실패: {e}");
             }
-            if let Some(s) = state {
-                if let Err(e) = app.emit("office-state", &s) {
-                    eprintln!("office-state 발행 실패: {e}");
-                }
-                #[cfg(debug_assertions)]
-                {
-                    states += 1;
-                }
-            }
-            #[cfg(debug_assertions)]
-            if logged.elapsed() >= StdDuration::from_secs(5) {
-                println!("발행 누적: office-list {lists}, office-state {states}");
-                logged = Instant::now();
+            if let Some(s) = state
+                && let Err(e) = app.emit("office-state", &s)
+            {
+                eprintln!("office-state 발행 실패: {e}");
             }
             thread::sleep(PUBLISH_EVERY.saturating_sub(start.elapsed()));
         }

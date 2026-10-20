@@ -17,7 +17,7 @@ use crate::discover::registry;
 use crate::discover::wsl::WslDistro;
 use crate::discover::{Host, HostKind, Product, Site, Vendor};
 use crate::office::classify::{SubMeta, rebuild};
-use crate::office::world::{OfficeId, OfficeWorld, TeamKey};
+use crate::office::world::{OfficeWorld, TeamKey};
 use crate::office::{Cue, TeamPhase};
 use crate::parse::claude::ClaudeParser;
 use crate::parse::codex::CodexParser;
@@ -187,8 +187,6 @@ pub struct HostLoop {
     pub heartbeat: Arc<Heartbeat>,
     diag: Arc<Mutex<Diag>>,
     last_scan: Option<DateTime<Utc>>,
-    /// 이번 틱에 난 연출 신호. `spawn` 이 틱마다 world 의 outbox 로 넘긴다
-    pub cues: Vec<(OfficeId, Cue)>,
     /// 다시 만들어야 하는데 아직 못 만든 팀. 경로 접근이 되는 다음 Scan 에서 만든다. 그동안 기존 리더는 계속 읽는다
     rebuild_due: BTreeSet<TeamKey>,
     /// 파일이 없어져 퇴장시킨 직원과 그 시각. 재구성이 메인의 Spawn 으로 되살리면 다시 퇴장시킨다
@@ -212,6 +210,11 @@ impl HostLoop {
         clock: Arc<dyn Clock>,
         diag: Arc<Mutex<Diag>>,
     ) -> Self {
+        world
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .hosts
+            .insert(host.id.clone(), host.clone());
         Self {
             host,
             sites,
@@ -221,7 +224,6 @@ impl HostLoop {
             heartbeat: Arc::new(Heartbeat::default()),
             diag,
             last_scan: None,
-            cues: Vec::new(),
             rebuild_due: BTreeSet::new(),
             gone: BTreeMap::new(),
             remotes: Arc::new(Mutex::new(Vec::new())),
@@ -268,7 +270,6 @@ impl HostLoop {
         self.heartbeat
             .last_tick_ms
             .store(mono_ms(), Ordering::Relaxed);
-        self.cues.clear();
         self.watch_remotes();
         if self.suspect() {
             return;
@@ -307,8 +308,7 @@ impl HostLoop {
         if self.suspect() {
             return;
         }
-        let cues = self.lock_world().tick(now, &self.host.id);
-        self.cues.extend(cues);
+        self.lock_world().tick(now, &self.host.id);
         let names = self.lock_world().unsaved_names();
         if let Some(Err(e)) = names.map(|n| n.write()) {
             // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
@@ -484,15 +484,12 @@ impl HostLoop {
             .map(|(m, evs)| (*m).max(evs.iter().filter_map(|e| e.ts).max()))
             .collect();
         let events = merge_live(per_file);
-        let (cues, product, office) = {
+        let product = {
             let mut w = self.lock_world();
-            let cues = if events.is_empty() {
-                Vec::new()
-            } else {
-                w.apply(key, &events, now)
-            };
-            let product = w.teams.get(key).map(|t| t.product);
-            (cues, product, w.office_of(key))
+            if !events.is_empty() {
+                w.apply(key, &events, now);
+            }
+            w.teams.get(key).map(|t| t.product)
         };
         for ((p, pending), max) in batch.into_iter().zip(maxes) {
             if let Some(t) = self.files.get_mut(&p) {
@@ -502,8 +499,6 @@ impl HostLoop {
                 }
             }
         }
-        self.cues
-            .extend(cues.into_iter().map(|c| (office.clone(), c)));
         if let Some(ts) = events.iter().filter_map(|e| e.ts).max() {
             self.clock.observe(ts);
         }
@@ -741,7 +736,17 @@ impl HostLoop {
         let product = team.product;
         let boss = team.employees[0].id.clone();
         let gone = self.gone.get(key).cloned().unwrap_or_default();
-        let (office, known) = {
+        let arrived: Vec<String> = arrived
+            .iter()
+            .map(|path| {
+                if is_subagent(path) {
+                    agent_of(path).unwrap_or_default()
+                } else {
+                    boss.clone()
+                }
+            })
+            .collect();
+        {
             let mut w = self.lock_world();
             // Spawn 을 먼저 적용해 이미 출근한 서브는 다시 출근하지 않는다
             let known: HashSet<String> = w
@@ -749,26 +754,24 @@ impl HostLoop {
                 .get(key)
                 .map(|t| t.employees.iter().map(|e| e.id.clone()).collect())
                 .unwrap_or_default();
-            w.put_team(key.clone(), team, now);
+            // 조용한 재구성은 새 세션과 Reset 뿐이다 (4.3). 서브 파일이 새로 보인 것은 진행 중 연출을 끊지 않는다
+            w.put_team(key.clone(), team, now, !exists || !reset.is_empty());
             // 파일이 없어 퇴장시킨 직원을 메인의 Spawn 이 되살렸으면 조용히 다시 퇴장시킨다
+            let quiet_from = w.outbox.len();
             for (agent, at) in &gone {
                 w.retire_employee(key, agent, *at);
             }
-            (w.office_of(key), known)
-        };
+            w.outbox.truncate(quiet_from);
+            // 출근 연출은 같은 잠금에서 넣는다. 번호만 먼저 나가지 않게
+            for agent in arrived {
+                if !known.contains(&agent) {
+                    w.cue(key, Cue::Enter { agent });
+                }
+            }
+        }
         self.install(fresh, &unseen);
         if let Some(ts) = last_ts {
             self.clock.observe(ts);
-        }
-        for path in arrived {
-            let agent = if is_subagent(&path) {
-                agent_of(&path).unwrap_or_default()
-            } else {
-                boss.clone()
-            };
-            if !known.contains(&agent) {
-                self.cues.push((office.clone(), Cue::Enter { agent }));
-            }
         }
         self.observe(product, &heard, &heard_unhandled, now);
         Ok(())
@@ -993,12 +996,7 @@ impl HostLoop {
             .or_default()
             .entry(agent.clone())
             .or_insert(now);
-        let (cues, office) = {
-            let mut w = self.lock_world();
-            (w.retire_employee(key, &agent, now), w.office_of(key))
-        };
-        self.cues
-            .extend(cues.into_iter().map(|c| (office.clone(), c)));
+        self.lock_world().retire_employee(key, &agent, now);
     }
 
     /// Windows Claude 세션 등록부 (4.4.1): 살아 있는 세션을 팀에 표시하고, jsonl 이 아직 없는 세션을 기다린다
@@ -1195,10 +1193,6 @@ pub fn spawn(mut host: HostLoop) -> thread::JoinHandle<()> {
         while !host.heartbeat.stop.load(Ordering::Relaxed) {
             let start = Instant::now();
             host.tick();
-            if !host.cues.is_empty() {
-                let cues = std::mem::take(&mut host.cues);
-                host.lock_world().outbox.extend(cues);
-            }
             let spent = start.elapsed();
             if spent > TICK {
                 eprintln!("{} 틱 {}ms", host.host.id, spent.as_millis());
@@ -1790,10 +1784,11 @@ mod tests {
             e.at(start + secs(3));
             h.tick();
             assert_eq!(e.w().teams.len(), 1);
-            let entered = h
-                .cues
+            let entered = e
+                .w()
+                .outbox
                 .iter()
-                .any(|(_, c)| matches!(c, Cue::Enter { agent } if agent == REJECT));
+                .any(|(.., c)| matches!(c, Cue::Enter { agent } if agent == REJECT));
             assert_eq!(entered, cued, "첫 레코드 {late} 뒤 발견");
         }
     }
@@ -1807,7 +1802,8 @@ mod tests {
         e.at(t0() + Duration::minutes(45));
         h.tick();
         assert_eq!(e.w().teams.len(), 1);
-        assert!(h.cues.is_empty(), "조용한 재구성에서 cue: {:?}", h.cues);
+        let w = e.w();
+        assert!(w.outbox.is_empty(), "조용한 재구성에서 cue: {:?}", w.outbox);
     }
 
     #[test]
@@ -2508,10 +2504,22 @@ mod tests {
         e.at(now);
         h.tick();
         e.select(ASYNC);
+        e.w().rebuilt.clear();
         copy_dir(&src.join(ASYNC), &p1.join(ASYNC));
         append(&main, &lines[3..]);
         e.at(now + ms(200));
         h.tick();
+        {
+            // 서브가 보여 다시 만든 것은 조용한 재구성이 아니다. 진행 중 연출과 출근을 끊지 않는다
+            let w = e.w();
+            assert!(w.rebuilt.is_empty(), "서브 추가 재구성이 rebuilt 로 나간다");
+            assert!(
+                w.outbox
+                    .iter()
+                    .any(|(.., c)| matches!(c, Cue::Enter { agent } if agent == ASYNC_SUB)),
+                "새 서브의 출근이 남는다"
+            );
+        }
         let sub = p1
             .join(ASYNC)
             .join("subagents")

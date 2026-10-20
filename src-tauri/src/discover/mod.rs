@@ -45,7 +45,7 @@ pub enum ReadMode {
     WholeFile,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Product {
     ClaudeDesktop,
     ClaudeCli,

@@ -640,8 +640,8 @@
 | 사무실 렌더링 | **PixiJS 8** | 스프라이트, z-정렬, 애니메이션. Canvas 2D로도 가능하지만 직원이 10명 넘으면 PixiJS가 편함 |
 | 설치 파일 | **NSIS** | 기본 경로와 GNU 폴백이 같은 설치 파일을 만든다. GNU 타깃에서 MSI(WiX)는 깨지는 사례가 있음 |
 | 직렬화 | serde + serde_json | |
-| 레지스트리 | `winreg` 크레이트 | `reg query` 자식 프로세스보다 깔끔 |
-| 해시 | `xxhash-rust` 또는 std `DefaultHasher` | 이름·방 번호 결정용. 암호학적일 필요 없음 |
+| 레지스트리 | `windows-sys`의 Windows API | 파일 ID·프로세스 생존 확인에 쓰는 의존성을 함께 사용 |
+| 해시 | 이름·방 번호는 FNV-1a 64, 증분 읽기 비교는 std `DefaultHasher` | 저장하는 이름·번호는 실행 간 같은 값이어야 함 |
 
 **C 런타임 (기본 경로)**: MSVC 빌드가 `vcruntime140.dll` 에 의존하면 VC++ 재배포 패키지가 없는 PC에서 실행되지 않는다. Tauri 2의 `tauri-build` 가 VC 런타임을 정적으로 링크한다고 가정한다 (미확인, 6부). 그래서 T01의 완료 기준은 "빈 창이 뜬다"가 아니라 "빌드 → NSIS 설치 파일 → 개발 도구가 없는 Windows 11에서 설치·실행"이다. 의존 DLL은 `dumpbin /dependents owlfice.exe` 로 확인해 Windows 시스템 DLL뿐임을 `docs/BUILD.md`에 기록한다.
 
@@ -1088,7 +1088,7 @@ outcome: 구조 필드가 없다. `run_command` 결과 첫 줄 `Command exited w
 
 #### 4.6.4 명령 분류 (`classify_command`)
 
-1. 명령을 개행, `|`, `&&`, `||`, `;` 로 나눈다. 따옴표(`'`, `"`) 안과 `\` 뒤의 구분자는 자르지 않는다 (간단한 따옴표 상태 머신). 세그먼트 끝의 단독 `&`(`&&` 아님)는 비동기 실행이다. 셸이 즉시 0을 돌려주므로 그 호출의 결과는 `Unknown` 으로 본다 (`git push &` 가 출고 성공이 되면 안 된다). 세그먼트 첫 토큰의 `&` 는 PowerShell 호출 연산자라 비동기가 아니다. 벗기고 다음 토큰을 프로그램으로 본다. 서브셸 `( )`, `$( )`, heredoc, `for`/`while`/`if`, `{ }` 가 들어 있으면 분석하지 않고 `compound = Mixed` 로 둔다. heredoc 본문 줄은 세그먼트로 나누지 않는다. 분석하지 못하는 구문은 개별 명령의 성공을 보증하지 않는 쪽으로 처리한다.
+1. 명령을 개행, `|`, `&&`, `||`, `;` 로 나눈다. 따옴표(`'`, `"`) 안과 `\` 뒤의 구분자는 자르지 않는다 (간단한 따옴표 상태 머신). 따옴표 밖에서 단어 첫머리의 `#` 부터 줄 끝까지는 주석이라 버린다 (`echo ok # && git push` 는 push가 아니다). 세그먼트 끝의 단독 `&`(`&&` 아님)는 비동기 실행이다. 셸이 즉시 0을 돌려주므로 그 호출의 결과는 `Unknown` 으로 본다 (`git push &` 가 출고 성공이 되면 안 된다). 세그먼트 첫 토큰의 `&` 는 PowerShell 호출 연산자라 비동기가 아니다. 벗기고 다음 토큰을 프로그램으로 본다. 서브셸 `( )`, `$( )`, heredoc, `for`/`while`/`if`, `{ }` 가 들어 있으면 분석하지 않고 `compound = Mixed` 로 둔다. heredoc 본문 줄은 세그먼트로 나누지 않는다. 분석하지 못하는 구문은 개별 명령의 성공을 보증하지 않는 쪽으로 처리한다.
 2. 각 세그먼트를 아래 표로 분류한다.
 3. **우선순위가 가장 높은 것**을 대표로 고른다. 마지막 명령 기준이 아니다. `cargo test 2>&1 | tail -20` 은 Test, `cd x && npm test | head` 도 Test다. 우선순위: Release > PrCreate > GitPush > GitCommit > Test > Build > GitDiff > PrView > GitQuery > FileSearch > FileRead > Shell. 대표 분류는 **방과 문장**(화면 위치)을 정하는 데 쓴다.
 4. `compound`: 세그먼트가 하나면 `Single`, 결합이 `&&` 뿐이면 `AndOnly`, 파이프·`||`·`;`·개행·단독 `&`·분석 불가 구문이 하나라도 있으면 `Mixed`. 파이프는 pipefail이 없으면 마지막 명령의 종료 코드만 남아 `cargo test | tail` 이 테스트 실패에도 0을 돌려준다. Claude Code의 Bash와 Codex의 bash는 pipefail이 꺼져 있다 (확인됨, `false | true` 가 성공).

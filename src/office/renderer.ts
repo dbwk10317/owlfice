@@ -306,6 +306,7 @@ export async function mountOffice(
   let officeId = "";
   actors.onPick = (teamId, agentId) => opts.onEmployee?.(officeId, teamId, agentId);
   actors.onRing = (now) => props?.ring(now);
+  actors.onCue = (c, now) => props?.cue(c, now);
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
   let fit = canvasScale(CANVAS_W, CANVAS_H, 1);
   let dpr = 1;
@@ -379,7 +380,7 @@ export async function mountOffice(
           if (team && shown) opts.onSession?.(shown.officeId, team.teamId);
         });
       }
-      props = new PropsLayer(fp, assets.sheet, kind, next);
+      props = new PropsLayer(fp, assets.sheet, kind, next, props?.memory);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);
@@ -387,6 +388,7 @@ export async function mountOffice(
       buildLabels(kind);
     }
     officeId = office?.officeId ?? "";
+    if (switched) props?.reset();
     // 사무실을 바꾼 첫 스냅샷, 숨은 창에서 돌아온 스냅샷은 걷지 않고 제자리 (cue 도 버린다)
     actors.sync(office, kind, Date.now(), {
       instant: switched || resumed,

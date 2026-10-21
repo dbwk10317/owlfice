@@ -5,6 +5,7 @@ import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
 import type { Light, OfficeDto, Pose, Room, TeamDto, TodoItem } from "../types/ipc.ts";
 import { parseFloorplan, type Kind } from "./floorplan.ts";
+import { FIREWORKS_MS, RETURN_MS, STAMP_RESULT_MS, TRUCK_MS } from "./anim-queue.ts";
 import {
   kanbanNotes,
   paperCount,
@@ -36,7 +37,12 @@ const at = (hour: number) => new Date(2026, 9, 21, hour, 0).getTime();
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
 
 function team(deskSlot: number | null, plant: number | null): TeamDto {
-  return { teamId: `t${deskSlot}`, deskSlot, props: { plant } } as unknown as TeamDto;
+  return {
+    teamId: `t${deskSlot}`,
+    deskSlot,
+    props: { plant },
+    employees: [],
+  } as unknown as TeamDto;
 }
 
 function office(shared: Partial<OfficeDto["shared"]> = {}, teams: TeamDto[] = []): OfficeDto {
@@ -342,4 +348,251 @@ test("퇴근한 팀 부장의 책상 소품은 모두 꺼진다", () => {
   const duck = { ...bossTeam(0, "TeamLead", "Duck"), phase: "Off" } as TeamDto;
   props.update(office({}, [duck]), NOW);
   expect(scene.driven.get("duck_0")!.visible).toBe(true);
+});
+
+// ---------- 빌드실·테스트실·출고장 (T25) ----------
+
+const SINCE = "2026-10-21T10:00:00Z";
+function emp(room: Room, pose: Pose = "Sit", agentId = "e"): TeamDto["employees"][number] {
+  return { agentId, activity: { room, pose, since: SINCE } } as TeamDto["employees"][number];
+}
+function crew(...employees: TeamDto["employees"]): OfficeDto {
+  const t = { ...team(0, null), phase: "Working", employees } as TeamDto;
+  return office({}, [t]);
+}
+type Built = ReturnType<typeof layer>["scene"];
+const tex = (scene: Built, id: string) => frameOf(scene.driven.get(id)!);
+const sprites = (scene: Built, frame: string) => withFrame(scene.world.children, frame) as Sprite[];
+const count = (scene: Built, frame: string) => sprites(scene, frame).length;
+const stillMotion = (on: boolean, fn: () => void) => {
+  vi.stubGlobal("matchMedia", () => ({ matches: on }));
+  try {
+    fn();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+};
+
+test("셸 명령 중: 랙 LED 가 깜빡이고 단말기가 켜진다. 사람이 없으면 평면도 기본", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind);
+    props.update(crew(emp("Build")), NOW);
+    expect(tex(scene, "terminal")).toBe("terminal/on");
+    const leds = [0, 200, 400].map((ms) => {
+      props.tick(NOW + ms);
+      return [tex(scene, "rack_0"), tex(scene, "rack_1")];
+    });
+    expect(new Set(leds.flat())).toEqual(new Set(["rack/led_0", "rack/led_1"]));
+    expect(tex(scene, "fan")).toBe("fan/off");
+    props.update(crew(emp("Dev")), NOW + 1000);
+    expect([tex(scene, "terminal"), tex(scene, "rack_0"), tex(scene, "rack_1")]).toEqual([
+      "terminal/off",
+      "rack/led_0",
+      "rack/led_0",
+    ]);
+  }
+});
+
+test("명령이 평균 2배를 넘으면(쪼그려 앉음) 선풍기가 돈다", () => {
+  const { scene, props } = layer();
+  props.update(crew(emp("Build", "Squat")), NOW);
+  const fans = [0, 50, 100].map((ms) => {
+    props.tick(NOW + ms);
+    return tex(scene, "fan");
+  });
+  expect(new Set(fans)).toEqual(new Set(["fan/spin_0", "fan/spin_1"]));
+  props.update(crew(emp("Build")), NOW + 500);
+  expect(tex(scene, "fan")).toBe("fan/off");
+  // 테스트실에서 쪼그린 직원은 빌드실 선풍기를 돌리지 않는다
+  props.update(crew(emp("Test", "Squat")), NOW + 600);
+  expect(tex(scene, "fan")).toBe("fan/off");
+});
+
+test("테스트 중에는 테스트 기계가 돈다", () => {
+  const { scene, props } = layer();
+  props.update(crew(emp("Test")), NOW);
+  const frames = [0, 100, 200].map((ms) => {
+    props.tick(NOW + ms);
+    return tex(scene, "test_machine");
+  });
+  expect(new Set(frames)).toEqual(new Set(["test_machine/run_0", "test_machine/run_1"]));
+  props.update(crew(emp("Dev")), NOW + 500);
+  expect(tex(scene, "test_machine")).toBe("test_machine/idle");
+});
+
+test("퇴근한 팀과 null 은 소품을 켜지 않는다", () => {
+  const { scene, props } = layer();
+  const off = crew(emp("Build"), emp("Test", "Sit", "f"), emp("Shipping", "Sit", "g"));
+  off.teams[0].phase = "Off";
+  props.update(off, NOW);
+  props.update(null, NOW);
+  expect([tex(scene, "terminal"), tex(scene, "test_machine")]).toEqual([
+    "terminal/off",
+    "test_machine/idle",
+  ]);
+  expect(count(scene, "box_taped/default")).toBe(0);
+});
+
+test("움직임 줄이기: 반복 프레임은 첫 장에 멈춘다", () =>
+  stillMotion(true, () => {
+    const { scene, props } = layer();
+    props.update(crew(emp("Build", "Squat"), emp("Test", "Sit", "t")), NOW);
+    for (const ms of [0, 200, 400]) {
+      props.tick(NOW + ms);
+      expect([tex(scene, "rack_0"), tex(scene, "fan"), tex(scene, "test_machine")]).toEqual([
+        "rack/led_0",
+        "fan/spin_0",
+        "test_machine/run_0",
+      ]);
+    }
+  }));
+
+test("출고장에 있는 직원마다 포장된 상자가 하나씩, 슬롯 수까지", () => {
+  const { scene, props } = layer();
+  const n = (k: number) =>
+    crew(...Array.from({ length: k }, (_, i) => emp("Shipping", "Sit", `e${i}`)));
+  const boxes = (o: OfficeDto) => {
+    props.update(o, NOW);
+    return count(scene, "box_taped/default");
+  };
+  expect([0, 1, 2, 3, 5].map((k) => boxes(n(k)))).toEqual([0, 1, 2, 3, 3]);
+  // 같은 수로 다시 그려도 상자를 늘리지 않는다
+  expect(boxes(n(3))).toBe(3);
+  expect(boxes(n(0))).toBe(0);
+});
+
+test("백그라운드 명령: Paper cue 가 작업표를 꽂고 빼고, 장면을 다시 지어도 남는다", () => {
+  const { scene, props } = layer();
+  const ticket = () => scene.driven.get("job_ticket")!.visible;
+  expect(ticket()).toBe(false);
+  props.cue({ teamId: "t", kind: "Paper", agent: "a", on: true }, NOW);
+  props.cue({ teamId: "t", kind: "Paper", agent: "b", on: true }, NOW);
+  expect(ticket()).toBe(true);
+  props.cue({ teamId: "t", kind: "Paper", agent: "a", on: false }, NOW);
+  expect(ticket()).toBe(true);
+  // 장애로 장면을 다시 지어도 (renderer 가 memory 를 넘긴다) 작업표가 남는다
+  const next = buildScene(assets, "large", "claude", true);
+  const again = new PropsLayer(fp, sheet, "large", next, props.memory);
+  again.update(office(), NOW + 1000);
+  expect(next.driven.get("job_ticket")!.visible).toBe(true);
+  props.cue({ teamId: "t", kind: "Paper", agent: "b", on: false }, NOW);
+  again.update(office(), NOW + 2000);
+  expect(next.driven.get("job_ticket")!.visible).toBe(false);
+});
+
+test("reset: 사무실을 옮기면 작업표·테스트 결과·진행 중인 효과가 사라진다", () => {
+  const { scene, props } = layer();
+  props.cue({ teamId: "t", kind: "Paper", agent: "a", on: true }, NOW);
+  props.cue({ teamId: "t", kind: "Stamp", passed: 1, failed: 1, estimated: false }, NOW);
+  props.cue({ teamId: "t", kind: "Truck" }, NOW);
+  props.reset();
+  props.update(office(), NOW + 10);
+  expect(scene.driven.get("job_ticket")!.visible).toBe(false);
+  expect(tex(scene, "test_board")).toBe("test_board/pass");
+  expect(count(scene, "stamp_fail/default") + count(scene, "truck/drive_0")).toBe(0);
+});
+
+const stampCue = (passed: number, failed: number, estimated = false) =>
+  ({ teamId: "t", kind: "Stamp", passed, failed, estimated }) as const;
+
+test("Stamp: 전부 통과 / 일부 실패 / 추정 각각의 도장과 결과판, 2초 뒤 도장만 사라진다", () => {
+  const cases: [number, number, boolean, string, string][] = [
+    [12, 0, false, "stamp_pass/default", "test_board/pass"],
+    [10, 2, false, "stamp_fail/default", "test_board/fail"],
+    [12, 0, true, "stamp_pass_est/default", "test_board/pass"],
+    [10, 2, true, "stamp_fail_est/default", "test_board/fail"],
+  ];
+  for (const [passed, failed, estimated, mark, board] of cases) {
+    const { scene, props } = layer();
+    props.cue(stampCue(passed, failed, estimated), NOW);
+    expect(count(scene, mark)).toBe(1);
+    expect(tex(scene, "test_board")).toBe(board);
+    props.tick(NOW + STAMP_RESULT_MS - 1);
+    expect(count(scene, mark)).toBe(1);
+    props.tick(NOW + STAMP_RESULT_MS);
+    expect(count(scene, mark)).toBe(0);
+    // 결과판은 다음 테스트까지 남고, 다시 그려도 유지된다
+    props.update(office(), NOW + STAMP_RESULT_MS + 1000);
+    expect(tex(scene, "test_board")).toBe(board);
+  }
+});
+
+test("Stamp 가 연달아 오면 앞 도장을 치우고 새것 하나만 둔다", () => {
+  const { scene, props } = layer();
+  props.cue(stampCue(1, 1), NOW);
+  props.cue(stampCue(2, 0), NOW + 500);
+  expect(count(scene, "stamp_fail/default")).toBe(0);
+  expect(count(scene, "stamp_pass/default")).toBe(1);
+});
+
+test("Truck: 출고장 앞에서 출발해 +gy 쪽으로 가고 TRUCK_MS 에 사라진다", () => {
+  const { scene, props } = layer();
+  props.cue({ teamId: "t", kind: "Truck" }, NOW);
+  const truck = () =>
+    (scene.world.children as Sprite[]).find((c) => frameOf(c)?.startsWith("truck/"));
+  const start = { x: truck()!.position.x, y: truck()!.position.y };
+  props.tick(NOW + TRUCK_MS / 2);
+  // +gy 로 가면 화면은 왼쪽 아래
+  expect(truck()!.position.x).toBeLessThan(start.x);
+  expect(truck()!.position.y).toBeGreaterThan(start.y);
+  props.tick(NOW + TRUCK_MS - 1);
+  expect(truck()).toBeDefined();
+  props.tick(NOW + TRUCK_MS);
+  expect(truck()).toBeUndefined();
+  // 움직임 줄이기: 제자리에서 같은 시간 동안만 보인다
+  stillMotion(true, () => {
+    const r = layer();
+    r.props.cue({ teamId: "t", kind: "Truck" }, NOW);
+    const t = () => sprites(r.scene, "truck/drive_0");
+    const p0 = { x: t()[0].position.x, y: t()[0].position.y };
+    r.props.tick(NOW + TRUCK_MS - 1);
+    expect([t()[0].position.x, t()[0].position.y]).toEqual([p0.x, p0.y]);
+    r.props.tick(NOW + TRUCK_MS);
+    expect(t()).toHaveLength(0);
+  });
+});
+
+test("Return: 상자가 떨어져 바닥에 닿고 반송 쪽지와 함께 RETURN_MS 뒤 사라진다", () => {
+  const { scene, props } = layer();
+  props.cue({ teamId: "t", kind: "Return" }, NOW);
+  const box = () => sprites(scene, "box_taped/default")[0];
+  const note = () => sprites(scene, "note_return/default")[0];
+  const high = box().position.y;
+  expect(note()).toBeDefined();
+  props.tick(NOW + 1000);
+  const floor = box().position.y;
+  expect(floor).toBeGreaterThan(high);
+  // 쪽지는 상자 위에 붙어 다닌다
+  expect(note().position.y).toBeLessThan(floor);
+  props.tick(NOW + RETURN_MS - 1);
+  expect(note()).toBeDefined();
+  props.tick(NOW + RETURN_MS);
+  expect([box(), note()]).toEqual([undefined, undefined]);
+  // 움직임 줄이기: 처음부터 바닥
+  stillMotion(true, () => {
+    const r = layer();
+    r.props.cue({ teamId: "t", kind: "Return" }, NOW);
+    expect(sprites(r.scene, "box_taped/default")[0].position.y).toBe(floor);
+  });
+});
+
+test("Fireworks: 0→1→2 한 번, FIREWORKS_MS 에 사라진다", () => {
+  const { scene, props } = layer();
+  props.cue({ teamId: "t", kind: "Fireworks" }, NOW);
+  const shown = (t: number) => {
+    props.tick(NOW + t);
+    return [0, 1, 2].find((i) => count(scene, `fireworks/${i}`) === 1);
+  };
+  expect([0, 170, 340, FIREWORKS_MS - 1].map(shown)).toEqual([0, 1, 2, 2]);
+  props.tick(NOW + FIREWORKS_MS);
+  expect([0, 1, 2].map((i) => count(scene, `fireworks/${i}`))).toEqual([0, 0, 0]);
+  // 움직임 줄이기: 마지막 프레임만 같은 시간 동안
+  stillMotion(true, () => {
+    const r = layer();
+    r.props.cue({ teamId: "t", kind: "Fireworks" }, NOW);
+    r.props.tick(NOW + FIREWORKS_MS - 1);
+    expect([0, 1, 2].map((i) => count(r.scene, `fireworks/${i}`))).toEqual([0, 0, 1]);
+    r.props.tick(NOW + FIREWORKS_MS);
+    expect([0, 1, 2].map((i) => count(r.scene, `fireworks/${i}`))).toEqual([0, 0, 0]);
+  });
 });

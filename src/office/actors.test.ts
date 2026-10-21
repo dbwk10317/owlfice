@@ -28,6 +28,7 @@ import {
   type Owls,
 } from "./actors.ts";
 import {
+  CHEER_MS,
   CLAP_MS,
   ENTER_MS,
   STAMP_MS,
@@ -1042,4 +1043,98 @@ test("반려 도장은 걷는 동안 숨고 긁기가 시작된 때부터 1초 �
   expect(stamp.visible).toBe(true);
   layer.update(NOW + WALK_MAX_MS + STAMP_MS);
   expect(stamp.visible).toBe(false);
+});
+
+// ---------- 빌드실·테스트실·출고장 (T25) ----------
+
+const stamp = (o: { passed?: number; failed?: number; estimated?: boolean } = {}) =>
+  cue({ kind: "Stamp", passed: 12, failed: 0, estimated: false, ...o });
+// 테스트실에서 일하던 직원이 도장 때 개발실로 돌아간다
+const testerLeaves = (cues: OfficeDto["cues"]) => {
+  const { layer } = newLayer({ owls: labeled });
+  const sp = speciesOf("a", meta.employeeSpecies);
+  layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
+  const back = office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 })])]);
+  layer.sync(withCues(back, cues), "large", NOW);
+  return { layer, pose: () => bodyOf(layer, "a")!.replace(`body/${sp}/`, "") };
+};
+
+test("합격 도장: 테스트실에 있던 직원이 만세 1초 뒤 자리로 걷는다", () => {
+  const { layer, pose } = testerLeaves([stamp()]);
+  expect(pose()).toBe("cheer_f_0");
+  expect(posOf(layer, "a")).toEqual(screen(...(fp.stands.test[0] as [number, number])));
+  layer.update(NOW + CHEER_MS);
+  expect(pose()).toMatch(/^walk_/);
+});
+
+test("실패·추정 도장과 도장 없는 이동에는 만세가 없다", () => {
+  for (const cues of [[stamp({ failed: 2 })], [stamp({ estimated: true })], []])
+    expect(testerLeaves(cues).pose()).toMatch(/^walk_/);
+});
+
+test("새 cue 는 onCue 로 넘기되 사무실 전환·숨은 창 복귀(instant)면 넘기지 않는다", () => {
+  const { layer } = newLayer();
+  const seen: string[] = [];
+  layer.onCue = (c) => void seen.push(c.kind);
+  const o = withCues(office([team("t", [boss()])]), [stamp(), cue({ kind: "Truck" })]);
+  layer.sync(o, "large", NOW);
+  expect(seen).toEqual(["Stamp", "Truck"]);
+  // 같은 스냅샷으로 다시 불려도 또 넘기지 않는다
+  layer.sync(o, "large", NOW + 10);
+  expect(seen).toHaveLength(2);
+  layer.sync(
+    withCues(office([team("t", [boss()])]), [cue({ kind: "Fireworks" })]),
+    "large",
+    NOW + 20,
+    { instant: true },
+  );
+  expect(seen).toHaveLength(2);
+  // 조용한 재구성에서도 지나간 일이라 넘기지 않는다
+  layer.sync(
+    withCues(office([team("t", [boss()])]), [cue({ kind: "Return" })], true),
+    "large",
+    NOW + 30,
+  );
+  expect(seen).toHaveLength(2);
+});
+
+test("땀방울: 쪼그려 앉은 지 2분이 넘어야 보이고 일어서면 사라진다. 움직임 줄이기면 첫 장", () => {
+  const sheet = {
+    data: officeJson,
+    textures: Object.fromEntries(
+      Object.keys(officeJson.frames).map((k) => [k, new Texture({ label: k })]),
+    ),
+  } as unknown as Spritesheet;
+  const layer = new ActorLayer(fp, sheet, owls, document.createElement("div"));
+  layer.attach(new Container());
+  const squat = team("t", [boss(), emp("a", "Build", "Squat")]);
+  layer.sync(office([squat]), "large", NOW);
+  const sweat = () =>
+    layer
+      .rootOf("t", "a")!
+      .children.find((c) => (c as Sprite).texture?.label?.startsWith("sweat/")) as
+      | Sprite
+      | undefined;
+  layer.update(NOW);
+  expect(sweat()?.visible ?? false).toBe(false);
+  // 120_000 은 "넘어야" 라서 정확히 2분은 아직
+  layer.update(Date.parse(SINCE) + 120_000);
+  expect(sweat()?.visible ?? false).toBe(false);
+  layer.update(Date.parse(SINCE) + 120_001);
+  expect(sweat()!.visible).toBe(true);
+  const frames = [0, 125, 250, 375].map((ms) => {
+    layer.update(Date.parse(SINCE) + 130_000 + ms);
+    return sweat()!.texture.label;
+  });
+  expect(new Set(frames)).toEqual(new Set(["sweat/0", "sweat/1"]));
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  try {
+    layer.update(Date.parse(SINCE) + 130_300);
+    expect(sweat()!.texture.label).toBe("sweat/0");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  layer.sync(office([team("t", [boss(), emp("a", "Build", "Sit")])]), "large", NOW + 100_000);
+  layer.update(Date.parse(SINCE) + 131_000);
+  expect(sweat()!.visible).toBe(false);
 });

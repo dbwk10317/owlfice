@@ -13,6 +13,14 @@ export const SCRATCH_MS = 2000;
 export const JUMP_MS = 400;
 export const RING_MS = 1000;
 export const STAMP_MS = 1000;
+/** 시험 결과 도장이 도장 책상 위에 남는 시간 */
+export const STAMP_RESULT_MS = 2000;
+export const TRUCK_MS = 1500;
+/** 반송 상자와 쪽지가 바닥에 남는 시간 */
+export const RETURN_MS = 5000;
+/** 폭죽 세 장을 6fps 로 한 번 (office.json fireworks) */
+export const FIREWORKS_MS = 500;
+export const CHEER_MS = 1000;
 /** 사장님이 부장 책상 앞에 도착한 뒤 서 있는 시간 */
 export const VISIT_STAY_MS = 5000;
 /** 이보다 많이 쌓이면 중간을 건너뛰고 마지막 상태로 점프 */
@@ -24,6 +32,7 @@ const CLAP: Look = { pose: "clap", dir: "f" };
 const IDLE_LOOK: Look = { pose: "idle", dir: "f" };
 const SCRATCH: Look = { pose: "scratch", dir: "f" };
 export const JUMP: Look = { pose: "jump", dir: "f" };
+export const CHEER: Look = { pose: "cheer", dir: "f" };
 
 export interface Pt {
   gx: number;
@@ -339,7 +348,8 @@ function along(path: Pt[], f: number): { at: Pt; seg: number } {
 /**
  * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire 는 자리 이동(retarget)이 이미 걷게 했다.
  * 사장님 방문(BossVisit)은 직원 큐가 아니라 ActorLayer 가 액터를 만들어 한다.
- * ponytail: 도장·트럭·사이렌 같은 나머지 연출은 아직 없어 무시한다, T25~T26 이 여기에 넣는다
+ * 도장·트럭·반송·폭죽·작업표는 소품 층(PropsLayer.cue), 도장 때 하이파이브는 ActorLayer 가 한다.
+ * ponytail: 사이렌·액자 교체·분갈이·흔들림은 아직 없어 무시한다, T26 이 여기에 넣는다
  */
 export function playCue(cue: CueDto, track: Track | undefined, now: number): void {
   if (cue.kind === "Clap") track?.pose(CLAP, CLAP_MS, now);

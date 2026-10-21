@@ -4,7 +4,7 @@
 # ///
 """T23 소품 상태 참조 그림. 직원 없이 소품 상태만 바꾼 두 장을 dev/ref/ 에 쓴다.
 
-호출: uv run dev/props_ref.py
+호출: uv run tools/props_ref.py
 dev/props.ts 의 CASES 와 같은 상태여야 한다. TV 선은 그림에 넣지 않는다 (지금 값 점 하나라 선과 달라서 눈으로 본다).
 """
 
@@ -46,7 +46,12 @@ CASES = [
             "trash": "full",
             "window": "night",
         },
-        {"ramen": True, "plant_boss_0": True, "plant_boss_1": True, "plant_boss_3": True},
+        {
+            "ramen": True,
+            "plant_boss_0": True,
+            "plant_boss_1": True,
+            "plant_boss_3": True,
+        },
         [(0, "yellow"), (3, "blue"), (4, "blue"), (6, "green")],
         "1234",
         10,

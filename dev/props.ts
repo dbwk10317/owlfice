@@ -1,11 +1,13 @@
 // 개발용 소품 상태 비교 페이지 (npm run dev 에서 /dev/props.html). 앱 빌드에 들어가지 않는다.
-// 바뀐 소품 상태를 PropsLayer 로 그려 dev/props_ref.py 가 만든 참조와 견준다.
-import { Rectangle } from "pixi.js";
+// 바뀐 소품 상태를 PropsLayer 로 그려 tools/props_ref.py 가 만든 참조와 견준다.
+import { Rectangle, type Spritesheet } from "pixi.js";
 import { CANVAS_H, CANVAS_W, hexToRgb, type Kind, type Theme } from "../src/office/floorplan.ts";
 import { PropsLayer } from "../src/office/props.ts";
 import { buildScene, createOfficeApp } from "../src/office/renderer.ts";
 import { loadOfficeAssets } from "../src/office/sprites.ts";
 import type { Light, OfficeDto, TeamDto, TodoItem } from "../src/types/ipc.ts";
+
+import { compare, loadRef, show, unpremultiply } from "./ref.ts";
 
 declare global {
   interface Window {
@@ -31,7 +33,7 @@ interface Case {
   now: number;
 }
 
-// dev/props_ref.py 의 CASES 와 같은 상태여야 한다
+// tools/props_ref.py 의 CASES 와 같은 상태여야 한다
 const CASES: Case[] = [
   {
     ref: "large-claude",
@@ -79,54 +81,21 @@ const CASES: Case[] = [
   },
 ];
 
-async function loadRef(name: string): Promise<Uint8ClampedArray> {
-  const img = new Image();
-  // decode() 는 캐시된 이미지에서 안 끝나는 때가 있어 load 이벤트를 쓴다
-  await new Promise<void>((ok, fail) => {
-    img.onload = () => ok();
-    img.onerror = () => fail(new Error(`${name}.png 를 못 읽음`));
-    img.src = `/dev/ref/${name}.png`;
-  });
-  const c = document.createElement("canvas");
-  c.width = CANVAS_W;
-  c.height = CANVAS_H;
-  const ctx = c.getContext("2d", { willReadFrequently: true })!;
-  ctx.drawImage(img, 0, 0);
-  return ctx.getImageData(0, 0, CANVAS_W, CANVAS_H).data;
-}
-
-function show(parent: HTMLElement, data: Uint8ClampedArray, unpremultiply: boolean): void {
-  const out = new Uint8ClampedArray(data);
-  if (unpremultiply)
-    for (let i = 0; i < out.length; i += 4) {
-      const a = out[i + 3];
-      for (let k = 0; k < 3; k++) out[i + k] = a ? Math.round((data[i + k] * 255) / a) : 0;
+/** TV 화면 평행사변형(office.json props.tv.screen). 점 한 픽셀 여유를 둔다. 참조에 TV 선이 없어 견주지 않는다 */
+function tvScreenTest(x0: number, y0: number, sheet: Spritesheet) {
+  const q = (
+    sheet.data as unknown as {
+      owlfice: { props: { tv: { screen: Record<string, [number, number]> } } };
     }
-  const c = document.createElement("canvas");
-  c.width = CANVAS_W;
-  c.height = CANVAS_H;
-  c.getContext("2d")!.putImageData(new ImageData(out, CANVAS_W, CANVAS_H), 0, 0);
-  parent.append(c);
-}
-
-/** 참조(곧은 알파)를 미리 곱해 Pixi 출력과 견준다. 조명을 곱한 장면은 채널당 1까지 허용 (HANDOFF 6.7) */
-function compare(ref: Uint8ClampedArray, got: Uint8ClampedArray, tolerance: number) {
-  const diff = new Uint8ClampedArray(ref.length);
-  let count = 0;
-  for (let i = 0; i < ref.length; i += 4) {
-    const a = ref[i + 3];
-    const tol = a === 255 ? tolerance : Math.max(2, tolerance);
-    let bad = false;
-    for (let k = 0; k < 4; k++) {
-      const want = k === 3 ? a : Math.round((ref[i + k] * a) / 255);
-      if (Math.abs(want - got[i + k]) > tol) bad = true;
-    }
-    if (bad) {
-      count++;
-      diff.set([255, 0, 0, 255], i);
-    } else diff.set([ref[i], ref[i + 1], ref[i + 2], a / 4], i);
-  }
-  return { count, diff };
+  ).owlfice.props.tv.screen;
+  return (x: number, y: number): boolean => {
+    const dx = x - x0;
+    if (dx < q.tr[0] || dx > q.tl[0]) return false;
+    const t = (dx - q.tl[0]) / (q.tr[0] - q.tl[0]);
+    const top = q.tl[1] + t * (q.tr[1] - q.tl[1]);
+    const bottom = q.bl[1] + t * (q.br[1] - q.bl[1]);
+    return y - y0 >= top - 1 && y - y0 <= bottom + 1;
+  };
 }
 
 async function main(): Promise<void> {
@@ -137,6 +106,8 @@ async function main(): Promise<void> {
   for (const c of CASES) {
     const scene = buildScene(assets, c.kind, c.theme, false);
     new PropsLayer(assets.floorplan, assets.sheet, c.kind, scene).update(c.office, c.now);
+    const tv = assets.floorplan.layouts[c.kind].placements.find((p) => p.id === "tv")!;
+    const inTvScreen = tvScreenTest(tv.x, tv.y, assets.sheet);
     if (c.lit) {
       const [r, g, b] = hexToRgb(assets.floorplan.lightTints.night);
       for (const l of scene.lit) l.tint = (r << 16) | (g << 8) | b;
@@ -148,16 +119,17 @@ async function main(): Promise<void> {
       resolution: 1,
     });
     scene.root.destroy({ children: true });
-    const { count, diff } = compare(await loadRef(c.ref), pixels, c.lit ? 1 : 0);
+    const ref = await loadRef(c.ref);
+    const { count, diff } = compare(ref, pixels, c.lit ? 1 : 0, inTvScreen);
     result[c.ref] = count;
     const sec = document.createElement("section");
     const h = document.createElement("h2");
     h.textContent = `${c.ref}: 다른 픽셀 ${count}`;
     if (count) h.className = "bad";
     sec.append(h);
-    show(sec, await loadRef(c.ref), false);
-    show(sec, pixels, true);
-    show(sec, diff, false);
+    show(sec, ref);
+    show(sec, unpremultiply(pixels));
+    show(sec, diff);
     out.append(sec);
   }
   window.__propsDiff = result;

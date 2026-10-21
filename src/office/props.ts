@@ -1,29 +1,15 @@
 // 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV (HANDOFF 5, 6.5, 6.6, PLAN 3.4, 4.7.9).
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
-import { Graphics, type Container, type Sprite, type Spritesheet } from "pixi.js";
-import type { Light, OfficeDto, TodoItem } from "../types/ipc.ts";
+import { Graphics, type Spritesheet } from "pixi.js";
+import type { OfficeDto, TodoItem } from "../types/ipc.ts";
 import { gridToScreen, hexToRgb, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
+import type { Scene } from "./renderer.ts";
 import { placeSprite } from "./sprites.ts";
 
-/** renderer.ts 의 Scene 중 소품이 쓰는 부분 */
-export interface PropsTarget {
-  /** 바닥 위 벽 요소 컨테이너 (포스트잇, TV 선) */
-  wall: Container;
-  world: Container;
-  /** 상태만 바꾸는 평면도 소품 (id → 스프라이트) */
-  driven: Map<string, Sprite>;
-}
+type PropsTarget = Pick<Scene, "wall" | "world" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
 export const DRIVEN_PROP = /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d)$/;
-
-const LIGHT_STATE: Record<Light, string> = {
-  Off: "off",
-  Yellow: "yellow",
-  Green: "green",
-  Red: "red",
-};
-export const lightState = (l: Light): string => LIGHT_STATE[l];
 
 /** 컨텍스트 사용률 0~1 → 화분 단계 (office.json plant 설명). 1 을 넘으면 시든다. null 이면 undefined = 평면도 기본 */
 export function plantState(v: number | null): string | undefined {
@@ -97,9 +83,7 @@ type Frames = Record<string, { anchorPx: [number, number] } | undefined>;
 export class PropsLayer {
   private readonly meta: Record<string, PropMeta>;
   private readonly pl: Map<string, Floorplan["layouts"][Kind]["placements"][number]>;
-  /** 소품마다 마지막으로 그린 값. 같으면 건너뛴다 */
   private readonly drawn = new Map<string, string>();
-  /** 값이 바뀔 때만 다시 만드는 스프라이트 묶음 */
   private readonly groups = new Map<string, { destroy(): void }[]>();
 
   constructor(
@@ -117,7 +101,7 @@ export class PropsLayer {
   /** office 가 null 이면 평면도 기본 상태 (그림을 더하지 않는다) */
   update(office: OfficeDto | null, nowMs: number): void {
     const shared = office?.shared;
-    this.state("ci_light", shared ? lightState(shared.light) : undefined);
+    this.state("ci_light", shared ? shared.light.toLowerCase() : undefined);
     this.state("window", windowState(new Date(nowMs).getHours()));
     this.state("trash", shared ? trashState(shared.trash) : undefined);
     const ramen = this.target.driven.get("ramen");
@@ -137,12 +121,14 @@ export class PropsLayer {
     const pl = this.pl.get(id);
     if (!sprite || !pl) return;
     const key = `${pl.sprite}/${state ?? pl.state}`;
-    if (!this.changed(`state:${id}`, key)) return;
+    // 서명은 텍스처를 붙인 뒤에 기록한다. 프레임이 없어 throw 한 채 기록되면 다음 update 가 건너뛴다
+    if (this.drawn.get(`state:${id}`) === key) return;
     const frame = (this.sheet.data.frames as unknown as Frames)[key];
     if (!frame) throw new Error(`office.json 에 프레임 ${key} 없음`);
     sprite.texture = this.sheet.textures[key];
     // 화분처럼 단계마다 기준점이 다른 소품이 있다
     sprite.pivot.set(frame.anchorPx[0], frame.anchorPx[1]);
+    this.drawn.set(`state:${id}`, key);
   }
 
   private updatePlants(office: OfficeDto | null): void {
@@ -237,16 +223,23 @@ export class PropsLayer {
   }
 
   /**
-   * 팀마다 컨텍스트 사용률 선 하나 (팀 순서대로 lineColors).
+   * 팀마다 컨텍스트 사용률 선 하나. 중소기업은 deskSlot 0~3 이 곧 색 번호라 팀 순서가 바뀌어도 색이 같다.
+   * 대기업은 팀 하나(teams[0])라 첫 색.
    * ponytail: DTO 에 시간축 기록이 없어 지금 값을 오른쪽 끝(u=1)에 점 하나로만 찍는다. 기록이 생기면 u 로 펴서 선으로.
    */
   private updateTv(office: OfficeDto | null): void {
     const tv = this.pl.get("tv");
     const { screen: q, lineColors: colors } = this.meta.tv;
     if (!tv || !q || !colors) return;
-    const dots = (office?.teams ?? [])
-      .slice(0, colors.length)
-      .map((t, i) => ({ v: t.props.plant, color: colors[i] }))
+    const teams = office?.teams ?? [];
+    const picked =
+      this.kind === "large"
+        ? teams.slice(0, 1).map((t) => ({ t, slot: 0 }))
+        : teams.flatMap((t) =>
+            t.deskSlot !== null && t.deskSlot < colors.length ? [{ t, slot: t.deskSlot }] : [],
+          );
+    const dots = picked
+      .map(({ t, slot }) => ({ v: t.props.plant, color: colors[slot] }))
       .flatMap(({ v, color }) => (v === null ? [] : [{ v: Math.min(1, Math.max(0, v)), color }]));
     if (!this.changed("tv", JSON.stringify(dots))) return;
     const g = new Graphics();

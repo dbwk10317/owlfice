@@ -18,10 +18,14 @@ declare global {
   }
 }
 
-async function loadRef(name: string): Promise<Uint8ClampedArray> {
+export async function loadRef(name: string): Promise<Uint8ClampedArray> {
   const img = new Image();
-  img.src = `/dev/ref/${name}.png`;
-  await img.decode();
+  // decode() 는 캐시된 이미지에서 안 끝나는 때가 있어 load 이벤트를 쓴다
+  await new Promise<void>((ok, fail) => {
+    img.onload = () => ok();
+    img.onerror = () => fail(new Error(`${name}.png 를 못 읽음`));
+    img.src = `/dev/ref/${name}.png`;
+  });
   const c = document.createElement("canvas");
   c.width = CANVAS_W;
   c.height = CANVAS_H;
@@ -31,7 +35,7 @@ async function loadRef(name: string): Promise<Uint8ClampedArray> {
 }
 
 /** 미리 곱한 알파를 나눠 곧은 알파로 돌려 화면에 보인다 (putImageData 는 곧은 알파를 받는다). */
-function unpremultiply(data: Uint8ClampedArray): Uint8ClampedArray {
+export function unpremultiply(data: Uint8ClampedArray): Uint8ClampedArray {
   const out = new Uint8ClampedArray(data.length);
   for (let i = 0; i < data.length; i += 4) {
     const a = data[i + 3];
@@ -41,7 +45,7 @@ function unpremultiply(data: Uint8ClampedArray): Uint8ClampedArray {
   return out;
 }
 
-function show(parent: HTMLElement, data: Uint8ClampedArray): void {
+export function show(parent: HTMLElement, data: Uint8ClampedArray): void {
   const c = document.createElement("canvas");
   c.width = CANVAS_W;
   c.height = CANVAS_H;
@@ -53,21 +57,30 @@ function show(parent: HTMLElement, data: Uint8ClampedArray): void {
   parent.append(c);
 }
 
-/** 참조(곧은 알파)를 미리 곱해 Pixi 출력(미리 곱한 알파)과 견준다. 불투명 픽셀은 완전히 같아야 한다. */
-function compare(
+/**
+ * 참조(곧은 알파)를 미리 곱해 Pixi 출력(미리 곱한 알파)과 견준다. 불투명 픽셀은 opaqueTol(기본 0) 안,
+ * 반투명은 그와 TOLERANCE 중 큰 값 안이어야 한다. skip 이 true 인 픽셀은 견주지 않는다.
+ */
+export function compare(
   ref: Uint8ClampedArray,
   got: Uint8ClampedArray,
+  opaqueTol = 0,
+  skip?: (x: number, y: number) => boolean,
 ): { count: number; diff: Uint8ClampedArray } {
   const diff = new Uint8ClampedArray(ref.length);
   let count = 0;
   for (let i = 0; i < ref.length; i += 4) {
     const a = ref[i + 3];
-    // ponytail: 반투명 소품(김·장애 빛) 자리 ±2 는 그 소품이 참조에 들어오는 T23·T26 에서 마스크로
-    const opaque = a === 255;
+    if (skip?.((i / 4) % CANVAS_W, Math.floor(i / 4 / CANVAS_W))) {
+      diff.set([ref[i], ref[i + 1], ref[i + 2], a / 4], i);
+      continue;
+    }
+    // ponytail: 반투명 소품(김·장애 빛) 자리 ±2 는 그 소품이 참조에 들어오는 T26 에서 마스크로
+    const tol = a === 255 ? opaqueTol : Math.max(TOLERANCE, opaqueTol);
     let bad = false;
     for (let k = 0; k < 4; k++) {
       const want = k === 3 ? a : Math.round((ref[i + k] * a) / 255);
-      if (Math.abs(want - got[i + k]) > (opaque ? 0 : TOLERANCE)) bad = true;
+      if (Math.abs(want - got[i + k]) > tol) bad = true;
     }
     if (bad) {
       count++;
@@ -108,7 +121,9 @@ async function main(): Promise<void> {
   window.__refDiff = result;
 }
 
-main().catch((e) => {
-  document.getElementById("out")!.textContent = `실패: ${e}`;
-  console.error(e);
-});
+// props.ts 가 이 파일의 비교 함수를 가져다 쓰므로, 이 페이지에서만 돌린다
+if (location.pathname.endsWith("/ref.html"))
+  main().catch((e) => {
+    document.getElementById("out")!.textContent = `실패: ${e}`;
+    console.error(e);
+  });

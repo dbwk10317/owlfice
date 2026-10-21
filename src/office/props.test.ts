@@ -7,7 +7,6 @@ import type { Light, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
 import { parseFloorplan, type Kind } from "./floorplan.ts";
 import {
   kanbanNotes,
-  lightState,
   paperCount,
   plantState,
   PropsLayer,
@@ -60,7 +59,6 @@ function layer(kind: Kind = "large") {
   return { scene, props: new PropsLayer(fp, sheet, kind, scene) };
 }
 
-/** 컨테이너 자식 중 이 프레임을 쓰는 스프라이트 */
 const withFrame = (children: unknown[], frame: string) =>
   (children as Sprite[]).filter((c) => c.texture === textures[frame]);
 
@@ -68,12 +66,6 @@ const todo = (status: TodoItem["status"], n = 1): TodoItem[] =>
   Array.from({ length: n }, () => ({ content: "x", status }));
 
 test("신호등: Light → 프레임", () => {
-  expect((["Off", "Yellow", "Green", "Red"] as Light[]).map(lightState)).toEqual([
-    "off",
-    "yellow",
-    "green",
-    "red",
-  ]);
   const { scene, props } = layer();
   props.update(office({ light: "Green" }), NOW);
   expect(frameOf(scene.driven.get("ci_light")!)).toBe("ci_light/green");
@@ -149,7 +141,6 @@ test("전광판 숫자는 digitOrigin 에서 digitStep 씩, 4자리까지", () =
   props.update(office({ safeSince: ago(123_456) }), NOW);
   expect(digits().map(([f]) => f)).toEqual(Array(4).fill("digit/9"));
 
-  // 1분이 지나면 숫자가 바뀐다
   props.update(office({ safeSince: ago(1234) }), NOW + 60_000);
   expect(digits().map(([f]) => f)).toEqual(["digit/1", "digit/2", "digit/3", "digit/5"]);
 });
@@ -253,8 +244,6 @@ test("같은 값이면 스프라이트를 다시 만들지 않고, 바뀐 소품
   const world = [...scene.world.children];
   const wall = [...scene.wall.children];
   props.update(o(2), NOW + 1000);
-  expect(scene.world.children).toEqual(world);
-  expect(scene.wall.children).toEqual(wall);
   expect(scene.world.children.every((c, i) => c === world[i])).toBe(true);
 
   props.update(o(3), NOW);

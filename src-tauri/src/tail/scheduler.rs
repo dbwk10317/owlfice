@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -208,8 +208,10 @@ pub struct HostLoop {
     side: BTreeSet<PathBuf>,
     /// Windows 스레드만: 감시할 다른 호스트
     remotes: Remotes,
-    /// Windows Claude 만: 등록부에 살아 있는 세션(id → 항목)과 그중 jsonl 이 아직 없는 세션 (4.5 신규 세션 발견 1번)
+    /// Claude 등록부에 살아 있는 세션(id → 항목)과 Windows에서 jsonl 이 아직 없는 세션 (4.5 신규 세션 발견 1번)
     alive: HashMap<String, registry::RegistryEntry>,
+    #[cfg(test)]
+    proc_root_override: Option<PathBuf>,
     awaited: BTreeSet<String>,
     last_await: Option<DateTime<Utc>>,
     project_dirs: Vec<PathBuf>,
@@ -246,6 +248,8 @@ impl HostLoop {
             side: BTreeSet::new(),
             remotes: Arc::new(Mutex::new(Vec::new())),
             alive: HashMap::new(),
+            #[cfg(test)]
+            proc_root_override: None,
             awaited: BTreeSet::new(),
             last_await: None,
             project_dirs: Vec::new(),
@@ -870,9 +874,7 @@ impl HostLoop {
     /// 접근에 실패한 Site 의 파일은 "없음"이 아니라 "못 봄"이라 아무것도 지우지 않는다.
     /// 경로 접근마다 앞에서 의심을 보고 멈춘다
     fn scan(&mut self, now: DateTime<Utc>) {
-        if !self.is_wsl() {
-            self.read_registry();
-        }
+        self.read_registry();
         let mut seen = HashSet::new();
         let mut metas = HashSet::new();
         let mut ok_roots = Vec::new();
@@ -1095,25 +1097,55 @@ impl HostLoop {
         self.lock_world().retire_employee(key, &agent, now);
     }
 
-    /// Windows Claude 세션 등록부 (4.4.1): 살아 있는 세션을 팀에 표시하고 이름·동을 넣고, jsonl 이 아직 없는 세션을 기다린다
+    /// Claude 세션 등록부 (4.4.1): 살아 있는 세션을 팀에 표시하고 이름·동을 넣는다
     fn read_registry(&mut self) {
+        if self.suspect() {
+            return;
+        }
         let home = self
             .sites
             .iter()
             .find(|s| s.vendor == Vendor::Claude)
             .and_then(|s| s.root.parent())
             .map(Path::to_path_buf);
-        if home.is_some() {
-            self.path_ops += 1;
-        }
         let live = match home {
-            Some(h) => match registry::live_sessions(&h, &self.alive) {
-                Some(l) => l,
-                // 폴더를 못 읽은 건 "없음"이 아니라 "못 봄"이다. 지우면 제목·생존이 깜박인다 (4.5)
-                None => return,
-            },
+            Some(h) => {
+                let live = match &self.host.kind {
+                    HostKind::Windows => {
+                        self.path_ops += 1;
+                        registry::live_sessions(&h, &self.alive)
+                    }
+                    HostKind::Wsl { distro } => {
+                        let proc_root = wsl_proc_root(&h, distro);
+                        #[cfg(test)]
+                        let proc_root = self.proc_root_override.clone().or(proc_root);
+                        let Some(proc_root) = proc_root else {
+                            return;
+                        };
+                        let heartbeat = self.heartbeat.clone();
+                        let mut ops = 0;
+                        let live = registry::live_wsl_sessions(&h, &proc_root, &self.alive, || {
+                            if heartbeat.suspect.load(Ordering::Relaxed) {
+                                return false;
+                            }
+                            ops += 1;
+                            true
+                        });
+                        self.path_ops += ops;
+                        live
+                    }
+                };
+                match live {
+                    Some(l) => l,
+                    // 못 읽은 건 "없음"이 아니라 "못 봄"이다. 지우면 제목·생존이 깜박인다 (4.5)
+                    None => return,
+                }
+            }
             None => HashMap::new(),
         };
+        if self.suspect() {
+            return;
+        }
         self.alive = live.into_iter().filter(|(id, _)| safe_id(id)).collect();
         let mut w = self.world.lock().unwrap_or_else(|e| e.into_inner());
         let mut ours = Vec::new();
@@ -1164,6 +1196,27 @@ impl HostLoop {
             }
         }
     }
+}
+
+fn wsl_proc_root(home: &Path, distro: &str) -> Option<PathBuf> {
+    let Component::Prefix(prefix) = home.components().next()? else {
+        return None;
+    };
+    let (Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share)) = prefix.kind() else {
+        return None;
+    };
+    let server = server.to_str()?;
+    if !["wsl.localhost", "wsl$"]
+        .iter()
+        .any(|s| server.eq_ignore_ascii_case(s))
+        || !share.to_str()?.eq_ignore_ascii_case(distro)
+    {
+        return None;
+    }
+    Some(PathBuf::from(format!(
+        r"\\{server}\{}\proc",
+        share.to_str()?
+    )))
 }
 
 /// 30초마다 Windows Site 와 WSL 배포판의 켜짐·꺼짐을 각 호스트에 넘긴다 (4.4.2).
@@ -2380,6 +2433,92 @@ mod tests {
             })
         };
         assert_eq!(run(2), run(3));
+    }
+
+    #[test]
+    fn wsl_registry_updates_only_after_probe_and_keeps_idle_team_alive() {
+        let e = env();
+        let root = e.dir("wsl/claude/projects");
+        let home = root.parent().unwrap();
+        let reg = home.join("sessions/7.json");
+        fs::create_dir_all(reg.parent().unwrap()).unwrap();
+        fs::write(&reg, format!(r#"{{"pid":7,"sessionId":"{REJECT}","procStart":"42","startedAt":20000,"updatedAt":1,"name":"wsl-name","nameSource":"user","entrypoint":"cli"}}"#)).unwrap();
+        let proc_root = e.dir("wsl/proc");
+        fs::create_dir(proc_root.join("7")).unwrap();
+        fs::write(proc_root.join("stat"), "btime 10\n").unwrap();
+        fs::write(
+            proc_root.join("7/stat"),
+            format!("7 (claude) S {} 42 0\n", "0 ".repeat(18)),
+        )
+        .unwrap();
+        let mut line: serde_json::Value =
+            serde_json::from_str(&user_line(REJECT, t0(), "지시")).unwrap();
+        line.as_object_mut().unwrap().remove("entrypoint");
+        append(
+            &root.join("p1").join(format!("{REJECT}.jsonl")),
+            &[line.to_string()],
+        );
+        let sites = [site_of(&wsl(), Vendor::Claude, &root)];
+        let mut h = e.host(wsl(), sites.to_vec());
+        h.proc_root_override = Some(proc_root.clone());
+        e.at(t0() + secs(1));
+        h.tick();
+        assert_eq!(h.path_ops, 0);
+        assert!(h.alive.is_empty());
+        probe_now(&h, &sites);
+        h.tick();
+        assert!(e.team(REJECT).alive_in_registry);
+        assert_eq!(e.team(REJECT).title, "wsl-name");
+        assert_eq!(e.team(REJECT).product, Product::ClaudeCli);
+        e.select(REJECT);
+        let ops = h.path_ops;
+        fs::remove_file(proc_root.join("7/stat")).unwrap();
+        e.at(t0() + Duration::milliseconds(1200));
+        h.tick();
+        assert_eq!(
+            h.path_ops, ops,
+            "Hot 단독 틱은 등록부와 proc 를 읽지 않는다"
+        );
+        assert!(e.team(REJECT).alive_in_registry);
+        e.at(t0() + Duration::hours(1));
+        h.tick();
+        assert_eq!(e.team(REJECT).phase, TeamPhase::Dozing);
+        assert_eq!(h.path_ops, ops);
+        probe_now(&h, &sites);
+        h.mark_suspect();
+        h.tick();
+        assert_eq!(
+            h.path_ops, ops,
+            "의심 중에는 Probe 전달이 있어도 읽지 않는다"
+        );
+        probe_now(&h, &sites);
+        h.tick();
+        assert!(!e.team(REJECT).alive_in_registry);
+        assert_ne!(e.team(REJECT).title, "wsl-name");
+        assert_eq!(e.team(REJECT).phase, TeamPhase::Off);
+    }
+
+    #[test]
+    fn wsl_proc_path_uses_only_matching_probe_share() {
+        for (home, want) in [
+            (
+                r"\\wsl.localhost\Test\home\user\.claude",
+                r"\\wsl.localhost\Test\proc",
+            ),
+            (r"\\wsl$\Test\home\user\.claude", r"\\wsl$\Test\proc"),
+            (
+                r"\\?\UNC\wsl.localhost\Test\home\user\.claude",
+                r"\\wsl.localhost\Test\proc",
+            ),
+        ] {
+            assert_eq!(
+                wsl_proc_root(Path::new(home), "Test"),
+                Some(PathBuf::from(want))
+            );
+            assert!(wsl_proc_root(Path::new(home), "Other").is_none());
+        }
+        assert!(wsl_proc_root(Path::new(r"C:\home\.claude"), "Test").is_none());
+        assert!(wsl_proc_root(Path::new(r"\\server\Test\home\.claude"), "Test").is_none());
     }
 
     #[test]

@@ -35,6 +35,8 @@ pub struct RegistryEntry {
     /// epoch ms
     #[serde(default, deserialize_with = "lenient")]
     pub started_at: Option<i64>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub proc_start: Option<String>,
     /// `idle`, `busy` 확인됨. 허가 대기 값은 미확인이라 문자열로 둔다
     #[serde(default, deserialize_with = "lenient")]
     pub status: Option<String>,
@@ -79,6 +81,16 @@ pub struct RegistryRead {
 /// `<home>\sessions\*.json` 을 모두 읽는다. 폴더를 읽지 못하면(NotFound 아님) None.
 /// 같은 폴더의 `.key` 파일은 용도를 확인하지 않았고 비밀일 수 있어 열지 않는다 (`.json` 만 연다)
 pub fn read_registry(home: &Path) -> Option<RegistryRead> {
+    read_registry_with(home, &mut || true)
+}
+
+fn read_registry_with(
+    home: &Path,
+    path_allowed: &mut impl FnMut() -> bool,
+) -> Option<RegistryRead> {
+    if !path_allowed() {
+        return None;
+    }
     let dir = match fs::read_dir(home.join("sessions")) {
         Ok(d) => d,
         // 폴더가 없는 건 정상이다 (등록부를 안 쓰는 설치)
@@ -90,7 +102,14 @@ pub fn read_registry(home: &Path) -> Option<RegistryRead> {
         }
     };
     let mut out = RegistryRead::default();
-    for p in dir.filter_map(Result::ok).map(|e| e.path()) {
+    for entry in dir {
+        let p = match entry {
+            Ok(e) => e.path(),
+            Err(e) => {
+                crate::oplog::log_once(&format!("등록부 목록 읽기 실패: {}", e.kind()));
+                return None;
+            }
+        };
         if !p.extension().is_some_and(|x| x == "json") {
             continue;
         }
@@ -105,6 +124,9 @@ pub fn read_registry(home: &Path) -> Option<RegistryRead> {
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+        if !path_allowed() {
+            return None;
+        }
         let bytes = match fs::read(&p) {
             Ok(b) => b,
             // 목록을 읽은 뒤 세션이 끝나 지워진 건 정상이다
@@ -133,6 +155,109 @@ pub fn live_sessions(
     prev: &HashMap<String, RegistryEntry>,
 ) -> Option<HashMap<String, RegistryEntry>> {
     live_with(home, prev, is_alive, created_ms)
+}
+
+/// Probe 직후에만 호출한다. 의심으로 바뀌면 다음 경로 접근 전에 중단하고 이번 결과를 버린다.
+pub fn live_wsl_sessions(
+    home: &Path,
+    proc_root: &Path,
+    prev: &HashMap<String, RegistryEntry>,
+    mut path_allowed: impl FnMut() -> bool,
+) -> Option<HashMap<String, RegistryEntry>> {
+    let read = read_registry_with(home, &mut path_allowed)?;
+    let kept = prev
+        .values()
+        .filter(|e| read.unread.contains(&e.pid.to_string()))
+        .cloned();
+    let entries: Vec<_> = read.entries.into_iter().chain(kept).collect();
+    let boot_ms = if entries.iter().any(|e| e.started_at.is_some()) {
+        if !path_allowed() {
+            return None;
+        }
+        match fs::read_to_string(proc_root.join("stat"))
+            .ok()
+            .and_then(|s| boot_time_ms(&s))
+        {
+            Some(ms) => Some(ms),
+            None => {
+                crate::oplog::log_once("WSL 부팅 시각 읽기·해석 실패");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let mut out: HashMap<String, RegistryEntry> = HashMap::new();
+    for e in entries {
+        if e.started_at.zip(boot_ms).is_some_and(|(start, boot)| {
+            i128::from(boot) - i128::from(start) > i128::from(REUSE_SLACK_MS)
+        }) {
+            continue;
+        }
+        if !path_allowed() {
+            return None;
+        }
+        let alive = match fs::read_to_string(proc_root.join(e.pid.to_string()).join("stat")) {
+            Ok(stat) => proc_alive(&e, &stat).and_then(|alive| {
+                // 사망은 확정할 수 있지만 부팅 시각을 못 읽은 새 행은 생존으로 올리지 않는다.
+                (!alive || e.started_at.is_none() || boot_ms.is_some()).then_some(alive)
+            }),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Some(false),
+            Err(_) => None,
+        };
+        let e = match alive {
+            Some(true) => e,
+            Some(false) => continue,
+            None => {
+                crate::oplog::log_once(&format!("WSL 프로세스 확인 실패: {}", e.pid));
+                let Some(old) = prev.get(&e.session_id).filter(|old| old.pid == e.pid) else {
+                    continue;
+                };
+                old.clone()
+            }
+        };
+        match out.get(&e.session_id) {
+            Some(old) if rank(old) >= rank(&e) => {}
+            _ => {
+                out.insert(e.session_id.clone(), e);
+            }
+        }
+    }
+    Some(out)
+}
+
+fn boot_time_ms(stat: &str) -> Option<i64> {
+    let mut fields = stat.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        (fields.next() == Some("btime")).then_some(fields)
+    })?;
+    let seconds = fields.next()?.parse::<u64>().ok()?;
+    i64::try_from(seconds.checked_mul(1000)?).ok()
+}
+
+fn proc_alive(entry: &RegistryEntry, stat: &str) -> Option<bool> {
+    // comm 에 공백과 닫는 괄호가 들어갈 수 있어 마지막 괄호 뒤에서 필드를 센다.
+    let (head, tail) = stat.rsplit_once(')')?;
+    let (pid, _) = head.split_once('(')?;
+    if pid.trim().parse::<u32>().ok()? != entry.pid {
+        return None;
+    }
+    let mut fields = tail.split_whitespace();
+    let state = fields.next()?;
+    if matches!(state, "Z" | "X" | "x") {
+        return Some(false);
+    }
+    if !matches!(state, "R" | "S" | "D" | "T" | "t" | "W" | "K" | "P" | "I") {
+        return None;
+    }
+    let started = fields.nth(18)?.parse::<u64>().ok()?;
+    let expected = match entry.proc_start.as_deref() {
+        Some(s) if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => {
+            Some(s.parse::<u64>().ok()?)
+        }
+        _ => None,
+    };
+    Some(expected.is_none_or(|ticks| ticks == started))
 }
 
 fn live_with(
@@ -388,6 +513,193 @@ mod tests {
         let now = chrono::Utc::now().timestamp_millis();
         let created = created_ms(std::process::id()).unwrap();
         assert!(created <= now && now - created < 600_000, "{created} {now}");
+    }
+
+    fn write_proc(proc_root: &Path, pid: u32, state: &str, ticks: u64) {
+        fs::create_dir_all(proc_root.join(pid.to_string())).unwrap();
+        fs::write(
+            proc_root.join(pid.to_string()).join("stat"),
+            format!(
+                "{pid} (claude ) worker) {state} {} {ticks} 0\n",
+                "0 ".repeat(18)
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn wsl_excludes_dead_reused_and_previous_boot_but_not_old_updates() {
+        let home = home_with(&[
+            (
+                "1.json",
+                r#"{"pid":1,"sessionId":"idle","procStart":"42","startedAt":20000,"updatedAt":1}"#,
+            ),
+            (
+                "2.json",
+                r#"{"pid":2,"sessionId":"stale","procStart":"42"}"#,
+            ),
+            (
+                "3.json",
+                r#"{"pid":3,"sessionId":"reused","procStart":"41"}"#,
+            ),
+            (
+                "4.json",
+                r#"{"pid":4,"sessionId":"zombie","procStart":"42"}"#,
+            ),
+            (
+                "5.json",
+                r#"{"pid":5,"sessionId":"previous-boot","procStart":"42","startedAt":14999}"#,
+            ),
+            (
+                "6.json",
+                r#"{"pid":6,"sessionId":"legacy","startedAt":15000}"#,
+            ),
+            (
+                "7.json",
+                r#"{"pid":7,"sessionId":"text-start","procStart":"Wed Oct 21 10:00:00 2026"}"#,
+            ),
+        ]);
+        let proc = tempfile::tempdir().unwrap();
+        fs::write(
+            proc.path().join("stat"),
+            "cpu 0 0 0\nbtime 20\nprocesses 9\n",
+        )
+        .unwrap();
+        for pid in [1, 3, 4, 5, 6, 7] {
+            write_proc(proc.path(), pid, if pid == 4 { "Z" } else { "S" }, 42);
+        }
+        let got = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true).unwrap();
+        let mut ids: Vec<_> = got.keys().map(String::as_str).collect();
+        ids.sort();
+        assert_eq!(ids, ["idle", "legacy", "text-start"]);
+        fs::remove_file(home.path().join("sessions/1.json")).unwrap();
+        let got = live_wsl_sessions(home.path(), proc.path(), &got, || true).unwrap();
+        assert!(
+            !got.contains_key("idle"),
+            "정상 종료로 등록부가 삭제되면 빠진다"
+        );
+        fs::remove_file(proc.path().join("6/stat")).unwrap();
+        let got = live_wsl_sessions(home.path(), proc.path(), &got, || true).unwrap();
+        assert!(
+            !got.contains_key("legacy"),
+            "남은 등록부만으로는 생존하지 않는다"
+        );
+    }
+
+    #[test]
+    fn wsl_uncertain_process_preserves_only_previous_same_pid_row() {
+        let home = home_with(&[(
+            "1.json",
+            r#"{"pid":1,"sessionId":"s","procStart":"42","name":"before","nameSource":"user","startedAt":20000}"#,
+        )]);
+        let proc = tempfile::tempdir().unwrap();
+        fs::write(proc.path().join("stat"), "btime 10\n").unwrap();
+        write_proc(proc.path(), 1, "S", 42);
+        let prev = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true).unwrap();
+        assert_eq!(prev.len(), 1);
+        fs::write(home.path().join("sessions/1.json"), r#"{"pid":1,"sessionId":"s","procStart":"42","name":"after","nameSource":"user","startedAt":20000}"#).unwrap();
+        for invalid in ["", "1 (claude) S", "2 (other) S", "1 (claude) ?"] {
+            fs::write(proc.path().join("1/stat"), invalid).unwrap();
+            let got = live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap();
+            assert_eq!(got, prev);
+            assert!(
+                live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true)
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        fs::remove_file(proc.path().join("1/stat")).unwrap();
+        fs::create_dir(proc.path().join("1/stat")).unwrap();
+        assert_eq!(
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            prev
+        );
+        fs::remove_dir(proc.path().join("1/stat")).unwrap();
+        write_proc(proc.path(), 1, "S", 42);
+        fs::write(
+            home.path().join("sessions/1.json"),
+            r#"{"pid":1,"sessionId":"s","procStart":"18446744073709551616"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            prev
+        );
+        assert!(
+            live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true)
+                .unwrap()
+                .is_empty()
+        );
+        fs::write(
+            home.path().join("sessions/1.json"),
+            r#"{"pid":2,"sessionId":"s"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(proc.path().join("2/stat")).unwrap();
+        assert!(
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn wsl_unreadable_registry_and_boot_time_keep_previous_results() {
+        let home = home_with(&[(
+            "1.json",
+            r#"{"pid":1,"sessionId":"s","procStart":"42","startedAt":20000}"#,
+        )]);
+        let proc = tempfile::tempdir().unwrap();
+        fs::write(proc.path().join("stat"), "btime 10\n").unwrap();
+        write_proc(proc.path(), 1, "S", 42);
+        let prev = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true).unwrap();
+        for invalid in ["btime nope", "cpu 0 0", "btime 18446744073709551615"] {
+            fs::write(proc.path().join("stat"), invalid).unwrap();
+            assert_eq!(
+                live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+                prev
+            );
+            assert!(
+                live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true)
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        fs::remove_file(proc.path().join("stat")).unwrap();
+        fs::create_dir(proc.path().join("stat")).unwrap();
+        assert_eq!(
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            prev
+        );
+        fs::write(home.path().join("sessions/1.json"), "{").unwrap();
+        assert_eq!(
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            prev
+        );
+        fs::remove_file(home.path().join("sessions/1.json")).unwrap();
+        fs::create_dir(home.path().join("sessions/1.json")).unwrap();
+        assert_eq!(
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            prev
+        );
+        let odd = tempfile::tempdir().unwrap();
+        fs::write(odd.path().join("sessions"), "").unwrap();
+        assert!(live_wsl_sessions(odd.path(), proc.path(), &prev, || true).is_none());
+    }
+
+    #[test]
+    fn wsl_suspect_aborts_before_registry_or_proc_access() {
+        let home = home_with(&[("1.json", r#"{"pid":1,"sessionId":"s","startedAt":20000}"#)]);
+        let proc = tempfile::tempdir().unwrap();
+        for allowed in 0..4 {
+            let mut attempts = 0;
+            let got = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || {
+                attempts += 1;
+                attempts <= allowed
+            });
+            assert!(got.is_none(), "의심 상태가 되면 이번 결과 전체를 버린다");
+            assert_eq!(attempts, allowed + 1);
+        }
     }
 
     #[test]

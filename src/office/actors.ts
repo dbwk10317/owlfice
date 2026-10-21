@@ -6,6 +6,8 @@ import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
 import { empKey } from "../ticker.ts";
 import {
+  CHEER,
+  CHEER_MS,
   HIDDEN,
   JUMP,
   JUMP_MS,
@@ -30,6 +32,10 @@ const BUBBLE_MS = 4000;
 const BOSS_TEXT_MAX = 30;
 /** 사장님이 부장 좌석에서 떨어져 서는 거리 (gy 칸) */
 const VISIT_FRONT = 2;
+/** 2분 넘게 도는 명령에 땀방울 (백엔드 classify.rs LONG_RUN, office.json sweat) */
+const SWEAT_AFTER_MS = 120_000;
+const SWEAT_FPS = 4;
+const SWEAT_OFFSET: [number, number] = [6, -2];
 
 export interface OwlMeta {
   anchor: [number, number];
@@ -394,6 +400,8 @@ interface Body {
   /** 반려 도장을 기다리는 중: scratch 가 시작되면 그때부터 1초 */
   stampArmed: boolean;
   stampUntil: number;
+  /** 2분 넘게 쪼그려 앉은 직원의 땀방울 */
+  sweat: Sprite | null;
 }
 
 interface Actor extends Body {
@@ -437,6 +445,8 @@ export class ActorLayer {
   private visitors: Visitor[] = [];
   /** 사장님이 오면 인터폰이 울린다 (소품 층이 건다) */
   onRing: ((now: number) => void) | null = null;
+  /** 새 cue 마다 (소품 층이 건다). 사무실 전환·조용한 재구성이면 부르지 않는다 */
+  onCue: ((cue: CueDto, now: number) => void) | null = null;
   /** 직원을 눌렀을 때 (직원 상세 팝업). 마운트하는 쪽이 건다 */
   onPick: ((teamId: string, agentId: string) => void) | null = null;
 
@@ -486,14 +496,18 @@ export class ActorLayer {
     const instant = opts.instant || (fresh && !!office?.rebuilt);
     const cuesOf = new Map<string, CueDto[]>();
     const visits: CueDto[] = [];
+    const stamps: Extract<CueDto, { kind: "Stamp" }>[] = [];
     for (const c of fresh && !opts.instant
       ? [...(opts.earlier ?? []), ...(office?.cues ?? [])]
-      : [])
+      : []) {
+      if (!instant) this.onCue?.(c, now);
+      if (c.kind === "Stamp") stamps.push(c);
       if ("agent" in c) {
         const key = empKey(c.teamId, c.agent);
         cuesOf.set(key, [...(cuesOf.get(key) ?? []), c]);
       } else if (c.kind === "BossVisit") visits.push(c);
       else playCue(c, undefined, now);
+    }
     const placed = office ? layoutActors(this.fp, kind, office) : [];
     const present = new Set(
       office?.teams.flatMap((t) => t.employees.map((e) => empKey(t.teamId, e.agentId))),
@@ -518,6 +532,7 @@ export class ActorLayer {
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
       a.role = p.emp.role === "Trainee" ? null : p.emp.role.toLowerCase();
+      const was = a.spot;
       // Pixi 는 직원이 다른 자리로 옮겨져도 pointerout 을 안 내서 이름표가 새 자리를 따라간다
       if (a.spot !== p.spot && this.hovered === key) this.hover(null);
       a.spot = p.spot;
@@ -530,6 +545,14 @@ export class ActorLayer {
       const target = targetOf(p);
       // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (PLAN 4.8)
       if (instant || (!old && !entering)) a.track.reset(target, now);
+      // 테스트실에 있던 직원이 합격 도장 때 만세를 부르고 나서 자리로 돌아간다 (추정 도장은 합격을 보증하지 않는다)
+      if (
+        old &&
+        !instant &&
+        was.startsWith("test_") &&
+        stamps.some((s) => s.teamId === p.team.teamId && s.failed === 0 && !s.estimated)
+      )
+        a.track.pose(CHEER, CHEER_MS, now);
       if (entering || (old && !instant)) a.track.retarget(target, now, entering);
       for (const c of cues) {
         // 반려는 지나간 일이라 조용한 재구성에서는 다시 보이지 않는다
@@ -570,7 +593,10 @@ export class ActorLayer {
 
   update(now: number): void {
     let moved = false;
-    for (const a of this.actors.values()) moved = this.draw(a, now) || moved;
+    for (const a of this.actors.values()) {
+      moved = this.draw(a, now) || moved;
+      this.placeSweat(a, now);
+    }
     for (const v of this.visitors) {
       if (!v.leaving && now >= v.leaveAt) {
         v.body.track.retarget(HIDDEN, now);
@@ -728,6 +754,7 @@ export class ActorLayer {
       stamp: null,
       stampArmed: false,
       stampUntil: 0,
+      sweat: null,
     };
   }
 
@@ -817,6 +844,27 @@ export class ActorLayer {
     const { anchors, anchor } = this.owls.meta;
     const hand = (anchors[`${a.look.pose}_${a.look.dir}_0`] ?? anchors.carry_f_0).hand;
     a.stamp.position.set(hand[0] - anchor[0], hand[1] - anchor[1] - 4);
+  }
+
+  private placeSweat(a: Actor, now: number): void {
+    const sweating =
+      a.look.pose === "crouch" && now - Date.parse(a.emp.activity.since) > SWEAT_AFTER_MS;
+    if (!sweating || !this.owls) {
+      if (a.sweat) a.sweat.visible = false;
+      return;
+    }
+    a.sweat ??= placeSprite(this.office, "sweat/0", 0, 0);
+    if (!a.sweat.parent) a.root.addChild(a.sweat);
+    a.sweat.visible = true;
+    // 움직임 줄이기: 첫 장에 멈춘다. 프레임마다 기준점이 같아 텍스처만 바꾼다
+    const i = reducedMotion() ? 0 : Math.floor((now * SWEAT_FPS) / 1000) % 2;
+    a.sweat.texture = this.office.textures[`sweat/${i}`];
+    const { anchors, anchor } = this.owls.meta;
+    const head = (anchors[`${a.look.pose}_${a.look.dir}_0`] ?? anchors.crouch_f_0).head;
+    a.sweat.position.set(
+      head[0] - anchor[0] + SWEAT_OFFSET[0],
+      head[1] - anchor[1] + SWEAT_OFFSET[1],
+    );
   }
 
   private fallbackBody(): Graphics {

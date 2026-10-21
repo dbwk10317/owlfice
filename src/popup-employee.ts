@@ -303,11 +303,13 @@ export function openEmployeeDetail(
         set("is-ok", D.ok);
         break;
       case "Err":
-      case "Rejected":
         set(
           "is-bad",
           e.test ? fill(D.failTests, { pass: e.test.passed, fail: e.test.failed }) : D.fail,
         );
+        break;
+      case "Rejected":
+        set("is-bad", D.rejected);
         break;
       case "Started":
         // 타임라인은 Started 와 뒤의 Ok/Err 를 따로 남기는 이력이라 경과 시간을 붙이면 끝난 일도 진행 중으로 읽힌다

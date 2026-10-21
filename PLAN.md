@@ -512,7 +512,7 @@
 
 **세션 상세 팝업** (사무실 목록의 `(상세)` 버튼, 사규 액자·팀장석 명패 클릭)
 - 머리: 사무실(팀) 이름, 동 설명(제품 이름), 호스트 이름, 오늘의 업무.
-- 정보: 세션 ID, 작업 폴더 전체 경로, 브랜치, 모델, 시작 시각, 경과 시간, 턴 수, 토큰 사용량(있으면), 직원 수, PR 링크(있으면).
+- 정보: 세션 ID, 작업 폴더 전체 경로, 브랜치, 모델, 시작 시각, 경과 시간, 턴 수, 토큰 사용량(있으면), 직원 수, PR 링크(있으면). 토큰 입력은 응답마다 새로 처리한 입력의 합이다 (Claude 는 input + cache_creation, Codex 는 input − cached. 캐시 읽기는 매번 다시 세지므로 뺀다). 출력은 출력 합.
 - 타임라인: 최근 사건 20개. 시각, 직원, 한 줄 요약, 추정 꼬리표. "더 보기"로 100개까지.
 - 하단 버튼: "원본 파일 폴더 열기", "작업 폴더 열기".
 
@@ -1161,7 +1161,7 @@ pub struct Employee {
     pub seat: Option<u8>,             // 개발실 자리 번호. 입사 때 배정, 퇴장까지 유지
     pub activity: Activity,           // 현재 하는 일 (대표 작업)
     pub recent: VecDeque<Activity>,   // 최근 3개
-    pub timeline: Vec<RawRef>,        // 이 직원의 모든 이벤트 위치 (팝업 페이징용. 건당 수십 바이트)
+    // 팝업 기록(이벤트 위치·받은 지시·실적 목록)은 office/mod.rs 의 Record (Mark 목록) 가 맡는다
     pub counters: Counters,           // 📄 ✏️ 💻 🚗 🤝 🗑
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
@@ -1321,9 +1321,10 @@ Tauri 커맨드 (프론트 → 백엔드):
 |---|---|---|
 | `get_world_snapshot` | 없음 | `WorldDto { list_seq, scale, offices: [OfficeSummaryDto], selected: Option<OfficeDto> }`. `OfficeDto` 는 `state_seq` 를 포함한다 |
 | `select_office` | `office_id, request_id` | `OfficeDto`(state_seq 포함) + `request_id`. 프론트는 마지막으로 보낸 request_id의 응답만 받아들이고, 그 사무실의 마지막 state_seq **미만**이면 버린다. 같으면 멱등이라 적용한다 (A→B→A처럼 변경 없는 사무실로 돌아올 때 화면을 채워야 한다). 늦게 온 응답이 이미 받은 이벤트보다 과거라 화면을 되돌리는 것만 막는다 `request_id` 는 단조 증가 숫자다. 백엔드는 마지막으로 처리한 번호보다 작은 요청을 무시한다 (두 요청이 뒤바뀌어 처리되면 백엔드와 프론트의 선택이 어긋난다) |
-| `get_employee_timeline` | `office_id, agent_id, before: Option<{generation, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 RawRef로 읽어 온 한 페이지. 커서는 (파일 세대, 오프셋)이다. Reset으로 generation이 바뀌었으면 `cursor_invalid` 를 돌려주고 프론트는 첫 페이지부터 다시 연다 |
-| `get_session_detail` | `office_id, team_id` | `SessionDetailDto` |
-| `open_path` | `path` | 탐색기로 열기 |
+| `get_employee_timeline` | `office_id, team_id, agent_id, before: Option<{generation, byte_offset}>`, `limit = 50` | `[EventDto]`. 원본 파일에서 다시 읽어 온 한 페이지 (최신부터). Reset으로 generation이 바뀌었으면 `cursor_invalid`. WSL 파일은 그 팀이 근무 중일 때만 읽고 아니면 `host_offline` (4.4.2). 읽기 한 번에 2초 상한 |
+| `get_employee_detail` | `office_id, team_id, agent_id` | `EmployeeDetailDto` (받은 지시, 읽은·수정한 파일, 실행한 명령. 메모리만) |
+| `get_session_detail` | `office_id, team_id, limit = 20 (최대 100)` | `SessionDetailDto`. 원본을 못 읽으면 최근 사건만 비우고 `recent_error` |
+| `open_path` | `OpenTarget` (원본 폴더·작업 폴더·원본 줄·사이드카) | 백엔드가 아는 대상만 탐색기로 연다. 프론트가 경로를 넘기지 않는다 (보안) |
 | `rescan` | 없음 | 즉시 Scan 1회 |
 | `get_settings` / `set_settings` | | 규모, 수동 경로, 소리, 사장님 이름, 원문 진단 |
 

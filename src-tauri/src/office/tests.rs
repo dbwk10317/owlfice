@@ -636,6 +636,21 @@ fn retired_sub_rehires_only_for_later_events() {
     assert!(s.cues.contains(&Cue::Rehire { agent: SUB.into() }));
 }
 
+/// 부모 Spawn 으로 돌아온 서브는 재출근 전의 텍스트 응답으로 다시 퇴근하지 않는다
+#[test]
+fn sub_rehired_by_spawn_is_not_retired_by_its_old_text() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    s.on(SUB, 5, text("끝")).tick(70);
+    assert_eq!(s.sub().retired_at, Some(at(65)));
+    s.cues.clear();
+    spawn_sub(&mut s, 200, "claude-haiku-4-5", None);
+    assert!(s.cues.contains(&Cue::Rehire { agent: SUB.into() }));
+    s.tick(201);
+    assert!(s.sub().retired_at.is_none());
+    assert!(!s.cues.iter().any(|c| matches!(c, Cue::Retire { .. })));
+}
+
 #[test]
 fn untimed_events_use_their_own_file_clock() {
     let untimed = |agent: &str, path: &str| Event {

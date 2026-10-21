@@ -83,6 +83,7 @@ function mountShell(companyName: string | undefined): void {
   });
 
   let office: OfficeHandle | null = null;
+  let pendingTeam: { officeId: string; teamId: string } | null = null;
   let header: ReturnType<typeof mountHeader> | null = null;
 
   // 팝업은 지금 고른 사무실의 직원만 이름을 안다. 다른 사무실의 세션 상세는 직원 이름 대신 id 를 보인다
@@ -116,6 +117,11 @@ function mountShell(companyName: string | undefined): void {
   });
   mountSidebar(side, store, requestSelect, {
     companyName,
+    onTeam: (officeId, teamId) => {
+      panel.showTeam(officeId, teamId);
+      if (office) office.highlightTeam(officeId, teamId);
+      else pendingTeam = { officeId, teamId };
+    },
     onDetail: (officeId, teamId, name, opener) =>
       openSessionDetail({ invoke, live }, { officeId, teamId, name }, opener),
   }); // 머리말이 띠를 찾으니 먼저
@@ -139,6 +145,8 @@ function mountShell(companyName: string | undefined): void {
   }).then(
     (o) => {
       office = o;
+      if (pendingTeam) o.highlightTeam(pendingTeam.officeId, pendingTeam.teamId);
+      pendingTeam = null;
       o.setRoomLabels(header?.roomLabels() ?? true);
     },
     (e) => {

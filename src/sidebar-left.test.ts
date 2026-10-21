@@ -70,7 +70,12 @@ const list = (
   ...over,
 });
 
-function setup(first: OfficeListDto, width = 1200, onDetail?: SidebarOptions["onDetail"]) {
+function setup(
+  first: OfficeListDto,
+  width = 1200,
+  onDetail?: SidebarOptions["onDetail"],
+  onTeam?: SidebarOptions["onTeam"],
+) {
   const store = createStore<OfficeListDto, OfficeDto>();
   store.applyWorld({ ...first, selected: null });
   const root = document.createElement("div");
@@ -80,6 +85,7 @@ function setup(first: OfficeListDto, width = 1200, onDetail?: SidebarOptions["on
   const dispose = mountSidebar(root, store, (id, req) => picked.push([id, req]), {
     getWidth: () => widthRef.w,
     onDetail,
+    onTeam,
   });
   const listEl = byClass(root, "ow-sidebar__list")[0];
   const slot = byClass(root, "ow-toast-slot")[0];
@@ -107,6 +113,24 @@ afterEach(() => {
 });
 
 // ---------- 테스트 ----------
+
+test("중소기업 팀은 다른 층과 현재 층 모두 팀 포커스를 요청한다", () => {
+  const focus = vi.fn();
+  const s = setup(
+    list([office("vendor/Claude", { building: null, teams: [team("one")] })], "Small"),
+    1200,
+    undefined,
+    focus,
+  );
+  const row = s.root.querySelector<HTMLButtonElement>(".is-team .ow-row__main")!;
+  row.click();
+  expect(s.picked).toHaveLength(1);
+  expect(focus).toHaveBeenLastCalledWith("vendor/Claude", "one");
+  row.click();
+  expect(s.picked).toHaveLength(1);
+  expect(focus).toHaveBeenCalledTimes(2);
+  s.dispose();
+});
 
 test("추가·갱신·제거: 같은 office id 행은 같은 DOM 노드다", () => {
   const s = setup(list([office("101"), office("102")]));

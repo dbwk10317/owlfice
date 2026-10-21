@@ -136,6 +136,7 @@ export interface PanelHandle {
   toggleDrawer(): void;
   /** 그 직원의 카드를 2초 하이라이트한다 (캔버스에서 직원을 눌렀을 때) */
   highlight(teamId: string, agentId: string): void;
+  showTeam(officeId: string, teamId: string): void;
   destroy(): void;
 }
 
@@ -531,14 +532,16 @@ interface HeadEntry {
   folder: string;
 }
 
-function createHead(doc: Document): HeadEntry {
+function createHead(doc: Document, toggle: () => void): HeadEntry {
   const square = h(doc, "span", "ow-square");
   const name = h(doc, "b");
   const meta = h(doc, "span", "ow-teamhead__meta");
   const host = h(doc, "span", "ow-host");
   const dot = h(doc, "span", "ow-dot");
   dot.style.marginLeft = "auto";
-  const el = h(doc, "div", "ow-teamhead", square, name, meta, host, dot);
+  const el = h(doc, "button", "ow-teamhead", square, name, meta, host, dot);
+  el.type = "button";
+  el.addEventListener("click", toggle);
   return { el, last: new Map(), square, name, meta, host, dot, startedMs: NaN, folder: "" };
 }
 
@@ -604,7 +607,8 @@ export function mountPanel(
   // 퇴근 서브 묶음 머리글. 접힘 상태는 다시 그려도 유지한다 (기본 접힘)
   const groups = new Map<string, GroupEntry>();
   const groupOpen = new Map<string, boolean>();
-  const teamColor = new Map<string, number>();
+  const teamOpen = new Map<string, boolean>();
+  let pendingTeam: { officeId: string; teamId: string } | null = null;
   const events = createEventCollector();
   const toastTimers = new Set<ReturnType<typeof setTimeout>>();
   let lastOfficeId: string | null = null;
@@ -664,12 +668,6 @@ export function mountPanel(
 
   // ---- 그리기 ----
 
-  function nextTeamColor(): number {
-    const used = new Set(teamColor.values());
-    for (let n = 1; n <= TEAM_COLORS; n++) if (!used.has(n)) return n;
-    return (teamColor.size % TEAM_COLORS) + 1;
-  }
-
   function clear(): void {
     for (const c of cards.values()) {
       c.timers.forEach(clearTimeout);
@@ -681,7 +679,7 @@ export function mountPanel(
     heads.clear();
     groups.clear();
     groupOpen.clear();
-    teamColor.clear();
+    teamOpen.clear();
     events.reset();
     ticker.setEvents([]);
     lastOfficeId = null;
@@ -698,6 +696,7 @@ export function mountPanel(
 
   function render(): void {
     const { office, list: info, selectedId } = store.state;
+    if (pendingTeam && pendingTeam.officeId !== selectedId) pendingTeam = null;
     // store 가 버린(선택이 바뀐) 상태는 그리지 않는다
     if (!office || office.officeId !== selectedId) {
       switchFade?.cancel();
@@ -736,9 +735,18 @@ export function mountPanel(
     for (const t of teams) {
       if (small) {
         let hd = heads.get(t.teamId);
-        if (!hd) heads.set(t.teamId, (hd = createHead(doc)));
-        if (!teamColor.has(t.teamId)) teamColor.set(t.teamId, nextTeamColor());
-        updateHead(hd, t, teamColor.get(t.teamId) ?? 1);
+        if (!hd)
+          heads.set(
+            t.teamId,
+            (hd = createHead(doc, () => {
+              teamOpen.set(t.teamId, !(teamOpen.get(t.teamId) ?? true));
+              render();
+            })),
+          );
+        if (changed(hd, "phase", t.phase)) teamOpen.set(t.teamId, t.phase !== "Off");
+        if (pendingTeam?.teamId === t.teamId) teamOpen.set(t.teamId, true);
+        hd.el.setAttribute("aria-expanded", String(teamOpen.get(t.teamId) ?? true));
+        updateHead(hd, t, Math.min(t.deskSlot ?? TEAM_COLORS - 1, TEAM_COLORS - 1) + 1);
         tickHead(hd, Date.now());
         liveHeads.add(t.teamId);
         desired.push(hd.el);
@@ -764,7 +772,7 @@ export function mountPanel(
         c.el.classList.toggle("is-departed", off);
         if (off) departed.push(c.el);
         else {
-          c.el.hidden = false;
+          c.el.hidden = small && !teamOpen.get(t.teamId);
           desired.push(c.el);
         }
       });
@@ -774,10 +782,11 @@ export function mountPanel(
         const open = groupOpen.get(t.teamId) ?? false;
         g.btn.setAttribute("aria-expanded", String(open));
         g.count.textContent = String(departed.length);
+        g.el.hidden = small && !teamOpen.get(t.teamId);
         liveGroups.add(t.teamId);
         desired.push(g.el);
         for (const el of departed) {
-          el.hidden = !open;
+          el.hidden = !open || (small && !teamOpen.get(t.teamId));
           desired.push(el);
         }
       }
@@ -793,6 +802,7 @@ export function mountPanel(
       if (liveHeads.has(id)) continue;
       hd.el.remove();
       heads.delete(id);
+      teamOpen.delete(id);
     }
     for (const [id, g] of groups) {
       if (liveGroups.has(id)) continue;
@@ -800,9 +810,6 @@ export function mountPanel(
       groups.delete(id);
       groupOpen.delete(id);
     }
-    // 퇴근한 팀의 색은 반납한다
-    for (const id of teamColor.keys()) if (!liveHeads.has(id)) teamColor.delete(id);
-
     // 옮기면 초점이 풀리는 브라우저가 있어 옮긴 뒤 되돌린다
     const focused = doc.activeElement;
     desired.forEach((el, i) => {
@@ -810,6 +817,10 @@ export function mountPanel(
     });
     if (focused instanceof HTMLElement && list.contains(focused) && doc.activeElement !== focused)
       focused.focus({ preventScroll: true });
+    if (pendingTeam) {
+      heads.get(pendingTeam.teamId)?.el.scrollIntoView({ block: "nearest" });
+      pendingTeam = null;
+    }
 
     for (const { c, e } of fresh) {
       flash(c, "new", (on) => c.el.classList.toggle("is-new", on), NEW_MS);
@@ -875,7 +886,7 @@ export function mountPanel(
   closeBtn.addEventListener("click", () => setDrawer(false));
   list.addEventListener("keydown", (ev) => {
     if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
-    const all = [...list.querySelectorAll<HTMLElement>(".ow-card")];
+    const all = [...list.querySelectorAll<HTMLElement>(".ow-card")].filter((card) => !card.hidden);
     const at = all.findIndex((c) => c === doc.activeElement);
     const next = all[at + (ev.key === "ArrowDown" ? 1 : -1)];
     if (at < 0 || !next) return;
@@ -898,6 +909,10 @@ export function mountPanel(
     openDrawer: () => setDrawer(true),
     toggleDrawer: () => setDrawer(!drawerOpen),
     highlight: pick,
+    showTeam: (officeId, teamId) => {
+      pendingTeam = { officeId, teamId };
+      render();
+    },
     destroy() {
       switchFade?.cancel();
       reducedMotion?.removeEventListener("change", onMotionChange);

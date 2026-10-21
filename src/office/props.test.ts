@@ -25,11 +25,16 @@ import {
   windowState,
 } from "./props.ts";
 import { buildScene } from "./renderer.ts";
+import { emp as testEmp, team as testTeam, office as testOffice } from "../test-office.ts";
 
-// jsdom 에는 canvas 가 없어 파티션 색 굽기는 건너뛴다 (소품과 무관)
+// jsdom 에는 canvas 가 없어 색별 텍스처로 파티션 결과를 비교한다.
 vi.mock("./sprites.ts", async (orig) => ({
   ...(await orig<typeof import("./sprites.ts")>()),
-  tintedTexture: () => Texture.EMPTY,
+  tintedTexture: (_sheet: Spritesheet, _frame: string, color: string) => {
+    const texture = new Texture({});
+    texture.label = color;
+    return texture;
+  },
 }));
 
 const fp = parseFloorplan(rawFloorplan);
@@ -79,6 +84,45 @@ const withFrame = (children: unknown[], frame: string) =>
 
 const todo = (status: TodoItem["status"], n = 1): TodoItem[] =>
   Array.from({ length: n }, () => ({ content: "x", status }));
+
+test("중소기업 파티션은 고정 좌석 팀 색이며 활동 정렬과 무관하고 퇴근하면 기본색이다", () => {
+  const { scene, props } = layer("small");
+  const teams = [0, 1, 6].map((slot, seat) =>
+    testTeam(`t${slot}`, [testEmp("boss"), testEmp("sub", { seat })], { deskSlot: slot }),
+  );
+  teams.push(testTeam("card", [testEmp("boss"), testEmp("sub", { seat: 3 })]));
+  const colors = () =>
+    fp.layouts.small.seats.dev
+      .slice(0, 4)
+      .map((s) => scene.driven.get(s.partition!)!.texture.label);
+  props.update(testOffice("vendor/Claude", 1, teams), NOW);
+  expect(colors()).toEqual([fp.teamTints[0], fp.teamTints[1], fp.teamTints[5], fp.teamTints[5]]);
+  props.update(testOffice("vendor/Claude", 2, [...teams].reverse()), NOW + 100);
+  expect(colors()).toEqual([fp.teamTints[0], fp.teamTints[1], fp.teamTints[5], fp.teamTints[5]]);
+  teams[0].phase = "Off";
+  props.update(testOffice("vendor/Claude", 3, teams), NOW + 200);
+  expect(colors()[0]).toBe(fp.themes.claude.cubicle);
+});
+
+test("중소기업 액자와 칸반은 포커스 팀을 보이고 해제하면 공유 최신 팀으로 돌아간다", () => {
+  const { scene, props } = layer("small");
+  const chosen = testTeam("chosen", [], { title: "선택" });
+  chosen.props.kanban = todo("Pending");
+  const o = testOffice("vendor/Claude", 1, [chosen]);
+  o.shared.frameTitle = "최근";
+  o.shared.kanban = todo("Done");
+  const title = () => scene.wall.children.filter((c) => c instanceof BitmapText).map((c) => c.text);
+  props.update(o, NOW, "chosen");
+  expect(title()).toEqual(["선\n택"]);
+  expect(withFrame(scene.wall.children, "wall_note/yellow")).toHaveLength(1);
+  expect(withFrame(scene.wall.children, "wall_note/green")).toHaveLength(0);
+  props.update(o, NOW + 2000);
+  expect(title()).toEqual(["최\n근"]);
+  expect(withFrame(scene.wall.children, "wall_note/yellow")).toHaveLength(0);
+  expect(withFrame(scene.wall.children, "wall_note/green")).toHaveLength(1);
+  props.update(o, NOW + 3000, "missing");
+  expect(title()).toEqual(["최\n근"]);
+});
 
 test("액자 제목은 사다리 끝까지 유지되고 연속 변경·재설정의 옛 예약은 침범하지 않는다", () => {
   const { scene, props } = layer();

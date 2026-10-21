@@ -72,6 +72,69 @@ function setup(
 
 const nodeCount = (el: Element): number => el.querySelectorAll("*").length + el.childNodes.length;
 
+test("중소기업 현황판 팀 색은 책상 슬롯을 따르고 활동 재정렬에도 유지된다", () => {
+  const teams = [
+    team("first", [emp("boss")], { deskSlot: 0, lastActivity: iso(14, 1) }),
+    team("second", [emp("boss")], { deskSlot: 1, lastActivity: iso(14, 2) }),
+    team("spare", [emp("boss")], { deskSlot: 6, lastActivity: iso(14, 3) }),
+    team("card", [emp("boss")], { lastActivity: iso(14, 4) }),
+  ];
+  const s = setup(office("vendor/Claude", 1, teams), "Small");
+  const colors = () =>
+    Object.fromEntries(
+      [...s.root.querySelectorAll<HTMLElement>(".ow-teamhead")].map((head) => [
+        head.textContent,
+        head.querySelector<HTMLElement>(".ow-square")!.style.getPropertyValue("--ow-square"),
+      ]),
+    );
+  const before = colors();
+  expect(Object.values(before).sort()).toEqual([
+    "var(--ow-team-1)",
+    "var(--ow-team-2)",
+    "var(--ow-team-6)",
+    "var(--ow-team-6)",
+  ]);
+  teams[0].lastActivity = iso(14, 5);
+  s.push(office("vendor/Claude", 2, [...teams].reverse()));
+  expect(colors()).toEqual(before);
+  s.panel.destroy();
+});
+
+test("중소기업 퇴근 팀은 접히고 팀 선택·재출근으로 다시 펼쳐진다", () => {
+  const state = (seq: number, phase: "Working" | "Off") =>
+    office("vendor/Claude", seq, [team("t", [emp("boss"), emp("sub")], { phase })]);
+  const s = setup(state(1, "Working"), "Small");
+  s.push(state(2, "Off"));
+  const head = s.root.querySelector<HTMLButtonElement>(".ow-teamhead")!;
+  expect(head.getAttribute("aria-expanded")).toBe("false");
+  expect(s.cards().every((c) => c.hidden)).toBe(true);
+  s.panel.showTeam("vendor/Claude", "t");
+  expect(head.getAttribute("aria-expanded")).toBe("true");
+  expect(s.cards().every((c) => !c.hidden)).toBe(true);
+  expect(scrollIntoView.mock.contexts[scrollIntoView.mock.contexts.length - 1]).toBe(head);
+  head.click();
+  expect(s.cards().every((c) => c.hidden)).toBe(true);
+  s.push(state(3, "Working"));
+  expect(head.getAttribute("aria-expanded")).toBe("true");
+  expect(s.cards().every((c) => !c.hidden)).toBe(true);
+  s.panel.destroy();
+});
+
+test("팀 스크롤은 해당 사무실 응답까지 기다리고 다른 선택이 오면 버린다", () => {
+  const s = setup(office("vendor/Claude", 1, [team("a", [emp("a")])]), "Small");
+  s.store.selectOffice("vendor/Codex");
+  s.panel.showTeam("vendor/Codex", "b");
+  expect(scrollIntoView).not.toHaveBeenCalled();
+  s.push(office("vendor/Codex", 1, [team("b", [emp("b")])]));
+  expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  s.store.selectOffice("vendor/Claude");
+  s.panel.showTeam("vendor/Claude", "a");
+  s.store.selectOffice("vendor/Gemini");
+  s.push(office("vendor/Gemini", 1, [team("c", [emp("c")])]));
+  expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  s.panel.destroy();
+});
+
 describe("사무실 카드 전환", () => {
   const animate = vi.fn<HTMLElement["animate"]>();
   const cancel = vi.fn();

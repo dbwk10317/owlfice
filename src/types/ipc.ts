@@ -320,16 +320,11 @@ export type CursorDto = { generation: number, byteOffset: number, };
 /**
  * 긴 글의 앞뒤만. 잘렸으면 `tail` 이 끝부분이고, 안 잘렸으면 `head` 가 전문이고 `tail` 은 빈 글이다
  */
-export type ClipDto = { head: string, tail: string, truncated: boolean, 
+export type ClipDto = { head: string, tail: string, 
 /**
  * 원문 바이트 수
  */
 bytes: number, };
-
-/**
- * 도구 결과 판정 (4.6 ToolOutcome)
- */
-export type OutcomeDto = "Ok" | "Err" | "Rejected" | "Started" | "Unknown";
 
 /**
  * 타임라인 한 칸 (3.7). 원본 줄을 다시 읽어 만든다
@@ -356,9 +351,9 @@ tool: string | null,
  */
 callId: string | null, 
 /**
- * 도구 입력 원문 (짧게)
+ * 도구 입력 원문 (앞뒤 2KB)
  */
-input: ClipDto | null, outcome: OutcomeDto | null, 
+input: ClipDto | null, outcome: ToolOutcome | null, 
 /**
  * 결과·메시지·지시 원문 (앞뒤 2KB)
  */
@@ -368,9 +363,20 @@ body: ClipDto | null,
  */
 path: string, lineNo: number, 
 /**
+ * 그 줄의 이벤트 중 몇 번째인가. 같은 줄의 칸을 `OpenTarget` 이 가른다
+ */
+lineIdx: number, 
+/**
  * 큰 결과가 분리된 `tool-results/` 파일. 세션 폴더 안인 것만
  */
 sidecar: string | null, };
+
+export type ToolOutcome = "Ok" | "Err" | "Rejected" | "Started" | "Unknown";
+
+/**
+ * 팀의 토큰 사용량 합 (3.7 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
+ */
+export type Tokens = { input: number, output: number, };
 
 /**
  * 직원 타임라인(3.7)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
@@ -390,8 +396,6 @@ bossName: string | null,
  */
 instruction: string | null, filesRead: Array<string>, filesEdited: Array<string>, commands: Array<string>, };
 
-export type TokensDto = { input: number, output: number, };
-
 /**
  * 직급별 직원 수. 퇴장한 직원도 센다
  */
@@ -402,7 +406,7 @@ export type PrDto = { number: number, url: string, };
 /**
  * 세션 상세 팝업 (3.7)
  */
-export type SessionDetailDto = { teamId: string, sessionId: string, title: string, 
+export type SessionDetailDto = { sessionId: string, title: string, 
 /**
  * 동 글자 (A~F)
  */
@@ -414,16 +418,20 @@ cwd: string, gitBranch: string | null,
 /**
  * 부장 모델
  */
-model: string | null, started: string, lastActivity: string, turns: number, tokens: TokensDto | null, headcount: HeadcountDto, pr: PrDto | null, 
+model: string | null, started: string, lastActivity: string, turns: number, tokens: Tokens | null, headcount: HeadcountDto, pr: PrDto | null, 
 /**
  * 최근 사건, 최신부터
  */
-recent: Array<EventDto>, };
+recent: Array<EventDto>, 
+/**
+ * 원본 줄을 못 읽어 `recent` 가 비었으면 이유. 나머지 값은 메모리에서 온 것이라 그대로 있다
+ */
+recentError: DetailError | null, };
 
 /**
  * `open_path` 대상. 경로는 백엔드가 아는 것만 연다. 프론트가 경로를 넘기는 길은 두지 않는다
  */
-export type OpenTarget = { "kind": "SourceFolder", officeId: string, teamId: string, } | { "kind": "WorkFolder", officeId: string, teamId: string, } | { "kind": "SourceLine", officeId: string, agentId: string, cursor: CursorDto, } | { "kind": "Sidecar", officeId: string, agentId: string, cursor: CursorDto, };
+export type OpenTarget = { "kind": "SourceFolder", officeId: string, teamId: string, } | { "kind": "WorkFolder", officeId: string, teamId: string, } | { "kind": "SourceLine", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, } | { "kind": "Sidecar", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, };
 
 /**
  * 상세 커맨드의 에러 코드

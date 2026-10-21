@@ -257,6 +257,7 @@ impl ClaudeParser {
         self.last_usage = Some(key);
         out.push(ctx.ev(EventKind::TokenUsage {
             input_total,
+            cache_read: read,
             output,
             context_window: None,
         }));
@@ -819,7 +820,7 @@ fn todo_items(input: &Value) -> Vec<TodoItem> {
 }
 
 /// `tool_result.content` 는 문자열 또는 블록 배열
-fn content_text(content: Option<&Value>) -> String {
+pub(crate) fn content_text(content: Option<&Value>) -> String {
     match content {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Array(blocks)) => blocks
@@ -1091,6 +1092,7 @@ mod tests {
                 EventKind::Thinking,
                 EventKind::TokenUsage {
                     input_total: 2 + 868 + 476_287,
+                    cache_read: 476_287,
                     output: 1751,
                     context_window: None,
                 },

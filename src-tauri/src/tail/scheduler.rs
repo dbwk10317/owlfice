@@ -1149,6 +1149,11 @@ impl Prober {
                         // Site 를 먼저 넘긴 뒤 의심을 푼다. 순서가 바뀌면 경로 접근 없이 한 틱이 돈다
                         *hb.probed.lock().unwrap_or_else(|e| e.into_inner()) = Some(d.sites);
                         set_suspect(&self.world, &d.host.id, &hb, false);
+                        // 팝업 읽기가 상한을 넘겨 world 에만 켠 의심(detail)도 켜짐을 본 여기서 푼다
+                        self.world
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .set_suspect(&d.host.id, false);
                     }
                     Some(false) => {
                         set_suspect(&self.world, &d.host.id, &hb, true);

@@ -1,11 +1,13 @@
 use std::fs;
+use std::time::Duration as StdDuration;
 
 use chrono::{DateTime, Duration, FixedOffset, Utc};
 use serde_json::json;
 
 use super::*;
 use crate::discover::{Host, Product, windows_host};
-use crate::ipc::office_id_str;
+use crate::ipc::{office_id_str, team_id_str};
+use crate::office::Tokens;
 use crate::office::classify::{SubMeta, merge, rebuild};
 use crate::office::names::NameBook;
 use crate::office::world::Scale;
@@ -155,8 +157,12 @@ struct Env {
 }
 
 fn env() -> Env {
+    env_scale(Scale::Large)
+}
+
+fn env_scale(scale: Scale) -> Env {
     let names = tempfile::tempdir().unwrap();
-    let mut w = OfficeWorld::new(Scale::Large, NameBook::load(names.path()), utc());
+    let mut w = OfficeWorld::new(scale, NameBook::load(names.path()), utc());
     for h in [windows_host(), wsl_host()] {
         w.hosts.insert(h.id.clone(), h);
     }
@@ -179,7 +185,7 @@ impl Env {
         before: Option<CursorDto>,
         limit: Option<u32>,
     ) -> Result<Vec<EventDto>, DetailError> {
-        employee_timeline(&self.world, &s.office(), agent, before, limit)
+        employee_timeline(&self.world, &s.office(), &s.team_id(), agent, before, limit)
     }
 
     fn marks(&self, s: &Session, agent: &str) -> Vec<Mark> {
@@ -363,13 +369,14 @@ fn synthetic() -> (Session, String) {
             "x",
             Some(&format!("C:\\p\\{SID}\\tool-results\\..")),
         ),
+        call_line(7, "toolu_long", &"x".repeat(5000)),
     ];
     let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
     fs::write(root.join(format!("{SID}.jsonl")), text).unwrap();
     (Session::at(dir, root, "windows"), big)
 }
 
-/// 결과는 앞뒤 2KB 와 잘렸는지, 입력은 원문, 사이드카는 이 세션 폴더 안인 것만
+/// 결과는 앞뒤 2KB, 입력도 같다, 사이드카는 이 세션 폴더 안인 것만
 #[test]
 fn result_is_clipped_and_sidecar_stays_in_session() {
     let (s, big) = synthetic();
@@ -383,12 +390,12 @@ fn result_is_clipped_and_sidecar_stays_in_session() {
     };
     let result = find("toolu_big", TimelineKind::ToolResult);
     let body = result.body.as_ref().unwrap();
-    assert!(body.truncated);
+    assert!(!body.tail.is_empty());
     assert_eq!(body.bytes, big.len() as u64);
     assert!(body.head.len() <= 2048 && body.head.len() > 2040);
     assert!(body.tail.len() <= 2048 && body.tail.len() > 2040);
     assert!(big.starts_with(&body.head) && big.ends_with(&body.tail));
-    assert_eq!(result.outcome, Some(OutcomeDto::Ok));
+    assert_eq!(result.outcome, Some(ToolOutcome::Ok));
     let sidecar = s
         .main
         .with_extension("")
@@ -398,11 +405,20 @@ fn result_is_clipped_and_sidecar_stays_in_session() {
     for id in ["toolu_other", "toolu_up"] {
         let d = find(id, TimelineKind::ToolResult);
         assert_eq!(d.sidecar, None, "{id}");
-        assert!(!d.body.as_ref().unwrap().truncated);
+        assert!(d.body.as_ref().unwrap().tail.is_empty());
     }
     let call = find("toolu_big", TimelineKind::ToolCall);
     assert_eq!(call.tool.as_deref(), Some("Bash"));
     assert!(call.input.as_ref().unwrap().head.contains("cargo test"));
+    // 입력도 결과처럼 앞뒤 2KB
+    let long = find("toolu_long", TimelineKind::ToolCall)
+        .input
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        (long.head.len(), long.tail.len(), long.bytes > 5000),
+        (2048, 2048, true)
+    );
     assert!(call.summary.contains("cargo test"));
     assert_eq!(call.line_no, 2);
     assert_eq!(call.path, s.main.display().to_string());
@@ -442,9 +458,9 @@ fn employee_detail_has_instruction_and_lists() {
         })
         .unwrap();
     assert!(!prompt.is_empty());
-    let sub = employee_detail(&e.world, &s.office(), ASYNC_SUB).unwrap();
+    let sub = employee_detail(&e.world, &s.office(), &s.team_id(), ASYNC_SUB).unwrap();
     assert_eq!(sub.instruction.as_deref(), Some(prompt.as_str()));
-    let boss = employee_detail(&e.world, &s.office(), &s.key.session).unwrap();
+    let boss = employee_detail(&e.world, &s.office(), &s.team_id(), &s.key.session).unwrap();
     assert_eq!(sub.boss_name.as_deref(), Some(boss.name.as_str()));
     assert_eq!(boss.boss_name, None);
     // 이 발췌는 사장님 메시지 없이 시작한다. 부장의 지시는 메시지가 있는 fixture 로 본다
@@ -455,7 +471,7 @@ fn employee_detail_has_instruction_and_lists() {
         _ => None,
     });
     assert!(first.is_some());
-    let boss = employee_detail(&e.world, &t.office(), &t.key.session).unwrap();
+    let boss = employee_detail(&e.world, &t.office(), &t.team_id(), &t.key.session).unwrap();
     assert_eq!(boss.instruction, first);
 
     let calls = || {
@@ -502,7 +518,7 @@ fn session_detail_values() {
             team.git_branch.clone(),
         );
         e.put(&s, team);
-        let d = session_detail(&e.world, &s.office(), &s.team_id()).unwrap();
+        let d = session_detail(&e.world, &s.office(), &s.team_id(), None).unwrap();
         let files = s.files(0);
         let turns = files[0]
             .iter()
@@ -514,22 +530,23 @@ fn session_detail_values() {
             .fold((0, 0), |acc, ev| match ev.kind {
                 EventKind::TokenUsage {
                     input_total,
+                    cache_read,
                     output,
                     ..
-                } => (acc.0 + input_total, acc.1 + output),
+                } => (acc.0 + input_total - cache_read, acc.1 + output),
                 _ => acc,
             });
         assert_eq!(d.session_id, s.key.session);
-        assert_eq!(d.team_id, s.team_id());
         assert!(!cwd.is_empty() && model.is_some(), "{rel}");
         assert_eq!((d.cwd, d.model, d.git_branch), (cwd, model, branch));
         assert_eq!(d.turns as usize, turns, "{rel}");
         assert!(input > 0, "{rel}");
-        assert_eq!(d.tokens, Some(TokensDto { input, output }), "{rel}");
+        assert_eq!(d.tokens, Some(Tokens { input, output }), "{rel}");
+        assert_eq!(d.recent_error, None);
         assert!(d.recent.iter().all(|r| r.summary != MISSING), "{rel}");
-        // 최근 20개는 직원들의 칸을 적용 순서로 합친 것의 머리
+        // 최근 20개는 직원들의 칸을 (ts, seq) 로 합친 것의 머리
         let mut all: Vec<Mark> = e.agents(&s).iter().flat_map(|a| e.marks(&s, a)).collect();
-        all.sort_by_key(|m| std::cmp::Reverse(m.seq));
+        all.sort_by_key(|m| std::cmp::Reverse((m.ts, m.seq)));
         all.truncate(20);
         assert!(all.len() > 10, "{rel}");
         assert_eq!(d.recent.len(), all.len(), "{rel}");
@@ -620,6 +637,10 @@ fn rebuild_and_live_append_give_same_timeline() {
     }
 }
 
+fn open(e: &Env, t: OpenTarget) -> Result<Launch, DetailError> {
+    resolve_open(&e.world, t).map(|p| p.0)
+}
+
 /// 모르는 사무실·팀·직원·칸과 믿을 수 없는 작업 폴더는 거부한다. 아는 대상은 백엔드가 아는 경로로만
 #[test]
 fn open_path_resolves_only_known_targets() {
@@ -628,7 +649,6 @@ fn open_path_resolves_only_known_targets() {
     let mut team = s.team(0);
     team.cwd = PathBuf::from(r"C:\proj");
     e.put(&s, team);
-    let open = |t: OpenTarget| resolve_open(&e.world, t);
     let (office, team_id) = (s.office(), s.team_id());
     let source = |office: &str, team: &str| OpenTarget::SourceFolder {
         office_id: office.into(),
@@ -639,39 +659,47 @@ fn open_path_resolves_only_known_targets() {
         team_id: team_id.clone(),
     };
     assert_eq!(
-        open(source(&office, &team_id)),
+        open(&e, source(&office, &team_id)),
         Ok(Launch::Select(s.main.clone()))
     );
-    assert_eq!(open(work()), Ok(Launch::Folder(PathBuf::from(r"C:\proj"))));
     assert_eq!(
-        open(source("garbage", &team_id)),
+        open(&e, work()),
+        Ok(Launch::Folder(PathBuf::from(r"C:\proj")))
+    );
+    assert_eq!(
+        open(&e, source("garbage", &team_id)),
         Err(DetailError::NotFound)
     );
     assert_eq!(
-        open(source(&office, "team/claude/없음/windows")),
+        open(&e, source(&office, "team/claude/없음/windows")),
         Err(DetailError::NotFound)
     );
     assert_eq!(
-        open(source(&office, r"C:\Windows")),
+        open(&e, source(&office, r"C:\Windows")),
         Err(DetailError::NotFound)
     );
     let cursor = e.timeline(&s, ASYNC_SUB, None, Some(1)).unwrap()[0].cursor;
-    let line = |agent: &str, cursor| OpenTarget::SourceLine {
+    let line = |agent: &str, cursor, line_idx| OpenTarget::SourceLine {
         office_id: office.clone(),
+        team_id: team_id.clone(),
         agent_id: agent.into(),
         cursor,
+        line_idx,
     };
     assert_eq!(
-        open(line(ASYNC_SUB, cursor)),
+        open(&e, line(ASYNC_SUB, cursor, 0)),
         Ok(Launch::Select(s.subs[0].clone()))
     );
-    assert_eq!(open(line("없는직원", cursor)), Err(DetailError::NotFound));
+    assert_eq!(
+        open(&e, line("없는직원", cursor, 0)),
+        Err(DetailError::NotFound)
+    );
     let bogus = CursorDto {
         generation: 9,
         byte_offset: 1,
     };
     assert_eq!(
-        open(line(ASYNC_SUB, bogus)),
+        open(&e, line(ASYNC_SUB, bogus, 0)),
         Err(DetailError::CursorInvalid)
     );
     // 사이드카는 결과 칸에서만
@@ -682,17 +710,22 @@ fn open_path_resolves_only_known_targets() {
         .find(|d| d.kind == TimelineKind::UserMessage)
         .unwrap();
     assert_eq!(
-        open(OpenTarget::Sidecar {
-            office_id: office.clone(),
-            agent_id: ASYNC_SUB.into(),
-            cursor: message.cursor
-        }),
+        open(
+            &e,
+            OpenTarget::Sidecar {
+                office_id: office.clone(),
+                team_id: team_id.clone(),
+                agent_id: ASYNC_SUB.into(),
+                cursor: message.cursor,
+                line_idx: message.line_idx,
+            }
+        ),
         Err(DetailError::CursorInvalid)
     );
     // 기록에 적힌 작업 폴더가 UNC·상대 경로·상위 이동이면 열지 않는다
     for bad in [r"\\evil\share\x", r"proj\x", r"C:\proj\..\Windows"] {
         lock(&e.world).teams.get_mut(&s.key).unwrap().cwd = PathBuf::from(bad);
-        assert_eq!(open(work()), Err(DetailError::OpenFailed), "{bad}");
+        assert_eq!(open(&e, work()), Err(DetailError::OpenFailed), "{bad}");
     }
 }
 
@@ -705,7 +738,19 @@ fn wsl_work_folder_maps_under_distro_share() {
         work_dir(Path::new("/home/u/proj"), &wsl, Some(main)),
         Some(PathBuf::from(r"\\wsl.localhost\Test\home\u\proj"))
     );
-    for bad in ["home/u", "/home/../etc", r"/home\u"] {
+    assert_eq!(
+        work_dir(Path::new("/"), &wsl, Some(main)),
+        Some(PathBuf::from(r"\\wsl.localhost\Test\"))
+    );
+    // `C:` 조각은 PathBuf::join 이 앞 경로를 통째로 바꾼다
+    for bad in [
+        "home/u",
+        "/home/../etc",
+        r"/home\u",
+        "/C:/Windows",
+        "/home/C:",
+        "/home/u/D:x",
+    ] {
         assert_eq!(work_dir(Path::new(bad), &wsl, Some(main)), None, "{bad}");
     }
     // 세션 파일이 WSL 공유가 아니면 옮길 곳이 없다
@@ -713,43 +758,406 @@ fn wsl_work_folder_maps_under_distro_share() {
     assert_eq!(work_dir(Path::new("/home/u"), &wsl, Some(elsewhere)), None);
 }
 
-/// 꺼졌거나 통신 지연인 배포판은 파일을 건드리기 전에 host_offline. 켜져 있으면 읽는다
+/// 끝의 `\` 는 닫는 따옴표를 이스케이프하므로 루트도 열리려면 두 배여야 한다
 #[test]
-fn offline_wsl_host_is_not_touched() {
+fn explorer_arg_keeps_closing_quote_for_roots() {
+    assert_eq!(explorer_arg(r"C:\", false), r#""C:\\""#);
+    assert_eq!(
+        explorer_arg(r"\\wsl.localhost\Test\", false),
+        r#""\\wsl.localhost\Test\\""#
+    );
+    assert_eq!(explorer_arg(r"C:\a b", false), r#""C:\a b""#);
+    assert_eq!(
+        explorer_arg(r"C:\a b\c.txt", true),
+        r#"/select,"C:\a b\c.txt""#
+    );
+}
+
+/// 기한이 지난 뒤에는 폴더가 멀쩡해도 탐색기를 띄우지 않는다
+#[test]
+fn launch_after_deadline_does_not_spawn() {
+    let dir = tempfile::tempdir().unwrap();
+    let past = Instant::now() - StdDuration::from_secs(1);
+    assert_eq!(
+        launch(Launch::Folder(dir.path().to_path_buf()), past),
+        Err(DetailError::Timeout)
+    );
+}
+
+fn set_phase(e: &Env, s: &Session, phase: TeamPhase) {
+    lock(&e.world).teams.get_mut(&s.key).unwrap().phase = phase;
+}
+
+/// 꺼졌거나 통신 지연인 배포판, 근무 중이 아닌 팀(핸들이 없다)은 파일을 건드리기 전에 host_offline.
+/// 세션 상세는 메모리 값을 그대로 주고 `recent_error` 로 알린다
+#[test]
+fn wsl_files_are_touched_only_for_working_teams() {
     let s = Session::fixture(ASYNC, "wsl:Test");
     let e = env();
     e.put(&s, s.team(0));
+    set_phase(&e, &s, TeamPhase::Working);
     let n = e.marks(&s, ASYNC_SUB).len();
     assert_eq!(e.timeline(&s, ASYNC_SUB, None, None).unwrap().len(), n);
+    let ok = session_detail(&e.world, &s.office(), &s.team_id(), None).unwrap();
+    assert_eq!((ok.recent.len(), ok.recent_error), (20, None));
 
-    lock(&e.world).suspect_hosts.insert("wsl:Test".into());
     // 파일을 지워 두면 건드렸을 때 "못 읽음" 칸이 나온다. 그 전에 멈춰야 한다
     fs::remove_file(&s.subs[0]).unwrap();
     fs::remove_file(&s.main).unwrap();
+    for suspect in [false, true] {
+        set_phase(
+            &e,
+            &s,
+            if suspect {
+                TeamPhase::Working
+            } else {
+                TeamPhase::Dozing
+            },
+        );
+        if suspect {
+            lock(&e.world).suspect_hosts.insert("wsl:Test".into());
+        }
+        assert_eq!(
+            e.timeline(&s, ASYNC_SUB, None, None),
+            Err(DetailError::HostOffline)
+        );
+        let d = session_detail(&e.world, &s.office(), &s.team_id(), None).unwrap();
+        assert!(d.recent.is_empty());
+        assert_eq!(d.recent_error, Some(DetailError::HostOffline));
+        assert_eq!((d.tokens, d.turns), (ok.tokens, ok.turns));
+        for t in [
+            OpenTarget::SourceFolder {
+                office_id: s.office(),
+                team_id: s.team_id(),
+            },
+            OpenTarget::WorkFolder {
+                office_id: s.office(),
+                team_id: s.team_id(),
+            },
+        ] {
+            assert_eq!(open(&e, t), Err(DetailError::HostOffline));
+        }
+        // 메모리에 있는 직원 상세는 호스트와 상관없다
+        assert!(employee_detail(&e.world, &s.office(), &s.team_id(), ASYNC_SUB).is_ok());
+    }
+
+    set_phase(&e, &s, TeamPhase::Working);
+    lock(&e.world).suspect_hosts.clear();
+    let page = e.timeline(&s, ASYNC_SUB, None, None).unwrap();
+    assert!(page.iter().all(|d| d.summary == UNREADABLE));
+}
+
+/// 상한을 넘긴 읽기는 그 WSL 호스트를 의심으로 돌리고, 그 스레드가 끝날 때까지 새 읽기를 막는다
+#[test]
+fn stalled_read_blocks_new_reads_until_it_ends() {
+    let host = Host {
+        id: "wsl:Stuck".into(),
+        kind: HostKind::Wsl {
+            distro: "Stuck".into(),
+        },
+        label: "Stuck".into(),
+    };
+    let s = Session::fixture(ASYNC, &host.id);
+    let e = env();
+    lock(&e.world).hosts.insert(host.id.clone(), host);
+    e.put(&s, s.team(0));
+    set_phase(&e, &s, TeamPhase::Working);
+    assert!(e.timeline(&s, ASYNC_SUB, None, None).is_ok());
+
+    let (release, gate) = mpsc::channel::<()>();
+    let r = bounded(&e.world, Some("wsl:Stuck".into()), move |_| {
+        let _ = gate.recv();
+        Ok(())
+    });
+    assert_eq!(r, Err(DetailError::Timeout));
+    assert!(lock(&e.world).suspect_hosts.contains("wsl:Stuck"));
+    // Probe 가 의심을 풀어도(켜져 있으니까) 걸린 스레드가 살아 있는 동안은 막힌다
+    lock(&e.world).set_suspect("wsl:Stuck", false);
     assert_eq!(
         e.timeline(&s, ASYNC_SUB, None, None),
         Err(DetailError::HostOffline)
     );
     assert_eq!(
-        session_detail(&e.world, &s.office(), &s.team_id()),
+        open(
+            &e,
+            OpenTarget::SourceFolder {
+                office_id: s.office(),
+                team_id: s.team_id()
+            }
+        ),
         Err(DetailError::HostOffline)
     );
-    for t in [
-        OpenTarget::SourceFolder {
-            office_id: s.office(),
-            team_id: s.team_id(),
-        },
-        OpenTarget::WorkFolder {
-            office_id: s.office(),
-            team_id: s.team_id(),
-        },
-    ] {
-        assert_eq!(resolve_open(&e.world, t), Err(DetailError::HostOffline));
-    }
-    // 메모리에 있는 직원 상세는 호스트와 상관없다
-    assert!(employee_detail(&e.world, &s.office(), ASYNC_SUB).is_ok());
 
-    lock(&e.world).suspect_hosts.clear();
-    let page = e.timeline(&s, ASYNC_SUB, None, None).unwrap();
-    assert!(page.iter().all(|d| d.summary == UNREADABLE));
+    drop(release);
+    let end = Instant::now() + StdDuration::from_secs(5);
+    while hung("wsl:Stuck") {
+        assert!(Instant::now() < end, "걸린 스레드가 끝나지 않았다");
+        thread::sleep(StdDuration::from_millis(10));
+    }
+    assert!(e.timeline(&s, ASYNC_SUB, None, None).is_ok());
+}
+
+/// 비교용 복제가 기록을 쥐지 않으니 이벤트를 적용해도 타임라인 전체가 복사되지 않는다 (같은 Arc 에 쓴다)
+#[test]
+fn apply_does_not_copy_the_record() {
+    let s = Session::fixture(ASYNC, "windows");
+    let events = merge(s.files(0));
+    let cut = events.len() / 2;
+    let boss = s.key.session.clone();
+    let head: Vec<Vec<Event>> = s
+        .files(0)
+        .iter()
+        .map(|f| {
+            f.iter()
+                .filter(|ev| events[..cut].contains(ev))
+                .cloned()
+                .collect()
+        })
+        .collect();
+    let e = env();
+    e.put(
+        &s,
+        rebuild(&s.key.session, s.product, &s.metas(), head, utc()),
+    );
+    let ptr = || Arc::as_ptr(&lock(&e.world).teams[&s.key].employees[0].record);
+    let before = ptr();
+    let len = e.marks(&s, &boss).len();
+    let mut applied = 0;
+    for ev in events[cut..].iter().filter(|ev| ev.agent_id == boss) {
+        let now = ev.ts.unwrap_or_default();
+        lock(&e.world).apply(&s.key, std::slice::from_ref(ev), now);
+        assert_eq!(ptr(), before, "기록이 복사되었다");
+        applied += 1;
+    }
+    assert!(applied > 3 && e.marks(&s, &boss).len() > len);
+}
+
+/// 파일이 바뀌어 같은 자리에 다른 줄이 있으면(ts 가 다르다) 다른 줄을 보여 주지 않는다
+#[test]
+fn changed_file_is_unreadable_not_another_line() {
+    let (s, _) = synthetic();
+    let e = env();
+    e.put(&s, s.team(0));
+    let fresh = e.timeline(&s, SID, None, None).unwrap();
+    assert!(fresh.iter().all(|d| d.summary != UNREADABLE));
+    // 같은 줄 길이로 시각만 밀린 파일 (재구성 전)
+    let text = fs::read_to_string(&s.main)
+        .unwrap()
+        .replace("T09:00:0", "T09:01:0");
+    fs::write(&s.main, text).unwrap();
+    let stale = e.timeline(&s, SID, None, None).unwrap();
+    assert_eq!(stale.len(), fresh.len());
+    assert!(stale.iter().all(|d| d.summary == UNREADABLE), "{stale:?}");
+}
+
+/// 한 줄에 호출·결과가 여럿이면 줄 안 순번이 칸을 가른다 (사이드카는 그 칸의 결과를 연다)
+#[test]
+fn line_idx_tells_apart_entries_of_one_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("p");
+    fs::create_dir_all(&root).unwrap();
+    let mut calls = base("assistant", 1);
+    calls["message"] = json!({"role": "assistant", "model": "claude-opus-5-5", "content": [
+        {"type": "tool_use", "id": "toolu_a", "name": "Bash", "input": {"command": "ls a"}},
+        {"type": "tool_use", "id": "toolu_b", "name": "Bash", "input": {"command": "ls b"}},
+    ]});
+    let big = |name: &str| {
+        format!(
+            "<persisted-output>\nOutput saved to C:\\u\\p\\{SID}\\tool-results\\{name}\n</persisted-output>"
+        )
+    };
+    let mut results = base("user", 2);
+    results["message"] = json!({"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_a", "content": big("a.txt"), "is_error": false},
+        {"type": "tool_result", "tool_use_id": "toolu_b", "content": big("b.txt"), "is_error": false},
+    ]});
+    let text: String = [calls, results].iter().map(|l| format!("{l}\n")).collect();
+    fs::write(root.join(format!("{SID}.jsonl")), text).unwrap();
+    let s = Session::at(dir, root, "windows");
+    let e = env();
+    e.put(&s, s.team(0));
+    let all = e.timeline(&s, SID, None, None).unwrap();
+    let pick = |id: &str, kind| {
+        all.iter()
+            .find(|d| d.call_id.as_deref() == Some(id) && d.kind == kind)
+            .unwrap()
+    };
+    let (a, b) = (
+        pick("toolu_a", TimelineKind::ToolResult),
+        pick("toolu_b", TimelineKind::ToolResult),
+    );
+    assert_eq!(a.cursor, b.cursor);
+    assert_eq!((a.line_idx, b.line_idx), (0, 1));
+    assert_eq!(pick("toolu_b", TimelineKind::ToolCall).line_idx, 1);
+    let sidecar = |d: &EventDto, line_idx| {
+        open(
+            &e,
+            OpenTarget::Sidecar {
+                office_id: s.office(),
+                team_id: s.team_id(),
+                agent_id: SID.into(),
+                cursor: d.cursor,
+                line_idx,
+            },
+        )
+    };
+    let call_of = |l: Result<Launch, DetailError>| match l {
+        Ok(Launch::Sidecar(w)) => w.mark.call,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(call_of(sidecar(a, a.line_idx)), call_hash("toolu_a"));
+    assert_eq!(call_of(sidecar(b, b.line_idx)), call_hash("toolu_b"));
+    assert_eq!(sidecar(a, 7), Err(DetailError::CursorInvalid));
+    // 호출 칸은 결과가 아니다
+    let call = pick("toolu_a", TimelineKind::ToolCall);
+    assert_eq!(
+        sidecar(call, call.line_idx),
+        Err(DetailError::CursorInvalid)
+    );
+}
+
+/// 중소기업은 한 사무실에 팀이 여럿이라 같은 직원 id 가 둘 있을 수 있다. 팀 id 로 가른다
+#[test]
+fn employee_commands_pick_the_team_by_id() {
+    let a = Session::fixture(ASYNC, "windows");
+    let b = Session::fixture(ASYNC, "wsl:Test");
+    let e = env_scale(Scale::Small);
+    e.put(&a, a.team(0));
+    // 이름은 직원 id 마다 정해져 팀이 달라도 같다. 모델로 가른다
+    let mut tb = b.team(0);
+    for emp in &mut tb.employees {
+        emp.model = Some("other-model".into());
+    }
+    e.put(&b, tb);
+    set_phase(&e, &b, TeamPhase::Working);
+    let office = office_id_str(&OfficeId::Vendor(Vendor::Claude));
+    let model = |s: &Session| {
+        employee_detail(&e.world, &office, &s.team_id(), ASYNC_SUB)
+            .unwrap()
+            .model
+    };
+    assert_ne!(model(&a), model(&b));
+    assert_eq!(model(&b).as_deref(), Some("other-model"));
+    for s in [&a, &b] {
+        let page =
+            employee_timeline(&e.world, &office, &s.team_id(), ASYNC_SUB, None, Some(3)).unwrap();
+        assert!(
+            page.iter()
+                .all(|d| Path::new(&d.path).starts_with(s.main.parent().unwrap()))
+        );
+    }
+    // 다른 사무실의 팀 id 는 이 사무실에 없다
+    let other = office_id_str(&OfficeId::Vendor(Vendor::Codex));
+    assert_eq!(
+        employee_detail(&e.world, &other, &a.team_id(), ASYNC_SUB),
+        Err(DetailError::NotFound)
+    );
+}
+
+/// 최근 사건은 직원마다 끝에서 뽑아 (ts, seq) 로 합치고, limit 은 1~100 으로 맞춘다.
+/// 늦게 읽힌 줄의 적용 순서(seq)가 시각 순서와 달라도 재구성과 같은 순서로 나온다
+#[test]
+fn session_recent_orders_by_ts_and_honors_limit() {
+    let s = Session::fixture(ASYNC, "windows");
+    let events = merge(s.files(0));
+    let cut = events.len() / 3;
+    let head: Vec<Vec<Event>> = s
+        .files(0)
+        .iter()
+        .map(|f| {
+            f.iter()
+                .filter(|ev| events[..cut].contains(ev))
+                .cloned()
+                .collect()
+        })
+        .collect();
+    let e = env();
+    e.put(
+        &s,
+        rebuild(&s.key.session, s.product, &s.metas(), head, utc()),
+    );
+    // 서브 파일이 부장 파일보다 늦게 읽힌 것처럼 적용한다
+    let (boss, subs): (Vec<&Event>, Vec<&Event>) = events[cut..]
+        .iter()
+        .partition(|ev| ev.agent_id == s.key.session);
+    for ev in boss.into_iter().chain(subs) {
+        let now = ev.ts.unwrap_or_default();
+        lock(&e.world).apply(&s.key, std::slice::from_ref(ev), now);
+    }
+    let all: Vec<Mark> = {
+        let mut v: Vec<Mark> = e.agents(&s).iter().flat_map(|a| e.marks(&s, a)).collect();
+        v.sort_by_key(|m| std::cmp::Reverse((m.ts, m.seq)));
+        v
+    };
+    let mut by_seq = all.clone();
+    by_seq.sort_by_key(|m| std::cmp::Reverse(m.seq));
+    assert_ne!(
+        all[..20].iter().map(|m| m.seq).collect::<Vec<_>>(),
+        by_seq[..20].iter().map(|m| m.seq).collect::<Vec<_>>(),
+        "fixture 가 시각과 적용 순서를 어긋나게 하지 못했다"
+    );
+    let recent = |limit| {
+        session_detail(&e.world, &s.office(), &s.team_id(), limit)
+            .unwrap()
+            .recent
+    };
+    let key = |r: &[EventDto]| {
+        r.iter()
+            .map(|d| (d.cursor.byte_offset, d.line_no))
+            .collect::<Vec<_>>()
+    };
+    let want = |n: usize| {
+        all[..n]
+            .iter()
+            .map(|m| (m.byte_offset, m.line_no))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(key(&recent(None)), want(20));
+    assert_eq!(key(&recent(Some(5))), want(5));
+    assert_eq!(recent(Some(0)).len(), 1);
+    assert_eq!(key(&recent(Some(1000))), want(all.len().min(100)));
+}
+
+/// 토큰은 캐시에서 읽은 입력을 세지 않는다 (응답마다 다시 읽혀 매번 다시 세진다)
+#[test]
+fn tokens_leave_out_cache_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("p");
+    fs::create_dir_all(&root).unwrap();
+    let reply = |secs, id: &str| {
+        let mut v = base("assistant", secs);
+        v["message"] = json!({"id": id, "role": "assistant", "model": "claude-opus-5-5",
+            "content": [{"type": "text", "text": "ok"}],
+            "usage": {"input_tokens": 10, "cache_creation_input_tokens": 20,
+                      "cache_read_input_tokens": 1000, "output_tokens": 5}});
+        v
+    };
+    let text: String = [reply(1, "msg_1"), reply(2, "msg_2")]
+        .iter()
+        .map(|l| format!("{l}\n"))
+        .collect();
+    fs::write(root.join(format!("{SID}.jsonl")), text).unwrap();
+    let s = Session::at(dir, root, "windows");
+    let e = env();
+    e.put(&s, s.team(0));
+    let d = session_detail(&e.world, &s.office(), &s.team_id(), None).unwrap();
+    assert_eq!(
+        d.tokens,
+        Some(Tokens {
+            input: 60,
+            output: 10
+        })
+    );
+
+    // Codex: input_tokens 는 cached 를 포함한다. 마지막 누적은 입력 163551 중 144384 가 캐시, 출력 768
+    let c = Session::fixture("codex/ask-reject-compact", "windows");
+    e.put(&c, c.team(0));
+    let d = session_detail(&e.world, &c.office(), &c.team_id(), None).unwrap();
+    assert_eq!(
+        d.tokens,
+        Some(Tokens {
+            input: 163_551 - 144_384,
+            output: 768
+        })
+    );
 }

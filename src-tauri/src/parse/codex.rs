@@ -39,6 +39,8 @@ pub struct CodexParser {
     ignored: HashSet<String>,
     /// 내부 에이전트의 rollout. 파일 전체에서 이벤트를 내지 않는다
     silent: bool,
+    /// 마지막 token_count 의 누적 사용량 (입력, 캐시, 출력). 누적이 그대로인 기록은 같은 사용량을 다시 쓴 것이다
+    last_total: Option<(u64, u64, u64)>,
 }
 
 struct Meta {
@@ -104,6 +106,7 @@ impl CodexParser {
             background: HashMap::new(),
             ignored: HashSet::new(),
             silent: false,
+            last_total: None,
         }
     }
 
@@ -581,9 +584,26 @@ impl CodexParser {
                 if input == 0 && output == 0 {
                     return;
                 }
+                let cached = last
+                    .get("cached_input_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                let total = p.pointer("/info/total_token_usage").map(|t| {
+                    let n = |k: &str| t.get(k).and_then(Value::as_u64).unwrap_or(0);
+                    (
+                        n("input_tokens"),
+                        n("cached_input_tokens"),
+                        n("output_tokens"),
+                    )
+                });
+                if total.is_some() && total == self.last_total {
+                    return;
+                }
+                self.last_total = total.or(self.last_total);
                 // input_tokens 는 cached_input_tokens 를 이미 포함한다
                 out.push(EventKind::TokenUsage {
                     input_total: input,
+                    cache_read: cached.min(input),
                     output,
                     context_window: p
                         .pointer("/info/model_context_window")
@@ -1368,6 +1388,7 @@ mod tests {
                 input_total,
                 output,
                 context_window,
+                ..
             } => format!("tokens {input_total} {output} {context_window:?}"),
             EventKind::PermissionRequest { .. } => "ask".into(),
             EventKind::ContextCompaction { .. } => "compact".into(),
@@ -1664,6 +1685,34 @@ mod tests {
             ["meta None", "meta Some(\"gpt-6.1-sol\")", "user", "text"]
         );
         assert!(un.is_empty(), "{un:?}");
+    }
+
+    /// 누적 사용량이 그대로인 token_count 를 다시 쓰면 같은 사용량을 두 번 세지 않는다.
+    /// 입력에서 캐시 몫은 따로 알려 준다
+    #[test]
+    fn repeated_token_count_is_counted_once() {
+        let count = |total_in: u64, last_in: u64| {
+            rec(
+                "event_msg",
+                json!({"type": "token_count", "info": {
+                    "total_token_usage": {"input_tokens": total_in, "cached_input_tokens": total_in / 2, "output_tokens": 10},
+                    "last_token_usage": {"input_tokens": last_in, "cached_input_tokens": last_in / 2, "output_tokens": 5},
+                    "model_context_window": 1000}}),
+            )
+        };
+        let (kinds, _) = feed(&[count(100, 100), count(100, 100), count(250, 150)]);
+        let usage: Vec<(u64, u64)> = kinds
+            .iter()
+            .filter_map(|k| match k {
+                EventKind::TokenUsage {
+                    input_total,
+                    cache_read,
+                    ..
+                } => Some((*input_total, *cache_read)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(usage, [(100, 50), (150, 75)]);
     }
 
     #[test]

@@ -100,16 +100,33 @@ pub struct Record {
     pub timeline: Vec<Mark>,
     /// 띄운 쪽이 준 지시 전문 (SubagentSpawn.prompt)
     pub prompt: Option<String>,
-    /// 이 직원이 받은 첫 메시지. 부장이면 첫 사장님 메시지
+    /// 부장의 첫 사장님 메시지
     pub first_message: Option<String>,
-    /// 중복 없이 처음 본 순서. 경로는 파서가 만든 상대 경로
-    pub files_read: Vec<String>,
-    pub files_edited: Vec<String>,
-    pub commands: Vec<String>,
+    /// 경로는 파서가 만든 상대 경로
+    pub files_read: Uniq,
+    pub files_edited: Uniq,
+    pub commands: Uniq,
 }
 
-/// 팀의 토큰 사용량 합 (3.7 세션 상세)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// 중복 없이 처음 본 순서로 쌓는 목록. 도구 호출마다 쌓으므로 검사는 집합으로 한다
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Uniq {
+    pub items: Vec<String>,
+    seen: HashSet<String>,
+}
+
+impl Uniq {
+    pub fn push_new(&mut self, item: Option<&str>) {
+        if let Some(s) = item.filter(|s| !s.is_empty())
+            && self.seen.insert(s.to_string())
+        {
+            self.items.push(s.to_string());
+        }
+    }
+}
+
+/// 팀의 토큰 사용량 합 (3.7 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 pub struct Tokens {
     pub input: u64,
     pub output: u64,

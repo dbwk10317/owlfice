@@ -607,12 +607,14 @@ impl Team {
             EventKind::UserMessage { .. } if self.employees[i].is_boss() => self.turns += 1,
             EventKind::TokenUsage {
                 input_total,
+                cache_read,
                 output,
                 ..
             } => {
-                // ponytail: Codex 가 합계가 그대로인 token_count 를 다시 쓰면 두 번 센다 (ask-reject-compact 에 1건), 파서가 total_token_usage 로 거르게 되면 맞는다
                 let t = self.tokens.get_or_insert(Tokens::default());
-                t.input = t.input.saturating_add(*input_total);
+                t.input = t
+                    .input
+                    .saturating_add(input_total.saturating_sub(*cache_read));
                 t.output = t.output.saturating_add(*output);
             }
             EventKind::SubagentSpawn {
@@ -661,6 +663,7 @@ impl Team {
             outcome,
             test,
         };
+        let is_boss = self.employees[i].is_boss();
         let r = Arc::make_mut(&mut self.employees[i].record);
         let same = r
             .timeline
@@ -672,14 +675,14 @@ impl Team {
         mark.nth = u8::try_from(same).unwrap_or(u8::MAX);
         r.timeline.push(mark);
         match &ev.kind {
-            EventKind::UserMessage { text } if r.first_message.is_none() => {
+            EventKind::UserMessage { text } if r.first_message.is_none() && is_boss => {
                 r.first_message = Some(text.clone());
             }
             EventKind::ToolCall { tool, summary, .. } => {
                 let path = summary.path.as_deref();
                 match tool {
-                    ToolKind::FileRead => push_new(&mut r.files_read, path),
-                    ToolKind::FileWrite | ToolKind::FileEdit => push_new(&mut r.files_edited, path),
+                    ToolKind::FileRead => r.files_read.push_new(path),
+                    ToolKind::FileWrite | ToolKind::FileEdit => r.files_edited.push_new(path),
                     _ => {}
                 }
                 // 명령으로 한 읽기(`cat`)도 실행한 명령이다
@@ -687,7 +690,7 @@ impl Team {
                     .command_norm
                     .as_deref()
                     .map(|c| sentence::cut(c, COMMAND_CHARS));
-                push_new(&mut r.commands, cmd.as_deref());
+                r.commands.push_new(cmd.as_deref());
             }
             _ => {}
         }
@@ -1393,14 +1396,6 @@ pub fn merge(files: Vec<Vec<Event>>) -> Vec<Event> {
 
 /// 직원 상세의 명령 목록 한 줄. 원문 전체는 heredoc 스크립트처럼 길 수 있다
 const COMMAND_CHARS: usize = 200;
-
-fn push_new(list: &mut Vec<String>, item: Option<&str>) {
-    if let Some(s) = item.filter(|s| !s.is_empty())
-        && !list.iter().any(|x| x == s)
-    {
-        list.push(s.to_string());
-    }
-}
 
 /// 퇴근한 직원은 그보다 뒤 ts 의 이벤트로만 돌아온다. 늦게 읽힌 옛 줄은 확인된 종료를 풀지 않는다 (4.7.1)
 fn rehires(e: &Employee, ts: Option<DateTime<Utc>>) -> bool {

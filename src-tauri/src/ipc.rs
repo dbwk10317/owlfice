@@ -17,9 +17,9 @@ use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
     Activity, Bubble, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
-    TimelineKind,
+    TimelineKind, Tokens,
 };
-use crate::parse::{Confidence, TodoItem};
+use crate::parse::{Confidence, TodoItem, ToolOutcome};
 use crate::settings::SettingsBook;
 
 /// 최대 5회/초 (4.8)
@@ -241,19 +241,8 @@ pub struct CursorDto {
 pub struct ClipDto {
     pub head: String,
     pub tail: String,
-    pub truncated: bool,
     /// 원문 바이트 수
     pub bytes: u64,
-}
-
-/// 도구 결과 판정 (4.6 ToolOutcome)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
-pub enum OutcomeDto {
-    Ok,
-    Err,
-    Rejected,
-    Started,
-    Unknown,
 }
 
 /// 타임라인 한 칸 (3.7). 원본 줄을 다시 읽어 만든다
@@ -273,14 +262,16 @@ pub struct EventDto {
     pub tool: Option<String>,
     /// 호출과 그 결과가 같은 값을 가진다
     pub call_id: Option<String>,
-    /// 도구 입력 원문 (짧게)
+    /// 도구 입력 원문 (앞뒤 2KB)
     pub input: Option<ClipDto>,
-    pub outcome: Option<OutcomeDto>,
+    pub outcome: Option<ToolOutcome>,
     /// 결과·메시지·지시 원문 (앞뒤 2KB)
     pub body: Option<ClipDto>,
     /// 원본 jsonl 과 줄 번호 (1 기준)
     pub path: String,
     pub line_no: u64,
+    /// 그 줄의 이벤트 중 몇 번째인가. 같은 줄의 칸을 `OpenTarget` 이 가른다
+    pub line_idx: u32,
     /// 큰 결과가 분리된 `tool-results/` 파일. 세션 폴더 안인 것만
     pub sidecar: Option<String>,
 }
@@ -305,13 +296,6 @@ pub struct EmployeeDetailDto {
     pub commands: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct TokensDto {
-    pub input: u64,
-    pub output: u64,
-}
-
 /// 직급별 직원 수. 퇴장한 직원도 센다
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -333,7 +317,6 @@ pub struct PrDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDetailDto {
-    pub team_id: String,
     pub session_id: String,
     pub title: String,
     /// 동 글자 (A~F)
@@ -348,11 +331,13 @@ pub struct SessionDetailDto {
     pub started: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub turns: u32,
-    pub tokens: Option<TokensDto>,
+    pub tokens: Option<Tokens>,
     pub headcount: HeadcountDto,
     pub pr: Option<PrDto>,
     /// 최근 사건, 최신부터
     pub recent: Vec<EventDto>,
+    /// 원본 줄을 못 읽어 `recent` 가 비었으면 이유. 나머지 값은 메모리에서 온 것이라 그대로 있다
+    pub recent_error: Option<DetailError>,
 }
 
 /// `open_path` 대상. 경로는 백엔드가 아는 것만 연다. 프론트가 경로를 넘기는 길은 두지 않는다
@@ -368,16 +353,21 @@ pub enum OpenTarget {
         office_id: String,
         team_id: String,
     },
-    /// 그 칸의 원본 jsonl (탐색기는 줄로 못 간다. 줄 번호는 EventDto 가 준다)
+    /// 그 칸의 원본 jsonl (탐색기는 줄로 못 간다. 줄 번호는 EventDto 가 준다).
+    /// `line_idx` 는 EventDto 의 것이다
     SourceLine {
         office_id: String,
+        team_id: String,
         agent_id: String,
         cursor: CursorDto,
+        line_idx: u32,
     },
     Sidecar {
         office_id: String,
+        team_id: String,
         agent_id: String,
         cursor: CursorDto,
+        line_idx: u32,
     },
 }
 
@@ -716,7 +706,7 @@ pub struct Sent {
     state: Option<(OfficeId, u64)>,
 }
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -937,38 +927,58 @@ pub fn spawn_publisher(app: AppHandle, ipc: Arc<Ipc>) -> thread::JoinHandle<()> 
     })
 }
 
-#[tauri::command(async)]
-pub fn get_employee_timeline(
+/// 파일을 읽는 상세 일은 tokio worker 가 아니라 막아도 되는 스레드에서 한다 (2초 상한 대기, world 잠금 대기)
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, DetailError> + Send + 'static,
+) -> Result<T, DetailError> {
+    // ponytail: 스레드가 죽은 것도 Timeout 으로 알린다, 에러 종류를 늘릴 때 나눈다
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .unwrap_or(Err(DetailError::Timeout))
+}
+
+#[tauri::command]
+pub async fn get_employee_timeline(
     ipc: State<'_, Arc<Ipc>>,
     office_id: String,
+    team_id: String,
     agent_id: String,
     before: Option<CursorDto>,
     limit: Option<u32>,
 ) -> Result<Vec<EventDto>, DetailError> {
-    detail::employee_timeline(&ipc.world, &office_id, &agent_id, before, limit)
+    let ipc = ipc.inner().clone();
+    blocking(move || {
+        detail::employee_timeline(&ipc.world, &office_id, &team_id, &agent_id, before, limit)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_employee_detail(
-    ipc: State<'_, Arc<Ipc>>,
-    office_id: String,
-    agent_id: String,
-) -> Result<EmployeeDetailDto, DetailError> {
-    detail::employee_detail(&ipc.world, &office_id, &agent_id)
-}
-
-#[tauri::command(async)]
-pub fn get_session_detail(
+pub async fn get_employee_detail(
     ipc: State<'_, Arc<Ipc>>,
     office_id: String,
     team_id: String,
-) -> Result<SessionDetailDto, DetailError> {
-    detail::session_detail(&ipc.world, &office_id, &team_id)
+    agent_id: String,
+) -> Result<EmployeeDetailDto, DetailError> {
+    let ipc = ipc.inner().clone();
+    blocking(move || detail::employee_detail(&ipc.world, &office_id, &team_id, &agent_id)).await
 }
 
-#[tauri::command(async)]
-pub fn open_path(ipc: State<'_, Arc<Ipc>>, target: OpenTarget) -> Result<(), DetailError> {
-    detail::open_path(&ipc.world, target)
+#[tauri::command]
+pub async fn get_session_detail(
+    ipc: State<'_, Arc<Ipc>>,
+    office_id: String,
+    team_id: String,
+    limit: Option<u32>,
+) -> Result<SessionDetailDto, DetailError> {
+    let ipc = ipc.inner().clone();
+    blocking(move || detail::session_detail(&ipc.world, &office_id, &team_id, limit)).await
+}
+
+#[tauri::command]
+pub async fn open_path(ipc: State<'_, Arc<Ipc>>, target: OpenTarget) -> Result<(), DetailError> {
+    let ipc = ipc.inner().clone();
+    blocking(move || detail::open_path(&ipc.world, target)).await
 }
 
 #[cfg(test)]

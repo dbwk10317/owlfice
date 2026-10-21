@@ -137,6 +137,8 @@ pub enum EventKind {
     TokenUsage {
         /// input + cache_creation + cache_read
         input_total: u64,
+        /// input_total 중 캐시에서 읽은 몫. 팀 토큰 합은 이것을 뺀다 (매 응답마다 다시 읽히는 몫이라)
+        cache_read: u64,
         output: u64,
         context_window: Option<u64>,
     },
@@ -150,7 +152,7 @@ pub enum EventKind {
     Reset,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum ToolOutcome {
     /// 구조 필드(is_error=false, exit_code=0)로 확인된 성공
     Ok,

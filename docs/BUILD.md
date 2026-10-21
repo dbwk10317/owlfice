@@ -47,7 +47,7 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | 프론트 빌드 | `npm run build` (린트·타입 검사 후 빌드) |
 | Python 린트·포맷 검사 | `uvx ruff check tools`, `uvx ruff format --check tools` |
 | 개발 실행 | `npm run tauri dev` |
-| 릴리스 | `npm run tauri build` → `src-tauri/target/release/bundle/nsis/*-setup.exe` |
+| 릴리스 | `npm run tauri build` → `src-tauri/target/release/bundle/nsis/*-setup.exe`. 설치 파일은 저장소에 넣지 않고 `gh release create v<버전> <setup.exe>` 로 GitHub Releases 에 첨부한다 (README 링크는 `releases/latest/download/`) |
 | 의존 DLL 확인 | `dumpbin /dependents src-tauri\target\release\owlfice.exe` (Developer PowerShell for VS) |
 
 `owlfice-replay`의 `--speed`는 줄을 쓰는 대기 시간만 줄이고 레코드 timestamp 간격은 압축하지 않는다. 실제 앱 검증은 `--speed 1`을 기본으로 쓴다. `--shift-to-now`와 함께 1보다 큰 값을 쓰면 현재 시각보다 미래인 레코드가 먼저 기록될 수 있다.

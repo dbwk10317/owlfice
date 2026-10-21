@@ -121,14 +121,20 @@ export interface Scene {
 const SESSION_PROP = /^(rules_frame|boss_desk_\d+)$/;
 
 /**
- * 눌린 소품이 가리키는 팀. 사규 액자는 가장 최근 활동 팀 것(4.7.9), 팀장석은 그 자리(deskSlot)의 팀이다.
+ * 눌린 소품이 가리키는 팀. 사규 액자는 포커스 팀 또는 최근 활동 팀 것(4.7.9), 팀장석은 그 자리(deskSlot)의 팀이다.
  * 명패는 따로 그리는 소품이 없어 팀장석 책상을 누르게 한다.
  */
-export function teamOfProp(id: string, office: OfficeDto | null): TeamDto | undefined {
+export function teamOfProp(
+  id: string,
+  office: OfficeDto | null,
+  focusedTeam: string | null = null,
+): TeamDto | undefined {
   const teams = office?.teams ?? [];
   const desk = /^boss_desk_(\d+)$/.exec(id);
   if (desk) return teams.find((t) => t.deskSlot === Number(desk[1]));
   if (id !== "rules_frame") return undefined;
+  const focused = teams.find((t) => t.teamId === focusedTeam);
+  if (focused && office?.officeId.startsWith("vendor/")) return focused;
   // 동점이면 뒤 팀이 이긴다 (백엔드 frame_title 의 max_by_key 와 같다)
   // ponytail: Date.parse 는 ms 까지만 봐서 그 밑 차이는 동점이 된다, 백엔드와 어긋나는 사례가 나오면 DTO 에 순번을 얹는다
   const at = (t: TeamDto) => Date.parse(t.lastActivity) || 0;
@@ -191,7 +197,6 @@ export function buildScene(
   // 깔개·벽 소품은 바닥 위에 배열 순서로, 월드는 depth 로 (render_scene 3·4단계)
   placements.forEach((pl, seq) => {
     const key = `${spriteName(pl, theme)}/${pl.state}`;
-    // ponytail: 중소기업 파티션은 빈자리 색(테마 cubicle)만, 앉은 팀의 색은 T29 에서 넣는다
     const tint = pl.id.startsWith("dev_part_") ? fp.themes[theme].cubicle : undefined;
     const place = (k: string, texture?: Texture) => {
       const s = placeSprite(sheet, k, pl.x, pl.y, texture);
@@ -271,6 +276,7 @@ const WHITE: Rgb = [255, 255, 255];
 export interface OfficeHandle {
   setRoomLabels(on: boolean): void;
   setBossName(name: string | null): void;
+  highlightTeam(officeId: string, teamId: string): void;
 }
 export interface OfficeOptions {
   bossName?: string | null;
@@ -330,6 +336,8 @@ export async function mountOffice(
   let props: PropsLayer | null = null;
   let shown: OfficeDto | null = null;
   let propsAt = 0;
+  let propsTeam: string | null = null;
+  let pendingTeam: { officeId: string; teamId: string } | null = null;
   let sceneKey = "";
   let officeId = "";
   let switchFade: Animation | undefined;
@@ -440,7 +448,7 @@ export async function mountOffice(
         sprite.on("pointertap", () => {
           if (suppressClick) return;
           tooltip.close();
-          const team = teamOfProp(id, shown);
+          const team = teamOfProp(id, shown, actors.focusedTeam(Date.now()));
           if (team && shown) opts.onSession?.(shown.officeId, team.teamId);
         });
       }
@@ -466,9 +474,11 @@ export async function mountOffice(
     const seated = seatProps(fp, kind, office);
     for (const [id, s] of scene?.toggled ?? []) s.visible = seated.has(id);
     shown = office;
+    focusTeam();
     setCanvasAria(office, list);
     propsAt = Date.now();
-    props?.update(office, propsAt);
+    propsTeam = actors.focusedTeam(propsAt);
+    props?.update(office, propsAt, propsTeam);
     setLight(lightOf(office), switched);
     stepLight(0);
     if (switched) {
@@ -479,6 +489,17 @@ export async function mountOffice(
           easing: getComputedStyle(wrap).getPropertyValue("--ow-ease").trim() || "ease",
         });
     }
+  }
+
+  function focusTeam(): void {
+    if (!pendingTeam) return;
+    if (store.state.selectedId !== pendingTeam.officeId) {
+      pendingTeam = null;
+      return;
+    }
+    if (shown?.officeId !== pendingTeam.officeId || store.state.office !== shown) return;
+    actors.highlightTeam(pendingTeam.teamId, Date.now());
+    pendingTeam = null;
   }
 
   function buildLabels(kind: Kind): void {
@@ -656,6 +677,7 @@ export async function mountOffice(
   let resumed = false;
   const cues = cueCollector();
   store.subscribe(() => {
+    if (store.state.selectedId !== officeId) actors.highlightTeam(null, Date.now());
     if (store.state.selectedId !== officeId) tooltip.close();
     dirty = true;
     if (store.state.selectedId !== officeId) switchFade?.cancel();
@@ -676,9 +698,11 @@ export async function mountOffice(
       if (lightT < 1) stepLight(t.deltaMS);
       const now = Date.now();
       // 무재해 분과 창밖 시각은 상태가 안 와도 흐른다. 바뀐 소품만 다시 그린다
-      if (now - propsAt >= 1000) {
+      const focused = actors.focusedTeam(now);
+      if (now - propsAt >= 1000 || focused !== propsTeam) {
         propsAt = now;
-        props?.update(shown, now);
+        propsTeam = focused;
+        props?.update(shown, now, focused);
       }
       props?.tick(now);
       actors.update(now);
@@ -712,6 +736,10 @@ export async function mountOffice(
     setRoomLabels: (on) => void (overlay.hidden = !on),
     setBossName: (name) => {
       bossName = name || phrases.ranks.boss;
+    },
+    highlightTeam: (officeId, teamId) => {
+      pendingTeam = { officeId, teamId };
+      focusTeam();
     },
   };
 }

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>중소기업 합성 연출</title>
+    <style>
+      #controls {
+        padding: 8px 16px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      #controls button {
+        padding: 6px 10px;
+      }
+      #status {
+        margin-left: 12px;
+      }
+      #app {
+        height: calc(100vh - 90px);
+      }
+      #note {
+        margin: 4px 16px;
+        font-size: 12px;
+      }
+    </style>
+    <script type="module" src="./company.ts"></script>
+  </head>
+  <body>
+    <div id="controls">
+      <button id="arrive">S50 새 팀 출근</button>
+      <button id="depart">S51 새 팀 퇴근</button>
+      <button id="scale">S52 규모 변경</button>
+      <button id="parallel">S53 병렬 호출</button>
+      <button id="visit">다온 팀 사장님 방문</button>
+      <label><input id="labels" type="checkbox" /> 방 이름</label>
+      <span id="status" role="status">장면 준비 중</span>
+    </div>
+    <p id="note">
+      합성 스냅샷만 사용합니다. 팀 행을 누르면 부장·액자·칸반을 2초 강조하고 현황판을 펼쳐
+      이동합니다.
+    </p>
+    <div id="app" class="ow-app"></div>
+  </body>
+</html>

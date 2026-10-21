@@ -473,6 +473,8 @@ export class ActorLayer {
   private world: Container | null = null;
   private toCss: ToCss = (x, y) => ({ left: x, top: y });
   private hovered: string | null = null;
+  private highlight: { teamId: string; key: string; until: number } | null = null;
+  private highlightRing: Graphics | null = null;
   private nametag: HTMLElement;
   private nametagName: HTMLElement;
   private nametagText: HTMLElement;
@@ -512,6 +514,7 @@ export class ActorLayer {
   /** 장면을 새로 지으면 옛 장면을 지우기 전에 불러 액터를 새 월드로 옮긴다. */
   attach(world: Container): void {
     this.world = world;
+    if (this.highlightRing) world.addChild(this.highlightRing);
     for (const a of this.actors.values()) world.addChild(a.root);
     for (const v of this.visitors) {
       world.addChild(v.body.root);
@@ -534,6 +537,8 @@ export class ActorLayer {
   ): Placed[] {
     // 목록만 바뀌어도 같은 스냅샷으로 다시 불린다. 그때 cue 를 또 재생하지 않는다
     const fresh = office !== this.lastOffice;
+    if (office?.officeId !== this.lastOffice?.officeId || (fresh && office?.rebuilt))
+      this.highlight = null;
     this.lastOffice = office;
     const instant = opts.instant || (fresh && !!office?.rebuilt);
     const cuesOf = new Map<string, CueDto[]>();
@@ -695,6 +700,41 @@ export class ActorLayer {
       if (a.bubble) a.bubble.hidden = !(Math.abs(now - a.bubbleAt) < BUBBLE_MS);
     if (moved) this.placeOverlay();
     this.fillNametag(now);
+    const focused =
+      this.focusedTeam(now) && this.highlight ? this.actors.get(this.highlight.key) : undefined;
+    if (this.highlightRing) {
+      this.highlightRing.visible = !!focused?.root.visible;
+      if (focused) {
+        this.highlightRing.position.copyFrom(focused.root.position);
+      }
+    }
+  }
+
+  highlightTeam(teamId: string | null, now: number): void {
+    const boss = this.lastOffice?.teams.find((t) => t.teamId === teamId)?.employees[0];
+    this.highlight =
+      teamId && boss ? { teamId, key: empKey(teamId, boss.agentId), until: now + 2000 } : null;
+    if (this.highlight && !this.highlightRing) {
+      this.highlightRing = new Graphics()
+        .rect(-12, -30, 24, 32)
+        .stroke({ color: 0xf0b948, width: 2 });
+      this.highlightRing.eventMode = "none";
+      // 부장을 가리는 책상보다 위에서 테두리가 보여야 한다.
+      this.highlightRing.zIndex = Number.MAX_SAFE_INTEGER;
+      this.world?.addChild(this.highlightRing);
+    }
+    this.update(now);
+  }
+
+  focusedTeam(now: number): string | null {
+    if (
+      this.highlight &&
+      now < this.highlight.until &&
+      this.lastOffice?.teams.some((t) => t.teamId === this.highlight?.teamId)
+    )
+      return this.highlight.teamId;
+    this.highlight = null;
+    return null;
   }
 
   /** 한 몸을 지금 모습으로 그린다. 오버레이를 다시 놓아야 하면 true */

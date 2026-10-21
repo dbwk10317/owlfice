@@ -1345,6 +1345,7 @@ Tauri 커맨드 (프론트 → 백엔드):
 - 경과 시간: 시간이 흐르며 바뀌는 문장(3.5 표의 "· 12초째", "(8초)", "자리 비움 2분", "(`npm test` · 2분 40초)")은 `Activity.sentence` 에 `{elapsed}` 자리를 두고, 프론트가 `since` 로 1초마다 채운다 (`units`). 그 밖의 문장과 `recent` 에는 두지 않는다. 백틱 코드 조각 안의 같은 글자는 채우지 않는다.
 - 말풍선: `EmployeeDto.bubble` 은 마지막 말풍선의 종류·재료와 시각 `at` 이다. 무슨 일에 어떤 종류가 붙는지는 백엔드가 정하고(3.4, 3.6, HANDOFF 5절 "말풍선" 열), 풀에서 고르기는 프론트가 `phrases.bubble` 에서 한다. 프론트는 `at` 이 4초 안일 때만 그린다 (재구성·다시 불러오기 뒤 옛 말풍선이 뜨지 않게). 점선·장애·허가 대기 모양은 그 직원의 활동에서 정한다.
 - 병렬 호출 수 `Activity.extra` 는 `+n` 배지와 "(외 n건)" 이 같이 쓴다.
+- 소품 재료는 문장을 다시 읽지 않고 필드로 준다: `EmployeeDto.jobs`(백그라운드 명령 수, 작업표), `meeting`(미팅실에 있을 때 MCP 서버 또는 스킬), `review`(리뷰실에 있을 때 빨간펜 수·승인 문구), `TeamProps.test`·`test_at` 과 `SharedPropsDto.test`(테스트 결과판, 공유는 가장 늦은 팀), `TeamDto.idle_alive`(S58, 졸음 30분 넘고 프로세스 살아 있음. 목록 점은 `IdleAlive`). cue 는 순간 연출에만 쓰고 소품 상태를 cue 로 기억하지 않는다.
 
 프론트 수신 규칙: 스트림마다 따로 센다. `office-list` 는 `list_seq` < 마지막 list_seq → 버림. `office-state` 는 `state_seq` < 그 사무실의 마지막 state_seq → 버림 (같으면 멱등 적용), `office_id` ≠ 현재 선택 → 버림. `rebuilt` → 애니메이션 없이 즉시 배치. `select_office` 응답과 스냅샷의 `selected` 도 `office-state` 와 같은 state_seq 규칙을 거친다. 시작 순서는 4.3 (구독 먼저, 스냅샷 다음, 스냅샷 seq 이하의 버퍼 이벤트 폐기).
 

@@ -7,17 +7,17 @@
 
 값이 서로 다르면 위에 있는 것이 이긴다.
 
-| 순서 | 파일 | 내용 | 앱에서 갈 곳 |
+| 순서 | 파일 | 내용 | 앱이 쓰는 법 (복사하지 않는다) |
 |---|---|---|---|
-| 1 | `design/HANDOFF.md` | 이 문서. 규칙과 수치 | 저장소 `docs/` |
-| 2 | `design/handoff/tokens.css` | 디자인 토큰과 컴포넌트 클래스 (`ow-` 접두사) | `src/styles/tokens.css` |
-| 3 | `design/sprites/owls.png` `owls.json` | 올빼미 부품 시트 (PixiJS 스프라이트 시트 형식) | `assets/sprites/` |
-| 3 | `design/sprites/office.png` `office.json` | 벽·바닥·가구·소품·효과 시트 | `assets/sprites/` |
-| 3 | `design/sprites/ui.png` `ui.json` | 로고, 로딩 건물 부품, 규모 미리보기 | `assets/sprites/` |
-| 3 | `design/sprites/floorplan.json` | 평면도: 방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색 | `assets/` |
-| 4 | `design/handoff/phrases.ko.json` | 화면에 보이는 모든 문구와 문장 틀 | `src/phrases.ko.json` |
-| 4 | `design/handoff/icons/*.svg` | 선 아이콘 41개 (24 격자, 선 1.75, `currentColor`) | `src/icons/` |
-| 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | `tokens.css` 기준 `../fonts/` |
+| 1 | `design/HANDOFF.md` | 이 문서. 규칙과 수치 | 그대로 |
+| 2 | `design/handoff/tokens.css` | 디자인 토큰과 컴포넌트 클래스 (`ow-` 접두사) | `import` (글꼴 상대 경로 `../fonts/` 가 그대로 맞는다) |
+| 3 | `design/sprites/owls.png` `owls.json` | 올빼미 부품 시트 (PixiJS 스프라이트 시트 형식) | Vite `publicDir` 라 `/owls.json` 으로 읽는다 |
+| 3 | `design/sprites/office.png` `office.json` | 벽·바닥·가구·소품·효과 시트 | `/office.json` |
+| 3 | `design/sprites/ui.png` `ui.json` | 로고, 로딩 건물 부품, 규모 미리보기 | `/ui.json` |
+| 3 | `design/sprites/floorplan.json` | 평면도: 방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색 | `/floorplan.json` |
+| 4 | `design/handoff/phrases.ko.json` | 화면에 보이는 모든 문구와 문장 틀 | `import` |
+| 4 | `design/handoff/icons/*.svg` | 선 아이콘 41개 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
+| 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | tokens.css 가 가리킨다 |
 | 5 | `design/assets/office-*.png` | 참조 렌더. 위 시트와 평면도만으로 그린 정답 그림 | 테스트 고정 자료 |
 | 6 | 캔버스 시안 | 13장. 화면 구성과 상태 | 시각 참조 |
 
@@ -148,7 +148,7 @@ python design/tools/owlfice_art.py
 7. 세로 구분선 1×20
 8. `room-labels` 토글 (`aria-pressed`), 소리 토글 (`sound-off`/`sound-on`)
 9. 배율 칩 mono "2×" (`title="캔버스 배율"`)
-10. 900–1099: 맨 오른쪽 `panel` 버튼. 드로어가 열려 있으면 검은 바탕 (`ow-iconbtn--solid`, `aria-expanded="true"`)
+10. 1100 미만: 맨 오른쪽 `panel` 버튼 ("직원 현황판 열기"). 드로어가 열려 있으면 검은 바탕 (`ow-iconbtn--solid`, `aria-expanded="true"`). 900 미만은 머리말 대신 띠(52·48)에 둔다 (시안 Narrow·Tiny). 900–1099 는 시안 Medium 처럼 사각형·이름·세션 제목·배율 칩·panel 버튼만
 
 ### 4.4 캔버스 위 DOM 요소
 
@@ -299,7 +299,7 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 2. 바닥 타일 24×16장. 규칙은 `floorplan.floorRule`.
 3. `layer: decal` 과 `layer: wall` 배치. 그 위에 코드가 그리는 벽 요소: 칸반 포스트잇, 근태판 자석, TV 그래프 선.
 4. `layer: window` (창문). **조명 색을 곱하지 않는 컨테이너.**
-5. 월드: `layer: world`·`fx` 배치 + 직원 + 휴지통 종이 + 피자 상자를 `depth` 오름차순으로. 같으면 배치 배열 순서 → 직원 순서. Pixi `sortableChildren`, `zIndex = depth × 1000 + 순번`.
+5. 월드: `layer: world`·`fx` 배치 + 직원 + 휴지통 종이 + 피자 상자를 `depth` 오름차순으로. 같으면 배치 배열 순서 → 직원 순서. Pixi `sortableChildren`, `zIndex` 는 (depth, 순번) 순서를 지키는 정수 (`src/office/floorplan.ts` 의 `zIndexOf`).
 6. `layer: overlay` (장애 빛).
 7. 조명 색 곱하기 (`floorplan.lightTints`): 1·2·3·5 컨테이너에 `tint`. 창문(4)과 빛(6)은 제외. 바뀔 때 1.5초 보간.
 8. DOM 오버레이 (4.4절).
@@ -371,7 +371,7 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 
 ### 6.7 참조 렌더로 검수하기
 
-`design/assets/office-claude-day.png`, `office-codex-night-smb.png`, `office-codex-day.png`, `office-gemini-day.png` 는 `make_canvas_images()` 의 고정 상태(직원 배치, 소품 상태, 칸반, 자석, 전광판)로 그린 그림이다. 앱 렌더러에 같은 상태를 넣고 1× 로 `renderer.extract` 한 결과가 **픽셀 단위로 같아야** 한다. 반투명 픽셀(장애 빛, 김)은 채널당 ±2 를 허용한다. 이 비교를 T18·T23 완료 기준에 넣기를 권한다.
+`design/assets/office-claude-day.png`, `office-codex-night-smb.png`, `office-codex-day.png`, `office-gemini-day.png` 는 `make_canvas_images()` 의 고정 상태(직원 배치, 소품 상태, 칸반, 자석, 전광판)로 그린 그림이다. 앱 렌더러에 같은 상태를 넣고 1× 로 `renderer.extract` 한 결과가 **픽셀 단위로 같아야** 한다. 반투명 픽셀(장애 빛, 김)은 채널당 ±2 를 허용한다. 조명(야간·소등)을 곱한 장면은 GPU 가 반올림하고 참조가 내림이라 불투명 픽셀도 채널당 ±1 을 허용한다. 이 비교를 T18·T23 완료 기준에 넣기를 권한다.
 
 ## 7. 움직임
 

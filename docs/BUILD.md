@@ -35,7 +35,13 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | Rust 테스트 | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | Rust 포맷 검사 | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
 | Rust 린트 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
+| 이벤트 열 JSON 확인 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- events fixtures/claude/reject` |
+| 미대응 로그 요약 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- unhandled [경로]` |
+| fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 10 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |
+| 앱에서 fixture 재생해 보기 (실제 세션 폴더를 건드리지 않는다) | 빈 임시 폴더 T 에 `T/claude/projects` 를 먼저 만들고 `APPDATA=T/appdata CLAUDE_CONFIG_DIR=T/claude CODEX_HOME=T/codex npm run tauri dev` 를 띄운 뒤 다른 셸에서 `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 4 --shift-to-now fixtures/claude/async-subagent T/claude/projects/replay`. 화면을 스크립트로 보려면 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 을 더해 CDP 로 붙는다 |
+| 프론트 IPC 타입 다시 만들기 (`ipc.rs` 를 고친 뒤. 낡으면 Rust 테스트가 실패한다) | `OWLFICE_WRITE_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml ts_bindings` (PowerShell은 `$env:OWLFICE_WRITE_TYPES=1` 를 먼저) |
 | 프론트 포맷·린트·타입 검사 | `npm run check` (포맷만 고치기 `npm run fmt`) |
+| 프론트 테스트 | `npm test` (DOM 이 필요한 테스트 파일은 첫 줄에 `// @vitest-environment jsdom`) |
 | 프론트 빌드 | `npm run build` (린트·타입 검사 후 빌드) |
 | Python 린트·포맷 검사 | `uvx ruff check tools`, `uvx ruff format --check tools` |
 | 개발 실행 | `npm run tauri dev` |

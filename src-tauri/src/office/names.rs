@@ -65,7 +65,7 @@ pub fn fnv1a64(s: &str) -> u64 {
 }
 
 /// 임시 파일에 쓴 뒤 이름을 바꾼다. 쓰다 끊겨도 기존 파일이 깨지지 않는다.
-fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -85,7 +85,7 @@ fn load_json<T: Default + for<'a> Deserialize<'a>>(path: &Path) -> (T, bool) {
     }
 }
 
-fn unwritable(path: &Path) -> io::Error {
+pub(crate) fn unwritable(path: &Path) -> io::Error {
     io::Error::other(format!("{} 을 읽지 못해 쓰지 않음", path.display()))
 }
 
@@ -104,6 +104,25 @@ pub struct NameBook {
     path: PathBuf,
     writable: bool,
     entries: BTreeMap<String, NameEntry>,
+    /// 메모리에만 배정하고 아직 저장하지 않은 이름이 있다
+    dirty: bool,
+}
+
+/// 잠금 밖에서 쓸 names.json 내용. world 잠금 안에서 파일을 쓰지 않으려고 꺼내 둔다
+pub struct NamesSave {
+    path: PathBuf,
+    writable: bool,
+    entries: BTreeMap<String, NameEntry>,
+}
+
+impl NamesSave {
+    pub fn write(self) -> io::Result<()> {
+        if self.writable {
+            save_json(&self.path, &self.entries)
+        } else {
+            Err(unwritable(&self.path))
+        }
+    }
 }
 
 impl NameBook {
@@ -114,6 +133,7 @@ impl NameBook {
             path,
             writable,
             entries,
+            dirty: false,
         }
     }
 
@@ -126,8 +146,20 @@ impl NameBook {
         in_use: &HashSet<String>,
         now: DateTime<Utc>,
     ) -> (String, io::Result<()>) {
+        let name = self.assign_unsaved(id, in_use, now);
+        let saved = self.unsaved().map_or(Ok(()), NamesSave::write);
+        (name, saved)
+    }
+
+    /// `assign` 과 같지만 메모리에만 둔다. 저장은 `unsaved` 로 꺼내 부르는 쪽이 한다
+    pub fn assign_unsaved(
+        &mut self,
+        id: &str,
+        in_use: &HashSet<String>,
+        now: DateTime<Utc>,
+    ) -> String {
         if let Some(e) = self.entries.get(id) {
-            return (e.name.clone(), Ok(()));
+            return e.name.clone();
         }
         let seed = fnv1a64(id);
         let combos = (SURNAMES.len() * GIVEN_NAMES.len()) as u64;
@@ -146,12 +178,17 @@ impl NameBook {
                 first_seen: now.to_rfc3339(),
             },
         );
-        let saved = if self.writable {
-            save_json(&self.path, &self.entries)
-        } else {
-            Err(unwritable(&self.path))
-        };
-        (name, saved)
+        self.dirty = true;
+        name
+    }
+
+    /// 아직 저장하지 않은 이름이 있으면 쓸 내용을 꺼낸다
+    pub fn unsaved(&mut self) -> Option<NamesSave> {
+        std::mem::take(&mut self.dirty).then(|| NamesSave {
+            path: self.path.clone(),
+            writable: self.writable,
+            entries: self.entries.clone(),
+        })
     }
 }
 
@@ -168,11 +205,11 @@ struct RoomEntry {
     last_seen: String,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 struct RoomsFile {
     /// 호스트 id -> 층. Windows 는 항상 1이라 넣지 않는다.
     floors: BTreeMap<String, u32>,
-    /// 팀(session_id) -> 방
+    /// 팀 -> 방. 키는 부르는 쪽이 준 팀 문자열(호스트·제조사·세션)이다
     rooms: BTreeMap<String, RoomEntry>,
 }
 
@@ -183,10 +220,29 @@ pub struct RoomAssignment {
     pub saved: io::Result<()>,
 }
 
+/// 잠금 밖에서 쓸 rooms.json 내용 (NamesSave 와 같은 까닭)
+pub struct RoomsSave {
+    path: PathBuf,
+    writable: bool,
+    data: RoomsFile,
+}
+
+impl RoomsSave {
+    pub fn write(self) -> io::Result<()> {
+        if self.writable {
+            save_json(&self.path, &self.data)
+        } else {
+            Err(unwritable(&self.path))
+        }
+    }
+}
+
 /// rooms.json: 층 번호와 방 번호
 pub struct RoomBook {
     path: PathBuf,
     writable: bool,
+    /// 메모리에만 바꾸고 아직 저장하지 않았다
+    dirty: bool,
     /// 파일에 마지막으로 쓴(또는 읽은) 방별 last_seen. 메모리 값이 이보다 하루 넘게 앞서면 다시 쓴다.
     file_seen: BTreeMap<String, String>,
     data: RoomsFile,
@@ -199,6 +255,7 @@ impl RoomBook {
         let mut book = Self {
             path,
             writable,
+            dirty: false,
             file_seen: BTreeMap::new(),
             data,
         };
@@ -215,31 +272,41 @@ impl RoomBook {
             .collect();
     }
 
-    pub fn save(&self) -> io::Result<()> {
-        if !self.writable {
-            return Err(unwritable(&self.path));
+    /// 아직 저장하지 않은 것이 있으면 쓸 내용을 꺼낸다. 꺼낸 시점을 파일에 쓴 것으로 본다
+    pub fn unsaved(&mut self) -> Option<RoomsSave> {
+        if !std::mem::take(&mut self.dirty) {
+            return None;
         }
-        save_json(&self.path, &self.data)
+        self.mark_file_seen();
+        Some(RoomsSave {
+            path: self.path.clone(),
+            writable: self.writable,
+            data: self.data.clone(),
+        })
     }
 
-    fn persist(&mut self) -> io::Result<()> {
-        self.save()?;
-        self.mark_file_seen();
-        Ok(())
+    fn write_unsaved(&mut self) -> io::Result<()> {
+        self.unsaved().map_or(Ok(()), RoomsSave::write)
     }
 
     /// 호스트의 층. Windows 는 1, 그 밖은 처음 본 순서로 2, 3 ... (이름순이면 새 배포판이 끼어들 때 어긋난다).
     /// 새로 매긴 층은 메모리에 두고 저장 결과를 같이 돌려준다.
     pub fn floor_of(&mut self, host: &Host) -> (u32, io::Result<()>) {
+        let floor = self.floor_unsaved(host);
+        (floor, self.write_unsaved())
+    }
+
+    fn floor_unsaved(&mut self, host: &Host) -> u32 {
         if host.kind == HostKind::Windows {
-            return (1, Ok(()));
+            return 1;
         }
         if let Some(&f) = self.data.floors.get(&host.id) {
-            return (f, Ok(()));
+            return f;
         }
         let floor = self.data.floors.values().copied().max().unwrap_or(1) + 1;
         self.data.floors.insert(host.id.clone(), floor);
-        (floor, self.persist())
+        self.dirty = true;
+        floor
     }
 
     /// 팀의 방 번호(`floor*100+nn`). 저장된 번호는 그대로 쓰고 `last_seen` 만 갱신한다.
@@ -247,7 +314,23 @@ impl RoomBook {
     /// 파일에는 새 번호를 줄 때와, 파일의 last_seen 이 하루 넘게 낡았을 때 쓴다.
     /// 7일 넘게 안 보인 팀의 번호는 비운 것으로 본다. 그 팀이 돌아오면 새로 받는다.
     pub fn room_of(&mut self, session_id: &str, host: &Host, now: DateTime<Utc>) -> RoomAssignment {
-        let (floor, floor_saved) = self.floor_of(host);
+        let (number, reused) = self.room_of_unsaved(session_id, host, now);
+        RoomAssignment {
+            number,
+            reused,
+            saved: self.write_unsaved(),
+        }
+    }
+
+    /// `room_of` 와 같지만 메모리에만 둔다. 저장은 `unsaved` 로 꺼내 부르는 쪽이 잠금 밖에서 한다.
+    /// (방 번호, 99팀을 넘어 재사용했나)
+    pub fn room_of_unsaved(
+        &mut self,
+        session_id: &str,
+        host: &Host,
+        now: DateTime<Utc>,
+    ) -> (u32, bool) {
+        let floor = self.floor_unsaved(host);
         let ttl = Duration::days(ROOM_TTL_DAYS);
         // 파싱 못 하는 시각은 오래된 것으로 본다.
         self.data.rooms.retain(|_, r| {
@@ -262,12 +345,8 @@ impl RoomBook {
                 DateTime::parse_from_rfc3339(s)
                     .is_ok_and(|t| now.signed_duration_since(t) > Duration::days(1))
             });
-            let saved = if stale { self.persist() } else { floor_saved };
-            return RoomAssignment {
-                number,
-                reused: false,
-                saved,
-            };
+            self.dirty |= stale;
+            return (number, false);
         }
 
         let taken: HashSet<u32> = self
@@ -290,11 +369,8 @@ impl RoomBook {
                 last_seen: now.to_rfc3339(),
             },
         );
-        RoomAssignment {
-            number,
-            reused: free.is_none(),
-            saved: self.persist(),
-        }
+        self.dirty = true;
+        (number, free.is_none())
     }
 }
 

@@ -25,7 +25,7 @@ pub struct LxssEntry {
     pub default_uid: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct WslDistro {
     pub host: Host,
     /// Some(false)는 소등. None은 `wsl.exe -l --running` 이 실패해 모르는 것

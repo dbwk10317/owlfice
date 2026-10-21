@@ -1,0 +1,156 @@
+/* 로딩 화면 (HANDOFF 4.7, 시안 Loading). 값은 시안 그대로, 색·글꼴은 tokens.css */
+.ld {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 24px 16px;
+  box-sizing: border-box;
+  background: var(--ow-bg);
+  color: var(--ow-ink);
+  font: var(--ow-text-body);
+  transition: opacity var(--ow-dur-3) var(--ow-ease);
+}
+.ld * {
+  box-sizing: border-box;
+}
+.ld--fade {
+  opacity: 0;
+}
+.ld__building {
+  position: relative;
+  width: 320px;
+  height: 300px;
+  flex: none;
+}
+.ld__px {
+  position: absolute;
+  image-rendering: pixelated;
+}
+.ld__win {
+  opacity: 0;
+  transition: opacity var(--ow-dur-2) var(--ow-ease);
+}
+.ld__win.is-on {
+  opacity: 1;
+}
+.ld__steps {
+  width: 440px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ld__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 7px 0;
+  min-height: 34px;
+}
+.ld__step--note {
+  padding-top: 0;
+}
+.ld__step--todo {
+  color: var(--ow-ink-3);
+}
+.ld__step--warn {
+  color: var(--ow-ask-ink);
+}
+.ld__step--off {
+  color: var(--ow-ink-3);
+}
+.ld__paren {
+  color: var(--ow-ink-3);
+}
+.ld__step--warn .ld__paren {
+  color: var(--ow-ask);
+}
+.ld__mk {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.ld__mk svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ld__mk--done {
+  background: var(--ow-ok-bg);
+  color: var(--ow-ok-ink);
+}
+.ld__mk--off {
+  background: var(--ow-fill);
+  color: var(--ow-ink-3);
+}
+.ld__mk--warn {
+  background: var(--ow-warn-bg);
+  color: var(--ow-ask);
+}
+.ld__mk--todo {
+  border: 1.5px solid #d4d4d8;
+}
+.ld__spin {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--ow-line);
+  border-top-color: var(--ow-ink);
+  animation: ld-spin 0.8s linear infinite;
+  flex: none;
+}
+@keyframes ld-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ld__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ld__now {
+  font-weight: 600;
+}
+.ld__cause {
+  font: 12px var(--ow-font-mono);
+  color: var(--ow-ink-3);
+}
+.ld__slow {
+  font-size: 12px;
+  color: var(--ow-ink-3);
+}
+.ld__foot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ow-ink-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* 좁은 창: 지금 줄과 이웃 줄만 (HANDOFF 반응형 480-639) */
+@media (max-width: 639px) {
+  .ld__step:not([data-near]) {
+    display: none;
+  }
+}
+/* 움직임 줄이기 (HANDOFF 7): 회전은 정지된 고리로, 페이드·깜빡임 없음 */
+@media (prefers-reduced-motion: reduce) {
+  .ld,
+  .ld__win {
+    transition: none;
+  }
+  .ld__spin {
+    animation: none;
+  }
+}

@@ -1,12 +1,15 @@
 //! 제품별 레코드를 공통 Event로 (PLAN 4.6)
 
+pub mod claude;
+pub mod codex;
+
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
 use crate::discover::Product;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Event {
     /// 메타 레코드(custom-title 등)에는 없다. None이면 상태 기계가 직전 이벤트 시각을 쓴다
     pub ts: Option<DateTime<Utc>>,
@@ -20,7 +23,7 @@ pub struct Event {
 }
 
 /// `generation` 은 파일 세대 (4.5)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RawRef {
     pub path: PathBuf,
     pub generation: u64,
@@ -28,14 +31,54 @@ pub struct RawRef {
     pub line_no: u64,
 }
 
+/// 파일 하나(메인 또는 서브 기록)마다 하나 둔다. 파일이 Reset되면 새로 만든다 (4.3)
+pub trait Parser {
+    /// TailReader의 한 줄을 이벤트로. 연출로 못 바꾼 모양은 `unhandled` 에 구조만 넣는다
+    fn parse_line(
+        &mut self,
+        bytes: &[u8],
+        raw_ref: &RawRef,
+        unhandled: &mut Vec<Unhandled>,
+    ) -> Vec<Event>;
+}
+
+/// 원본 레코드를 보는 파서만 아는 미대응 재료 (4.11). 원문 값은 담지 않는다.
+/// 이벤트에서 알 수 있는 kind(`command`·`mcp_server`·`skill` 등)와 집계·저장은 diag 몫이다
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum Unhandled {
+    /// 모르는 최상위 `type`, Codex `payload.type`. `keys` 는 최상위 키 이름
+    RecordType {
+        type_name: String,
+        keys: Vec<String>,
+        renamed_turn: bool,
+    },
+    SystemSubtype {
+        subtype: String,
+    },
+    /// ToolKind::Other 로 떨어진 도구 (내부 배관 제외)
+    ToolName {
+        name: String,
+        input_keys: Vec<String>,
+    },
+    /// 성공·실패를 판별하지 못한 결과. `result_keys` 는 결과의 최상위 키 이름
+    OutcomeUnknown {
+        tool: String,
+        result_keys: Vec<String>,
+    },
+    /// 모르는 Claude `entrypoint`·Codex `originator` 값
+    ProductValue {
+        value: String,
+    },
+}
+
 /// 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum Confidence {
     Confirmed,
     Inferred,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum EventKind {
     UserMessage {
         text: String,
@@ -63,6 +106,8 @@ pub enum EventKind {
         prompt: String,
         model: Option<String>,
         description: Option<String>,
+        /// Codex 서브의 reasoning_effort. Claude 서브는 meta.json 사전 등록이 맡아 None
+        effort: Option<String>,
         depth: u8,
     },
     /// 완료 기록에서 낸다 (4.6.1~4.6.3). 못 봤으면 추정 (4.7.2)
@@ -72,6 +117,8 @@ pub enum EventKind {
     /// 확인됨: AskUserQuestion / ExitPlanMode / Codex request_user_input_async / Antigravity ask_question
     PermissionRequest {
         question: String,
+        /// Claude ExitPlanMode
+        plan: bool,
     },
     ContextCompaction {
         pre_tokens: Option<u64>,
@@ -90,6 +137,8 @@ pub enum EventKind {
     TokenUsage {
         /// input + cache_creation + cache_read
         input_total: u64,
+        /// input_total 중 캐시에서 읽은 몫. 팀 토큰 합은 이것을 뺀다 (매 응답마다 다시 읽히는 몫이라)
+        cache_read: u64,
         output: u64,
         context_window: Option<u64>,
     },
@@ -103,7 +152,7 @@ pub enum EventKind {
     Reset,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum ToolOutcome {
     /// 구조 필드(is_error=false, exit_code=0)로 확인된 성공
     Ok,
@@ -117,7 +166,7 @@ pub enum ToolOutcome {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ToolKind {
     FileRead,
     FileSearch,
@@ -145,7 +194,7 @@ pub enum ToolKind {
 }
 
 /// 문장 생성에 필요한 최소 정보
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ToolSummary {
     /// 상대 경로
     pub path: Option<String>,
@@ -162,22 +211,26 @@ pub struct ToolSummary {
     pub background: bool,
     /// max(old_string 줄 수, new_string 줄 수)
     pub lines_changed: Option<u32>,
+    /// Codex `sandbox_permissions: "require_escalated"` 로 승인 창을 요청한 호출
+    pub escalated: bool,
+    /// `git commit -m` 의 메시지 (커밋 문장용)
+    pub commit_message: Option<String>,
 }
 
 /// 합격·반려 숫자. 종료 코드가 아니라 결과 본문에서 온다
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct TestResult {
     pub passed: u32,
     pub failed: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct TodoItem {
     pub content: String,
     pub status: TodoStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum TodoStatus {
     Pending,
     InProgress,
@@ -185,7 +238,7 @@ pub enum TodoStatus {
 }
 
 /// 파이프(pipefail 꺼짐)·`||`·`;`·개행·단독 `&`·분석 불가 구문은 개별 명령의 성공을 보증하지 못해 Mixed (4.6.4)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Compound {
     Single,
     /// `&&` 만
@@ -280,6 +333,12 @@ fn scan(cmd: &str) -> Scan {
                     has_tok = true;
                 }
             },
+            // 단어 첫머리 `#` 은 줄 끝까지 주석이라 실행되지 않는다. 개행은 남겨 기존 분기가 처리한다
+            '#' if !has_tok => {
+                while i + 1 < chars.len() && chars[i + 1] != '\n' {
+                    i += 1;
+                }
+            }
             ' ' | '\t' | '\r' => flush(&mut seg, &mut cur, &mut has_tok),
             '\n' | ';' => {
                 flush(&mut seg, &mut cur, &mut has_tok);
@@ -303,8 +362,12 @@ fn scan(cmd: &str) -> Scan {
                     // 리다이렉트 `2>&1`, `&>`
                     cur.push(c);
                     has_tok = true;
-                } else if seg.is_empty() && !has_tok && next != Some('&') {
-                    // 세그먼트 첫 토큰의 `&` 는 PowerShell 호출 연산자. 비동기가 아니다
+                } else if next != Some('&')
+                    && ((seg.is_empty() && !has_tok)
+                        || (has_tok && cur.ends_with(['{', '(']))
+                        || (!has_tok && seg.last().is_some_and(|t| t.ends_with(['{', '(']))))
+                {
+                    // 세그먼트 첫 토큰이나 `{`·`(` 바로 뒤의 `&` 는 PowerShell 호출 연산자. 비동기가 아니다
                 } else if next == Some('&') {
                     flush(&mut seg, &mut cur, &mut has_tok);
                     end(&mut s.segs, &mut seg);
@@ -515,7 +578,8 @@ fn classify_segment(toks: &[String]) -> SegClass {
             ("pr", "create") => ToolKind::PrCreate,
             _ => ToolKind::Shell,
         },
-        "cat" | "head" | "tail" | "less" => {
+        // `cat > f <<EOF` 처럼 표준 출력을 파일로 보내면 쓰기다
+        "cat" | "head" | "tail" | "less" if !args.iter().any(|a| redirects_stdout(a)) => {
             path = file_arg(&args, false);
             ToolKind::FileRead
         }
@@ -552,6 +616,12 @@ fn classify_segment(toks: &[String]) -> SegClass {
         path,
         msg,
     }
+}
+
+/// 표준 출력 리다이렉트 `>`, `>>`, `1>`, `&>`, `>f`. `2>`, `2>&1`, `>&2` 는 아니다
+fn redirects_stdout(a: &str) -> bool {
+    let r = a.strip_prefix(['1', '&']).unwrap_or(a);
+    r.starts_with('>') && !r.trim_start_matches('>').starts_with('&')
 }
 
 /// `-i`, `-i.bak`, `-ni`, `--in-place[=x]`
@@ -673,6 +743,77 @@ pub fn classify_command(cmd: &str) -> Classified {
         path: best.path,
         commit_message: best.msg,
         async_unknown: s.async_bg,
+    }
+}
+
+/// `word` 바로 앞의 숫자 (`3 passed` 의 3)
+pub(crate) fn count_before(line: &str, word: &str) -> Option<u32> {
+    line.match_indices(word).find_map(|(i, _)| {
+        let head = line[..i].trim_end();
+        let start = head
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| c.is_ascii_digit())
+            .last()?
+            .0;
+        head[start..].parse().ok()
+    })
+}
+
+/// 도장 숫자만 뽑는다. 성공·실패 판정에는 쓰지 않는다 (4.6.1)
+pub(crate) fn parse_test_result(text: &str) -> Option<TestResult> {
+    let pick = |l: &str| {
+        count_before(l, "passed").map(|passed| TestResult {
+            passed,
+            failed: count_before(l, "failed").unwrap_or(0),
+        })
+    };
+    let cargo: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains("test result:"))
+        .collect();
+    if cargo.is_empty() {
+        // pytest `1 failed, 3 passed in …`, jest `Tests: 1 failed, 3 passed, 4 total`
+        return text.lines().rev().find_map(pick);
+    }
+    // cargo 는 크레이트·doc 테스트마다 한 줄씩 낸다
+    cargo
+        .into_iter()
+        .filter_map(pick)
+        .reduce(|a, b| TestResult {
+            passed: a.passed.saturating_add(b.passed),
+            failed: a.failed.saturating_add(b.failed),
+        })
+}
+
+/// 4.6.1 매핑표의 `mcp__` 행. 도구 이름의 단어가 외근(웹)인지 거래처(Mcp)인지 정한다
+pub(crate) fn mcp_kind(name: &str) -> ToolKind {
+    let rest = name.strip_prefix("mcp__").unwrap_or(name);
+    let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));
+    let lower = tool.to_ascii_lowercase();
+    if lower.contains("search") {
+        return ToolKind::WebSearch;
+    }
+    if ["fetch", "scrape", "crawl"]
+        .iter()
+        .any(|w| lower.contains(w))
+    {
+        return ToolKind::WebFetch;
+    }
+    // Claude Desktop 커넥터는 서버 id가 UUID라 상호로 못 쓴다. JS 식별자라 `-` 가 `_` 로 바뀌어 있을 수 있다
+    let uuid = server.len() == 36
+        && server.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-' || c == '_',
+            _ => c.is_ascii_hexdigit(),
+        });
+    let server = if uuid {
+        tool.split('_').next().unwrap_or(tool)
+    } else {
+        server
+    };
+    ToolKind::Mcp {
+        server: server.to_string(),
+        tool: tool.to_string(),
     }
 }
 
@@ -842,6 +983,13 @@ mod tests {
     }
 
     #[test]
+    fn ampersand_after_open_brace_or_paren_is_call_operator() {
+        assert!(!classify_command("{ & $x }").async_unknown);
+        assert!(!classify_command("(& x)").async_unknown);
+        assert!(classify_command("git push &").async_unknown);
+    }
+
+    #[test]
     fn key_is_for_average_norm_is_for_incident() {
         let a = classify_command("pytest a.py");
         let b = classify_command("pytest b.py");
@@ -892,6 +1040,21 @@ mod tests {
         let c = classify_command("cat <<-\"X\"\n\tcargo test\n\tX\ngit push");
         assert_eq!(c.kind, GitPush);
         assert_eq!(c.compound, Compound::Mixed);
+    }
+
+    #[test]
+    fn stdout_redirect_turns_a_read_into_a_write() {
+        for cmd in [
+            "cat > a.md <<EOF\nhi\nEOF",
+            "head a > b",
+            "cat a >>b",
+            "tail a 1>b",
+        ] {
+            assert_eq!(classify_command(cmd).kind, Shell, "{cmd}");
+        }
+        for cmd in ["cat a 2>/dev/null", "cat a 2>&1", "cat a >&2"] {
+            assert_eq!(classify_command(cmd).kind, FileRead, "{cmd}");
+        }
     }
 
     #[test]
@@ -947,5 +1110,26 @@ mod tests {
         assert_eq!(classify_command("sed -n -i 1,5p a").kind, Shell);
         assert_eq!(classify_command("sed -i.bak -n 1p a").kind, Shell);
         assert_eq!(classify_command("sed --in-place -n 1p a").kind, Shell);
+    }
+
+    #[test]
+    fn shell_comment_is_not_executed() {
+        let cases: &[(&str, ToolKind, Compound)] = &[
+            (
+                "echo ok # no deployment && git push",
+                Shell,
+                Compound::Single,
+            ),
+            ("git push # done", GitPush, Compound::Single),
+            ("echo a#b && git push", GitPush, Compound::AndOnly),
+            ("echo \"# x\" && git push", GitPush, Compound::AndOnly),
+            ("echo $# && git push", GitPush, Compound::AndOnly),
+            ("ls # c\ngit push", GitPush, Compound::Mixed),
+            ("cat <<EOF # c\ngit push\nEOF", FileRead, Compound::Mixed),
+        ];
+        for (cmd, kind, compound) in cases {
+            let c = classify_command(cmd);
+            assert_eq!((&c.kind, &c.compound), (kind, compound), "{cmd}");
+        }
     }
 }

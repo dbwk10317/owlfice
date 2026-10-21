@@ -483,7 +483,7 @@ export class ActorLayer {
   /** 자리 초과 "+n" 배지. 키는 마지막 자리 id, x·y 는 1× 캔버스 좌표 */
   private crowds = new Map<string, { el: HTMLElement; x: number; y: number }>();
   /** 사장님이 오면 인터폰이 울린다 (소품 층이 건다) */
-  onRing: ((now: number) => void) | null = null;
+  onRing: ((now: number, cue: Extract<CueDto, { kind: "BossVisit" }>) => void) | null = null;
   /** 외근 복귀로 문이 열릴 때 (소품 층이 건다) */
   onDoor: ((now: number) => void) | null = null;
   /** 새 cue 마다 (소품 층이 건다). 사무실 전환·조용한 재구성이면 부르지 않는다 */
@@ -737,6 +737,11 @@ export class ActorLayer {
     return null;
   }
 
+  isTyping(): boolean {
+    for (const a of this.actors.values()) if (a.root.visible && a.look.pose === "type") return true;
+    return false;
+  }
+
   /** 한 몸을 지금 모습으로 그린다. 오버레이를 다시 놓아야 하면 true */
   private draw(a: Body, now: number): boolean {
     const s = a.track.update(now);
@@ -903,7 +908,7 @@ export class ActorLayer {
     if (!seat) return;
     // 같은 팀에 또 오면 앞 사장님은 없던 것으로
     for (const v of this.visitors.filter((v) => v.teamId === c.teamId)) this.dropVisitor(v);
-    this.onRing?.(now);
+    this.onRing?.(now, c);
     this.actors.get(empKey(c.teamId, lead.agentId))?.track.pose(JUMP, JUMP_MS, now);
     // 그 부장 좌석 앞(화면 아래쪽)에서 부장을 마주 본다
     const to = { gx: seat.gx, gy: seat.gy + VISIT_FRONT, z: 0 };

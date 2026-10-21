@@ -5,6 +5,7 @@ import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 �
 import { firstOffice } from "./first-office.ts";
 import { mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
+import { OfficeSound } from "./office/sound.ts";
 import { emptyState, mountSidebar, popupNames } from "./sidebar-left.ts";
 import { mountPanel } from "./sidebar-right.ts";
 import { showLoading, type LoadingSheet } from "./loading.ts";
@@ -54,6 +55,14 @@ async function loadSheet(): Promise<LoadingSheet | undefined> {
 /** 사이드바 · 가운데(머리말 + 무대) · 현황판 (HANDOFF 2.1). 창 너비 구간은 header 가 app.dataset.layout 으로 정한다 */
 function mountShell(initialSettings: SettingsDto): void {
   let settings = initialSettings;
+  const sound = new OfficeSound();
+  sound.setEnabled(settings.sound ?? false);
+  document.addEventListener("pointerdown", () => sound.unlock());
+  document.addEventListener("keydown", () => sound.unlock());
+  const soundGesture = (on: boolean) => {
+    sound.setEnabled(on);
+    if (on) sound.unlock();
+  };
   const companyName = settings.companyName ?? undefined;
   const el = (tag: string, cls = "") => {
     const e = document.createElement(tag);
@@ -130,6 +139,7 @@ function mountShell(initialSettings: SettingsDto): void {
         {
           invoke,
           onSettings: applySettings,
+          onSoundGesture: soundGesture,
           onError(message) {
             settingsError.textContent = message;
             settingsError.hidden = false;
@@ -150,12 +160,16 @@ function mountShell(initialSettings: SettingsDto): void {
   header = mountHeader(app, headerEl, store, {
     companyName,
     sound: settings.sound ?? false,
-    onSound: (sound) => saveSettings({ invoke, onSettings: applySettings }, { sound }),
+    onSound: (on) => {
+      soundGesture(on);
+      return saveSettings({ invoke, onSettings: applySettings }, { sound: on });
+    },
     bandSlot: () => side.querySelector<HTMLElement>(".ow-side-band"),
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
   });
   mountOffice(stage, store, {
+    sound,
     bossName: settings.bossName,
     onScale: (n) => header?.setScale(n),
     onEmployee: (officeId, teamId, agentId) => {
@@ -184,6 +198,7 @@ function mountShell(initialSettings: SettingsDto): void {
   );
   function applySettings(next: SettingsDto): void {
     settings = next;
+    sound.setEnabled(next.sound ?? false);
     sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
     header?.setSettings(next.companyName, next.sound ?? false);
     office?.setBossName(next.bossName);

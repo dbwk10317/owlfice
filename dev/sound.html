@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>효과음 확인 (T34)</title>
+    <script type="module" src="./sound.ts"></script>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      .controls {
+        padding: 12px;
+      }
+      button {
+        margin: 4px;
+      }
+      #stage {
+        flex: 1;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="controls" aria-label="효과음 검증 조작">
+      <strong>합성 데이터 · 기본 무음</strong>
+      <p>
+        ‘소리 켜기’를 누른 뒤에만 스피커에서 작은 소리가 납니다. 탭을 숨겼다 돌아오면 지난 사건음은
+        울리지 않습니다.
+      </p>
+      <button id="sound" aria-pressed="false">소리 켜기</button>
+      <button id="typing" aria-pressed="false">타자 시작</button>
+      <button id="visit">인터폰 (방문)</button>
+      <button id="siren">짧은 경보</button>
+      <button id="ding">무재해 땡</button>
+      <button id="off">경보 해제 (무음)</button>
+      <button id="rebuild">재구성 (사건음 버림)</button>
+      <button id="switch">사무실 전환 (사건음 버림)</button>
+      <button id="past">끄고 사건 → 켜기 (과거음 버림)</button>
+      <p id="status" role="status">준비 중</p>
+    </section>
+    <div class="ow-stage" id="stage"></div>
+  </body>
+</html>

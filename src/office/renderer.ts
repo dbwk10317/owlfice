@@ -13,6 +13,7 @@ import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { fill } from "../text.ts";
 import { ActorLayer, seatProps } from "./actors.ts";
+import type { OfficeSound } from "./sound.ts";
 import { DRIVEN_PROP, PropsLayer, ScreenLabel, loadWallFont } from "./props.ts";
 import { LADDER_MS } from "./anim-queue.ts";
 import { CanvasTooltip, propTooltip, roomTooltip } from "./canvas-tooltip.ts";
@@ -279,6 +280,7 @@ export interface OfficeHandle {
   highlightTeam(officeId: string, teamId: string): void;
 }
 export interface OfficeOptions {
+  sound?: OfficeSound;
   bossName?: string | null;
   /** 정수 배율(장치 픽셀 기준). 처음 한 번 현재 값으로 부르고, 바뀔 때마다 부른다 */
   onScale?(scale: number): void;
@@ -356,9 +358,15 @@ export async function mountOffice(
     const message = shown?.teams.find((t) => t.teamId === teamId)?.props.bossVisit;
     if (!suppressClick && message) showAt(`${bossName}\n${message}`, x, y);
   };
-  actors.onRing = (now) => props?.ring(now);
+  actors.onRing = (now, cue) => {
+    props?.ring(now);
+    opts.sound?.cue(cue);
+  };
   actors.onDoor = (now) => props?.openDoor(now);
-  actors.onCue = (c, now, o) => props?.cue(c, now, o);
+  actors.onCue = (c, now, o) => {
+    props?.cue(c, now, o);
+    if (c.kind !== "BossVisit") opts.sound?.cue(c);
+  };
   actors.onLadder = (at, now, title) => {
     props?.ladder(at, now);
     props?.deferTitle(title, at + LADDER_MS);
@@ -676,7 +684,11 @@ export async function mountOffice(
   let dirty = true;
   let resumed = false;
   const cues = cueCollector();
+  const soundState = () =>
+    opts.sound?.see(store.state.office, store.state.selectedId, document.hidden);
+  soundState();
   store.subscribe(() => {
+    soundState();
     if (store.state.selectedId !== officeId) actors.highlightTeam(null, Date.now());
     if (store.state.selectedId !== officeId) tooltip.close();
     dirty = true;
@@ -706,6 +718,7 @@ export async function mountOffice(
       }
       props?.tick(now);
       actors.update(now);
+      opts.sound?.keyboard(actors.isTyping(), now);
     },
     undefined,
     UPDATE_PRIORITY.HIGH,
@@ -722,6 +735,7 @@ export async function mountOffice(
     UPDATE_PRIORITY.UTILITY,
   );
   document.addEventListener("visibilitychange", () => {
+    soundState();
     switchFade?.cancel();
     if (document.hidden) app.ticker.stop();
     else {

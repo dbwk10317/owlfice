@@ -1020,7 +1020,7 @@ test("BossVisit cue 로 사장님 액터가 생기고 도착 5초 뒤 나가 사
   const base = world.children.length;
   layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
   expect(world.children).toHaveLength(base + 1);
-  expect(ring).toHaveBeenCalledWith(NOW);
+  expect(ring).toHaveBeenCalledWith(NOW, expect.objectContaining({ kind: "BossVisit" }));
   expect(bodyOf(layer, "boss")).toBe(`body/${sp}/jump_f_0`);
   const visitor = world.children[base] as Container;
   expect((visitor.children[0] as Sprite).texture.label).toMatch(/^body\/snowy\/walk_[fb]_/);
@@ -1234,6 +1234,18 @@ test("합격 도장: 테스트실에 있던 직원이 만세 1초 뒤 자리로 
 test("실패·추정 도장과 도장 없는 이동에는 만세가 없다", () => {
   for (const cues of [[stamp({ failed: 2 })], [stamp({ estimated: true })], []])
     expect(testerLeaves(cues).pose()).toMatch(/^walk_/);
+});
+
+test("타건 여부는 현재 보이는 자세만 보고 걷는 중·퇴근한 직원은 제외한다", () => {
+  const { layer } = newLayer();
+  layer.sync(office([team("t", [boss(), emp("a", "Test", "Type")])]), "large", NOW);
+  expect(layer.isTyping()).toBe(false);
+  layer.sync(office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 })])]), "large", NOW + 1);
+  expect(layer.isTyping()).toBe(false);
+  layer.update(NOW + 1 + WALK_MAX_MS);
+  expect(layer.isTyping()).toBe(true);
+  layer.sync(office([]), "large", NOW + 2 + WALK_MAX_MS, { instant: true });
+  expect(layer.isTyping()).toBe(false);
 });
 
 test("새 cue 는 onCue 로 넘기되 사무실 전환·숨은 창 복귀(instant)면 넘기지 않는다", () => {

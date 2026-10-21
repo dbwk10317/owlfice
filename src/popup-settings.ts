@@ -9,6 +9,7 @@ const S = phrases.settings;
 export interface SettingsDeps {
   invoke: Invoke;
   onSettings(settings: SettingsDto): void;
+  onSoundGesture?(on: boolean): void;
   onError?(message: string): void;
   doc?: Document;
   writeClipboard?(text: string): Promise<void>;
@@ -152,9 +153,11 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     text: string,
     hint: string,
   ): void {
-    const control = button("", () =>
-      save({ [key]: !(current?.[key] ?? key === "osNotifications") }),
-    );
+    const control = button("", () => {
+      const on = !(current?.[key] ?? key === "osNotifications");
+      if (key === "sound") deps.onSoundGesture?.(on);
+      save({ [key]: on });
+    });
     control.className = "ow-switch";
     control.setAttribute("role", "switch");
     control.setAttribute("aria-label", text);

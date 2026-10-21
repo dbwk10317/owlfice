@@ -1,7 +1,7 @@
 # Owlfice 디자인 인계서
 
 > 대상: 프론트 구현 담당 (Tauri 2 + Vite + TypeScript + PixiJS 8). 동작 규칙의 원본은 `PLAN.md` 3부다. 이 문서는 "어떻게 보이고 어떻게 그리는가"를 정한다.
-> 시각 참조는 캔버스 시안 [야근불 · Owlfice 앱 디자인](https://claude.ai/artifact/CLgXWWfStVppQvdRKFHGrx)이다. 원본 파일은 `design/project/*.dc.html`.
+> 시각 참조는 캔버스 시안 [Owlfice 디자인 재검토](https://claude.ai/artifact/Bjiy1HeRhmQqpZcG3M7KmG)이다. 원본 파일은 `design/project/*.dc.html`.
 
 ## 0. 무엇을 어디에 쓰나
 
@@ -19,7 +19,7 @@
 | 4 | `design/handoff/icons/*.svg` | 선 아이콘 41개 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
 | 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | tokens.css 가 가리킨다 |
 | 5 | `design/assets/office-*.png` | 참조 렌더. 위 시트와 평면도만으로 그린 정답 그림 | 테스트 고정 자료 |
-| 6 | 캔버스 시안 | 13장. 화면 구성과 상태 | 시각 참조 |
+| 6 | 캔버스 시안 | 14장 + 실측 반영 제안 보드. 화면 구성과 상태 | 시각 참조 |
 
 그림은 손으로 고치지 않는다. `design/tools/owlfice_art.py` 를 고치고 다시 만든다.
 

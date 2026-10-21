@@ -2,6 +2,7 @@
 // 버튼이 직원 방·문장과 공유 소품(장애)을 바꿔 S21~S28 을 보여 준다. 외근 복귀처럼 "어디서 어디로" 가는 장면은
 // 앞 상태를 먼저 보낸 뒤 다음 상태를 보낸다.
 import { mountOffice } from "../src/office/renderer.ts";
+import { office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type {
   CueDto,
   EmployeeDto,
@@ -67,11 +68,17 @@ function office(
   cues: CueDto[] = [],
 ): OfficeDto {
   const since = iso();
+  const t = testTeam(T, [boss, worker]);
+  const o = testOffice(
+    "dev-scenes",
+    seq++,
+    [{ ...t, title: T, folder: "app", started: since, lastActivity: since, deskSlot: 0 }],
+    cues,
+  );
   return {
-    stateSeq: seq++,
-    officeId: "dev-scenes",
-    rebuilt: false,
+    ...o,
     shared: {
+      ...o.shared,
       incident,
       night: false,
       light: "Off",
@@ -79,27 +86,7 @@ function office(
       trash,
       pizza: 0,
       kanban: [],
-    } as unknown as OfficeDto["shared"],
-    cues,
-    teams: [
-      {
-        teamId: T,
-        title: T,
-        building: "A",
-        hostBadge: null,
-        delayed: false,
-        folder: "app",
-        started: since,
-        lastActivity: since,
-        phase: "Working",
-        workType: "NewDev",
-        deskSlot: 0,
-        employees: [boss, worker],
-        props: {} as OfficeDto["teams"][number]["props"],
-        incident: null,
-        idleAlive: false,
-      },
-    ],
+    },
   };
 }
 

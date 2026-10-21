@@ -1,5 +1,6 @@
 // 개발용 직원 액터 확인 페이지 (npm run dev 에서 /dev/actors.html). 앱 빌드에 들어가지 않는다.
 import { mountOffice } from "../src/office/renderer.ts";
+import { office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type {
   EmployeeDto,
   OfficeDto,
@@ -77,7 +78,9 @@ function team(
   deskSlot: number | null,
   employees: EmployeeDto[],
 ): TeamDto {
+  const t = testTeam(teamId, employees);
   return {
+    ...t,
     teamId,
     title: teamId,
     building,
@@ -90,17 +93,19 @@ function team(
     workType: "NewDev",
     deskSlot,
     employees,
-    props: {} as TeamDto["props"],
-    incident: null,
-    idleAlive: false,
   };
 }
+
+const shared = (incident: boolean): OfficeDto["shared"] => ({
+  ...testOffice("dev-actors", 1, []).shared,
+  incident,
+});
 
 const LARGE: OfficeDto = {
   stateSeq: 1,
   officeId: "dev-large",
   rebuilt: false,
-  shared: { incident: false, night: false } as OfficeDto["shared"],
+  shared: shared(false),
   cues: [],
   teams: [
     team("t1", "A", 0, [
@@ -191,7 +196,7 @@ const SMALL: OfficeDto = {
   stateSeq: 1,
   officeId: "vendor/codex",
   rebuilt: false,
-  shared: { incident: true, night: false } as OfficeDto["shared"],
+  shared: shared(true),
   cues: [],
   teams: [
     team("a", "C", 0, [

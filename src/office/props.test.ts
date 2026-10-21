@@ -3,7 +3,7 @@ import { Sprite, Texture, type Spritesheet } from "pixi.js";
 import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
-import type { Light, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
+import type { Light, OfficeDto, Pose, Room, TeamDto, TodoItem } from "../types/ipc.ts";
 import { parseFloorplan, type Kind } from "./floorplan.ts";
 import {
   kanbanNotes,
@@ -254,4 +254,92 @@ test("같은 값이면 스프라이트를 다시 만들지 않고, 바뀐 소품
     withFrame(scene.world.children, "paper_ball/default").every((c) => world.includes(c)),
   ).toBe(true);
   expect(scene.wall.children).toEqual(wall);
+});
+
+// ---------- 부장 책상 소품 (응답 대기·러버덕·결재 대기·인터폰) ----------
+
+function bossTeam(deskSlot: number | null, room: Room, pose: Pose): TeamDto {
+  return {
+    teamId: `t${deskSlot}`,
+    deskSlot,
+    props: { plant: null },
+    employees: [{ activity: { room, pose } }],
+  } as unknown as TeamDto;
+}
+
+test("응답 대기 김, 러버덕 집어 듦, 결재 대기 화면보호기는 부장 자세를 따라간다", () => {
+  const { scene, props } = layer();
+  const mug = scene.driven.get("mug_0")!;
+  const duck = scene.driven.get("duck_0")!;
+  const mons = ["boss_mon_0_0", "boss_mon_0_1"].map((id) => scene.driven.get(id)!);
+  const at = (pose: Pose, room: Room = "TeamLead") => {
+    props.update(office({}, [bossTeam(0, room, pose)]), NOW);
+  };
+  at("Sit");
+  expect(frameOf(mug)).toBe("mug/still");
+  expect(duck.visible).toBe(true);
+  expect(mons.map(frameOf)).toEqual(["monitor_lg/off", "monitor_lg/off"]);
+
+  at("Think");
+  expect(frameOf(mug)).toMatch(/^mug\/steam_[01]$/);
+  // 김은 두 프레임이 번갈아 오른다
+  props.tick(NOW + 334);
+  const a = frameOf(mug);
+  props.tick(NOW + 667);
+  expect(frameOf(mug)).not.toBe(a);
+
+  at("Duck");
+  expect(duck.visible).toBe(false);
+  expect(frameOf(mug)).toBe("mug/still");
+
+  at("Pace", "Dev");
+  expect(mons.map(frameOf)).toEqual([
+    expect.stringMatching(/^monitor_lg\/saver_[01]$/),
+    expect.stringMatching(/^monitor_lg\/saver_[01]$/),
+  ]);
+  expect(duck.visible).toBe(true);
+
+  // 부장이 다른 방에서 생각하면 책상 앞 김은 없다
+  at("Think", "Dev");
+  expect(frameOf(mug)).toBe("mug/still");
+  props.update(null, NOW);
+  expect(mons.map(frameOf)).toEqual(["monitor_lg/off", "monitor_lg/off"]);
+});
+
+test("중소기업은 팀장석마다 그 팀 부장 모니터만 화면보호기, 김·러버덕 소품은 없다", () => {
+  const { scene, props } = layer("small");
+  props.update(office({}, [bossTeam(2, "Dev", "Pace"), bossTeam(0, "TeamLead", "Sit")]), NOW);
+  const f = (i: number) => frameOf(scene.driven.get(`boss_mon_${i}_0`)!);
+  expect([0, 1, 2, 3].map(f)).toEqual([
+    "monitor_md/off",
+    "monitor_md/off",
+    expect.stringMatching(/^monitor_md\/saver_[01]$/),
+    "monitor_md/off",
+  ]);
+  expect(scene.driven.has("mug_0")).toBe(false);
+});
+
+test("인터폰은 ring 뒤 1초만 울린다", () => {
+  const { scene, props } = layer();
+  const bell = scene.driven.get("interphone")!;
+  expect(frameOf(bell)).toBe("interphone/idle");
+  props.ring(NOW);
+  expect(frameOf(bell)).toMatch(/^interphone\/ring_[01]$/);
+  props.tick(NOW + 999);
+  expect(frameOf(bell)).toMatch(/^interphone\/ring_[01]$/);
+  props.tick(NOW + 1000);
+  expect(frameOf(bell)).toBe("interphone/idle");
+});
+
+test("퇴근한 팀 부장의 책상 소품은 모두 꺼진다", () => {
+  const { scene, props } = layer();
+  const off = { ...bossTeam(0, "TeamLead", "Think"), phase: "Off" } as TeamDto;
+  props.update(office({}, [off]), NOW);
+  expect(frameOf(scene.driven.get("mug_0")!)).toBe("mug/still");
+  const pace = { ...bossTeam(0, "TeamLead", "Pace"), phase: "Off" } as TeamDto;
+  props.update(office({}, [pace]), NOW);
+  expect(frameOf(scene.driven.get("boss_mon_0_0")!)).toBe("monitor_lg/off");
+  const duck = { ...bossTeam(0, "TeamLead", "Duck"), phase: "Off" } as TeamDto;
+  props.update(office({}, [duck]), NOW);
+  expect(scene.driven.get("duck_0")!.visible).toBe(true);
 });

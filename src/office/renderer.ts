@@ -305,6 +305,7 @@ export async function mountOffice(
   let sceneKey = "";
   let officeId = "";
   actors.onPick = (teamId, agentId) => opts.onEmployee?.(officeId, teamId, agentId);
+  actors.onRing = (now) => props?.ring(now);
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
   let fit = canvasScale(CANVAS_W, CANVAS_H, 1);
   let dpr = 1;
@@ -551,6 +552,7 @@ export async function mountOffice(
         propsAt = now;
         props?.update(shown, now);
       }
+      props?.tick(now);
       actors.update(now);
     },
     undefined,

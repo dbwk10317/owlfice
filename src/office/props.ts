@@ -1,15 +1,50 @@
 // 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV (HANDOFF 5, 6.5, 6.6, PLAN 3.4, 4.7.9).
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
 import { Graphics, type Spritesheet } from "pixi.js";
-import type { OfficeDto, TodoItem } from "../types/ipc.ts";
-import { gridToScreen, hexToRgb, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
+import type { OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
+import {
+  gridToScreen,
+  hexToRgb,
+  zIndexOf,
+  type Floorplan,
+  type Kind,
+  type Seat,
+} from "./floorplan.ts";
+import { RING_MS } from "./anim-queue.ts";
 import type { Scene } from "./renderer.ts";
 import { placeSprite } from "./sprites.ts";
 
 type PropsTarget = Pick<Scene, "wall" | "world" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
-export const DRIVEN_PROP = /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d)$/;
+export const DRIVEN_PROP =
+  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d)$/;
+
+/** 부장 자세로 정해지는 책상 소품 (HANDOFF 5절): 응답 대기 김, 러버덕 집어 듦, 결재 대기 화면보호기 */
+export interface BossFx {
+  steam: boolean;
+  duck: boolean;
+  saver: boolean;
+}
+
+export function bossFx(team: TeamDto | undefined): BossFx {
+  const a = team?.phase === "Off" ? undefined : team?.employees?.[0]?.activity;
+  // 앉는 자세는 팀장실에 있을 때만 책상 앞이다. 서성임은 방과 상관없이 결재 대기다
+  const seated = a?.room === "TeamLead";
+  return {
+    steam: seated && a.pose === "Think",
+    duck: seated && a.pose === "Duck",
+    saver: a?.pose === "Pace",
+  };
+}
+
+type BossSeat = Seat & { mug?: string; duck?: string };
+
+const MUG_FPS = 3;
+const SAVER_FPS = 2;
+const RING_FPS = 8;
+/** 2프레임 반복 소품의 지금 프레임 번호 */
+const blink = (nowMs: number, fps: number) => Math.floor((nowMs * fps) / 1000) % 2;
 
 /** 컨텍스트 사용률 0~1 → 화분 단계 (office.json plant 설명). 1 을 넘으면 시든다. null 이면 undefined = 평면도 기본 */
 export function plantState(v: number | null): string | undefined {
@@ -85,6 +120,9 @@ export class PropsLayer {
   private readonly pl: Map<string, Floorplan["layouts"][Kind]["placements"][number]>;
   private readonly drawn = new Map<string, string>();
   private readonly groups = new Map<string, { destroy(): void }[]>();
+  private readonly bossSeats: BossSeat[];
+  private fx: BossFx[] = [];
+  private ringUntil = 0;
 
   constructor(
     fp: Floorplan,
@@ -96,6 +134,26 @@ export class PropsLayer {
       sheet.data as unknown as { owlfice: { props: Record<string, PropMeta> } }
     ).owlfice.props;
     this.pl = new Map(fp.layouts[kind].placements.map((p) => [p.id, p]));
+    this.bossSeats = fp.layouts[kind].seats.boss;
+  }
+
+  /** 사장님 방문 때 인터폰이 1초 울린다 */
+  ring(nowMs: number): void {
+    this.ringUntil = nowMs + RING_MS;
+    this.tick(nowMs);
+  }
+
+  /** 김·화면보호기·벨은 프레임이 바뀌어서 매 프레임 불린다. 상태는 update 가 정한 것을 쓴다 */
+  tick(nowMs: number): void {
+    this.bossSeats.forEach((seat, i) => {
+      const fx = this.fx[i];
+      if (seat.mug) this.state(seat.mug, fx?.steam ? `steam_${blink(nowMs, MUG_FPS)}` : undefined);
+      const duck = seat.duck && this.target.driven.get(seat.duck);
+      if (duck) duck.visible = !fx?.duck;
+      for (const m of seat.monitors ?? [])
+        this.state(m, fx?.saver ? `saver_${blink(nowMs, SAVER_FPS)}` : undefined);
+    });
+    this.state("interphone", nowMs < this.ringUntil ? `ring_${blink(nowMs, RING_FPS)}` : undefined);
   }
 
   /** office 가 null 이면 평면도 기본 상태 (그림을 더하지 않는다) */
@@ -113,6 +171,13 @@ export class PropsLayer {
     this.updatePapers(shared?.trash ?? 0);
     this.updatePizza(shared?.pizza ?? 0);
     this.updateTv(office);
+    // 대기업은 팀 하나가 팀장석 하나, 중소기업은 팀장석 번호가 deskSlot
+    this.fx = this.bossSeats.map((_, i) =>
+      bossFx(
+        this.kind === "large" ? office?.teams[0] : office?.teams.find((t) => t.deskSlot === i),
+      ),
+    );
+    this.tick(nowMs);
   }
 
   /** 평면도 소품의 상태를 바꾼다. undefined 는 평면도 기본 상태 */

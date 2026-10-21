@@ -50,5 +50,6 @@ tempfile = "3"
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# 시작 작업 패닉을 오류 단계로 복구하기 위함
+panic = "unwind"
 strip = true

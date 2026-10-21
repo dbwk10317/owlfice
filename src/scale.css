@@ -146,3 +146,16 @@
   font-size: 12px;
   color: var(--ow-ink-3);
 }
+@media (max-height: 639px) {
+  .sc {
+    gap: 12px;
+    padding: 64px 16px 10px;
+  }
+  .sc__brand {
+    top: 16px;
+  }
+  .sc__opt {
+    padding: 10px 10px 12px;
+    gap: 10px;
+  }
+}

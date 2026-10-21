@@ -28,7 +28,18 @@
       #status {
         margin: 4px 0;
       }
+      html.preview .controls {
+        display: none;
+      }
+      html.preview #app {
+        height: 100vh;
+      }
     </style>
+    <script>
+      if (new URLSearchParams(location.search).get("preview") === "1") {
+        document.documentElement.classList.add("preview");
+      }
+    </script>
   </head>
   <body>
     <section class="controls" aria-label="설정 검증 조작">

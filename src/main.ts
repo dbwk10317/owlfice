@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import "../design/handoff/tokens.css";
 import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 이 필요해 가장 먼저 부른다
 import { firstOffice } from "./first-office.ts";
+import { mountEmptyOffice } from "./empty-office.ts";
 import { mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
 import { OfficeSound } from "./office/sound.ts";
@@ -53,7 +54,7 @@ async function loadSheet(): Promise<LoadingSheet | undefined> {
 }
 
 /** 사이드바 · 가운데(머리말 + 무대) · 현황판 (HANDOFF 2.1). 창 너비 구간은 header 가 app.dataset.layout 으로 정한다 */
-function mountShell(initialSettings: SettingsDto): void {
+function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
   let settings = initialSettings;
   const sound = new OfficeSound();
   sound.setEnabled(settings.sound ?? false);
@@ -134,21 +135,7 @@ function mountShell(initialSettings: SettingsDto): void {
   const sidebar = mountSidebar(side, store, requestSelect, {
     companyName,
     rawDiagnostics: settings.rawDiagnostics ?? false,
-    onSettings: (opener) => {
-      settingsError.hidden = true;
-      openSettings(
-        {
-          invoke,
-          onSettings: applySettings,
-          onSoundGesture: soundGesture,
-          onError(message) {
-            settingsError.textContent = message;
-            settingsError.hidden = false;
-          },
-        },
-        opener,
-      );
-    },
+    onSettings: showSettings,
     onRescan: () => invoke<void>("rescan"),
     onTeam: (officeId, teamId) => {
       panel.showTeam(officeId, teamId);
@@ -169,6 +156,7 @@ function mountShell(initialSettings: SettingsDto): void {
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
   });
+  const emptyOffice = mountEmptyOffice(stage, store, { invoke, onSettings: showSettings, sheet });
   mountOffice(stage, store, {
     sound,
     bossName: settings.bossName,
@@ -192,11 +180,27 @@ function mountShell(initialSettings: SettingsDto): void {
     },
     (e) => {
       console.error("사무실 캔버스", e);
+      emptyOffice.dispose();
       stage.replaceChildren(
         emptyState(document, phrases.canvas.failTitle, phrases.canvas.failBody),
       );
     },
   );
+  function showSettings(opener?: HTMLElement): void {
+    settingsError.hidden = true;
+    openSettings(
+      {
+        invoke,
+        onSettings: applySettings,
+        onSoundGesture: soundGesture,
+        onError(message) {
+          settingsError.textContent = message;
+          settingsError.hidden = false;
+        },
+      },
+      opener,
+    );
+  }
   function applySettings(next: SettingsDto): void {
     settings = next;
     sound.setEnabled(next.sound ?? false);
@@ -218,7 +222,7 @@ async function start(): Promise<void> {
   const companyName = settings.companyName ?? undefined;
   await showLoading(root, { invoke, listen }, sheet, companyName);
   root.remove();
-  mountShell(settings);
+  mountShell(settings, sheet);
   // 구독을 먼저 걸어야 스냅샷과 첫 이벤트 사이의 변경을 놓치지 않는다 (PLAN 4.3 시작 순서)
   await Promise.all([
     listen<OfficeListDto>("office-list", (e) => store.applyList(e.payload)),
@@ -235,4 +239,22 @@ function sendVisibility(): void {
 document.addEventListener("visibilitychange", sendVisibility);
 sendVisibility();
 
-start().catch((e) => console.error("시작 실패", e));
+start().catch((e) => {
+  console.error("시작 실패", e);
+  const screen = document.createElement("div");
+  screen.className = "ow-app ow-start-error";
+  const message = emptyState(
+    document,
+    "앱을 시작하지 못했습니다",
+    "설정과 사무실 정보를 불러오지 못했어요. 다시 시도해 주세요.",
+  );
+  message.setAttribute("role", "alert");
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "ow-btn";
+  retry.textContent = "다시 시도";
+  retry.addEventListener("click", () => location.reload());
+  message.append(retry);
+  screen.append(message);
+  document.body.replaceChildren(screen);
+});

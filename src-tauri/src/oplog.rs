@@ -264,16 +264,6 @@ mod tests {
     }
 
     #[test]
-    fn log_once_는_기억이_차도_새_줄을_쓴다() {
-        // 전역 기억은 이 프로세스의 다른 테스트와 겹치지 않는 줄로만 본다
-        for i in 0..ONCE_MAX + 5 {
-            log_once(&format!("기억 테스트 {i}"));
-        }
-        let seen = ONCE.lock().unwrap();
-        assert_eq!(seen.as_ref().unwrap().len(), ONCE_MAX);
-    }
-
-    #[test]
     fn log_once_는_기억이_찬_뒤에도_기억한_줄은_다시_안_쓰고_새_줄은_쓴다() {
         let mut set = HashSet::new();
         for i in 0..ONCE_MAX {
@@ -282,6 +272,7 @@ mod tests {
         assert!(!first_time(&mut set, "줄 0"));
         assert!(first_time(&mut set, "새 줄"));
         assert!(first_time(&mut set, "새 줄"), "기억 못 한 줄은 다시 쓴다");
+        assert_eq!(set.len(), ONCE_MAX);
     }
 
     #[test]

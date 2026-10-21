@@ -346,6 +346,10 @@ scale: Scale | null,
  */
 companyName: string | null, manualPaths: Array<ManualPath> | null, sound: boolean | null, osNotifications: boolean | null, bossName: string | null, rawDiagnostics: boolean | null, };
 
+export type DiscoveryPathDto = { host: string, vendor: string, path: string | null, status: DiscoveryStatus, };
+
+export type DiscoveryStatus = "Found" | "Missing" | "Offline" | "Unknown";
+
 export type ManualPath = { vendor: ManualVendor, root: string, };
 
 export type ManualVendor = "Claude" | "Codex";

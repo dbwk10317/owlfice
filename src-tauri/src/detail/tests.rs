@@ -825,7 +825,14 @@ fn open_path_resolves_only_known_targets() {
         Err(DetailError::CursorInvalid)
     );
     // 기록에 적힌 작업 폴더가 UNC·상대 경로·상위 이동이면 열지 않는다
-    for bad in [r"\\evil\share\x", r"proj\x", r"C:\proj\..\Windows"] {
+    for bad in [
+        r"\\evil\share\x",
+        r"proj\x",
+        r"C:\proj\..\Windows",
+        r"C:proj",
+        r"C:",
+        r"C:.",
+    ] {
         lock(&e.world).teams.get_mut(&s.key).unwrap().cwd = PathBuf::from(bad);
         assert_eq!(open(&e, work()), Err(DetailError::OpenFailed), "{bad}");
     }

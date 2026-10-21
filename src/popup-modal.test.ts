@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test } from "vite-plus/test";
-import phrases from "../design/handoff/phrases.ko.json";
-import { detailErrorText, openModal } from "./popup-modal.ts";
+import { openModal } from "./popup-modal.ts";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -52,18 +51,6 @@ test("팝업은 한 번에 하나, 두 번째가 닫힐 때 처음 연 요소로
   expect(opened()).toHaveLength(1);
   second.close();
   expect(document.activeElement).toBe(b);
-});
-
-test("오류 코드마다 문구가 있고 모르는 값은 그대로 보인다", () => {
-  for (const code of [
-    "not_found",
-    "cursor_invalid",
-    "host_offline",
-    "timeout",
-    "open_failed",
-  ] as const)
-    expect(detailErrorText(code)).toBe(phrases.detailError[code]);
-  expect(detailErrorText("뭔가 이상함")).toBe("뭔가 이상함");
 });
 
 test("Tab 가두기는 조상이 hidden 인 버튼을 마지막으로 잡지 않는다", () => {

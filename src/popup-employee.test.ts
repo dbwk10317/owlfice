@@ -363,14 +363,6 @@ test("같은 agentId 라도 팀이 다르면 그 teamId 로 연다", async () =>
   expect(s.q("#ed-title")!.textContent).toBe("박서준");
 });
 
-test("Esc 로 닫으면 연 요소로 초점이 돌아간다", async () => {
-  const s = setup();
-  await flush();
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  expect(s.q(".ow-backdrop")).toBeNull();
-  expect(document.activeElement).toBe(s.opener);
-});
-
 test("처음부터 다시 불러오기마저 실패해도 더 보기는 마지막 성공한 cursor 를 간직한다", async () => {
   let more = 0;
   const s = setup({

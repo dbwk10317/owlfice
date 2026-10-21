@@ -4,6 +4,10 @@ html,
 body {
   margin: 0;
 }
+.ow-start-error {
+  align-items: center;
+  justify-content: center;
+}
 .ow-canvas-tooltip {
   position: fixed;
   transform: none;

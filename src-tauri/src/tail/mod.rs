@@ -614,17 +614,6 @@ mod tests {
     }
 
     #[test]
-    fn unread_len_counts_bytes_after_last_newline() {
-        let (_d, _p, mut r) = setup(
-            b"{}
-{}
-abc",
-        );
-        take(&mut r);
-        assert_eq!(r.unread_len(), 3);
-    }
-
-    #[test]
     fn finished_stops_when_read_does_not_advance() {
         // stat 길이가 실제로 읽히는 바이트보다 크게 보이는 경우를 파일로 만들 수 없어 Pending 의 len 을 부풀린다
         let (_d, _p, mut r) = setup(

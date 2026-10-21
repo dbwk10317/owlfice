@@ -1,6 +1,6 @@
 /* 로딩 화면 (HANDOFF 4.7, 시안 Loading). 값은 시안 그대로, 색·글꼴은 tokens.css */
 .ld {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -39,6 +39,8 @@
 .ld__steps {
   width: 440px;
   max-width: 100%;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
@@ -131,6 +133,7 @@
   color: var(--ow-ink-3);
 }
 .ld__foot {
+  flex: none;
   margin: 0;
   font-size: 12px;
   color: var(--ow-ink-3);
@@ -138,8 +141,19 @@
   align-items: center;
   gap: 6px;
 }
-/* 좁은 창: 지금 줄과 이웃 줄만 (HANDOFF 반응형 480-639) */
-@media (max-width: 639px) {
+/* 낮은 창: 지금 줄과 이웃 줄만 (HANDOFF 반응형 높이 480-639) */
+@media (max-height: 639px) {
+  .ld {
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .ld__step {
+    padding: 4px 0;
+    min-height: 28px;
+  }
+  .ld__step--note {
+    padding-top: 0;
+  }
   .ld__step:not([data-near]) {
     display: none;
   }

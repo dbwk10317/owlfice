@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>실제 크기 화면 검수</title>
+    <style>
+      body {
+        margin: 16px;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+        background: #eee;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+      form,
+      #presets {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      input[type="number"] {
+        width: 80px;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        padding: 4px 8px;
+      }
+      #metrics {
+        display: block;
+        margin: 8px 0;
+        font-family: monospace;
+      }
+      #frame {
+        display: block;
+        border: 0;
+        background: white;
+        outline: 1px solid #888;
+        max-width: none;
+      }
+      #inspection {
+        display: block;
+        max-height: 360px;
+        overflow: auto;
+        white-space: pre;
+        font-family: monospace;
+      }
+    </style>
+    <script type="module" src="./viewport.ts"></script>
+  </head>
+  <body>
+    <h1>실제 크기 iframe 검수</h1>
+    <form id="controls">
+      <label
+        >화면
+        <select id="page">
+          <option value="company">중소기업 연출</option>
+          <option value="settings">설정</option>
+          <option value="avatar">아바타</option>
+          <option value="props">소품 비교</option>
+          <option value="startup">첫 실행·로딩</option>
+        </select></label
+      >
+      <label
+        >너비
+        <input id="width" type="number" min="1" max="8192" step="1" value="1280" required /> CSS
+        px</label
+      >
+      <label
+        >높이
+        <input id="height" type="number" min="1" max="8192" step="1" value="720" required /> CSS
+        px</label
+      >
+      <button type="submit">크기 적용</button>
+      <button id="reload" type="button">화면 초기화</button>
+      <label><input id="hide-controls" type="checkbox" /> 개발 조작 UI 숨기기</label>
+      <button id="inspect" type="button">화면 치수 확인</button>
+    </form>
+    <div id="presets" role="group" aria-label="검수 크기 프리셋"></div>
+    <p>
+      축소 없이 지정한 iframe 크기를 유지합니다. 큰 화면은 부모 페이지를 스크롤하세요. 각 개발
+      화면의 조작 UI가 내부 높이 일부를 차지하므로 실제 앱 콘텐츠 영역과 차이가 있습니다.
+    </p>
+    <output id="metrics" aria-live="polite"></output>
+    <iframe id="frame" title="중소기업 연출 검수" width="1280" height="720"></iframe>
+    <output id="inspection" aria-label="화면 치수 JSON"></output>
+  </body>
+</html>

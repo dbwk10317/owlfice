@@ -478,7 +478,7 @@ fn work_dir(cwd: &Path, kind: &HostKind, main: Option<&Path>) -> Option<PathBuf>
                 Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
             );
             let up = cwd.components().any(|c| c == Component::ParentDir);
-            (local && !up).then(|| cwd.to_path_buf())
+            (local && cwd.is_absolute() && !up).then(|| cwd.to_path_buf())
         }
         HostKind::Wsl { .. } => {
             let s = cwd.to_str()?;

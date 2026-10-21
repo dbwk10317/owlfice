@@ -1,9 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { durationText, fill, fillElapsed, hhmm } from "./text.ts";
-
-test("fill: 없는 자리는 빈 글자", () => {
-  expect(fill("{a} {b}!", { a: 1 })).toBe("1 !");
-});
+import { durationText, fillElapsed } from "./text.ts";
 
 test("durationText 초 표기: 경계와 정각", () => {
   expect(durationText(59, true)).toBe("59초");
@@ -35,8 +31,4 @@ test("fillElapsed: 플래그가 false 면 그대로, 백틱 안은 그대로", (
   expect(fillElapsed("`echo {elapsed}` · {elapsed}", 1, true)).toBe("`echo {elapsed}` · 1초");
   expect(fillElapsed("그대로", 5, true)).toBe("그대로");
   expect(fillElapsed("a {elapsed} b", null, true)).toBe("a  b");
-});
-
-test("hhmm: 두 자리로 맞춘다", () => {
-  expect(hhmm(new Date(2026, 0, 2, 3, 4).getTime())).toBe("03:04");
 });

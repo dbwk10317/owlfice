@@ -1,7 +1,16 @@
 // 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 세 겹 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
-import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
+import type {
+  Activity,
+  Bubble,
+  CueDto,
+  EmployeeDto,
+  OfficeDto,
+  Pose,
+  Room,
+  TeamDto,
+} from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
 import { empKey } from "../ticker.ts";
@@ -118,6 +127,20 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
   Dev: { at: ["dev_center"], look: IDLE },
 };
 
+/**
+ * 미팅실 호출이 MCP 인가 스킬인가. 둘 다 Meeting·Sit 로 와서 DTO 로는 못 가르고 백엔드 문장 틀로 가른다
+ * (classify.rs sentence::call·done: "거래처 `서버`…", "외주 매뉴얼 `이름`…").
+ * ponytail: 문장 틀이 바뀌면 깨진다, DTO 에 호출 종류가 생기면 그것으로
+ */
+export function meetingCall(
+  a: Pick<Activity, "room" | "sentence">,
+): { kind: "mcp"; server: string } | { kind: "skill" } | null {
+  if (a.room !== "Meeting") return null;
+  const mcp = /^거래처 `([^`]*)`/.exec(a.sentence);
+  if (mcp) return { kind: "mcp", server: mcp[1] };
+  return a.sentence.startsWith("외주 매뉴얼 ") ? { kind: "skill" } : null;
+}
+
 /** 방·자세 → 자리와 sprite 자세. null 은 그리지 않는다 (외근). */
 export function placeRule(room: Room, pose: Pose, boss: boolean): Rule | null {
   if (room === "Outside") return null;
@@ -189,7 +212,7 @@ function standSpots(fp: Floorplan, kind: Kind, rule: Rule & { at: string[] }): S
   );
 }
 
-function seatSpots(
+export function seatSpots(
   fp: Floorplan,
   kind: Kind,
   team: TeamDto,
@@ -250,6 +273,8 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
       // ponytail: 자리가 모자라면 마지막 자리에 겹친다, 겹침 연출은 T29
       const spot = spots[Math.min(k, spots.length - 1)];
       used.add(spot.id);
+      // 스킬은 앉아서 매뉴얼을 펼치고 MCP 는 서서 미팅한다 (HANDOFF 5절)
+      const skill = emp.activity.pose === "Sit" && meetingCall(emp.activity)?.kind === "skill";
       const p = gridToScreen(spot.gx, spot.gy, spot.z);
       out.push({
         emp,
@@ -261,7 +286,7 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
         gy: spot.gy,
         z: spot.z,
         depth: spot.depth,
-        look: spot.look ?? rule.look,
+        look: spot.look ?? (skill ? SIT : rule.look),
         seated: rule.at === "seat",
       });
     });
@@ -270,8 +295,27 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
 }
 
 /**
+ * 좌석을 가진 직원과 그 좌석. 퇴근한 팀, 팀장석이 없는 중소기업 부장, 퇴장한 서브는 빠진다.
+ * 좌석 배정(seat, deskSlot)으로 정하니 직원이 다른 방에 있어도 나온다.
+ */
+export function* seated(fp: Floorplan, kind: Kind, office: OfficeDto | null) {
+  for (const team of office?.teams ?? []) {
+    // 퇴근한 팀은 모두 퇴장했고 백엔드도 자리를 비운다
+    if (team.phase === "Off") continue;
+    for (const [i, emp] of team.employees.entries()) {
+      const boss = i === 0;
+      if (boss && kind === "small" && team.deskSlot === null) continue;
+      // 퇴장한 서브는 백엔드가 자리를 비운다
+      if (!boss && emp.retiredAt !== null) continue;
+      const { spots, index } = seatSpots(fp, kind, team, emp, boss);
+      yield { emp, spots, index, spot: spots[Math.min(index, spots.length - 1)] };
+    }
+  }
+}
+
+/**
  * 평면도가 숨겨 둔 소품 중 지금 보여야 할 것: 임시·간이 책상과 쪽지 (HANDOFF 6.5).
- * 가구는 지금 선 자리가 아니라 좌석 배정(seat, deskSlot)으로 정한다. 임시 자리 직원이 다른 방에 가도 책상은 남는다.
+ * 임시 자리 직원이 다른 방에 가도 책상은 남는다.
  * 만석 쪽지는 임시 책상 쪽지와 같은 자리에 놓고 그것을 대신한다.
  */
 export function seatProps(fp: Floorplan, kind: Kind, office: OfficeDto | null): Set<string> {
@@ -279,26 +323,16 @@ export function seatProps(fp: Floorplan, kind: Kind, office: OfficeDto | null): 
   const out = new Set<string>();
   let temp = false;
   let full = false;
-  for (const team of office?.teams ?? []) {
-    // 퇴근한 팀은 모두 퇴장했고 백엔드도 자리를 비운다
-    if (team.phase === "Off") continue;
-    team.employees.forEach((emp, i) => {
-      const boss = i === 0;
-      if (boss && kind === "small" && team.deskSlot === null) return;
-      // 퇴장한 서브는 백엔드가 자리를 비운다
-      if (!boss && emp.retiredAt !== null) return;
-      const { spots, index } = seatSpots(fp, kind, team, emp, boss);
-      const spot = spots[Math.min(index, spots.length - 1)];
-      if (!spot?.desk) return;
-      // 팀장석 책상은 평면도에 늘 있다. 켜는 건 간이·임시 책상뿐
-      const isTemp = s.temp.some((x) => x.id === spot.id);
-      if (!isTemp && !s.spare.some((x) => x.id === spot.id)) return;
-      out.add(spot.desk);
-      if (isTemp) {
-        temp = true;
-        full ||= index >= spots.length;
-      }
-    });
+  for (const { spots, index, spot } of seated(fp, kind, office)) {
+    if (!spot?.desk) continue;
+    // 팀장석 책상은 평면도에 늘 있다. 켜는 건 간이·임시 책상뿐
+    const isTemp = s.temp.some((x) => x.id === spot.id);
+    if (!isTemp && !s.spare.some((x) => x.id === spot.id)) continue;
+    out.add(spot.desk);
+    if (isTemp) {
+      temp = true;
+      full ||= index >= spots.length;
+    }
   }
   if (temp) {
     // 접이식 책상은 7명째부터 4자리가 한꺼번에 펴진다 (PLAN 3.4)
@@ -402,6 +436,8 @@ interface Body {
   stampUntil: number;
   /** 2분 넘게 쪼그려 앉은 직원의 땀방울 */
   sweat: Sprite | null;
+  /** 외근으로 숨어 있다 (돌아오면 봉투를 들고 문으로 들어온다) */
+  away: boolean;
 }
 
 interface Actor extends Body {
@@ -445,6 +481,8 @@ export class ActorLayer {
   private visitors: Visitor[] = [];
   /** 사장님이 오면 인터폰이 울린다 (소품 층이 건다) */
   onRing: ((now: number) => void) | null = null;
+  /** 외근 복귀로 문이 열릴 때 (소품 층이 건다) */
+  onDoor: ((now: number) => void) | null = null;
   /** 새 cue 마다 (소품 층이 건다). 사무실 전환·조용한 재구성이면 부르지 않는다 */
   onCue: ((cue: CueDto, now: number) => void) | null = null;
   /** 직원을 눌렀을 때 (직원 상세 팝업). 마운트하는 쪽이 건다 */
@@ -509,6 +547,15 @@ export class ActorLayer {
       else playCue(c, undefined, now);
     }
     const placed = office ? layoutActors(this.fp, kind, office) : [];
+    const away = new Set(
+      office?.teams.flatMap((t) =>
+        t.phase === "Off"
+          ? []
+          : t.employees
+              .filter((e) => e.activity.room === "Outside")
+              .map((e) => empKey(t.teamId, e.agentId)),
+      ),
+    );
     const present = new Set(
       office?.teams.flatMap((t) => t.employees.map((e) => empKey(t.teamId, e.agentId))),
     );
@@ -553,7 +600,12 @@ export class ActorLayer {
         stamps.some((s) => s.teamId === p.team.teamId && s.failed === 0 && !s.estimated)
       )
         a.track.pose(CHEER, CHEER_MS, now);
-      if (entering || (old && !instant)) a.track.retarget(target, now, entering);
+      // 외근에서 돌아온 직원은 문이 1초 열리고 봉투를 들고 자리로 걷는다 (S24). 움직임 줄이기면 결과(자리)만
+      const back = a.away && !entering && !instant && !reducedMotion();
+      a.away = false;
+      if (back) this.onDoor?.(now);
+      if (entering || (old && !instant))
+        a.track.retarget(target, now, entering, back ? "envelope" : undefined);
       for (const c of cues) {
         // 반려는 지나간 일이라 조용한 재구성에서는 다시 보이지 않는다
         if (c.kind === "Reject" && instant) continue;
@@ -568,6 +620,7 @@ export class ActorLayer {
       if (!shown.has(a.key)) {
         if (instant) a.track.reset(HIDDEN, now);
         else a.track.retarget(HIDDEN, now);
+        a.away = away.has(a.key);
         for (const c of cuesOf.get(a.key) ?? []) playCue(c, a.track, now);
         a.zz?.remove();
         a.zz = null;
@@ -755,6 +808,7 @@ export class ActorLayer {
       stampArmed: false,
       stampUntil: 0,
       sweat: null,
+      away: false,
     };
   }
 

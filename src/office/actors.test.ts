@@ -20,6 +20,7 @@ import {
   bubbleText,
   fnv1a64,
   layoutActors,
+  meetingCall,
   owlFrameKeys,
   roundEven,
   seatProps,
@@ -1137,4 +1138,86 @@ test("땀방울: 쪼그려 앉은 지 2분이 넘어야 보이고 일어서면 �
   layer.sync(office([team("t", [boss(), emp("a", "Build", "Sit")])]), "large", NOW + 100_000);
   layer.update(Date.parse(SINCE) + 131_000);
   expect(sweat()!.visible).toBe(false);
+});
+
+// ---------- 미팅실·외근 (T26) ----------
+
+test("미팅실: MCP 는 서서, 스킬은 앉아서 (둘 다 Meeting·Sit 이라 문장으로 가른다)", () => {
+  const look = (sentence: string) =>
+    at(
+      "large",
+      office([team("t", [boss(), emp("a", "Meeting", "Sit", { activity: act(sentence) })])]),
+      "a",
+    )!.look;
+  expect(look("거래처 `figma`와 `get_file` 건으로 미팅 중")).toEqual({ pose: "idle", dir: "f" });
+  expect(look("외주 매뉴얼 `pdf` 펼쳐보는 중")).toEqual({ pose: "sit", dir: "f" });
+  expect(meetingCall(act("거래처 `figma` 미팅 완료"))).toEqual({ kind: "mcp", server: "figma" });
+  expect(meetingCall({ room: "Dev", sentence: "거래처 `x`와 `y` 건으로 미팅 중" })).toBeNull();
+});
+
+function act(sentence: string, room: Room = "Meeting") {
+  return { ...emp("x", room).activity, sentence };
+}
+
+// 외근: 숨었다 돌아오는 직원이 있는 층
+function awayLayer(o: { owls?: Owls | null } = {}) {
+  const sheet = {
+    data: officeJson,
+    textures: Object.fromEntries(
+      Object.keys(officeJson.frames).map((k) => [k, new Texture({ label: k })]),
+    ),
+  } as unknown as Spritesheet;
+  const layer = new ActorLayer(fp, sheet, o.owls ?? labeled, document.createElement("div"));
+  layer.attach(new Container());
+  const doors: number[] = [];
+  layer.onDoor = (now) => void doors.push(now);
+  const a = emp("a", "Dev", "Type", { seat: 0 });
+  const out = { ...a, activity: { ...a.activity, room: "Outside" as Room } };
+  const held = () =>
+    layer
+      .rootOf("t", "a")!
+      .children.some((c) => (c as Sprite).texture?.label === "held_envelope/default");
+  return { layer, doors, held, a, out };
+}
+
+test("외근 복귀: 문이 열리고 문에서 봉투를 들고 걸어 자리로 간다", () => {
+  const { layer, doors, held, a, out } = awayLayer();
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  layer.sync(office([team("t", [boss(), out])]), "large", NOW);
+  layer.update(NOW + WALK_MAX_MS);
+  expect(layer.rootOf("t", "a")!.visible).toBe(false);
+  expect(doors).toEqual([]);
+
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW + 3000);
+  expect(doors).toEqual([NOW + 3000]);
+  expect(posOf(layer, "a")).toEqual(screen(...DOOR));
+  expect(bodyOf(layer, "a")).toMatch(/^body\/\w+\/walk_/);
+  expect(held()).toBe(true);
+  // 자리에 앉으면 봉투를 내려놓는다
+  layer.update(NOW + 3000 + WALK_MAX_MS);
+  expect(posOf(layer, "a")).toEqual(SEAT0);
+  expect(held()).toBe(false);
+});
+
+test("외근 복귀가 아닌 출근(Enter)·조용한 재구성(instant)·움직임 줄이기에는 문도 봉투도 없다", () => {
+  const back = (run: (l: ActorLayer, o: OfficeDto) => void) => {
+    const { layer, doors, held, a, out } = awayLayer();
+    layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+    layer.sync(office([team("t", [boss(), out])]), "large", NOW);
+    layer.update(NOW + WALK_MAX_MS);
+    run(layer, office([team("t", [boss(), a])]));
+    return [doors.length, held()];
+  };
+  expect(
+    back((l, o) => l.sync(withCues(o, [cue({ kind: "Enter", agent: "a" })]), "large", NOW + 3000)),
+  ).toEqual([0, false]);
+  expect(back((l, o) => l.sync(o, "large", NOW + 3000, { instant: true }))).toEqual([0, false]);
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  try {
+    expect(back((l, o) => l.sync(o, "large", NOW + 3000))).toEqual([0, false]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  // 대조: 보통은 문이 열린다
+  expect(back((l, o) => l.sync(o, "large", NOW + 3000))).toEqual([1, true]);
 });

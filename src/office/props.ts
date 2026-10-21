@@ -1,4 +1,4 @@
-// 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV (HANDOFF 5, 6.5, 6.6, PLAN 3.4, 4.7.9).
+// 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV·미팅실·리뷰실·장애 상황실·외근 팻말 (HANDOFF 5, 6.5, 6.6, PLAN 3.4, 4.7.9).
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
 import { Graphics, type Sprite, type Spritesheet } from "pixi.js";
 import type { CueDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
@@ -12,7 +12,15 @@ import {
   type Kind,
   type Seat,
 } from "./floorplan.ts";
-import { FIREWORKS_MS, RETURN_MS, RING_MS, STAMP_RESULT_MS, TRUCK_MS } from "./anim-queue.ts";
+import { meetingCall, seated } from "./actors.ts";
+import {
+  DOOR_OPEN_MS,
+  FIREWORKS_MS,
+  RETURN_MS,
+  RING_MS,
+  STAMP_RESULT_MS,
+  TRUCK_MS,
+} from "./anim-queue.ts";
 import type { Scene } from "./renderer.ts";
 import { placeSprite } from "./sprites.ts";
 
@@ -20,7 +28,7 @@ type PropsTarget = Pick<Scene, "wall" | "world" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
 export const DRIVEN_PROP =
-  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d|rack_\d|terminal|fan|test_machine|test_board|job_ticket)$/;
+  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d|rack_\d|terminal|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table)$/;
 
 /** 부장 자세로 정해지는 책상 소품 (HANDOFF 5절): 응답 대기 김, 러버덕 집어 듦, 결재 대기 화면보호기 */
 export interface BossFx {
@@ -69,6 +77,35 @@ export function labFx(office: OfficeDto | null): LabFx {
   return fx;
 }
 
+/** 공용 방 소품 (HANDOFF 5절 미팅·스킬·리뷰) */
+interface RoomFx {
+  /** MCP 미팅 중인 거래처 상호. 없으면 null */
+  vendor: string | null;
+  /** 스킬 매뉴얼을 펼친 직원이 있다 */
+  skill: boolean;
+  /** 리뷰실에 직원이 있으면 빨간펜 수, 없으면 null */
+  pens: number | null;
+}
+
+// 미팅실·리뷰실도 공용 방이라 어느 팀이든 일하면 켠다 (labFx 와 같은 규칙)
+// ponytail: 빨간펜 수는 DTO 필드가 없어 백엔드 문장("빨간펜 n개")에서 읽는다, 필드가 생기면 그것으로
+function roomFx(office: OfficeDto | null): RoomFx {
+  const fx: RoomFx = { vendor: null, skill: false, pens: null };
+  for (const team of office?.teams ?? []) {
+    if (team.phase === "Off") continue;
+    for (const { activity: a } of team.employees) {
+      const call = meetingCall(a);
+      if (call?.kind === "mcp") fx.vendor ??= call.server;
+      else if (call) fx.skill = true;
+      else if (a.room === "Review") {
+        const n = Number(/빨간펜 (\d+)개/.exec(a.sentence)?.[1] ?? 0);
+        fx.pens = Math.max(fx.pens ?? 0, n);
+      }
+    }
+  }
+  return fx;
+}
+
 type BossSeat = Seat & { mug?: string; duck?: string };
 
 const MUG_FPS = 3;
@@ -76,6 +113,7 @@ const SAVER_FPS = 2;
 const RING_FPS = 8;
 const RACK_FPS = 3;
 const FAN_FPS = 10;
+const BEACON_FPS = 6;
 const MACHINE_FPS = 6;
 const TRUCK_FPS = 8;
 const FIREWORKS_FPS = 6;
@@ -149,6 +187,11 @@ const FIREWORKS_AT = { gx: 2.5, gy: 12.5, z: 34 };
 // 트럭은 출고장 앞 바닥 밖에서 +gy 쪽으로 빠져나간다 (office.json truck)
 const TRUCK_FROM = { gx: 1.5, gy: 16.6 };
 const TRUCK_TO_GY = 22;
+// 회의 탁자 위 (탁자 높이 z=9): 명함과 펼친 매뉴얼
+const CARD_AT = { gx: 19.2, gy: 14.0, z: 9 };
+const MANUAL_AT = { gx: 20.6, gy: 14.0, z: 9 };
+// 미팅실 화면의 밝은 띠 중심과 폭 (meeting_screen 소품 위치 기준 1× px)
+const BAND = { x: 10, y: -5, w: 18 };
 // 효과는 다른 소품 위에 그린다
 const FX_DEPTH = 80;
 
@@ -159,6 +202,8 @@ const LOOSE_SEQ = 5000;
 
 interface PropMeta {
   slots?: number[][];
+  footprint?: [number, number];
+  height?: number;
   stack?: { gx: number; gy: number; z0: number; dz: number; max: number };
   screen?: Record<"bl" | "br" | "tl" | "tr", [number, number]>;
   lineColors?: string[];
@@ -183,6 +228,53 @@ interface Fx {
   tick?: (now: number) => void;
 }
 
+type ToCss = (x: number, y: number) => { left: number; top: number };
+
+/** 미팅실 화면에 쓰는 거래처 상호. 글자는 DOM 이라 장면을 새로 지어도 이 층은 남는다 (HANDOFF 4.4) */
+export class ScreenLabel {
+  private readonly el: HTMLElement;
+  private at = { x: 0, y: 0, w: 0 };
+  private toCss: ToCss = (x, y) => ({ left: x, top: y });
+
+  constructor(overlay: HTMLElement) {
+    this.el = overlay.ownerDocument.createElement("div");
+    this.el.setAttribute("aria-hidden", "true");
+    this.el.hidden = true;
+    Object.assign(this.el.style, {
+      position: "absolute",
+      transform: "translate(-50%, -50%)",
+      font: "var(--ow-text-bubble)",
+      color: "#18181b",
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      pointerEvents: "none",
+    });
+    overlay.append(this.el);
+  }
+
+  /** 글이 없으면 숨긴다. 좌표는 1× 캔버스 */
+  set(text: string | null, x: number, y: number, w: number): void {
+    this.at = { x, y, w };
+    this.el.hidden = text === null;
+    if (this.el.textContent !== (text ?? "")) this.el.textContent = text ?? "";
+    this.put();
+  }
+
+  place(toCss: ToCss): void {
+    this.toCss = toCss;
+    this.put();
+  }
+
+  private put(): void {
+    const p = this.toCss(this.at.x, this.at.y);
+    this.el.style.left = `${p.left}px`;
+    this.el.style.top = `${p.top}px`;
+    // 띠보다 길면 말줄임으로 자른다
+    this.el.style.maxWidth = `${this.toCss(this.at.w, 0).left}px`;
+  }
+}
+
 export class PropsLayer {
   private readonly meta: Record<string, PropMeta>;
   private readonly pl: Map<string, Floorplan["layouts"][Kind]["placements"][number]>;
@@ -191,21 +283,30 @@ export class PropsLayer {
   private readonly bossSeats: BossSeat[];
   private fx: BossFx[] = [];
   private ringUntil = 0;
+  private doorUntil = 0;
+  private incident = false;
   private lab: LabFx = { shell: false, slow: false, test: false, boxes: 0 };
   private readonly effects = new Map<string, Fx>();
 
   constructor(
-    fp: Floorplan,
+    private readonly fp: Floorplan,
     private readonly sheet: Spritesheet,
     private readonly kind: Kind,
     private readonly target: PropsTarget,
     readonly memory: Remembered = { tickets: new Set(), board: undefined },
+    private readonly label: ScreenLabel | null = null,
   ) {
     this.meta = (
       sheet.data as unknown as { owlfice: { props: Record<string, PropMeta> } }
     ).owlfice.props;
     this.pl = new Map(fp.layouts[kind].placements.map((p) => [p.id, p]));
     this.bossSeats = fp.layouts[kind].seats.boss;
+  }
+
+  /** 외근에서 돌아오는 직원이 문을 연다 */
+  openDoor(nowMs: number): void {
+    this.doorUntil = nowMs + DOOR_OPEN_MS;
+    this.tick(nowMs);
   }
 
   /** 사장님 방문 때 인터폰이 1초 울린다 */
@@ -225,6 +326,7 @@ export class PropsLayer {
         this.state(m, fx?.saver ? `saver_${blink(nowMs, SAVER_FPS)}` : undefined);
     });
     this.state("interphone", nowMs < this.ringUntil ? `ring_${blink(nowMs, RING_FPS)}` : undefined);
+    this.state("door", nowMs < this.doorUntil ? "open" : undefined);
     // 움직임 줄이기: 반복 프레임은 첫 장에 멈춘다
     const still = reducedMotion();
     const f = (fps: number) => (still ? 0 : blink(nowMs, fps));
@@ -232,6 +334,7 @@ export class PropsLayer {
       this.state(id, this.lab.shell ? `led_${f(RACK_FPS)}` : undefined);
     this.state("fan", this.lab.slow ? `spin_${f(FAN_FPS)}` : undefined);
     this.state("test_machine", this.lab.test ? `run_${f(MACHINE_FPS)}` : undefined);
+    this.state("beacon", this.incident ? `on_${f(BEACON_FPS)}` : undefined);
     for (const [name, e] of this.effects)
       if (nowMs >= e.until) {
         for (const p of e.parts) p.destroy();
@@ -385,6 +488,7 @@ export class PropsLayer {
     this.state("terminal", this.lab.shell ? "on" : undefined);
     this.state("test_board", this.memory.board);
     this.showTicket();
+    this.updateRooms(office);
     // 대기업은 팀 하나가 팀장석 하나, 중소기업은 팀장석 번호가 deskSlot
     this.fx = this.bossSeats.map((_, i) =>
       bossFx(
@@ -408,6 +512,83 @@ export class PropsLayer {
     // 화분처럼 단계마다 기준점이 다른 소품이 있다
     sprite.pivot.set(frame.anchorPx[0], frame.anchorPx[1]);
     this.drawn.set(`state:${id}`, key);
+  }
+
+  /** 미팅실·리뷰실·장애 상황실·외근 팻말. 전부 지금 상태로 정해지고 cue 는 없다 */
+  private updateRooms(office: OfficeDto | null): void {
+    const fx = roomFx(office);
+    this.incident = office?.shared.incident ?? false;
+    this.state("meeting_screen", fx.vendor !== null ? "on" : undefined);
+    this.state("review_screen", fx.pens !== null ? "code" : undefined);
+    this.state("whiteboard", this.incident ? "scribble" : undefined);
+    this.state("incident_table", this.incident ? "on" : undefined);
+    const ms = this.pl.get("meeting_screen");
+    if (ms) this.label?.set(fx.vendor, ms.x + BAND.x, ms.y + BAND.y, BAND.w);
+    this.updateMeetingTable(fx);
+    this.updatePens(fx.pens ?? 0);
+    this.updateAway(office);
+  }
+
+  private updateMeetingTable(fx: RoomFx): void {
+    const things = [
+      ...(fx.vendor !== null ? [["business_card", CARD_AT] as const] : []),
+      ...(fx.skill ? [["manual_open", MANUAL_AT] as const] : []),
+    ];
+    if (!this.changed("meeting", things.map(([k]) => k).join())) return;
+    const depth = (this.pl.get("meeting_table")?.depth ?? 33.75) + 0.01;
+    this.replace(
+      "meeting",
+      things.map(([k, { gx, gy, z }], i) => {
+        const s = this.fxSprite(`${k}/default`, gx, gy, z);
+        s.zIndex = zIndexOf(depth, LOOSE_SEQ + i);
+        return s;
+      }),
+    );
+  }
+
+  /** 지적마다 리뷰 화면 위에 빨간 포스트잇. 화면 슬롯 수까지만 */
+  private updatePens(pens: number): void {
+    // ponytail: 승인 문구(review_screen approved)는 DTO 에 신호가 없어 못 켠다, T25b 가 백엔드 스냅샷 값을 주면
+    const rs = this.pl.get("review_screen");
+    const slots = this.meta.review_screen?.slots ?? [];
+    const n = Math.min(slots.length, pens);
+    if (!rs || !this.changed("pens", String(n))) return;
+    const screenZ = this.target.driven.get("review_screen")?.zIndex ?? 0;
+    this.replace(
+      "pens",
+      slots.slice(0, n).map(([dx, dy]) => {
+        const s = placeSprite(this.sheet, "postit_red/default", rs.x + dx, rs.y + dy);
+        // 화면 바로 위. 같은 depth 의 다른 소품에 가려지지 않게 화면 키 바로 뒤
+        s.zIndex = screenZ + 0.5;
+        this.target.world.addChild(s);
+        return s;
+      }),
+    );
+  }
+
+  /** 외근 중인 직원의 자리 책상 위에 팻말 (S23). 퇴장한 서브와 팀장석이 없는 팀은 뺀다 */
+  private updateAway(office: OfficeDto | null): void {
+    const desks = [...seated(this.fp, this.kind, office)].flatMap(({ emp, spot }) =>
+      emp.activity.room === "Outside" && spot?.desk ? [spot.desk] : [],
+    );
+    if (!this.changed("away", desks.join())) return;
+    this.replace(
+      "away",
+      desks.flatMap((id) => {
+        const pl = this.pl.get(id);
+        const m = pl && this.meta[pl.sprite];
+        if (!pl || !m?.footprint) return [];
+        // 책상 윗면 가운데
+        const s = this.fxSprite(
+          "sign_away/default",
+          pl.gx + m.footprint[0] / 2,
+          pl.gy + m.footprint[1] / 2,
+          m.height ?? 0,
+        );
+        s.zIndex = zIndexOf(pl.depth + 0.02, LOOSE_SEQ);
+        return [s];
+      }),
+    );
   }
 
   private updatePlants(office: OfficeDto | null): void {

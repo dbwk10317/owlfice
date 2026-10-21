@@ -12,6 +12,8 @@ export const REJECT_HOLD_MS = 4000;
 export const SCRATCH_MS = 2000;
 export const JUMP_MS = 400;
 export const RING_MS = 1000;
+/** 외근 복귀 때 문이 열려 있는 시간 */
+export const DOOR_OPEN_MS = 1000;
 export const STAMP_MS = 1000;
 /** 시험 결과 도장이 도장 책상 위에 남는 시간 */
 export const STAMP_RESULT_MS = 2000;
@@ -60,7 +62,16 @@ export interface Shown {
 }
 
 type Step =
-  | { kind: "walk"; path: Pt[]; ms: number; auto: boolean; head?: number; tail?: number }
+  | {
+      kind: "walk";
+      path: Pt[];
+      ms: number;
+      auto: boolean;
+      head?: number;
+      tail?: number;
+      /** 걷는 동안 손에 든 물건 (외근 복귀의 봉투) */
+      held?: string;
+    }
   | { kind: "pose"; look: Look; ms: number }
   | { kind: "hide" };
 
@@ -179,8 +190,8 @@ export class Track {
     this.nextIdle = now + idlePeriod(this.ctx.seed);
   }
 
-  /** 새 스냅샷 자리. `entering` 이면 문에서 4초 걸어 들어온다 (출근·재출근) */
-  retarget(target: Target, now: number, entering = false): void {
+  /** 새 스냅샷 자리. `entering` 이면 문에서 4초 걸어 들어온다 (출근·재출근). `held` 는 숨었다 돌아올 때 들고 오는 물건 */
+  retarget(target: Target, now: number, entering = false, held?: string): void {
     this.advance(now);
     const prev = this.target;
     this.target = target;
@@ -201,7 +212,7 @@ export class Track {
       this.push({ kind: "hide" }, now);
     } else if (target.at)
       // 숨어 있다 돌아오면 문에서 들어온다 (웹 복귀)
-      this.walk(walkPath(fp, stand(fp, "door"), target.at), undefined, now, false, { tail });
+      this.walk(walkPath(fp, stand(fp, "door"), target.at), undefined, now, false, { tail, held });
     if (this.steps.length > MAX_STEPS) this.reset(target, now);
   }
 
@@ -242,7 +253,7 @@ export class Track {
       const w = along(s.path, s.ms > 0 ? (now - this.t0) / s.ms : 1);
       const f = facing(s.path[w.seg], s.path[w.seg + 1] ?? s.path[w.seg]);
       at = w.at;
-      look = { pose: "walk", dir: f.dir };
+      look = { pose: "walk", dir: f.dir, ...(s.held && { held: s.held }) };
       flip = f.flip;
       // 유휴 동작은 좌석 depth 를 그대로 써야 칸막이·책상과 앞뒤가 안 뒤집힌다
       if (s.auto && t.wander) depth = t.depth;
@@ -295,11 +306,11 @@ export class Track {
     ms: number | undefined,
     now: number,
     auto = false,
-    depths: { head?: number; tail?: number } = {},
+    extra: { head?: number; tail?: number; held?: string } = {},
   ): void {
     // 움직임 줄이기: 걷지 않고 즉시 이동 (HANDOFF 7)
     const t = this.ctx.reduced() ? 0 : (ms ?? walkMs(path));
-    this.push({ kind: "walk", path, ms: t, auto, ...depths }, now);
+    this.push({ kind: "walk", path, ms: t, auto, ...extra }, now);
   }
 
   private idle(now: number): void {
@@ -349,7 +360,8 @@ function along(path: Pt[], f: number): { at: Pt; seg: number } {
  * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire 는 자리 이동(retarget)이 이미 걷게 했다.
  * 사장님 방문(BossVisit)은 직원 큐가 아니라 ActorLayer 가 액터를 만들어 한다.
  * 도장·트럭·반송·폭죽·작업표는 소품 층(PropsLayer.cue), 도장 때 하이파이브는 ActorLayer 가 한다.
- * ponytail: 사이렌·액자 교체·분갈이·흔들림은 아직 없어 무시한다, T26 이 여기에 넣는다
+ * 사이렌(Siren)·흔들림(Shake)은 상태(incident, 카드)가 장면을 다 정하고 캔버스에 순간 연출 그림·소리가 HANDOFF 에 없어 무시한다.
+ * ponytail: 액자 교체·분갈이는 아직 없어 무시한다, 해당 티켓이 여기에 넣는다
  */
 export function playCue(cue: CueDto, track: Track | undefined, now: number): void {
   if (cue.kind === "Clap") track?.pose(CLAP, CLAP_MS, now);

@@ -12,7 +12,7 @@ import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { fill } from "../text.ts";
 import { ActorLayer, seatProps } from "./actors.ts";
-import { DRIVEN_PROP, PropsLayer } from "./props.ts";
+import { DRIVEN_PROP, PropsLayer, ScreenLabel } from "./props.ts";
 import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
 import {
   CANVAS_H,
@@ -281,6 +281,8 @@ export async function mountOffice(
   const actorOverlay = document.createElement("div");
   actorOverlay.className = "ow-overlay";
   wrap.append(app.canvas, overlay, actorOverlay);
+  // 이름표보다 아래에 깔리게 먼저 만든다
+  const screenLabel = new ScreenLabel(actorOverlay);
   const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay);
   const minimap = document.createElement("div");
   minimap.className = "ow-minimap";
@@ -306,6 +308,7 @@ export async function mountOffice(
   let officeId = "";
   actors.onPick = (teamId, agentId) => opts.onEmployee?.(officeId, teamId, agentId);
   actors.onRing = (now) => props?.ring(now);
+  actors.onDoor = (now) => props?.openDoor(now);
   actors.onCue = (c, now) => props?.cue(c, now);
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
   let fit = canvasScale(CANVAS_W, CANVAS_H, 1);
@@ -380,7 +383,7 @@ export async function mountOffice(
           if (team && shown) opts.onSession?.(shown.officeId, team.teamId);
         });
       }
-      props = new PropsLayer(fp, assets.sheet, kind, next, props?.memory);
+      props = new PropsLayer(fp, assets.sheet, kind, next, props?.memory, screenLabel);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);
@@ -444,7 +447,9 @@ export async function mountOffice(
       el.style.height = `${fit.cssH}px`;
     }
     placeLabels();
-    actors.placeOverlay((x, y) => toCss(x, y, fit.scale, dpr));
+    const css = (x: number, y: number) => toCss(x, y, fit.scale, dpr);
+    actors.placeOverlay(css);
+    screenLabel.place(css);
     const lim = panLimits(fit.backingW, fit.backingH, avail.w, avail.h, dpr);
     pan.maxX = lim.maxX;
     pan.maxY = lim.maxY;

@@ -5,12 +5,13 @@ import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
 import type { Light, OfficeDto, Pose, Room, TeamDto, TodoItem } from "../types/ipc.ts";
 import { parseFloorplan, type Kind } from "./floorplan.ts";
-import { FIREWORKS_MS, RETURN_MS, STAMP_RESULT_MS, TRUCK_MS } from "./anim-queue.ts";
+import { DOOR_OPEN_MS, FIREWORKS_MS, RETURN_MS, STAMP_RESULT_MS, TRUCK_MS } from "./anim-queue.ts";
 import {
   kanbanNotes,
   paperCount,
   plantState,
   PropsLayer,
+  ScreenLabel,
   safeMinutes,
   trashState,
   windowState,
@@ -595,4 +596,151 @@ test("Fireworks: 0→1→2 한 번, FIREWORKS_MS 에 사라진다", () => {
     r.props.tick(NOW + FIREWORKS_MS);
     expect([0, 1, 2].map((i) => count(r.scene, `fireworks/${i}`))).toEqual([0, 0, 0]);
   });
+});
+
+// ---------- 미팅실·외근·장애·리뷰실 (T26) ----------
+
+function says(room: Room, sentence: string, o: object = {}): TeamDto["employees"][number] {
+  return {
+    agentId: "e",
+    retiredAt: null,
+    activity: { room, pose: "Sit", since: SINCE, sentence },
+    ...o,
+  } as TeamDto["employees"][number];
+}
+const MCP = "거래처 `figma`와 `get_file` 건으로 미팅 중";
+const SKILL = "외주 매뉴얼 `pdf` 펼쳐보는 중";
+const review = (n: number) => `PR 리뷰 중 · 빨간펜 ${n}개`;
+
+test("MCP 미팅: 화면 켜짐, 명함, 상호 글자(DOM). 스킬은 매뉴얼. 끝나면 기본", () => {
+  const overlay = document.createElement("div");
+  const label = new ScreenLabel(overlay);
+  const scene = buildScene(assets, "large", "claude", false);
+  const props = new PropsLayer(fp, sheet, "large", scene, undefined, label);
+  const shown = () => (overlay.firstElementChild as HTMLElement).hidden;
+
+  props.update(crew(says("Meeting", MCP)), NOW);
+  expect(tex(scene, "meeting_screen")).toBe("meeting_screen/on");
+  expect([count(scene, "business_card/default"), count(scene, "manual_open/default")]).toEqual([
+    1, 0,
+  ]);
+  expect(overlay.textContent).toBe("figma");
+  expect(shown()).toBe(false);
+
+  props.update(crew(says("Meeting", SKILL)), NOW);
+  expect(tex(scene, "meeting_screen")).toBe("meeting_screen/off");
+  expect([count(scene, "business_card/default"), count(scene, "manual_open/default")]).toEqual([
+    0, 1,
+  ]);
+  expect(shown()).toBe(true);
+
+  props.update(crew(says("Dev", MCP)), NOW);
+  expect(count(scene, "manual_open/default")).toBe(0);
+  props.update(null, NOW);
+  expect(tex(scene, "meeting_screen")).toBe("meeting_screen/off");
+});
+
+test("상호는 textContent 로만 넣는다", () => {
+  const overlay = document.createElement("div");
+  const scene = buildScene(assets, "large", "claude", false);
+  const props = new PropsLayer(fp, sheet, "large", scene, undefined, new ScreenLabel(overlay));
+  props.update(crew(says("Meeting", "거래처 `<img src=x>`와 `t` 건으로 미팅 중")), NOW);
+  expect(overlay.querySelector("img")).toBeNull();
+  expect(overlay.textContent).toBe("<img src=x>");
+});
+
+test("외근 중인 직원 자리 책상 위에 팻말, 돌아오거나 퇴근·퇴장이면 걷는다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind);
+    const out = (sub: object = {}) =>
+      crew(says("Outside", "외근 중", { agentId: "b" }), says("Outside", "외근 중", sub));
+    props.update(out({ seat: 2 }), NOW);
+    expect(count(scene, "sign_away/default")).toBe(2);
+    // 책상 하나에 하나씩, 직원 자리가 다르면 위치도 다르다
+    const [a, b] = sprites(scene, "sign_away/default");
+    expect([a.x, a.y]).not.toEqual([b.x, b.y]);
+    props.update(out({ seat: 2, retiredAt: SINCE }), NOW);
+    expect(count(scene, "sign_away/default")).toBe(1);
+    props.update(crew(says("Dev", "일하는 중", { seat: 2 })), NOW);
+    expect(count(scene, "sign_away/default")).toBe(0);
+    const off = out({ seat: 2 });
+    off.teams[0].phase = "Off";
+    props.update(off, NOW);
+    expect(count(scene, "sign_away/default")).toBe(0);
+  }
+});
+
+test("리뷰실: 직원이 있으면 화면 code, 빨간펜 수만큼 포스트잇(화면 슬롯 6개까지)", () => {
+  const { scene, props } = layer();
+  const pens = () => count(scene, "postit_red/default");
+  props.update(crew(says("Review", review(0))), NOW);
+  expect([tex(scene, "review_screen"), pens()]).toEqual(["review_screen/code", 0]);
+  props.update(crew(says("Review", review(3))), NOW);
+  expect(pens()).toBe(3);
+  const rs = fp.layouts.large.placements.find((p) => p.id === "review_screen")!;
+  const slots = officeJson.owlfice.props.review_screen.slots;
+  const at = (xy: number[]) => xy.join();
+  expect(new Set(sprites(scene, "postit_red/default").map((s) => at([s.x, s.y])))).toEqual(
+    new Set(slots.slice(0, 3).map(([dx, dy]) => at([rs.x + dx, rs.y + dy]))),
+  );
+  props.update(crew(says("Review", review(9))), NOW);
+  expect(pens()).toBe(slots.length);
+  // 두 사람이 리뷰하면 더 많은 쪽
+  props.update(crew(says("Review", review(2)), says("Review", review(4), { agentId: "f" })), NOW);
+  expect(pens()).toBe(4);
+  props.update(crew(says("Dev", review(4))), NOW);
+  expect([tex(scene, "review_screen"), pens()]).toEqual(["review_screen/off", 0]);
+});
+
+test("장애: 화이트보드 낙서, 탁자 켜짐, 경광등이 돈다. 해제하면 기본. 움직임 줄이기면 경광등 첫 장", () => {
+  const { scene, props } = layer();
+  const inc = (incident: boolean) => office({ incident }, []);
+  props.update(inc(true), NOW);
+  expect([tex(scene, "whiteboard"), tex(scene, "incident_table")]).toEqual([
+    "whiteboard/scribble",
+    "incident_table/on",
+  ]);
+  const beacon = [0, 80, 160, 240].map((ms) => {
+    props.tick(NOW + ms);
+    return tex(scene, "beacon");
+  });
+  expect(new Set(beacon)).toEqual(new Set(["beacon/on_0", "beacon/on_1"]));
+  stillMotion(true, () => {
+    for (const ms of [0, 80, 160, 240]) {
+      props.tick(NOW + ms);
+      expect(tex(scene, "beacon")).toBe("beacon/on_0");
+    }
+  });
+  props.update(inc(false), NOW + 1000);
+  expect([tex(scene, "whiteboard"), tex(scene, "incident_table"), tex(scene, "beacon")]).toEqual([
+    "whiteboard/off",
+    "incident_table/off",
+    "beacon/off",
+  ]);
+});
+
+test("외근 복귀: 문이 DOOR_OPEN_MS 동안 열렸다 닫힌다", () => {
+  const { scene, props } = layer();
+  expect(tex(scene, "door")).toBe("door/closed");
+  props.openDoor(NOW);
+  expect(tex(scene, "door")).toBe("door/open");
+  props.tick(NOW + DOOR_OPEN_MS - 1);
+  expect(tex(scene, "door")).toBe("door/open");
+  props.tick(NOW + DOOR_OPEN_MS);
+  expect(tex(scene, "door")).toBe("door/closed");
+});
+
+test("상호 글자: 배율이 바뀌면 left·top·maxWidth 가 따라 바뀐다", () => {
+  const overlay = document.createElement("div");
+  const label = new ScreenLabel(overlay);
+  label.set("figma", 10, 20, 18);
+  const el = overlay.firstElementChild as HTMLElement;
+  for (const k of [1, 3]) {
+    label.place((x, y) => ({ left: x * k, top: y * k }));
+    expect([el.style.left, el.style.top, el.style.maxWidth]).toEqual([
+      `${10 * k}px`,
+      `${20 * k}px`,
+      `${18 * k}px`,
+    ]);
+  }
 });

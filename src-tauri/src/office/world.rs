@@ -1,15 +1,16 @@
 //! 팀을 사무실로 묶고 변경 번호를 붙인다 (PLAN 4.7.9, 4.3)
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use chrono::{DateTime, FixedOffset, Utc};
 
 use super::names::{NameBook, NamesSave};
 use super::work::WorkType;
 use super::{Cue, Record, Team, TeamPhase};
+use crate::diag::Diag;
 use crate::discover::{Host, Product, Vendor};
-use crate::parse::Event;
+use crate::parse::{Event, Unhandled};
 
 /// 비교용 복제본이 기록 자리에 두는 빈 기록
 static NO_RECORD: LazyLock<Arc<Record>> = LazyLock::new(Arc::default);
@@ -64,6 +65,8 @@ pub struct OfficeWorld {
     /// 아직 프론트에 보내지 않은 연출 신호와 그 팀. 상태 번호를 올린 같은 잠금 안에서 넣고 발행기가 비운다 (4.8).
     /// 따로 넣으면 발행기가 그 사이에 돌아 번호만 먼저 나가고 연출이 늦게 붙는다
     pub outbox: Vec<(OfficeId, TeamKey, Cue)>,
+    /// 상태 기계가 낸 미대응 기록(Cue::Unhandled)과 그 팀의 동. 프론트로 가지 않고 `drain_unhandled` 가 diag 에 넘긴다 (4.11)
+    unhandled: Vec<(Product, Unhandled)>,
     /// 호스트 id → Host. 호스트 스레드가 만들어질 때 등록한다. 층 번호·배지가 종류를 본다
     pub hosts: HashMap<String, Host>,
     /// 조용히 다시 만들었거나 규모를 바꾼 뒤 아직 발행하지 않은 사무실. 다음 office-state 가 rebuilt 로 나간다 (4.3, 4.7.9)
@@ -98,6 +101,7 @@ impl OfficeWorld {
             suspect_hosts: BTreeSet::new(),
             local,
             outbox: Vec::new(),
+            unhandled: Vec::new(),
             hosts: HashMap::new(),
             rebuilt: HashSet::new(),
             list_rebuilt: false,
@@ -177,9 +181,28 @@ impl OfficeWorld {
         }
     }
 
-    /// 연출 신호를 그 팀의 사무실 앞으로 넣는다
+    /// 모아 둔 미대응 기록을 diag 에 넘긴다. 실행 중 적용(apply·tick) 뒤에 부른다.
+    /// 잠금 순서는 world → diag 다
+    pub fn drain_unhandled(&mut self, diag: &Mutex<Diag>, now: DateTime<Utc>) {
+        if self.unhandled.is_empty() {
+            return;
+        }
+        let mut d = diag.lock().unwrap_or_else(|e| e.into_inner());
+        for (product, u) in self.unhandled.drain(..) {
+            d.observe_unhandled(product, &u, now);
+        }
+    }
+
+    /// 연출 신호를 그 팀의 사무실 앞으로 넣는다. 미대응 기록은 따로 모은다
     pub fn cue(&mut self, key: &TeamKey, cue: Cue) {
-        self.outbox.push((self.office_of(key), key.clone(), cue));
+        match cue {
+            Cue::Unhandled(u) => {
+                if let Some(t) = self.teams.get(key) {
+                    self.unhandled.push((t.product, u));
+                }
+            }
+            cue => self.outbox.push((self.office_of(key), key.clone(), cue)),
+        }
     }
 
     /// 실행 중 append 된 이벤트를 적용한다 (4.3). 잠금 안에서는 이것만 한다.
@@ -206,7 +229,7 @@ impl OfficeWorld {
         for (b, e) in before.employees.iter_mut().zip(&team.employees) {
             b.record = e.record.clone();
         }
-        self.settle(key, &before, now, !cues.is_empty());
+        self.settle(key, &before, now, cues.iter().any(Cue::shown));
         for c in cues {
             self.cue(key, c);
         }
@@ -323,11 +346,16 @@ impl OfficeWorld {
             let mut cues = Vec::new();
             team.tick(now, self.local, &mut cues);
             let list_changed = list_view(&before) != list_view(team);
-            if list_changed || before != *team || !cues.is_empty() {
+            if list_changed || before != *team || cues.iter().any(Cue::shown) {
                 bumps.push((key.clone(), list_changed));
             }
             let office = office_for(self.scale, key);
-            out.extend(cues.into_iter().map(|c| (office.clone(), key.clone(), c)));
+            for c in cues {
+                match c {
+                    Cue::Unhandled(u) => self.unhandled.push((team.product, u)),
+                    c => out.push((office.clone(), key.clone(), c)),
+                }
+            }
         }
         for (key, list_changed) in bumps {
             // 퇴장·퇴근한 직원의 자리를 비운다

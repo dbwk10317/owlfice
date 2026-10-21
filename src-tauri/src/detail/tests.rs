@@ -497,7 +497,7 @@ fn sidecar_path_requires_same_record() {
     );
 }
 
-/// 받은 지시(서브는 Spawn 프롬프트, 부장은 첫 사장님 메시지)와 중복 없는 실적 목록, 상사 이름
+/// 받은 지시(서브는 Spawn 프롬프트, 부장은 첫 사장님 메시지)와 처음 본 순서의 실적 목록(명령은 횟수), 상사 이름
 #[test]
 fn employee_detail_has_instruction_and_lists() {
     let s = Session::fixture(ASYNC, "windows");
@@ -536,30 +536,76 @@ fn employee_detail_has_instruction_and_lists() {
             _ => None,
         })
     };
-    let distinct = |v: Vec<String>| {
-        let mut out: Vec<String> = Vec::new();
+    let counted = |v: Vec<String>| {
+        let mut out: Vec<CountDto> = Vec::new();
         for x in v {
-            if !out.contains(&x) {
-                out.push(x);
+            match out.iter_mut().find(|c| c.item == x) {
+                Some(c) => c.times += 1,
+                None => out.push(CountDto { item: x, times: 1 }),
             }
         }
         out
     };
-    let reads = distinct(
+    let reads: Vec<String> = counted(
         calls()
             .filter(|(t, _)| **t == ToolKind::FileRead)
             .filter_map(|(_, s)| s.path.clone())
             .collect(),
-    );
+    )
+    .into_iter()
+    .map(|c| c.item)
+    .collect();
     assert!(!reads.is_empty());
     assert_eq!(sub.files_read, reads);
-    let commands = distinct(
+    let commands = counted(
         calls()
             .filter_map(|(_, s)| s.command_norm.as_deref().map(|c| sentence::cut(c, 200)))
             .collect(),
     );
     assert!(!commands.is_empty());
     assert_eq!(sub.commands, commands);
+}
+
+/// 테스트 결과가 있는 결과 칸은 그 합격·반려 수를 싣고, 나머지 칸은 비운다
+#[test]
+fn result_event_carries_test_counts() {
+    let s = Session::fixture("claude/test-fail-fix-pass", "windows");
+    let e = env();
+    e.put(&s, s.team(0));
+    let tests: Vec<(String, TestDto)> = s
+        .files(0)
+        .into_iter()
+        .flatten()
+        .filter_map(|ev| match ev.kind {
+            EventKind::ToolResult {
+                call_id,
+                test_result: Some(t),
+                ..
+            } => Some((
+                call_id,
+                TestDto {
+                    passed: t.passed,
+                    failed: t.failed,
+                },
+            )),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        tests.iter().any(|(_, t)| t.failed > 0),
+        "실패한 테스트가 없다"
+    );
+    let all = e.timeline(&s, &s.key.session, None, Some(200)).unwrap();
+    let mut seen = 0;
+    for d in &all {
+        let want = (d.kind == TimelineKind::ToolResult)
+            .then(|| tests.iter().find(|(id, _)| Some(id) == d.call_id.as_ref()))
+            .flatten()
+            .map(|(_, t)| *t);
+        assert_eq!(d.test, want, "{}행", d.line_no);
+        seen += usize::from(want.is_some());
+    }
+    assert_eq!(seen, tests.len());
 }
 
 #[test]
@@ -783,6 +829,65 @@ fn open_path_resolves_only_known_targets() {
         lock(&e.world).teams.get_mut(&s.key).unwrap().cwd = PathBuf::from(bad);
         assert_eq!(open(&e, work()), Err(DetailError::OpenFailed), "{bad}");
     }
+}
+
+/// PR 은 그 팀이 아는 https 주소만 연다. 다른 스킴·인자 경계를 깨는 글자는 탐색기에 닿기 전에 거절한다
+#[test]
+fn pr_target_opens_only_safe_https() {
+    let s = Session::fixture(ASYNC, "windows");
+    let e = env();
+    e.put(&s, s.team(0));
+    let pr = || OpenTarget::Pr {
+        office_id: s.office(),
+        team_id: s.team_id(),
+    };
+    let set = |url: &str| {
+        lock(&e.world).teams.get_mut(&s.key).unwrap().props.pr = Some((142, url.into()));
+    };
+    lock(&e.world).teams.get_mut(&s.key).unwrap().props.pr = None;
+    assert_eq!(open(&e, pr()), Err(DetailError::NotFound));
+    let long = format!("https://github.com/{}", "a".repeat(2048 - 19));
+    for good in [
+        "https://github.com/x/y/pull/142",
+        "https://github.com/x/y%20z/pull/142",
+        long.as_str(),
+    ] {
+        set(good);
+        assert_eq!(open(&e, pr()), Ok(Launch::Url(good.into())), "{good:?}");
+    }
+    let too_long = format!("{long}a");
+    for bad in [
+        "http://github.com/x/y/pull/142",
+        "file:///C:/Windows/System32/calc.exe",
+        r"C:\Windows\System32\calc.exe",
+        "https://",
+        "HTTPS://github.com/x",
+        "https://github.com/x\"y",
+        "https://github.com/x /y",
+        "https://github.com/x\t/y",
+        "https://github.com/x\n/y",
+        "https://github.com/x\u{7f}y",
+        r"https://github.com/x,C:\Windows\calc.exe",
+        r"https://github.com\..\x",
+        "https://github.com/x\u{202e}y",
+        "https://github.com/x\u{200b}y",
+        "https://github.com/\u{feff}x",
+        "https://깃허브.com/x",
+        too_long.as_str(),
+    ] {
+        set(bad);
+        assert_eq!(open(&e, pr()), Err(DetailError::OpenFailed), "{bad:?}");
+    }
+    assert_eq!(
+        open(
+            &e,
+            OpenTarget::Pr {
+                office_id: s.office(),
+                team_id: "team/claude/없음/windows".into(),
+            }
+        ),
+        Err(DetailError::NotFound)
+    );
 }
 
 /// WSL 작업 폴더는 세션 파일이 있는 배포판 공유 아래로 옮긴다

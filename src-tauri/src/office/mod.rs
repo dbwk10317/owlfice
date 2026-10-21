@@ -18,7 +18,7 @@ use ts_rs::TS;
 
 use crate::discover::Product;
 use crate::parse::{
-    Confidence, EventKind, TestResult, TodoItem, ToolKind, ToolOutcome, ToolSummary,
+    Confidence, EventKind, TestResult, TodoItem, ToolKind, ToolOutcome, ToolSummary, Unhandled,
 };
 use work::{Role, Touched, WorkTally, WorkType};
 
@@ -103,24 +103,31 @@ pub struct Record {
     /// 부장의 첫 사장님 메시지
     pub first_message: Option<String>,
     /// 경로는 파서가 만든 상대 경로
-    pub files_read: Uniq,
-    pub files_edited: Uniq,
-    pub commands: Uniq,
+    pub files_read: Counted,
+    pub files_edited: Counted,
+    pub commands: Counted,
 }
 
-/// 중복 없이 처음 본 순서로 쌓는 목록. 도구 호출마다 쌓으므로 검사는 집합으로 한다
+/// 처음 본 순서로 쌓고 같은 항목은 횟수만 올리는 목록. 도구 호출마다 쌓으므로 찾기는 맵으로 한다
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Uniq {
-    pub items: Vec<String>,
-    seen: HashSet<String>,
+pub struct Counted {
+    /// (항목, 나온 횟수)
+    pub items: Vec<(String, u32)>,
+    /// 항목 → `items` 의 자리
+    at: HashMap<String, usize>,
 }
 
-impl Uniq {
-    pub fn push_new(&mut self, item: Option<&str>) {
-        if let Some(s) = item.filter(|s| !s.is_empty())
-            && self.seen.insert(s.to_string())
-        {
-            self.items.push(s.to_string());
+impl Counted {
+    pub fn add(&mut self, item: Option<&str>) {
+        let Some(s) = item.filter(|s| !s.is_empty()) else {
+            return;
+        };
+        match self.at.get(s) {
+            Some(&i) => self.items[i].1 = self.items[i].1.saturating_add(1),
+            None => {
+                self.at.insert(s.to_string(), self.items.len());
+                self.items.push((s.to_string(), 1));
+            }
         }
     }
 }
@@ -405,6 +412,18 @@ pub enum Cue {
         agent: String,
         on: bool,
     },
+    /// 프론트에 안 가는 미대응 기록 (4.11). 재구성이 cue 를 버릴 때 함께 버려져 다시 세지 않게 같은 길로 낸다.
+    /// world 가 outbox 대신 따로 모으고 "cue 가 있었나" 에도 넣지 않는다
+    #[serde(skip)]
+    #[ts(skip)]
+    Unhandled(Unhandled),
+}
+
+impl Cue {
+    /// 프론트 연출인가 (미대응 기록이 아닌가)
+    pub fn shown(&self) -> bool {
+        !matches!(self, Cue::Unhandled(_))
+    }
 }
 
 /// 세션 하나 (4.7). 사무실 합성·좌석은 world 몫이다

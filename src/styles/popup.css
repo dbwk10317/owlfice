@@ -247,6 +247,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ow-kv__pr:hover {
+  color: var(--ow-ink-2);
 }
 
 /* 세션 상세: 최근 사건 */
@@ -319,6 +324,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 횟수가 붙은 줄: 긴 명령이 잘려도 횟수는 오른쪽 끝에 남는다 */
+.ow-emp__li--count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ow-emp__item {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ow-emp__times {
+  flex: none;
+  font-size: 11px;
+  color: var(--ow-ink-3);
 }
 .ow-ev {
   border: 1px solid var(--ow-line);

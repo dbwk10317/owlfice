@@ -9,6 +9,26 @@ export const WALK_MAX_MS = 1500;
 export const ENTER_MS = 4000;
 export const CLAP_MS = 1000;
 export const REJECT_HOLD_MS = 4000;
+export const SCRATCH_MS = 2000;
+export const JUMP_MS = 400;
+export const RING_MS = 1000;
+/** 외근 복귀 때 문이 열려 있는 시간 */
+export const DOOR_OPEN_MS = 1000;
+export const STAMP_MS = 1000;
+/** 시험 결과 도장이 도장 책상 위에 남는 시간 */
+export const STAMP_RESULT_MS = 2000;
+export const TRUCK_MS = 1500;
+/** 반송 상자와 쪽지가 바닥에 남는 시간 */
+export const RETURN_MS = 5000;
+/** 폭죽 세 장을 6fps 로 한 번 (office.json fireworks) */
+export const FIREWORKS_MS = 500;
+export const CHEER_MS = 1000;
+/** 사장님이 부장 책상 앞에 도착한 뒤 서 있는 시간 */
+export const VISIT_STAY_MS = 5000;
+/** 액자를 바꾸는 직원이 사다리 위에 있는 시간 (HANDOFF 5절 제목 변경) */
+export const LADDER_MS = 4000;
+/** 분갈이 때 화분이 비어 있는 시간. 새 화분(s0)은 그 뒤에 나온다 */
+export const REPOT_MS = 800;
 /** 이보다 많이 쌓이면 중간을 건너뛰고 마지막 상태로 점프 */
 export const MAX_STEPS = 5;
 // 방 사이 거리(약 100~390px, 중앙값 250px)가 0.5~1.5초에 고르게 들어오는 속도.
@@ -16,6 +36,9 @@ export const MAX_STEPS = 5;
 const WALK_PX_PER_S = 260;
 const CLAP: Look = { pose: "clap", dir: "f" };
 const IDLE_LOOK: Look = { pose: "idle", dir: "f" };
+const SCRATCH: Look = { pose: "scratch", dir: "f" };
+export const JUMP: Look = { pose: "jump", dir: "f" };
+export const CHEER: Look = { pose: "cheer", dir: "f" };
 
 export interface Pt {
   gx: number;
@@ -43,7 +66,16 @@ export interface Shown {
 }
 
 type Step =
-  | { kind: "walk"; path: Pt[]; ms: number; auto: boolean; head?: number; tail?: number }
+  | {
+      kind: "walk";
+      path: Pt[];
+      ms: number;
+      auto: boolean;
+      head?: number;
+      tail?: number;
+      /** 걷는 동안 손에 든 물건 (외근 복귀의 봉투) */
+      held?: string;
+    }
   | { kind: "pose"; look: Look; ms: number }
   | { kind: "hide" };
 
@@ -68,7 +100,7 @@ export const HIDDEN: Target = {
 const same = (a: Pt | null, b: Pt | null) =>
   a === b || (!!a && !!b && a.gx === b.gx && a.gy === b.gy && a.z === b.z);
 
-function stand(fp: Floorplan, name: string, i = 0): Pt {
+export function stand(fp: Floorplan, name: string, i = 0): Pt {
   const [gx, gy, z = 0] = fp.stands[name][i];
   return { gx, gy, z };
 }
@@ -104,7 +136,7 @@ function segLen(a: Pt, b: Pt): number {
 }
 
 // 0.5–1.5초로 자른다 (HANDOFF 7)
-function walkMs(path: Pt[]): number {
+export function walkMs(path: Pt[]): number {
   let px = 0;
   for (let i = 1; i < path.length; i++) px += segLen(path[i - 1], path[i]);
   return Math.min(WALK_MAX_MS, Math.max(WALK_MIN_MS, (px / WALK_PX_PER_S) * 1000));
@@ -162,8 +194,8 @@ export class Track {
     this.nextIdle = now + idlePeriod(this.ctx.seed);
   }
 
-  /** 새 스냅샷 자리. `entering` 이면 문에서 4초 걸어 들어온다 (출근·재출근) */
-  retarget(target: Target, now: number, entering = false): void {
+  /** 새 스냅샷 자리. `entering` 이면 문에서 4초 걸어 들어온다 (출근·재출근). `held` 는 숨었다 돌아올 때 들고 오는 물건 */
+  retarget(target: Target, now: number, entering = false, held?: string): void {
     this.advance(now);
     const prev = this.target;
     this.target = target;
@@ -184,7 +216,7 @@ export class Track {
       this.push({ kind: "hide" }, now);
     } else if (target.at)
       // 숨어 있다 돌아오면 문에서 들어온다 (웹 복귀)
-      this.walk(walkPath(fp, stand(fp, "door"), target.at), undefined, now, false, { tail });
+      this.walk(walkPath(fp, stand(fp, "door"), target.at), undefined, now, false, { tail, held });
     if (this.steps.length > MAX_STEPS) this.reset(target, now);
   }
 
@@ -202,6 +234,33 @@ export class Track {
     if (from && !same(from, at)) this.walk(walkPath(this.ctx.fp, from, at), undefined, now);
     this.push({ kind: "pose", look, ms }, now);
     if (this.steps.length > MAX_STEPS) this.reset(this.target, now);
+  }
+
+  /**
+   * 자리를 떠나 `to` 에서 look 으로 ms 서 있다 자리로 돌아온다 (액자 교체). 서 있기 시작하는 시각을 돌려준다.
+   * 숨어 있거나 단계가 너무 많이 밀려 있으면 하지 않고 null
+   */
+  errand(to: Pt, look: Look, ms: number, now: number): number | null {
+    this.advance(now);
+    const at = this.target.at;
+    if (!at) return null;
+    this.cut(now);
+    const from = this.end();
+    if (!from) return null;
+    const busyUntil = this.queueEnd(now);
+    const t = this.target;
+    // 앉았던 자리에서 일어서고 다시 앉을 때 책상·칸막이 앞뒤가 뒤집히지 않게 (retarget 과 같다)
+    const head = same(from, t.at) ? t.depth : undefined;
+    const tail = t.sitOn ? t.depth : undefined;
+    this.walk(walkPath(this.ctx.fp, from, to), undefined, now, false, { head });
+    const go = this.steps[this.steps.length - 1];
+    this.push({ kind: "pose", look, ms }, now);
+    this.walk(walkPath(this.ctx.fp, to, at), undefined, now, false, { tail });
+    if (this.steps.length > MAX_STEPS) {
+      this.reset(this.target, now);
+      return null;
+    }
+    return busyUntil + (go.kind === "walk" ? go.ms : 0);
   }
 
   /** 반려 직후 사장님 손이 필요한 동안(needs_boss)은 유휴 동작을 미룬다 (PLAN 4.7.2) */
@@ -225,7 +284,7 @@ export class Track {
       const w = along(s.path, s.ms > 0 ? (now - this.t0) / s.ms : 1);
       const f = facing(s.path[w.seg], s.path[w.seg + 1] ?? s.path[w.seg]);
       at = w.at;
-      look = { pose: "walk", dir: f.dir };
+      look = { pose: "walk", dir: f.dir, ...(s.held && { held: s.held }) };
       flip = f.flip;
       // 유휴 동작은 좌석 depth 를 그대로 써야 칸막이·책상과 앞뒤가 안 뒤집힌다
       if (s.auto && t.wander) depth = t.depth;
@@ -248,6 +307,12 @@ export class Track {
       this.t0 = end;
       if (this.steps.length === 0) this.nextIdle = end + idlePeriod(this.ctx.seed);
     }
+  }
+
+  /** 큐가 다 도는 시각. 비어 있으면 지금 */
+  private queueEnd(now: number): number {
+    if (this.steps.length === 0) return now;
+    return this.t0 + this.steps.reduce((t, s) => t + (s.kind === "hide" ? 0 : s.ms), 0);
   }
 
   /** 큐가 다 돌면 설 자리 */
@@ -278,11 +343,11 @@ export class Track {
     ms: number | undefined,
     now: number,
     auto = false,
-    depths: { head?: number; tail?: number } = {},
+    extra: { head?: number; tail?: number; held?: string } = {},
   ): void {
     // 움직임 줄이기: 걷지 않고 즉시 이동 (HANDOFF 7)
     const t = this.ctx.reduced() ? 0 : (ms ?? walkMs(path));
-    this.push({ kind: "walk", path, ms: t, auto, ...depths }, now);
+    this.push({ kind: "walk", path, ms: t, auto, ...extra }, now);
   }
 
   private idle(now: number): void {
@@ -330,9 +395,14 @@ function along(path: Pt[], f: number): { at: Pt; seg: number } {
 
 /**
  * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire 는 자리 이동(retarget)이 이미 걷게 했다.
- * ponytail: 도장·트럭·사장님 방문·사이렌 같은 나머지 연출은 아직 없어 무시한다, T24~T26 이 여기에 넣는다
+ * 사장님 방문(BossVisit)은 직원 큐가 아니라 ActorLayer 가 액터를 만들어 한다.
+ * 도장·트럭·반송·폭죽·작업표·분갈이는 소품 층(PropsLayer.cue), 도장 때 하이파이브와 액자 교체(FrameSwap)는 ActorLayer 가 한다.
+ * 사이렌(Siren)·흔들림(Shake)은 상태(incident, 카드)가 장면을 다 정하고 캔버스에 순간 연출 그림·소리가 HANDOFF 에 없어 무시한다.
  */
 export function playCue(cue: CueDto, track: Track | undefined, now: number): void {
   if (cue.kind === "Clap") track?.pose(CLAP, CLAP_MS, now);
-  else if (cue.kind === "Reject") track?.holdIdle(REJECT_HOLD_MS, now);
+  else if (cue.kind === "Reject") {
+    track?.holdIdle(REJECT_HOLD_MS, now);
+    track?.pose(SCRATCH, SCRATCH_MS, now);
+  }
 }

@@ -7,6 +7,7 @@ import {
   HIDDEN,
   MAX_STEPS,
   REJECT_HOLD_MS,
+  SCRATCH_MS,
   Track,
   WALK_MAX_MS,
   WALK_MIN_MS,
@@ -278,15 +279,19 @@ test("허가 대기·결재 대기·장애 상황실·졸음·좌석 밖은 유�
   expect(t.update(NOW + 60_000).at).toEqual(pt("door_wait"));
 });
 
-test("반려 cue 를 받으면 그 직원의 다음 유휴 동작이 4초 뒤로 밀린다", () => {
+test("반려 cue 를 받으면 부장이 머리를 긁고 좌석으로, 다음 유휴 동작은 4초 넘게 밀린다", () => {
   const seed = 1234;
   const p = idlePeriod(seed);
   const t = track({ seed });
   t.reset(target(SEAT, { wander: true }), NOW);
   const reject = { teamId: "t", kind: "Reject", agent: "a" } as CueDto;
-  playCue(reject, t, NOW + p - 1000);
-  expect(t.update(NOW + p + REJECT_HOLD_MS - 1001).look.pose).toBe("sit");
-  expect(t.update(NOW + p - 1000 + REJECT_HOLD_MS).look.pose).toBe("walk");
+  const at = NOW + p - 1000;
+  playCue(reject, t, at);
+  expect(t.update(at).look.pose).toBe("scratch");
+  expect(t.update(at + SCRATCH_MS - 1).look.pose).toBe("scratch");
+  expect(t.update(at + SCRATCH_MS).look.pose).toBe("sit");
+  expect(t.update(at + REJECT_HOLD_MS - 1).look.pose).not.toBe("walk");
+  expect(t.update(at + REJECT_HOLD_MS).look.pose).toBe("sit");
 });
 
 test("앉는 가구 자리에서 떠나는 첫 구간과 도착하는 끝 구간은 가구 depth 를 지킨다", () => {

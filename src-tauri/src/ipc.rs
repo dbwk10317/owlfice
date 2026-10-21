@@ -274,6 +274,23 @@ pub struct EventDto {
     pub line_idx: u32,
     /// 큰 결과가 분리된 `tool-results/` 파일. 세션 폴더 안인 것만
     pub sidecar: Option<String>,
+    /// 결과 본문에서 센 테스트 합격·반려 수
+    pub test: Option<TestDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TestDto {
+    pub passed: u32,
+    pub failed: u32,
+}
+
+/// 실적 요약 한 줄: 처음 본 순서의 항목과 나온 횟수
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CountDto {
+    pub item: String,
+    pub times: u32,
 }
 
 /// 직원 상세 팝업 (3.7) 중 원본을 다시 읽지 않는 부분
@@ -292,8 +309,8 @@ pub struct EmployeeDetailDto {
     /// 서브는 받은 프롬프트 전문, 부장은 첫 사장님 메시지
     pub instruction: Option<String>,
     pub files_read: Vec<String>,
-    pub files_edited: Vec<String>,
-    pub commands: Vec<String>,
+    pub files_edited: Vec<CountDto>,
+    pub commands: Vec<CountDto>,
 }
 
 /// 직급별 직원 수. 퇴장한 직원도 센다
@@ -368,6 +385,11 @@ pub enum OpenTarget {
         agent_id: String,
         cursor: CursorDto,
         line_idx: u32,
+    },
+    /// 그 팀의 PR 주소를 기본 브라우저로
+    Pr {
+        office_id: String,
+        team_id: String,
     },
 }
 

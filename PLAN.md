@@ -1353,7 +1353,7 @@ DTO는 모두 `#[derive(Serialize)]` + `camelCase`. enum 값은 Rust 이름 그�
 - `store.ts`: 단일 객체 상태. `applyList`, `applyOfficeState` (둘 다 전체 교체, 스트림별 seq 검사). 구독자는 사이드바 둘과 렌더러.
 - `scale.ts`: 첫 실행 규모 선택 화면. 설정에 규모가 없을 때만 뜬다.
 - `sidebar-left.ts`, `sidebar-right.ts`: DOM 직접 조작. 카드는 `agent_id` 키로 재사용하고 바뀐 필드만 갱신한다. 매 상태마다 innerHTML을 다시 쓰지 않는다. 중소기업은 팀 묶음 헤더. 3.2의 구간에 따라 레일(48px)·드로어·압축형 카드로 바뀐다.
-- `office/anim-queue.ts`: `AnimCue` 를 직원별 큐에 넣고 순서대로 재생. 이동은 A* 없이 방 중심점 간 직선 + 모서리 우회 두 점. 최소 0.5초, 최대 1.5초. 큐가 5개 넘게 쌓이면 중간을 건너뛰고 마지막 상태로 점프. 큐가 비고 자리에 앉은 직원은 5~10초마다(직원 id 해시로 어긋나게) 자리 주변 한두 타일을 오가는 유휴 동작을 한다. 이 동작은 이벤트가 아니고 의미도 주장하지 않는다. `needs_boss()`(4.7.2) 직원은 하지 않는다. 아틀라스 로드에 실패하면 코드로 그린 대체 몸체(단색 사각 + 눈)로 그려 에셋 없이도 화면을 검증할 수 있게 한다.
+- `office/anim-queue.ts`: `AnimCue` 를 직원별 큐에 넣고 순서대로 재생. 이동은 A* 없이 `floorplan.json` 의 `path` 규칙(방 entry 와 개발실 통로를 잇는 직선, 한쪽 끝이 개발실이면 통로 점 생략). 최소 0.5초, 최대 1.5초. 큐가 5개 넘게 쌓이면 중간을 건너뛰고 마지막 상태로 점프. 큐가 비고 자리에 앉은 직원은 5~10초마다(직원 id 해시로 어긋나게) 자리 주변 한두 타일을 오가는 유휴 동작을 한다. 이 동작은 이벤트가 아니고 의미도 주장하지 않는다. `needs_boss()`(4.7.2) 직원은 하지 않는다. 아틀라스 로드에 실패하면 코드로 그린 대체 몸체(단색 사각 + 눈)로 그려 에셋 없이도 화면을 검증할 수 있게 한다.
 - `office/floorplan.ts`: 방마다 `{tiles, anchor, seats[]}`. 원본 데이터는 `design/sprites/floorplan.json`. 개발실 좌석 6 + 임시 책상 4, 팀장석 4 + 간이 2. 좌석 번호는 백엔드가 준 `seat` 를 따른다 (해시 아님).
 - `office/props.ts`: 신호등·화분·전광판·휴지통·칸반·피자·창밖은 `TeamDto.props` 와 `SharedPropsDto` 를 받아 즉시 반영. 애니메이션은 cue로.
 - `office/renderer.ts`: 정수 배율만 (3.2 공식). 720 미만에서 패닝 모드와 미니맵. ResizeObserver 100ms 디바운스. 렌더 루프 60fps. 보이지 않는 창(`document.hidden`)이면 렌더를 멈추고 `office-state` 는 마지막 스냅샷만 들고 있다가 보일 때 한 번 적용한다 (cue는 버린다. 전체 스냅샷이라 seq 규칙과 어긋나지 않는다, 4.3). 한 틱에 두 번 이상 그리지 않도록 `requestAnimationFrame` 하나로 모은다.

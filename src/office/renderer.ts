@@ -275,9 +275,11 @@ const WHITE: Rgb = [255, 255, 255];
 /** 머리말이 부르는 것 */
 export interface OfficeHandle {
   setRoomLabels(on: boolean): void;
+  setBossName(name: string | null): void;
   highlightTeam(officeId: string, teamId: string): void;
 }
 export interface OfficeOptions {
+  bossName?: string | null;
   /** 정수 배율(장치 픽셀 기준). 처음 한 번 현재 값으로 부르고, 바뀔 때마다 부른다 */
   onScale?(scale: number): void;
   /** 직원을 눌렀을 때 (직원 상세 팝업). officeId 는 캔버스에 그려진 사무실이다: 전환 중엔 선택과 다를 수 있다 */
@@ -312,6 +314,7 @@ export async function mountOffice(
   // 이름표보다 아래에 깔리게 먼저 만든다
   const screenLabel = new ScreenLabel(actorOverlay);
   const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay);
+  let bossName = opts.bossName || phrases.ranks.boss;
   const minimap = document.createElement("div");
   minimap.className = "ow-minimap";
   minimap.hidden = true;
@@ -350,8 +353,8 @@ export async function mountOffice(
     }
   };
   actors.onBossPick = (teamId, x, y) => {
-    if (!suppressClick)
-      showAt(shown?.teams.find((t) => t.teamId === teamId)?.props.bossVisit ?? "", x, y);
+    const message = shown?.teams.find((t) => t.teamId === teamId)?.props.bossVisit;
+    if (!suppressClick && message) showAt(`${bossName}\n${message}`, x, y);
   };
   actors.onRing = (now) => props?.ring(now);
   actors.onDoor = (now) => props?.openDoor(now);
@@ -731,6 +734,9 @@ export async function mountOffice(
   layout();
   return {
     setRoomLabels: (on) => void (overlay.hidden = !on),
+    setBossName: (name) => {
+      bossName = name || phrases.ranks.boss;
+    },
     highlightTeam: (officeId, teamId) => {
       pendingTeam = { officeId, teamId };
       focusTeam();

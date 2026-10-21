@@ -159,6 +159,10 @@ impl TailReader {
         self.generation
     }
 
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
     /// commit 한 위치 뒤에 개행 없이 남아 읽지 못한 바이트 수. 버리는 중인 줄은 세지 않는다
     pub fn unread_len(&self) -> usize {
         self.remainder.len()

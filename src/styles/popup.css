@@ -13,6 +13,81 @@
   display: none !important;
 }
 
+.ow-settings {
+  margin: 0;
+  border: 0;
+  padding: 0 24px 24px;
+  min-width: 0;
+}
+.ow-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 0;
+  border-top: 1px solid var(--ow-line);
+}
+.ow-settings__section h2 {
+  margin: 0;
+}
+.ow-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ow-settings__hint,
+.ow-settings__status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ow-ink-3);
+}
+.ow-settings__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.ow-settings__scale,
+.ow-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ow-settings__scale .ow-btn {
+  flex: 1;
+  height: 40px;
+  justify-content: center;
+}
+.ow-settings__paths {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ow-settings__path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.ow-settings__path-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.ow-settings__path button {
+  flex: none;
+}
+.ow-settings__foot {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ow-settings :disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .ow-pop__head {
   display: flex;
   gap: 12px;

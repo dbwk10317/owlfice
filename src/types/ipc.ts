@@ -335,7 +335,6 @@ export type Scale = "Large" | "Small";
 
 /**
  * `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
- * 나머지 설정 칸은 T30 이 여기에 더한다
  */
 export type SettingsDto = { 
 /**
@@ -345,7 +344,11 @@ scale: Scale | null,
 /**
  * 저장된 회사 이름. 없으면 null 이고 프론트가 기본 이름을 쓴다. 보낼 때 ""(공백뿐)는 기본으로 되돌린다
  */
-companyName: string | null, };
+companyName: string | null, manualPaths: Array<ManualPath> | null, sound: boolean | null, osNotifications: boolean | null, bossName: string | null, rawDiagnostics: boolean | null, };
+
+export type ManualPath = { vendor: ManualVendor, root: string, };
+
+export type ManualVendor = "Claude" | "Codex";
 
 export type StepState = "Running" | "Done" | "Warn" | "Error";
 

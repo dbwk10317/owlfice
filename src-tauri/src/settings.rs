@@ -1,5 +1,5 @@
 //! 설정 파일 `settings.json` (PLAN 4.8 `get_settings`/`set_settings`).
-//! 지금은 규모와 회사 이름만 안다. 모르는 칸(T30 이후의 설정, 새 버전이 쓴 칸)은 읽은 대로 두고 다시 쓴다.
+//! 모르는 칸은 읽은 대로 두고 다시 쓴다.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -7,8 +7,64 @@ use std::sync::{Condvar, Mutex, MutexGuard};
 
 use serde_json::{Map, Value};
 
+use crate::ipc::SettingsDto;
 use crate::office::names::{unwritable, write_atomic};
 use crate::office::world::Scale;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub enum ManualVendor {
+    Claude,
+    Codex,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct ManualPath {
+    pub vendor: ManualVendor,
+    pub root: String,
+}
+
+impl ManualPath {
+    /// WSL을 깨우지 않도록 존재 여부는 확인하지 않는다. 실제 접근은 Probe 뒤에 한다.
+    pub fn validate(&self) -> Result<(), String> {
+        let root = self.root.replace('/', "\\");
+        let bytes = root.as_bytes();
+        let rest = if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && bytes[2] == b'\\'
+        {
+            &root[3..]
+        } else if let Some(unc) = root.strip_prefix("\\\\") {
+            let Some((server, rest)) = unc.split_once('\\') else {
+                return Err("수동 경로의 WSL 배포판 이름이 없습니다".into());
+            };
+            if !(server.eq_ignore_ascii_case("wsl.localhost")
+                || server.eq_ignore_ascii_case("wsl$"))
+                || rest.is_empty()
+                || rest.starts_with('\\')
+            {
+                return Err("수동 경로는 WSL 공유만 사용할 수 있습니다".into());
+            }
+            rest
+        } else {
+            return Err("수동 경로는 Windows 절대 경로나 WSL UNC 경로여야 합니다".into());
+        };
+        if rest.contains("\\\\")
+            || rest
+                .chars()
+                .any(|c| c.is_control() || "<>:\"|?*".contains(c))
+            || rest.trim_end_matches('\\').split('\\').any(|part| {
+                part == "."
+                    || part == ".."
+                    || part.ends_with([' ', '.'])
+                    || (part.is_empty() && !rest.is_empty())
+            })
+        {
+            return Err("수동 경로에 잘못된 문자나 상위 경로가 있습니다".into());
+        }
+        Ok(())
+    }
+}
 
 struct Inner {
     path: PathBuf,
@@ -34,12 +90,12 @@ fn scale_of(g: &Inner) -> Option<Scale> {
     serde_json::from_value(g.map.get("scale")?.clone()).ok()
 }
 
-/// 회사 이름 상한 (PLAN 3.8 0단계). 글자(char) 수로 센다
-const COMPANY_MAX: usize = 20;
+/// 회사 이름·사장님 이름은 글자(char) 수로 센다.
+const NAME_MAX: usize = 20;
 
 /// 앞뒤 공백을 떼고 상한까지 자른다. 비면 None (기본 이름)
 fn company_of(s: &str) -> Option<String> {
-    let s: String = s.trim().chars().take(COMPANY_MAX).collect();
+    let s: String = s.trim().chars().take(NAME_MAX).collect();
     (!s.is_empty()).then_some(s)
 }
 
@@ -84,14 +140,10 @@ impl SettingsBook {
 
     /// 메모리에는 항상 반영한다. 저장에 실패하면 에러를 돌려주되 값은 남는다
     pub fn set_scale(&self, scale: Scale) -> io::Result<()> {
-        let mut g = lock(&self.inner);
-        g.map.insert("scale".into(), serde_json::to_value(scale)?);
-        self.chosen.notify_all();
-        if !g.writable {
-            return Err(unwritable(&g.path));
-        }
-        let bytes = serde_json::to_vec_pretty(&g.map)?;
-        write_atomic(&g.path, &bytes)
+        self.update(&SettingsDto {
+            scale: Some(scale),
+            ..SettingsDto::default()
+        })
     }
 
     /// 저장된 회사 이름. 없으면 None 이고 기본 이름은 프론트가 정한다. 손으로 고친 파일도 같은 규칙으로 읽는다
@@ -99,18 +151,92 @@ impl SettingsBook {
         company_of(lock(&self.inner).map.get("company_name")?.as_str()?)
     }
 
+    pub fn os_notifications(&self) -> bool {
+        lock(&self.inner)
+            .map
+            .get("os_notifications")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    }
+
     /// None 이나 공백뿐이면 키를 지운다(기본 이름). 메모리·저장 실패는 set_scale 과 같다
     pub fn set_company_name(&self, name: Option<&str>) -> io::Result<()> {
+        self.update(&SettingsDto {
+            company_name: Some(name.unwrap_or_default().into()),
+            ..SettingsDto::default()
+        })
+    }
+
+    /// 잘못된 입력은 아무 칸도 바꾸지 않는다. 저장 실패는 모든 칸을 이번 실행에 유지한다.
+    pub fn update(&self, dto: &SettingsDto) -> io::Result<()> {
+        if let Some(paths) = &dto.manual_paths {
+            for path in paths {
+                path.validate()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+            }
+        }
+        if dto == &SettingsDto::default() {
+            return Ok(());
+        }
         let mut g = lock(&self.inner);
-        match name.and_then(company_of) {
-            Some(n) => g.map.insert("company_name".into(), n.into()),
-            None => g.map.remove("company_name"),
-        };
+        if let Some(scale) = dto.scale {
+            g.map.insert("scale".into(), serde_json::to_value(scale)?);
+            self.chosen.notify_all();
+        }
+        for (key, name) in [
+            ("company_name", &dto.company_name),
+            ("boss_name", &dto.boss_name),
+        ] {
+            if let Some(name) = name {
+                match company_of(name) {
+                    Some(name) => g.map.insert(key.into(), name.into()),
+                    None => g.map.remove(key),
+                };
+            }
+        }
+        for (key, value) in [
+            ("sound", dto.sound),
+            ("os_notifications", dto.os_notifications),
+            ("raw_diagnostics", dto.raw_diagnostics),
+        ] {
+            if let Some(value) = value {
+                g.map.insert(key.into(), value.into());
+            }
+        }
+        if let Some(paths) = &dto.manual_paths {
+            g.map
+                .insert("manual_paths".into(), serde_json::to_value(paths)?);
+        }
         if !g.writable {
             return Err(unwritable(&g.path));
         }
         let bytes = serde_json::to_vec_pretty(&g.map)?;
         write_atomic(&g.path, &bytes)
+    }
+
+    /// 파일을 손으로 고친 경우에도 IPC 입력과 같은 경로 검증·이름 상한을 적용한다.
+    pub fn snapshot(&self) -> SettingsDto {
+        let g = lock(&self.inner);
+        let name = |key| g.map.get(key).and_then(Value::as_str).and_then(company_of);
+        let flag = |key, default| g.map.get(key).and_then(Value::as_bool).unwrap_or(default);
+        let paths = g
+            .map
+            .get("manual_paths")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|v| serde_json::from_value::<ManualPath>(v.clone()).ok())
+            .filter(|path| path.validate().is_ok())
+            .collect();
+        SettingsDto {
+            scale: scale_of(&g),
+            company_name: name("company_name"),
+            manual_paths: Some(paths),
+            sound: Some(flag("sound", false)),
+            os_notifications: Some(flag("os_notifications", true)),
+            boss_name: name("boss_name"),
+            raw_diagnostics: Some(flag("raw_diagnostics", false)),
+        }
     }
 }
 
@@ -229,5 +355,74 @@ mod tests {
         let b = SettingsBook::load(dir.path());
         assert!(b.set_scale(Scale::Small).is_err());
         assert!(dir.path().join("settings.json").is_dir());
+    }
+
+    #[test]
+    fn manual_paths_accept_only_absolute_local_or_wsl_roots() {
+        let path = |root: &str| ManualPath {
+            vendor: ManualVendor::Claude,
+            root: root.into(),
+        };
+        for root in [
+            r"C:\",
+            r"D:\sessions\projects",
+            "D:/sessions/projects",
+            r"\\wsl.localhost\Ubuntu\home\fixture\.claude\projects",
+            r"\\wsl$\Debian\home\fixture\.codex\sessions",
+        ] {
+            assert!(path(root).validate().is_ok(), "{root}");
+        }
+        for root in [
+            "",
+            "projects",
+            r"C:projects",
+            r"\projects",
+            r"\\server\share\projects",
+            r"\\wsl.localhost",
+            r"\\wsl$\",
+            r"\\wsl$\\projects",
+            r"\\?\C:\projects",
+            r"C:\projects\..\sessions",
+            r"C:\projects\.. \sessions",
+            r"\\wsl$\Ubuntu\home\..\sessions",
+            r"C:\projects:stream",
+            r"C:\projects\\sessions",
+            "C:\\bad\nname",
+            r"C:\projects\*",
+            r"C:\projects\.",
+        ] {
+            assert!(path(root).validate().is_err(), "{root}");
+        }
+    }
+
+    /// 파일에 잘못된 경로나 타입을 써도 감시 후보·원문 설정에 그대로 들어가지 않는다.
+    #[test]
+    fn hand_edited_settings_use_defaults_and_validate_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let value = serde_json::json!({
+            "sound": {"on": true}, "os_notifications": "false", "raw_diagnostics": 1,
+            "boss_name": format!("  {}  ", "가".repeat(21)),
+            "manual_paths": [
+                {"vendor": "Claude", "root": "D:/fixture/projects"},
+                {"vendor": "Codex", "root": "../sessions"},
+                {"vendor": "Gemini", "root": "D:/fixture/brain"}
+            ], "future": {"value": 1}
+        });
+        std::fs::write(dir.path().join("settings.json"), value.to_string()).unwrap();
+        let book = SettingsBook::load(dir.path());
+        let snapshot = book.snapshot();
+        assert_eq!(snapshot.sound, Some(false));
+        assert_eq!(snapshot.os_notifications, Some(true));
+        assert_eq!(snapshot.raw_diagnostics, Some(false));
+        assert_eq!(snapshot.boss_name, Some("가".repeat(20)));
+        assert_eq!(
+            snapshot.manual_paths.unwrap(),
+            vec![ManualPath {
+                vendor: ManualVendor::Claude,
+                root: "D:/fixture/projects".into()
+            }]
+        );
+        book.set_scale(Scale::Small).unwrap();
+        assert_eq!(read(dir.path())["future"], value["future"]);
     }
 }

@@ -113,6 +113,29 @@ test("3.2 표의 너비 경계", () => {
   ]);
 });
 
+test("설정 갱신으로 본사 이름과 소리 토글이 바로 바뀌고 실패는 알린다", async () => {
+  const s = setup(summary());
+  s.store.applyList({ ...s.store.state.list!, listSeq: 2, selectedId: null });
+  s.handle!.setSettings("새 회사", true);
+  expect(s.q(".ow-header__title").textContent).toContain("새 회사");
+  expect(s.q('[aria-label="소리 끄기"]').getAttribute("aria-pressed")).toBe("true");
+
+  const app = document.createElement("div");
+  const header = document.createElement("header");
+  app.append(header);
+  document.body.append(app);
+  const onSound = vi.fn().mockRejectedValue(new Error("저장 실패"));
+  mountHeader(app, header, s.store, { togglePanel() {}, setRoomLabels() {}, onSound });
+  const toggle = header.querySelector<HTMLButtonElement>('[aria-label="소리 켜기"]')!;
+  toggle.click();
+  expect(toggle.disabled).toBe(true);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(onSound).toHaveBeenCalledExactlyOnceWith(true);
+  expect(app.querySelector('[role="alert"]')!.textContent).toContain("저장 실패");
+  expect(toggle.disabled).toBe(false);
+});
+
 test("대기업: 이름, 제품·호스트, 세션 제목, 근무 중 경과", () => {
   const s = setup(summary());
   expect(s.q(".ow-header__title").textContent).toBe("B동 203호");

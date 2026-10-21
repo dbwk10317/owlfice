@@ -94,7 +94,7 @@ impl Mark {
     }
 }
 
-/// 팝업(3.7)만 쓰는 기록. world 가 틱마다 팀을 복제해 비교하므로 Arc 로 싸서 복제·비교를 포인터 하나로 줄인다
+/// 팝업(3.7)과 통계가 쓰는 기록. world 가 틱마다 팀을 복제해 비교하므로 Arc 로 싸서 복제·비교를 포인터 하나로 줄인다
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Record {
     pub timeline: Vec<Mark>,
@@ -149,7 +149,7 @@ pub enum Rank {
 }
 
 /// 사무실 안 구역 (PLAN 2.3)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Room {
     TeamLead,
     Dev,
@@ -272,6 +272,7 @@ pub struct Employee {
     pub description: Option<String>,
     pub activity: Activity,
     pub recent: VecDeque<Activity>,
+    pub room_recent: VecDeque<Activity>,
     pub counters: Counters,
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
@@ -495,6 +496,7 @@ pub struct Team {
     seq: u64,
     /// 사장님 메시지 수 (3.7 턴 수)
     pub turns: u32,
+    pub commits: u32,
     /// 사용량을 한 번도 못 봤으면 None
     pub tokens: Option<Tokens>,
 }

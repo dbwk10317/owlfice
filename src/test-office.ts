@@ -102,7 +102,9 @@ export function office(
       incident: false,
       night: false,
       test: null,
+      stats: { commits: 0, filesEdited: 0, commands: 0, turns: 0 },
     },
+    roomRecent: [],
     cues,
   };
 }

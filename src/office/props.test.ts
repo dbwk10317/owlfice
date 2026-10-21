@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { Sprite, Texture, type Spritesheet } from "pixi.js";
+import { BitmapText, Sprite, Texture, type Spritesheet } from "pixi.js";
 import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
@@ -79,6 +79,42 @@ const withFrame = (children: unknown[], frame: string) =>
 
 const todo = (status: TodoItem["status"], n = 1): TodoItem[] =>
   Array.from({ length: n }, () => ({ content: "x", status }));
+
+test("액자 제목은 사다리 끝까지 유지되고 연속 변경·재설정의 옛 예약은 침범하지 않는다", () => {
+  const { scene, props } = layer();
+  const title = () => scene.wall.children.filter((c) => c instanceof BitmapText).map((c) => c.text);
+  props.update(office({ frameTitle: "이전 제목" }), NOW);
+  expect(title()).toEqual(["이\n전"]);
+  props.deferTitle("다음 제목", NOW + LADDER_MS);
+  props.update(office({ frameTitle: "다음 제목" }), NOW);
+  props.tick(NOW + LADDER_MS - 1);
+  expect(title()).toEqual(["이\n전"]);
+  props.deferTitle("최종 제목", NOW + LADDER_MS * 2);
+  props.update(office({ frameTitle: "최종 제목" }), NOW + 1);
+  props.tick(NOW + LADDER_MS);
+  expect(title()).toEqual(["이\n전"]);
+  props.tick(NOW + LADDER_MS * 2);
+  expect(title()).toEqual(["최\n종"]);
+  props.deferTitle("지난 사무실", NOW + LADDER_MS * 3);
+  props.reset();
+  props.update(office({ frameTitle: "새방 제목" }), NOW + 2);
+  props.tick(NOW + LADDER_MS * 4);
+  expect(title()).toEqual(["새\n방"]);
+  props.update(null, NOW);
+  expect(title()).toEqual([]);
+});
+
+test("통계 한 자리와 초과 표시는 바뀔 때 교체하고 빈 사무실에는 남지 않는다", () => {
+  const { scene, props } = layer();
+  const digits = () =>
+    scene.wall.children.filter((c) => c instanceof Sprite).map((c) => frameOf(c));
+  props.update(office({ stats: { commits: 1, filesEdited: 2, commands: 3, turns: 4 } }), NOW);
+  expect(digits()).toEqual(expect.arrayContaining(["digit/1", "digit/2", "digit/3", "digit/4"]));
+  props.update(office({ stats: { commits: 10, filesEdited: 20, commands: 30, turns: 40 } }), NOW);
+  expect(digits()).not.toContain("digit/4");
+  props.update(null, NOW);
+  expect(digits().filter((f) => f?.startsWith("digit/"))).toEqual([]);
+});
 
 test("신호등: Light → 프레임", () => {
   const { scene, props } = layer();

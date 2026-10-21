@@ -1,6 +1,6 @@
 //! IPC 계약 (PLAN 4.8). 프론트 타입은 여기서 ts-rs 로 만든다 (`src/types/ipc.ts`)
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration as StdDuration, Instant};
@@ -140,7 +140,23 @@ pub struct OfficeDto {
     pub rebuilt: bool,
     pub teams: Vec<TeamDto>,
     pub shared: SharedPropsDto,
+    pub room_recent: Vec<RoomRecentDto>,
     pub cues: Vec<CueDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomRecentDto {
+    pub room: Room,
+    pub events: Vec<RoomEventDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomEventDto {
+    pub team_id: String,
+    pub agent_id: String,
+    pub activity: Activity,
 }
 
 /// 연출 신호와 그 팀. 중소기업은 한 사무실에 팀이 여럿이라 팀 단위 연출(사장님 방문, 분갈이 등)에 필요하다
@@ -259,6 +275,16 @@ pub struct SharedPropsDto {
     pub night: bool,
     /// 테스트실 결과판 = 테스트를 가장 늦게 끝낸 팀 결과
     pub test: Option<TestVerdict>,
+    pub stats: BoardStatsDto,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardStatsDto {
+    pub commits: u32,
+    pub files_edited: u32,
+    pub commands: u32,
+    pub turns: u32,
 }
 
 /// 타임라인 커서 (4.8): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
@@ -715,6 +741,21 @@ fn shared(teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
         .iter()
         .map(|(_, t)| *t)
         .max_by_key(|t| t.last_activity);
+    let mut stats = BoardStatsDto::default();
+    for (_, t) in teams {
+        stats.commits = stats.commits.saturating_add(t.commits);
+        stats.turns = stats.turns.saturating_add(t.turns);
+        let mut files = HashSet::new();
+        for e in &t.employees {
+            files.extend(e.record.files_edited.items.iter().map(|(path, _)| path));
+            for (_, count) in &e.record.commands.items {
+                stats.commands = stats.commands.saturating_add(*count);
+            }
+        }
+        stats.files_edited = stats
+            .files_edited
+            .saturating_add(u32::try_from(files.len()).unwrap_or(u32::MAX));
+    }
     SharedPropsDto {
         light: teams
             .iter()
@@ -739,6 +780,7 @@ fn shared(teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
             .filter(|p| p.test.is_some())
             .max_by_key(|p| p.test_at)
             .and_then(|p| p.test),
+        stats,
     }
 }
 
@@ -750,12 +792,43 @@ pub fn office_dto(
     cues: Vec<CueDto>,
 ) -> Option<OfficeDto> {
     let teams = grouped(w).remove(id)?;
+    let mut room_recent: BTreeMap<Room, Vec<RoomEventDto>> = BTreeMap::new();
+    for (key, team) in &teams {
+        let team_id = team_id_str(key);
+        for e in &team.employees {
+            for activity in &e.room_recent {
+                room_recent
+                    .entry(activity.room)
+                    .or_default()
+                    .push(RoomEventDto {
+                        team_id: team_id.clone(),
+                        agent_id: e.id.clone(),
+                        activity: activity.clone(),
+                    });
+            }
+        }
+    }
+    let room_recent = room_recent
+        .into_iter()
+        .map(|(room, mut events)| {
+            events.sort_by(|a, b| {
+                b.activity
+                    .since
+                    .cmp(&a.activity.since)
+                    .then_with(|| a.team_id.cmp(&b.team_id))
+                    .then_with(|| a.agent_id.cmp(&b.agent_id))
+            });
+            events.truncate(10);
+            RoomRecentDto { room, events }
+        })
+        .collect();
     Some(OfficeDto {
         state_seq: w.state_seq.get(id).copied().unwrap_or(0),
         office_id: office_id_str(id),
         rebuilt,
         teams: teams.iter().map(|(k, t)| team_dto(w, k, t)).collect(),
         shared: shared(&teams),
+        room_recent,
         cues,
     })
 }

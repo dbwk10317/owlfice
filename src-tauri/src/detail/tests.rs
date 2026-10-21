@@ -261,6 +261,8 @@ fn every_mark_finds_its_line_on_all_fixtures() {
         "codex/codex-app",
         "codex/ask-reject-compact",
         "codex/aborted",
+        "claude/bg-fail-reject-compact",
+        "claude/async-subagent",
     ] {
         let s = Session::fixture(rel, "windows");
         let e = env();
@@ -1054,10 +1056,10 @@ fn employee_commands_pick_the_team_by_id() {
     );
 }
 
-/// 최근 사건은 직원마다 끝에서 뽑아 (ts, seq) 로 합치고, limit 은 1~100 으로 맞춘다.
-/// 늦게 읽힌 줄의 적용 순서(seq)가 시각 순서와 달라도 재구성과 같은 순서로 나온다
+/// 최근 사건은 직원마다 끝에서 뽑아 적용 순서(seq)로 합치고, limit 은 1~100 으로 맞춘다.
+/// 늦게 읽힌 줄의 적용 순서가 시각 순서와 달라도 적용 순서를 따른다
 #[test]
-fn session_recent_orders_by_ts_and_honors_limit() {
+fn session_recent_orders_by_seq_and_honors_limit() {
     let s = Session::fixture(ASYNC, "windows");
     let events = merge(s.files(0));
     let cut = events.len() / 3;
@@ -1086,14 +1088,14 @@ fn session_recent_orders_by_ts_and_honors_limit() {
     }
     let all: Vec<Mark> = {
         let mut v: Vec<Mark> = e.agents(&s).iter().flat_map(|a| e.marks(&s, a)).collect();
-        v.sort_by_key(|m| std::cmp::Reverse((m.ts, m.seq)));
+        v.sort_by_key(|m| std::cmp::Reverse(m.seq));
         v
     };
-    let mut by_seq = all.clone();
-    by_seq.sort_by_key(|m| std::cmp::Reverse(m.seq));
+    let mut by_ts = all.clone();
+    by_ts.sort_by_key(|m| std::cmp::Reverse((m.ts, m.seq)));
     assert_ne!(
         all[..20].iter().map(|m| m.seq).collect::<Vec<_>>(),
-        by_seq[..20].iter().map(|m| m.seq).collect::<Vec<_>>(),
+        by_ts[..20].iter().map(|m| m.seq).collect::<Vec<_>>(),
         "fixture 가 시각과 적용 순서를 어긋나게 하지 못했다"
     );
     let recent = |limit| {
@@ -1159,5 +1161,167 @@ fn tokens_leave_out_cache_reads() {
             input: 163_551 - 144_384,
             output: 768
         })
+    );
+}
+
+/// 호출과 결과가 다른 페이지에 있어도 결과 칸은 한 번에 읽은 것과 같다.
+/// Codex 파서는 짝 호출을 본 적 없는 결과에 이벤트를 내지 않는다
+#[test]
+fn result_paged_apart_from_its_call_reads_the_same() {
+    let mut bodies = 0;
+    for rel in [
+        "codex/codex-app",
+        "codex/ask-reject-compact",
+        "codex/aborted",
+        "claude/bg-fail-reject-compact",
+        "claude/async-subagent",
+    ] {
+        let s = Session::fixture(rel, "windows");
+        let e = env();
+        e.put(&s, s.team(0));
+        for agent in e.agents(&s) {
+            let all = e.timeline(&s, &agent, None, Some(200)).unwrap();
+            let mut one_by_one = Vec::new();
+            let mut before = None;
+            loop {
+                let page = e.timeline(&s, &agent, before, Some(1)).unwrap();
+                let Some(last) = page.last() else { break };
+                before = Some(last.cursor);
+                one_by_one.extend(page);
+            }
+            assert_eq!(one_by_one, all, "{rel} {agent}");
+            bodies += all
+                .iter()
+                .filter(|d| d.kind == TimelineKind::ToolResult && d.body.is_some())
+                .count();
+        }
+    }
+    assert!(bodies > 0, "본문 있는 결과가 없어 비교가 비었다");
+}
+
+/// 백그라운드 완료 결과는 다른 줄(Started 결과)의 파서 상태가 있어야 이벤트가 난다.
+/// 한 줄씩 페이징해도 결과 칸은 "못 읽음"이 아니다
+#[test]
+fn background_codex_result_paged_alone_is_still_readable() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("p");
+    fs::create_dir_all(&root).unwrap();
+    let ts = |s: u32| format!("2026-03-02T09:00:{s:02}Z");
+    let rec = |s: u32, ty: &str, payload: serde_json::Value| json!({"timestamp": ts(s), "type": ty, "payload": payload});
+    let lines = [
+        rec(
+            0,
+            "session_meta",
+            json!({"id": "fbeee44f-138a-8f82-87fd-61f01dfc0cca", "cwd": "/w",
+                   "originator": "Codex Desktop", "source": "vscode"}),
+        ),
+        rec(
+            1,
+            "response_item",
+            json!({"type": "custom_tool_call", "name": "exec", "call_id": "bg",
+                   "input": "tools.exec_command({cmd:\"npm run dev\"})"}),
+        ),
+        rec(
+            2,
+            "response_item",
+            json!({"type": "custom_tool_call_output", "call_id": "bg", "output": [
+                {"type": "input_text", "text": "Script completed
+"},
+                {"type": "input_text", "text": "{\"session_id\":4242,\"output\":\"\"}"}]}),
+        ),
+        rec(
+            3,
+            "event_msg",
+            json!({"type": "item_completed", "item": {
+                "type": "CommandExecution", "id": "exec-x", "process_id": "4242",
+                "command": ["bash", "-lc", "x"], "status": "completed", "exit_code": 0}}),
+        ),
+    ];
+    let name = "rollout-2026-03-02T09-00-00-fbeee44f-138a-8f82-87fd-61f01dfc0cca.jsonl";
+    fs::write(
+        root.join(name),
+        lines
+            .iter()
+            .map(|l| {
+                format!(
+                    "{l}
+"
+                )
+            })
+            .collect::<String>(),
+    )
+    .unwrap();
+    let s = Session::at(dir, root, "windows");
+    let e = env();
+    e.put(&s, s.team(0));
+    let agent = &e.agents(&s)[0];
+    let all = e.timeline(&s, agent, None, Some(200)).unwrap();
+    let mut results = Vec::new();
+    let mut before = None;
+    loop {
+        let page = e.timeline(&s, agent, before, Some(1)).unwrap();
+        let Some(last) = page.last() else { break };
+        before = Some(last.cursor);
+        results.extend(
+            page.into_iter()
+                .filter(|d| d.kind == TimelineKind::ToolResult),
+        );
+    }
+    assert_eq!(results.len(), 2, "{results:?}");
+    let whole: Vec<_> = all
+        .into_iter()
+        .filter(|d| d.kind == TimelineKind::ToolResult)
+        .collect();
+    assert_eq!(results, whole);
+    for r in &results {
+        assert_ne!(r.summary, UNREADABLE, "{r:?}");
+    }
+}
+
+/// TaskStop 결과는 TaskStop 호출 줄(다른 call)의 상태가 있어야 이벤트가 나서, 짝 줄 문맥으로도 못 읽는다.
+/// 한 줄씩 페이징해도 결과 칸은 요약을 원문 대체로 채운다
+#[test]
+fn task_stop_result_paged_alone_falls_back_to_raw() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("p");
+    fs::create_dir_all(&root).unwrap();
+    let mut start = call_line(1, "toolu_bg", "npm run dev");
+    start["message"]["content"][0]["input"]["run_in_background"] = json!(true);
+    let mut started = result_line(2, "toolu_bg", "", None);
+    started["toolUseResult"] = json!({"backgroundTaskId": "task01"});
+    let mut stop = call_line(3, "toolu_stop", "");
+    stop["message"]["content"][0]["name"] = json!("TaskStop");
+    stop["message"]["content"][0]["input"] = json!({"task_id": "task01"});
+    let stopped = result_line(4, "toolu_stop", "stopped", None);
+    let text: String = [start, started, stop, stopped]
+        .iter()
+        .map(|l| {
+            format!(
+                "{l}
+"
+            )
+        })
+        .collect();
+    fs::write(root.join(format!("{SID}.jsonl")), text).unwrap();
+    let s = Session::at(dir, root, "windows");
+    let e = env();
+    e.put(&s, s.team(0));
+    let agent = &e.agents(&s)[0];
+    let mut results = Vec::new();
+    let mut before = None;
+    loop {
+        let page = e.timeline(&s, agent, before, Some(1)).unwrap();
+        let Some(last) = page.last() else { break };
+        before = Some(last.cursor);
+        results.extend(
+            page.into_iter()
+                .filter(|d| d.kind == TimelineKind::ToolResult),
+        );
+    }
+    // 시작 결과와 TaskStop 이 닫은 원 호출의 결과
+    assert_eq!(results.len(), 2, "{results:?}");
+    assert!(
+        results.iter().all(|r| r.summary != UNREADABLE),
+        "{results:?}"
     );
 }

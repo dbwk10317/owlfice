@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>첫 실행·로딩 합성 검수</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 12px;
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        background: #fff;
+      }
+      #controls button {
+        padding: 4px 8px;
+      }
+      #note {
+        margin: 0;
+        padding: 0 12px 8px;
+        font:
+          12px/1.5 system-ui,
+          sans-serif;
+        background: #fff;
+      }
+      #stage {
+        min-height: 100vh;
+        font: var(--ow-text-body);
+        color: var(--ow-ink);
+        background: var(--ow-bg);
+      }
+    </style>
+    <script type="module" src="./startup.ts"></script>
+  </head>
+  <body>
+    <div id="controls">
+      <button data-mode="first" type="button">첫 실행</button>
+      <button data-mode="progress" type="button">진행</button>
+      <button data-mode="empty" type="button">빈 상태</button>
+      <button data-mode="failure" type="button">실패 안내</button>
+      <button id="next" type="button" disabled>다음 단계</button>
+      <span id="status" role="status"></span>
+    </div>
+    <p id="note">
+      실제 컴포넌트에 합성 응답만 보냅니다. 모드 변경은 페이지를 초기화합니다. 조작 UI 높이가
+      추가되며, 로딩 화면 안을 클릭하거나 키를 누르면 실제 동작대로 건너뜁니다. 진행은 다음 단계까지
+      유지됩니다.
+    </p>
+    <div id="stage"></div>
+  </body>
+</html>

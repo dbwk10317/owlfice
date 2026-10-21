@@ -12,7 +12,7 @@ use ts_rs::TS;
 
 use crate::detail;
 use crate::diag::{self, Diag};
-use crate::discover::{Host, HostKind, Product, Vendor};
+use crate::discover::{CandidateResult, Host, HostKind, Product, Vendor};
 use crate::office::names::RoomBook;
 use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
@@ -57,6 +57,23 @@ pub struct SettingsDto {
     // 비면 프론트가 기본 호칭을 쓴다. 빈 문자열을 보내면 기본으로 되돌린다.
     pub boss_name: Option<String>,
     pub raw_diagnostics: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryPathDto {
+    pub host: String,
+    pub vendor: String,
+    pub path: Option<String>,
+    pub status: DiscoveryStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, TS)]
+pub enum DiscoveryStatus {
+    Found,
+    Missing,
+    Offline,
+    Unknown,
 }
 
 /// `get_world_snapshot` 반환. 목록 필드를 그대로 품어 store 가 목록처럼 받는다
@@ -1085,6 +1102,27 @@ pub fn set_settings(
 #[tauri::command]
 pub fn rescan(runtime: State<'_, Arc<Runtime>>) {
     runtime.request_rescan();
+}
+
+#[tauri::command]
+pub fn get_discovery(runtime: State<'_, Arc<Runtime>>) -> Vec<DiscoveryPathDto> {
+    lock(&runtime.candidates)
+        .iter()
+        .map(|candidate| DiscoveryPathDto {
+            host: candidate.host.label.clone(),
+            vendor: candidate.vendor.label().into(),
+            path: candidate
+                .root
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned()),
+            status: match candidate.result {
+                CandidateResult::Found => DiscoveryStatus::Found,
+                CandidateResult::Missing => DiscoveryStatus::Missing,
+                CandidateResult::Offline => DiscoveryStatus::Offline,
+                CandidateResult::Unknown => DiscoveryStatus::Unknown,
+            },
+        })
+        .collect()
 }
 
 #[tauri::command]

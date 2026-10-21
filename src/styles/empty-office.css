@@ -1,0 +1,69 @@
+.ow-empty-office {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  overflow: auto;
+  padding: 24px 16px;
+  background: var(--ow-stage);
+  text-align: center;
+  color: var(--ow-ink-2);
+}
+.ow-empty-office[hidden],
+.ow-empty-office [hidden] {
+  display: none;
+}
+/* 비동기 캔버스가 뒤늦게 붙어도 빈 화면 뒤의 버튼에 초점이 가지 않는다. */
+.ow-stage:has(> .ow-empty-office:not([hidden])) > :not(.ow-empty-office) {
+  visibility: hidden;
+}
+.ow-empty-office__content {
+  width: min(100%, 600px);
+  margin: auto;
+}
+.ow-empty-office .ow-empty {
+  padding: 12px 0 20px;
+  color: var(--ow-ink-2);
+}
+.ow-empty-office .ow-empty__art {
+  width: 56px;
+  height: 56px;
+}
+.ow-empty-office__building {
+  flex: none;
+  image-rendering: pixelated;
+}
+.ow-empty-office__paths {
+  width: 100%;
+  margin-bottom: 20px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  text-align: left;
+  font-size: 12px;
+}
+.ow-empty-office__paths caption {
+  padding-bottom: 8px;
+  text-align: left;
+  font-weight: 600;
+}
+.ow-empty-office__paths th,
+.ow-empty-office__paths td {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--ow-line);
+  vertical-align: top;
+}
+.ow-empty-office__paths th {
+  width: 100px;
+}
+.ow-empty-office__paths th span {
+  display: block;
+  width: 92px;
+  overflow-wrap: anywhere;
+}
+.ow-empty-office__paths td:last-child {
+  width: 64px;
+}
+.ow-empty-office__path {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

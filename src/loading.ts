@@ -300,12 +300,13 @@ export function showLoading(
 
   function paintAll(): void {
     rows.forEach((_, i) => paintRow(i));
-    // 좁은 창에서는 지금 줄과 이웃만 보인다 (HANDOFF 반응형 "3줄만")
+    // 낮은 창에서는 처음과 끝에서도 3줄을 유지한다 (HANDOFF 반응형 "3줄만")
     const cur = Math.min(
       rows.findIndex((r) => r.state !== "done" && r.state !== "error") + 1 || STEP_COUNT,
       STEP_COUNT,
     );
-    const near = (step: number) => Math.abs(step - cur) <= 1;
+    const start = Math.max(1, Math.min(cur - 1, STEP_COUNT - 2));
+    const near = (step: number) => step >= start && step < start + 3;
     stepEls.forEach((e, i) => e.toggleAttribute("data-near", near(i + 1)));
     for (const n of notes.values()) n.el.toggleAttribute("data-near", near(n.step));
     const ended = rows.filter((r) => r.state === "done" || r.state === "error").length;

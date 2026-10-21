@@ -1,11 +1,16 @@
 import "../src/styles/app.css";
-import { mountOffice } from "../src/office/renderer.ts";
-import { mountSidebar } from "../src/sidebar-left.ts";
+import { mountHeader } from "../src/header.ts";
+import { mountOffice, type OfficeHandle } from "../src/office/renderer.ts";
+import { openEmployeeDetail } from "../src/popup-employee.ts";
+import type { Invoke } from "../src/scale.ts";
+import { mountSidebar, popupNames } from "../src/sidebar-left.ts";
 import { mountPanel } from "../src/sidebar-right.ts";
 import { createStore } from "../src/store.ts";
 import { act, emp, office, team } from "../src/test-office.ts";
 import type {
   CueDto,
+  EmployeeDetailDto,
+  EventDto,
   OfficeDto,
   OfficeListDto,
   OfficeSummaryDto,
@@ -43,16 +48,11 @@ let scale: Scale = "Small";
 let seq = 1;
 let selectRequest = 0;
 const store = createStore<OfficeListDto, OfficeDto>();
+const companyName = "야근불 연구소";
 const app = document.getElementById("app")!;
-const side = document.createElement("div");
-const stage = document.createElement("div");
-stage.className = "ow-stage";
-const main = document.createElement("div");
-main.className = "ow-main";
-main.append(stage);
-const panelHost = document.createElement("div");
-panelHost.className = "ow-panel-host";
-app.append(side, main, panelHost);
+const side = document.getElementById("side")!;
+const stage = document.getElementById("stage")!;
+const panelHost = document.getElementById("panel")!;
 const status = document.getElementById("status")!;
 
 function summary(id: string, members: TeamDto[], floor: number): OfficeSummaryDto {
@@ -125,12 +125,93 @@ function publish(
   status.textContent = `${scale === "Small" ? "중소기업" : "대기업"} · ${teams.filter((t) => t.phase !== "Off").length}팀 근무`;
 }
 
+function openEmployee(
+  officeId: string,
+  teamId: string,
+  agentId: string,
+  opener?: HTMLElement,
+): void {
+  const selectedTeam = store.state.office?.teams.find((t) => t.teamId === teamId);
+  const employee = selectedTeam?.employees.find((e) => e.agentId === agentId);
+  if (!selectedTeam || !employee) return;
+  // README용 합성 기록이다. 파일 이름과 명령은 표시할 문자열이며 읽거나 실행하지 않는다.
+  const detail: EmployeeDetailDto = {
+    agentId: employee.agentId,
+    name: employee.name,
+    rank: employee.rank,
+    role: employee.role,
+    model: employee.model,
+    hiredAt: employee.hiredAt,
+    retiredAt: employee.retiredAt,
+    bossName: selectedTeam.employees.find((e) => e.agentId === employee.parent)?.name ?? null,
+    instruction: "[합성 예시] 설정 화면의 간격을 다듬고 테스트를 확인해 주세요.",
+    filesRead: ["src/app.ts"],
+    filesEdited: [{ item: "src/app.ts", times: 1 }],
+    commands: [{ item: "npm test", times: 1 }],
+  };
+  const events: EventDto[] = [
+    { tool: "Bash", summary: "`npm test` 성공 · 합격 12 / 반려 0", input: "npm test" },
+    { tool: "Edit", summary: "`src/app.ts` 설정 화면 간격 수정", input: "src/app.ts · 간격 16px" },
+    { tool: "Read", summary: "`src/app.ts` 읽기", input: "src/app.ts" },
+  ].map((sample, i) => {
+    const input = `[합성 예시] ${sample.input}`;
+    const body = "[합성 예시] Tests 12 passed (12)";
+    return {
+      cursor: { generation: 1, byteOffset: (3 - i) * 100 },
+      agentId: employee.agentId,
+      ts: new Date(Date.parse(since) + (3 - i) * 10_000).toISOString(),
+      kind: i === 0 ? "ToolResult" : "ToolCall",
+      summary: sample.summary,
+      confidence: "Confirmed",
+      tool: sample.tool,
+      callId: `synthetic-call-${i}`,
+      input: { head: input, tail: "", bytes: new TextEncoder().encode(input).length },
+      outcome: i === 0 ? "Ok" : null,
+      body: i === 0 ? { head: body, tail: "", bytes: new TextEncoder().encode(body).length } : null,
+      path: `synthetic/README/${teamId}-${agentId}.jsonl`,
+      lineNo: 3 - i,
+      lineIdx: 0,
+      sidecar: null,
+      test: i === 0 ? { passed: 12, failed: 0 } : null,
+    };
+  });
+  const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
+    if (cmd === "open_path") throw new Error("합성 미리보기에서는 원본 파일을 열지 않습니다.");
+    if (args?.officeId !== officeId || args.teamId !== teamId || args.agentId !== agentId)
+      throw new Error("합성 직원 정보가 일치하지 않습니다.");
+    if (cmd === "get_employee_detail") return detail as T;
+    if (cmd === "get_employee_timeline") return (args.before === null ? events : []) as T;
+    throw new Error(`합성 응답이 없는 명령: ${cmd}`);
+  };
+  openEmployeeDetail(
+    {
+      invoke,
+      live: (id, agent) =>
+        store.state.office?.teams
+          .find((t) => t.teamId === id)
+          ?.employees.find((e) => e.agentId === agent),
+    },
+    {
+      officeId,
+      teamId,
+      agentId,
+      officeName: popupNames(store.state.list, officeId, teamId).officeName,
+      building: selectedTeam.building,
+    },
+    opener,
+  );
+}
+
 store.applyWorld({ ...listing("vendor/Claude"), selected: snapshot("vendor/Claude") });
-const panel = mountPanel(panelHost, store);
-const view = await mountOffice(stage, store);
-view.setRoomLabels(false);
-document.getElementById("labels")!.addEventListener("change", (event) => {
-  view.setRoomLabels((event.target as HTMLInputElement).checked);
+let header: ReturnType<typeof mountHeader> | undefined;
+let view: OfficeHandle | undefined;
+let pendingTeam: { officeId: string; teamId: string } | null = null;
+const panel = mountPanel(panelHost, store, {
+  onDrawerChange: (open) => header?.setDrawerOpen(open),
+  onEmployee: (teamId, agentId, opener) => {
+    const officeId = store.state.selectedId;
+    if (officeId) openEmployee(officeId, teamId, agentId, opener);
+  },
 });
 mountSidebar(
   side,
@@ -142,13 +223,33 @@ mountSidebar(
     store.applyList(listing(id));
   },
   {
-    companyName: "합성 연출실",
+    companyName,
     onTeam: (officeId, teamId) => {
       panel.showTeam(officeId, teamId);
-      view.highlightTeam(officeId, teamId);
+      if (view) view.highlightTeam(officeId, teamId);
+      else pendingTeam = { officeId, teamId };
     },
   },
 );
+header = mountHeader(app, document.getElementById("header")!, store, {
+  companyName,
+  bandSlot: () => side.querySelector(".ow-side-band"),
+  togglePanel: () => panel.toggleDrawer(),
+  setRoomLabels: (on) => view?.setRoomLabels(on),
+});
+await mountOffice(stage, store, {
+  onScale: (n) => header?.setScale(n),
+  onEmployee: (officeId, teamId, agentId) => {
+    panel.highlight(teamId, agentId);
+    openEmployee(officeId, teamId, agentId);
+  },
+}).then((handle) => {
+  view = handle;
+  if (pendingTeam) view.highlightTeam(pendingTeam.officeId, pendingTeam.teamId);
+  pendingTeam = null;
+  view.setRoomLabels(header?.roomLabels() ?? true);
+  app.dataset.ready = "true";
+});
 
 document.getElementById("arrive")!.addEventListener("click", () => {
   let arriving = teams.find((t) => t.teamId === "three");

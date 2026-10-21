@@ -56,6 +56,7 @@ test("처음엔 7단계가 순서대로 빈 원과 기본 문구로 보이고, �
   const m = mount();
   await m.flush();
   expect(m.rows()).toHaveLength(7);
+  expect(m.rows().filter((r) => r.hasAttribute("data-near"))).toEqual(m.rows().slice(0, 3));
   expect(m.text()).toEqual(L.steps.map((s) => s.pool[0]));
   expect(m.io.listen).toHaveBeenCalledWith("startup-progress", expect.any(Function));
 
@@ -67,6 +68,7 @@ test("처음엔 7단계가 순서대로 빈 원과 기본 문구로 보이고, �
     ev(5, "Running"),
   );
   const t = m.text();
+  expect(m.rows().filter((r) => r.hasAttribute("data-near"))).toEqual(m.rows().slice(3, 6));
   expect(t[0]).toBe("법인 등기 완료 (사명: Owlfice)");
   expect(t[1]).toBe("후보지 2곳 확인 (Windows, WSL Rocky-9)");
   expect(t[2]).toBe("Windows Claude · WSL Rocky-9 Codex 임대 계약 완료");
@@ -142,6 +144,7 @@ test("전부 빨리 끝나도 1.2초는 보여 주고, 간판 0.3초 뒤 0.3초 
 test("7단계가 안 끝났으면 1.2초가 지나도 기다린다", async () => {
   const m = mount(allDone().slice(0, 6));
   await m.flush();
+  expect(m.rows().filter((r) => r.hasAttribute("data-near"))).toEqual(m.rows().slice(4, 7));
   await vi.advanceTimersByTimeAsync(5000);
   expect(m.state.resolved).toBe(false);
   m.send(ev(7, "Done"));

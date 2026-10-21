@@ -190,6 +190,7 @@ pub fn run() {
             ipc::get_settings,
             ipc::set_settings,
             ipc::rescan,
+            ipc::get_discovery,
             ipc::get_diagnostics,
             ipc::open_log_folder,
             notification::set_window_hidden,

@@ -1364,6 +1364,8 @@ fn bindings() -> String {
         Light,
         Scale,
         SettingsDto,
+        DiscoveryPathDto,
+        DiscoveryStatus,
         ManualPath,
         crate::settings::ManualVendor,
         StepState,

@@ -288,7 +288,7 @@ fn live_with(
 }
 
 /// 같은 세션 행 중 고르는 순서: 사용자가 이름을 붙인 쪽, 늦게 시작한 쪽, 큰 pid
-fn rank(e: &RegistryEntry) -> (bool, Option<i64>, u32) {
+pub(crate) fn rank(e: &RegistryEntry) -> (bool, Option<i64>, u32) {
     (
         e.name_source.as_deref() == Some("user"),
         e.started_at,

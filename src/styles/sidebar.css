@@ -17,6 +17,27 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+.ow-brand__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-brand > .ow-icon,
+.ow-brand__warn {
+  flex: none;
+}
+.ow-sidebar__footer > button {
+  margin-left: auto;
+}
+.ow-sidebar__error {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--ow-bad-ink);
+  overflow-wrap: anywhere;
 }
 /* 토스트가 떠 있는 동안 목록을 그만큼 내려 첫 행을 가리지 않는다 (시안은 토스트가 흐름 안에 있다) */
 .ow-side-host.has-toast[data-mode="full"] .ow-sidebar__list {

@@ -9,6 +9,8 @@ import evictedSvg from "../design/handoff/icons/evicted.svg?raw";
 import infoSvg from "../design/handoff/icons/info.svg?raw";
 import emptySvg from "../design/handoff/icons/empty-building.svg?raw";
 import logoUrl from "../design/assets/logo.png";
+import settingsSvg from "../design/handoff/icons/settings.svg?raw";
+import refreshSvg from "../design/handoff/icons/refresh.svg?raw";
 import type {
   Border,
   Dot,
@@ -40,6 +42,9 @@ export interface SidebarOptions {
   onDetail?: (officeId: string, teamId: string, name: string, opener: HTMLElement) => void;
   /** 간판의 회사 이름. 없으면 기본 이름 */
   companyName?: string;
+  rawDiagnostics?: boolean;
+  onSettings?: (opener: HTMLElement) => void;
+  onRescan?: () => Promise<void>;
 }
 
 type SidebarMode = "full" | "rail" | "select";
@@ -537,26 +542,53 @@ export function mountSidebar(
   store: SidebarStore,
   selectOffice: SelectOffice,
   opts: SidebarOptions = {},
-): () => void {
+): (() => void) & { setSettings(companyName: string | null, rawDiagnostics: boolean): void } {
   const doc = root.ownerDocument;
   root.classList.add("ow-side-host");
 
   const aside = mk(doc, "aside", "ow-sidebar");
   aside.setAttribute("aria-label", phrases.header.officeSelect);
-  // ponytail: 간판은 설정 팝업을 여는 버튼이다 (HANDOFF 4.1), 설정 팝업(T30)이 생기면 button 으로 바꾼다
-  const brand = mk(doc, "div", "ow-brand");
+  const brand = mk(doc, "button", "ow-brand");
+  brand.setAttribute("type", "button");
+  brand.setAttribute("aria-label", P.openSettings);
+  brand.addEventListener("click", () => opts.onSettings?.(brand));
   const logo = doc.createElement("img");
   logo.className = "ow-brand__logo ow-px";
   logo.src = logoUrl;
   logo.alt = "";
   const brandSub = mk(doc, "span", "ow-brand__sub", phrases.app.brandSub);
   const brandText = mk(doc, "span", "ow-brand__text");
-  brandText.append(mk(doc, "b", "ow-brand__name", opts.companyName ?? phrases.app.brand), brandSub);
-  brand.append(logo, brandText);
+  const brandName = mk(doc, "b", "ow-brand__name", opts.companyName ?? phrases.app.brand);
+  brandText.append(brandName, brandSub);
+  const warning = mk(doc, "span", "ow-brand__warn");
+  warning.hidden = !opts.rawDiagnostics;
+  warning.setAttribute("role", "img");
+  warning.setAttribute("aria-label", "원문 진단 켜짐");
+  brand.append(logo, brandText, warning, svgSpan(doc, settingsSvg, "ow-icon"));
   const listEl = mk(doc, "div", "ow-sidebar__list");
-  // ponytail: 바닥의 "지금 다시 찾기" 버튼은 재탐색 커맨드가 없어 뺐다, IPC 가 생기면 붙인다
   const footer = mk(doc, "div", "ow-sidebar__footer", phrases.sidebar.autoCheck);
-  aside.append(brand, listEl, footer);
+  const refresh = doc.createElement("button");
+  refresh.type = "button";
+  refresh.className = "ow-iconbtn";
+  refresh.setAttribute("aria-label", P.refresh);
+  refresh.append(svgSpan(doc, refreshSvg, "ow-icon"));
+  const rescanError = mk(doc, "p", "ow-sidebar__error");
+  rescanError.setAttribute("role", "alert");
+  rescanError.hidden = true;
+  refresh.addEventListener("click", async () => {
+    refresh.disabled = true;
+    rescanError.hidden = true;
+    try {
+      await opts.onRescan?.();
+    } catch (e) {
+      rescanError.textContent = `다시 찾지 못했습니다: ${String(e)}`;
+      rescanError.hidden = false;
+    } finally {
+      refresh.disabled = false;
+    }
+  });
+  footer.append(refresh);
+  aside.append(brand, listEl, rescanError, footer);
   // 레일·드롭다운 모드에선 aside 가 숨으므로 토스트 칸은 aside 밖에 둔다
   const toastSlot = mk(doc, "div", "ow-toast-slot");
   toastSlot.setAttribute("role", "status");
@@ -567,7 +599,15 @@ export function mountSidebar(
   const select = doc.createElement("select");
   select.className = "ow-side-select";
   select.setAttribute("aria-label", phrases.header.officeSelect);
-  band.append(select);
+  const bandSettings = mk(doc, "button", "ow-iconbtn");
+  bandSettings.setAttribute("type", "button");
+  bandSettings.setAttribute("aria-label", P.openSettings);
+  const bandWarning = mk(doc, "span", "ow-brand__warn");
+  bandWarning.hidden = !opts.rawDiagnostics;
+  bandWarning.setAttribute("aria-hidden", "true");
+  bandSettings.append(svgSpan(doc, settingsSvg, "ow-icon"), bandWarning);
+  bandSettings.addEventListener("click", () => opts.onSettings?.(bandSettings));
+  band.append(select, bandSettings);
   root.append(aside, toastSlot, rail, band);
 
   function pick(id: string | null): void {
@@ -1019,22 +1059,32 @@ export function mountSidebar(
   const unsub = store.subscribe(render);
   render();
 
-  return () => {
-    unsub();
-    ro?.disconnect();
-    clearInterval(tick);
-    clearTimeout(toastTimer);
-    clearTimeout(resizeTimer);
-    queue.length = 0;
-    showing = false;
-    root.removeEventListener("mouseleave", onLeave);
-    root.removeEventListener("focusout", onFocusOut);
-    root.classList.remove("ow-side-host", "is-pop");
-    delete root.dataset.mode;
-    delete root.dataset.scale;
-    aside.remove();
-    toastSlot.remove();
-    rail.remove();
-    band.remove();
-  };
+  return Object.assign(
+    () => {
+      unsub();
+      ro?.disconnect();
+      clearInterval(tick);
+      clearTimeout(toastTimer);
+      clearTimeout(resizeTimer);
+      queue.length = 0;
+      showing = false;
+      root.removeEventListener("mouseleave", onLeave);
+      root.removeEventListener("focusout", onFocusOut);
+      root.classList.remove("ow-side-host", "is-pop");
+      delete root.dataset.mode;
+      delete root.dataset.scale;
+      aside.remove();
+      toastSlot.remove();
+      rail.remove();
+      band.remove();
+    },
+    {
+      setSettings(companyName: string | null, rawDiagnostics: boolean) {
+        brandName.textContent = companyName || phrases.app.brand;
+        warning.hidden = !rawDiagnostics;
+        bandWarning.hidden = !rawDiagnostics;
+        bandSettings.title = rawDiagnostics ? "원문 진단 켜짐" : P.openSettings;
+      },
+    },
+  );
 }

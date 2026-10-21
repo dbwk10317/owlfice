@@ -4,6 +4,8 @@ import phrases from "../design/handoff/phrases.ko.json";
 import nightSvg from "../design/handoff/icons/night.svg?raw";
 import panelSvg from "../design/handoff/icons/panel.svg?raw";
 import roomLabelsSvg from "../design/handoff/icons/room-labels.svg?raw";
+import soundOnSvg from "../design/handoff/icons/sound-on.svg?raw";
+import soundOffSvg from "../design/handoff/icons/sound-off.svg?raw";
 import { BUILDING_PRODUCT, DOT_STATE, FLOOR_PRODUCT, ringOf, WORK_TYPES } from "./sidebar-left.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { windowViewport, type Viewport } from "./sidebar-right.ts";
@@ -36,11 +38,14 @@ export interface HeaderOptions {
   setRoomLabels(on: boolean): void;
   /** 사무실을 안 골랐을 때 제목 "{company} 본사" 의 이름. 없으면 기본 이름 */
   companyName?: string;
+  sound?: boolean;
+  onSound?: (on: boolean) => Promise<void>;
 }
 export interface HeaderHandle {
   roomLabels(): boolean;
   setScale(scale: number): void;
   setDrawerOpen(open: boolean): void;
+  setSettings(companyName: string | null, sound: boolean): void;
 }
 
 type El = HTMLElement;
@@ -67,7 +72,6 @@ const setText = (el: El, text: string) => {
 
 /**
  * `app` 은 `.ow-app`, `header` 는 `.ow-main` 안의 `<header>`. 창 너비 구간은 app.dataset.layout 으로 알린다.
- * 소리 토글·브랜치 칩은 받을 기능·데이터가 없어 만들지 않는다.
  */
 export function mountHeader(
   app: El,
@@ -77,7 +81,8 @@ export function mountHeader(
 ): HeaderHandle {
   const doc = header.ownerDocument;
   header.classList.add("ow-header");
-  const hq = fill(H.hq, { company: opts.companyName ?? phrases.app.brand });
+  let hq = fill(H.hq, { company: opts.companyName ?? phrases.app.brand });
+  let soundOn = opts.sound ?? false;
 
   const square = mk(doc, "span", "ow-header__square");
   const title = mk(doc, "h1", "ow-header__title");
@@ -96,6 +101,24 @@ export function mountHeader(
   const labels = iconBtn(doc, roomLabelsSvg, H.roomLabels);
   labels.classList.add("ow-header__wide");
   labels.setAttribute("aria-pressed", "true");
+  const sound = iconBtn(doc, soundOn ? soundOnSvg : soundOffSvg, soundOn ? H.soundOff : H.soundOn);
+  sound.setAttribute("aria-pressed", String(soundOn));
+  const soundError = mk(doc, "p", "ow-selection-error");
+  soundError.setAttribute("role", "alert");
+  soundError.hidden = true;
+  header.after(soundError);
+  sound.addEventListener("click", async () => {
+    sound.disabled = true;
+    soundError.hidden = true;
+    try {
+      await opts.onSound?.(!soundOn);
+    } catch (e) {
+      soundError.textContent = String(e);
+      soundError.hidden = false;
+    } finally {
+      sound.disabled = false;
+    }
+  });
   const scale = mk(doc, "span", "ow-chip ow-header__scale ow-header__full", "1×");
   scale.title = H.scale;
   const panelBtn = iconBtn(doc, panelSvg, H.panelOpen);
@@ -104,7 +127,7 @@ export function mountHeader(
   const spacer = mk(doc, "span", "ow-header__spacer");
   header.append(
     square, title, sub, slash, session, status, work, spacer,
-    divider, labels, scale, panelBtn,
+    divider, labels, sound, scale, panelBtn,
   ); // prettier-ignore
 
   let roomLabelsOn = true;
@@ -189,6 +212,14 @@ export function mountHeader(
   render();
 
   return {
+    setSettings(companyName, on) {
+      hq = fill(H.hq, { company: companyName || phrases.app.brand });
+      soundOn = on;
+      sound.setAttribute("aria-pressed", String(on));
+      sound.setAttribute("aria-label", on ? H.soundOff : H.soundOn);
+      sound.firstElementChild!.innerHTML = on ? soundOnSvg : soundOffSvg;
+      render();
+    },
     roomLabels: () => roomLabelsOn,
     setScale: (n) => setText(scale, `${n}×`),
     setDrawerOpen(open) {

@@ -196,6 +196,34 @@ test("행을 누르면 store 선택과 select_office 를 부른다", () => {
   s.dispose();
 });
 
+test("간판 설정 열기·회사 이름·원문 경고·재탐색을 연결한다", async () => {
+  const store = createStore<OfficeListDto, OfficeDto>();
+  store.applyWorld({ ...list([]), selected: null });
+  const root = document.createElement("div");
+  document.body.append(root);
+  const onSettings = vi.fn();
+  const onRescan = vi.fn().mockRejectedValue(new Error("탐색 실패"));
+  const dispose = mountSidebar(root, store, vi.fn(), { onSettings, onRescan });
+  const brand = root.querySelector<HTMLButtonElement>(".ow-brand")!;
+  brand.click();
+  expect(onSettings).toHaveBeenLastCalledWith(brand);
+  dispose.setSettings("새 회사", true);
+  expect(root.querySelector(".ow-brand__name")!.textContent).toBe("새 회사");
+  expect(root.querySelector<HTMLElement>(".ow-brand__warn")!.hidden).toBe(false);
+  const refresh = root.querySelector<HTMLButtonElement>('[aria-label="지금 다시 찾기"]')!;
+  refresh.click();
+  refresh.click();
+  expect(onRescan).toHaveBeenCalledTimes(1);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(root.querySelector('[role="alert"]')!.textContent).toContain("탐색 실패");
+  expect(refresh.disabled).toBe(false);
+  dispose.setSettings(null, false);
+  expect(root.querySelector(".ow-brand__name")!.textContent).toBe("Owlfice");
+  expect(root.querySelector<HTMLElement>(".ow-brand__warn")!.hidden).toBe(true);
+  dispose();
+});
+
 test("요청 중 같은 사무실은 다시 부르지 않고 복구 실패 뒤에는 재선택한다", async () => {
   const s = setup(list([office("101"), office("102")]));
   const row = byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0];

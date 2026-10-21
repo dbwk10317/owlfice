@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf, Prefix};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration as StdDuration, Instant, SystemTime};
 
@@ -22,6 +22,7 @@ use crate::office::{Cue, TeamPhase};
 use crate::parse::claude::ClaudeParser;
 use crate::parse::codex::CodexParser;
 use crate::parse::{Event, EventKind, Parser, RawRef, Unhandled};
+use crate::runtime::{FileDiagnostic, HostDiagnostic, Runtime, TickStats};
 use crate::startup::ScanWatch;
 
 const HOT: Duration = Duration::milliseconds(200);
@@ -105,8 +106,14 @@ pub fn mono_ms() -> i64 {
     START.get_or_init(Instant::now).elapsed().as_millis() as i64
 }
 
+pub struct ProbeUpdate {
+    pub sites: Vec<Site>,
+    pub removed: Vec<(Vendor, PathBuf)>,
+}
+
 /// 다른 스레드가 이 호스트를 지켜보고 지시하는 값 (4.5 감시자). 멈춘 I/O 안의 스레드는 자기 지연을 잴 수 없다
 pub struct Heartbeat {
+    pub diagnostic: Mutex<Option<mpsc::Sender<HostDiagnostic>>>,
     /// `mono_ms` 로 잰 마지막 틱
     pub last_tick_ms: AtomicI64,
     /// 의심 상태. Probe 가 켜짐을 다시 확인할 때까지 UNC 를 건드리지 않는다 (4.4.2).
@@ -114,7 +121,7 @@ pub struct Heartbeat {
     // ponytail: 소등과 통신 지연을 이 깃발 하나로 둔다, 사이드바가 둘을 나눠 그리는 티켓에서 나눈다
     pub suspect: AtomicBool,
     /// Probe 가 넘긴 Site. WSL 은 이것을 받은 틱만 경로 접근(나열, verify_path, 열기·닫기)을 한다 (4.4.2)
-    pub probed: Mutex<Option<Vec<Site>>>,
+    pub probed: Mutex<Option<ProbeUpdate>>,
     /// 켜면 스레드가 다음 틱 전에 끝난다
     pub stop: AtomicBool,
 }
@@ -122,6 +129,7 @@ pub struct Heartbeat {
 impl Default for Heartbeat {
     fn default() -> Self {
         Self {
+            diagnostic: Mutex::new(None),
             last_tick_ms: AtomicI64::new(mono_ms()),
             suspect: AtomicBool::new(false),
             probed: Mutex::new(None),
@@ -155,6 +163,7 @@ struct Tracked {
     reader: Option<TailReader>,
     /// 핸들을 닫을 때의 (길이, mtime)
     closed: Option<(u64, SystemTime)>,
+    closed_offset: u64,
     parser: Box<dyn Parser + Send>,
     last_read: DateTime<Utc>,
     /// 연속으로 Scan 에서 못 본 횟수
@@ -190,6 +199,8 @@ struct Due {
 }
 
 pub struct HostLoop {
+    pub runtime: Arc<Runtime>,
+    tick_stats: TickStats,
     pub host: Host,
     pub sites: Vec<Site>,
     files: BTreeMap<PathBuf, Tracked>,
@@ -210,6 +221,7 @@ pub struct HostLoop {
     remotes: Remotes,
     /// Claude 등록부에 살아 있는 세션(id → 항목)과 Windows에서 jsonl 이 아직 없는 세션 (4.5 신규 세션 발견 1번)
     alive: HashMap<String, registry::RegistryEntry>,
+    registry_roots: BTreeMap<PathBuf, HashMap<String, registry::RegistryEntry>>,
     #[cfg(test)]
     proc_root_override: Option<PathBuf>,
     awaited: BTreeSet<String>,
@@ -235,6 +247,8 @@ impl HostLoop {
             .hosts
             .insert(host.id.clone(), host.clone());
         Self {
+            runtime: Arc::new(Runtime::default()),
+            tick_stats: TickStats::default(),
             host,
             sites,
             files: BTreeMap::new(),
@@ -248,6 +262,7 @@ impl HostLoop {
             side: BTreeSet::new(),
             remotes: Arc::new(Mutex::new(Vec::new())),
             alive: HashMap::new(),
+            registry_roots: BTreeMap::new(),
             #[cfg(test)]
             proc_root_override: None,
             awaited: BTreeSet::new(),
@@ -289,6 +304,7 @@ impl HostLoop {
 
     /// 한 틱. 읽기·파싱은 잠금 밖에서, 적용만 잠금 안에서 한다 (4.3)
     pub fn tick(&mut self) {
+        self.reply_diagnostic();
         let now = self.clock.now();
         self.heartbeat
             .last_tick_ms
@@ -304,14 +320,16 @@ impl HostLoop {
             .unwrap_or_else(|e| e.into_inner())
             .take();
         // WSL 은 경로 접근이 Probe 직후에만 된다. 나열도 경로 기반이라 Scan 도 그때만 돈다 (4.4.2)
-        let path_ok = !self.is_wsl() || probed.is_some();
-        if let Some(sites) = probed {
-            self.set_sites(sites);
+        let fresh = probed.is_some();
+        let path_ok = !self.is_wsl() || fresh;
+        if let Some(update) = probed {
+            self.set_sites(update.sites);
+            self.remove_manual_roots(update.removed);
         }
         let scan = if self.is_wsl() {
             path_ok
         } else {
-            self.awaited_appeared(now) || self.last_scan.is_none_or(|t| now - t >= SCAN)
+            fresh || self.awaited_appeared(now) || self.last_scan.is_none_or(|t| now - t >= SCAN)
         };
         if scan {
             self.scan(now);
@@ -351,6 +369,93 @@ impl HostLoop {
             .flush_if_due(now)
         {
             crate::oplog!("미대응 로그 쓰기 실패: {e}");
+        }
+    }
+
+    fn reply_diagnostic(&self) {
+        let reply = self
+            .heartbeat
+            .diagnostic
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        let Some(reply) = reply else {
+            return;
+        };
+        let files = self
+            .files
+            .iter()
+            .map(|(path, tracked)| FileDiagnostic {
+                team: tracked.key.clone(),
+                path: path.clone(),
+                offset: tracked
+                    .reader
+                    .as_ref()
+                    .map_or(tracked.closed_offset, TailReader::offset),
+                generation: tracked.generation(),
+            })
+            .collect();
+        let _ = reply.send(HostDiagnostic {
+            host: self.host.clone(),
+            sites: self.sites.clone(),
+            files,
+            ticks: self.tick_stats.clone(),
+            path_ops: self.path_ops,
+            suspect: self.suspect(),
+        });
+    }
+
+    fn remove_manual_roots(&mut self, removed: Vec<(Vendor, PathBuf)>) {
+        if removed.is_empty() {
+            return;
+        }
+        let removed_path = |vendor: Vendor, path: &Path| {
+            !self.sites.iter().any(|site| {
+                site.vendor == vendor
+                    && crate::runtime::contains_root(&self.host, vendor, &site.root, path)
+            }) && removed.iter().any(|(gone_vendor, root)| {
+                *gone_vendor == vendor
+                    && crate::runtime::contains_root(&self.host, vendor, root, path)
+            })
+        };
+        let mut world = self.lock_world();
+        let gone: Vec<_> = world
+            .teams
+            .iter()
+            .filter(|(key, team)| {
+                key.host == self.host.id
+                    && !team.sources.is_empty()
+                    && team
+                        .sources
+                        .iter()
+                        .all(|path| removed_path(key.vendor, path))
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in &gone {
+            world.remove_team(key);
+        }
+        drop(world);
+        self.files
+            .retain(|path, tracked| !removed_path(tracked.key.vendor, path));
+        self.registry_roots.retain(|home, _| {
+            self.sites.iter().any(|site| {
+                site.vendor == Vendor::Claude
+                    && site.root.parent().is_some_and(|parent| {
+                        crate::runtime::contains_root(&self.host, site.vendor, parent, home)
+                            && crate::runtime::contains_root(&self.host, site.vendor, home, parent)
+                    })
+            }) || !removed.iter().any(|(vendor, root)| {
+                *vendor == Vendor::Claude
+                    && root.parent().is_some_and(|parent| {
+                        crate::runtime::contains_root(&self.host, *vendor, parent, home)
+                            && crate::runtime::contains_root(&self.host, *vendor, home, parent)
+                    })
+            })
+        });
+        for key in gone {
+            self.rebuild_due.remove(&key);
+            self.gone.remove(&key);
         }
     }
 
@@ -610,6 +715,10 @@ impl HostLoop {
                     continue;
                 }
                 t.generation = t.generation();
+                t.closed_offset = t
+                    .reader
+                    .as_ref()
+                    .map_or(t.closed_offset, TailReader::offset);
                 t.closed = Some((m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)));
                 t.reader = None;
             }
@@ -1102,51 +1211,67 @@ impl HostLoop {
         if self.suspect() {
             return;
         }
-        let home = self
+        let homes: BTreeSet<_> = self
             .sites
             .iter()
-            .find(|s| s.vendor == Vendor::Claude)
-            .and_then(|s| s.root.parent())
-            .map(Path::to_path_buf);
-        let live = match home {
-            Some(h) => {
-                let live = match &self.host.kind {
-                    HostKind::Windows => {
-                        self.path_ops += 1;
-                        registry::live_sessions(&h, &self.alive)
-                    }
-                    HostKind::Wsl { distro } => {
-                        let proc_root = wsl_proc_root(&h, distro);
-                        #[cfg(test)]
-                        let proc_root = self.proc_root_override.clone().or(proc_root);
-                        let Some(proc_root) = proc_root else {
-                            return;
-                        };
-                        let heartbeat = self.heartbeat.clone();
-                        let mut ops = 0;
-                        let live = registry::live_wsl_sessions(&h, &proc_root, &self.alive, || {
-                            if heartbeat.suspect.load(Ordering::Relaxed) {
-                                return false;
-                            }
-                            ops += 1;
-                            true
-                        });
-                        self.path_ops += ops;
-                        live
-                    }
-                };
-                match live {
-                    Some(l) => l,
-                    // 못 읽은 건 "없음"이 아니라 "못 봄"이다. 지우면 제목·생존이 깜박인다 (4.5)
-                    None => return,
-                }
+            .filter(|s| s.vendor == Vendor::Claude)
+            .filter_map(|s| s.root.parent())
+            .map(Path::to_path_buf)
+            .chain(self.registry_roots.keys().cloned())
+            .collect();
+        for h in homes {
+            if self.suspect() {
+                return;
             }
-            None => HashMap::new(),
-        };
+            let previous = self.registry_roots.entry(h.clone()).or_default();
+            let live = match &self.host.kind {
+                HostKind::Windows => {
+                    self.path_ops += 1;
+                    registry::live_sessions(&h, previous)
+                }
+                HostKind::Wsl { distro } => {
+                    let proc_root = wsl_proc_root(&h, distro);
+                    #[cfg(test)]
+                    let proc_root = self.proc_root_override.clone().or(proc_root);
+                    let Some(proc_root) = proc_root else {
+                        continue;
+                    };
+                    let heartbeat = self.heartbeat.clone();
+                    let mut ops = 0;
+                    let live = registry::live_wsl_sessions(&h, &proc_root, previous, || {
+                        if heartbeat.suspect.load(Ordering::Relaxed) {
+                            return false;
+                        }
+                        ops += 1;
+                        true
+                    });
+                    self.path_ops += ops;
+                    live
+                }
+            };
+            // 한 루트의 실패가 다른 루트의 갱신을 막거나 직전 생존 행을 지우지 않는다.
+            if let Some(live) = live {
+                *previous = live;
+            }
+        }
         if self.suspect() {
             return;
         }
-        self.alive = live.into_iter().filter(|(id, _)| safe_id(id)).collect();
+        self.registry_roots.retain(|_, rows| !rows.is_empty());
+        self.alive.clear();
+        for (id, row) in self
+            .registry_roots
+            .values()
+            .flat_map(|rows| rows.iter())
+            .filter(|(id, _)| safe_id(id))
+        {
+            match self.alive.get(id) {
+                Some(old) if registry::rank(old) >= registry::rank(row) => {}
+                _ => {
+                    self.alive.insert(id.clone(), row.clone());
+                }
+            }
+        }
         let mut w = self.world.lock().unwrap_or_else(|e| e.into_inner());
         let mut ours = Vec::new();
         for (k, t) in w.teams.iter_mut() {
@@ -1222,6 +1347,7 @@ fn wsl_proc_root(home: &Path, distro: &str) -> Option<PathBuf> {
 /// 30초마다 Windows Site 와 WSL 배포판의 켜짐·꺼짐을 각 호스트에 넘긴다 (4.4.2).
 /// `wsl.exe` 와 켜진 배포판의 UNC 를 쓰므로 자기 스레드에서 돈다. 멈춰도 Windows 갱신과 감시자는 계속된다 (4.5)
 pub struct Prober {
+    runtime: Arc<Runtime>,
     probe: ProbeFn,
     windows: Arc<Heartbeat>,
     remotes: Remotes,
@@ -1235,7 +1361,11 @@ pub struct Prober {
 impl Prober {
     /// Windows 스레드와 감시 목록·world 를 함께 쓴다
     pub fn new(windows: &HostLoop, probe: ProbeFn) -> Self {
+        windows
+            .runtime
+            .register(&windows.host, windows.heartbeat.clone());
         Self {
+            runtime: windows.runtime.clone(),
             probe,
             windows: windows.heartbeat.clone(),
             remotes: windows.remotes.clone(),
@@ -1250,12 +1380,8 @@ impl Prober {
     /// 한 번 본다. 꺼진 배포판은 UNC 를 건드리지 않고, 의심 상태를 푸는 것도 여기서만 한다
     pub fn run(&mut self) {
         let (local, distros) = (self.probe)();
-        // Windows 는 언제나 경로 접근을 하니 Site 만 바꾼다
-        *self
-            .windows
-            .probed
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(local);
+        self.runtime
+            .publish_probe(&crate::discover::windows_host(), &self.windows, local);
         for d in distros {
             let known = self
                 .remotes
@@ -1268,7 +1394,7 @@ impl Prober {
                 match d.running {
                     Some(true) => {
                         // Site 를 먼저 넘긴 뒤 의심을 푼다. 순서가 바뀌면 경로 접근 없이 한 틱이 돈다
-                        *hb.probed.lock().unwrap_or_else(|e| e.into_inner()) = Some(d.sites);
+                        self.runtime.publish_probe(&d.host, &hb, d.sites);
                         set_suspect(&self.world, &d.host.id, &hb, false);
                         // 팝업 읽기가 상한을 넘겨 world 에만 켠 의심(detail)도 켜짐을 본 여기서 푼다
                         self.world
@@ -1291,7 +1417,9 @@ impl Prober {
                     self.diag.clone(),
                 );
                 h.watch = self.watch.clone();
-                *h.heartbeat.probed.lock().unwrap_or_else(|e| e.into_inner()) = Some(d.sites);
+                h.runtime = self.runtime.clone();
+                self.runtime.register(&h.host, h.heartbeat.clone());
+                self.runtime.publish_probe(&d.host, &h.heartbeat, d.sites);
                 let hb = h.heartbeat.clone();
                 self.remotes
                     .lock()
@@ -1313,6 +1441,9 @@ pub fn spawn_probe(mut p: Prober) -> thread::JoinHandle<()> {
             while Instant::now() < until {
                 if p.windows.stop.load(Ordering::Relaxed) {
                     break 'run;
+                }
+                if p.runtime.rescan.swap(false, Ordering::Relaxed) {
+                    break;
                 }
                 thread::sleep(TICK);
             }
@@ -1362,6 +1493,7 @@ pub fn spawn(mut host: HostLoop) -> thread::JoinHandle<()> {
             let start = Instant::now();
             host.tick();
             let spent = start.elapsed();
+            host.tick_stats.record(spent);
             thread::sleep(pace.next(&host.host.id, spent));
         }
         // 꺼진 배포판의 핸들은 닫기만 해도 배포판을 다시 켠다 (4.4.2). 의심 중이면 닫지 않고 둔다
@@ -1412,6 +1544,7 @@ fn open(
         parser: make_parser(path, key.vendor),
         reader: Some(TailReader::open_at(path, generation)?),
         closed: None,
+        closed_offset: 0,
         key,
         last_read,
         missing: 0,
@@ -1844,7 +1977,10 @@ mod tests {
     }
 
     fn probe_now(h: &HostLoop, sites: &[Site]) {
-        *h.heartbeat.probed.lock().unwrap() = Some(sites.to_vec());
+        *h.heartbeat.probed.lock().unwrap() = Some(ProbeUpdate {
+            sites: sites.to_vec(),
+            removed: Vec::new(),
+        });
         set_suspect(&h.world, &h.host.id, &h.heartbeat, false);
     }
 
@@ -2617,6 +2753,172 @@ mod tests {
             "Probe 밖에서는 닫지 않는다"
         );
         (h, file, sites, now)
+    }
+
+    #[test]
+    fn diagnostic_request_keeps_closed_offset_and_never_touches_suspect_paths() {
+        let e = env();
+        let (mut h, file, sites, now) = dozing_wsl_team(&e);
+        let offset = h.files[&file].reader.as_ref().unwrap().offset();
+        probe_now(&h, &sites);
+        e.at(now + secs(1));
+        h.tick();
+        assert!(h.files[&file].reader.is_none());
+        h.heartbeat.suspect.store(true, Ordering::Relaxed);
+        let ops = h.path_ops;
+        let (tx, rx) = mpsc::channel();
+        *h.heartbeat.diagnostic.lock().unwrap() = Some(tx);
+        h.tick();
+        let snapshot = rx.try_recv().unwrap();
+        assert_eq!(h.path_ops, ops);
+        assert!(snapshot.suspect);
+        assert_eq!(
+            snapshot
+                .files
+                .iter()
+                .find(|f| f.path == file)
+                .unwrap()
+                .offset,
+            offset
+        );
+        assert!(h.heartbeat.diagnostic.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn probe_result_scans_windows_now_and_only_explicit_removal_deletes_a_team() {
+        let e = env();
+        let root = e.dir("claude/custom-records");
+        let site = site_of(&win(), Vendor::Claude, &root);
+        let mut h = e.host(win(), vec![site.clone()]);
+        h.tick();
+        copy_dir(&fixture("claude/reject"), &root.join("p1"));
+        e.at(t0() + Duration::milliseconds(200));
+        probe_now(&h, std::slice::from_ref(&site));
+        h.tick();
+        assert!(e.w().teams.keys().any(|k| k.session == REJECT));
+        probe_now(&h, &[]);
+        h.tick();
+        assert!(
+            e.w().teams.keys().any(|k| k.session == REJECT),
+            "Probe 누락으로 팀을 지우지 않는다"
+        );
+        *h.heartbeat.probed.lock().unwrap() = Some(ProbeUpdate {
+            sites: Vec::new(),
+            removed: vec![(Vendor::Claude, root)],
+        });
+        h.tick();
+        assert!(!e.w().teams.keys().any(|k| k.session == REJECT));
+    }
+
+    #[test]
+    fn multiple_registry_roots_keep_failed_rows_rank_duplicates_and_remove_custom_root() {
+        let e = env();
+        let a = e.dir("a-home/custom-records");
+        let z = e.dir("z-home/other-records");
+        let ar = a.parent().unwrap().join("sessions");
+        let zr = z.parent().unwrap().join("sessions");
+        fs::create_dir_all(&ar).unwrap();
+        fs::create_dir_all(&zr).unwrap();
+        let pid = std::process::id();
+        let row = |id: &str, name: &str, source: &str| {
+            serde_json::json!({ "pid":pid, "sessionId":id, "name":name, "nameSource":source })
+                .to_string()
+        };
+        fs::write(
+            ar.join(format!("{pid}.json")),
+            row("shared", "사용자 이름", "user"),
+        )
+        .unwrap();
+        fs::write(
+            zr.join(format!("{pid}.json")),
+            row("shared", "자동 이름", "auto"),
+        )
+        .unwrap();
+        let mut h = e.host(
+            win(),
+            vec![
+                site_of(&win(), Vendor::Claude, &a),
+                site_of(&win(), Vendor::Claude, &z),
+            ],
+        );
+        h.tick();
+        assert_eq!(h.alive["shared"].user_name(), Some("사용자 이름"));
+        // 첫 루트 전체가 읽히지 않아도 두 번째 루트의 새 행을 읽는다.
+        fs::rename(&ar, ar.with_file_name("saved-sessions")).unwrap();
+        fs::write(&ar, "not a directory").unwrap();
+        fs::write(
+            zr.join(format!("{pid}.json")),
+            row("new-session", "새 이름", "user"),
+        )
+        .unwrap();
+        e.at(t0() + secs(3));
+        h.tick();
+        assert!(h.alive.contains_key("shared"));
+        assert!(h.alive.contains_key("new-session"));
+        *h.heartbeat.probed.lock().unwrap() = Some(ProbeUpdate {
+            sites: vec![site_of(&win(), Vendor::Claude, &z)],
+            removed: vec![(Vendor::Claude, a)],
+        });
+        h.tick();
+        assert!(!h.alive.contains_key("shared"));
+        assert!(h.alive.contains_key("new-session"));
+        // 자동 탐색에서 빠진 루트의 캐시도 다음 허용 Scan에서 실제 생존을 다시 본다.
+        fs::remove_file(zr.join(format!("{pid}.json"))).unwrap();
+        probe_now(&h, &[]);
+        h.tick();
+        assert!(h.alive.is_empty());
+    }
+
+    #[test]
+    fn removing_parent_manual_root_preserves_nested_automatic_site() {
+        let e = env();
+        let manual = e.dir("base");
+        let automatic = manual.join(".claude/projects");
+        copy_dir(&fixture("claude/reject"), &automatic.join("p1"));
+        let manual_file = manual.join("p2/manual.jsonl");
+        fs::create_dir_all(manual_file.parent().unwrap()).unwrap();
+        fs::write(
+            &manual_file,
+            format!("{}\n", user_line("manual", t0(), "수동 팀")),
+        )
+        .unwrap();
+        let automatic_site = site_of(&win(), Vendor::Claude, &automatic);
+        let mut h = e.host(
+            win(),
+            vec![
+                site_of(&win(), Vendor::Claude, &manual),
+                automatic_site.clone(),
+            ],
+        );
+        h.tick();
+        assert!(e.w().teams.keys().any(|k| k.session == "manual"));
+        let kept_file = automatic.join("p1").join(format!("{REJECT}.jsonl"));
+        let offset = h.files[&kept_file].reader.as_ref().unwrap().offset();
+        let removed = crate::settings::ManualPath {
+            vendor: crate::settings::ManualVendor::Claude,
+            root: manual.to_string_lossy().into_owned(),
+        };
+        h.runtime.manual_changed(&[removed], &[]);
+        h.runtime.discovered(
+            &crate::discover::ScanResult {
+                sites: vec![automatic_site.clone()],
+                distros: Vec::new(),
+                candidates: Vec::new(),
+            },
+            &[],
+        );
+        // 탐색과 전달 사이에 Windows 틱이 돌아도 이전 Site로 제거를 적용하지 않는다.
+        h.tick();
+        assert!(e.w().teams.keys().any(|k| k.session == "manual"));
+        h.runtime
+            .publish_probe(&win(), &h.heartbeat, vec![automatic_site]);
+        h.tick();
+        assert!(!e.w().teams.keys().any(|k| k.session == "manual"));
+        assert!(e.w().teams.keys().any(|k| k.session == REJECT));
+        assert_eq!(
+            h.files[&kept_file].reader.as_ref().unwrap().offset(),
+            offset
+        );
     }
 
     /// 졸음 팀에 8MB 넘는 backlog 가 있으면 닫기 전 읽기 한 번으로 다 못 읽는다. 덜 읽은 채 닫지 않는다

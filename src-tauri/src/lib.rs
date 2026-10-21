@@ -2,9 +2,11 @@ pub mod detail;
 pub mod diag;
 pub mod discover;
 pub mod ipc;
+pub mod notification;
 pub mod office;
 pub mod oplog;
 pub mod parse;
+pub mod runtime;
 pub mod settings;
 pub mod startup;
 pub mod tail;
@@ -18,10 +20,11 @@ use tauri::{Emitter, Manager};
 
 use diag::Diag;
 use discover::wsl::WslDistro;
-use discover::{Site, discover_all, discover_wsl, windows_host};
+use discover::{Site, scan, windows_host};
 use ipc::Ipc;
 use office::names::{NameBook, RoomBook};
 use office::world::{OfficeWorld, Scale};
+use runtime::Runtime;
 use settings::SettingsBook;
 use startup::{Boot, Limits, ScanWatch, Startup, StartupSummary, StepState};
 use tail::scheduler::{self, HostLoop, Prober, WallClock};
@@ -66,6 +69,7 @@ struct AppBoot {
     world: Arc<Mutex<OfficeWorld>>,
     diag: Arc<Mutex<Diag>>,
     settings: Arc<SettingsBook>,
+    runtime: Arc<Runtime>,
 }
 
 impl Boot for AppBoot {
@@ -74,9 +78,11 @@ impl Boot for AppBoot {
     }
 
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>) {
-        let found = (discover_all(), discover_wsl());
-        log_sites(&found.0, &found.1);
-        found
+        let manual = self.settings.snapshot().manual_paths.unwrap_or_default();
+        let found = scan(&manual);
+        log_sites(&found.sites, &found.distros);
+        self.runtime.discovered(&found, &manual);
+        (found.sites, found.distros)
     }
 
     /// 호스트 스레드를 띄운다. WSL 스레드는 Probe 가 켜진 배포판을 보고 띄운다 (4.4.2)
@@ -89,14 +95,20 @@ impl Boot for AppBoot {
             self.diag.clone(),
         );
         host.watch = Some(watch);
+        host.runtime = self.runtime.clone();
         // 첫 Probe 는 방금 찾은 결과를 쓴다. wsl.exe 를 또 부르면 느린 PC 에서 로딩이 두 배가 된다
         let mut first = Some((sites, distros));
+        let settings = self.settings.clone();
+        let runtime = self.runtime.clone();
         let prober = Prober::new(
             &host,
             Box::new(move || {
-                first
-                    .take()
-                    .unwrap_or_else(|| (discover_all(), discover_wsl()))
+                first.take().unwrap_or_else(|| {
+                    let manual = settings.snapshot().manual_paths.unwrap_or_default();
+                    let found = scan(&manual);
+                    runtime.discovered(&found, &manual);
+                    (found.sites, found.distros)
+                })
             }),
         );
         scheduler::spawn(host);
@@ -135,8 +147,14 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
         NameBook::load(&dir),
         local,
     )));
-    // ponytail: 원문 진단은 설정(T30) 전까지 끈다
-    let diag = Arc::new(Mutex::new(Diag::open(&dir.join("logs"), false)));
+    let diag = Arc::new(Mutex::new(Diag::open(
+        &dir.join("logs"),
+        settings.snapshot().raw_diagnostics.unwrap_or(false),
+    )));
+    let runtime = Arc::new(Runtime::new(
+        dir.join("logs"),
+        std::env::var_os("USERPROFILE").map(PathBuf::from),
+    ));
     let ipc = Arc::new(Ipc::new(world.clone(), RoomBook::load(&dir)));
     startup.report(1, StepState::Done, StartupSummary::None, None);
 
@@ -144,19 +162,24 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
         app: app.clone(),
         ipc: ipc.clone(),
         world: world.clone(),
-        diag,
+        diag: diag.clone(),
         settings: settings.clone(),
+        runtime: runtime.clone(),
     };
     let progress = startup.clone();
-    thread::spawn(move || startup::run_guarded(&progress, &boot, &world, &Limits::default()));
     app.manage(ipc);
     app.manage(settings);
+    app.manage(diag);
+    app.manage(runtime);
+    app.manage(notification::WindowVisibility::default());
     app.manage(startup);
+    thread::spawn(move || startup::run_guarded(&progress, &boot, &world, &Limits::default()));
     Ok(())
 }
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             start(app.handle())?;
             Ok(())
@@ -166,6 +189,10 @@ pub fn run() {
             ipc::select_office,
             ipc::get_settings,
             ipc::set_settings,
+            ipc::rescan,
+            ipc::get_diagnostics,
+            ipc::open_log_folder,
+            notification::set_window_hidden,
             ipc::get_employee_timeline,
             ipc::get_employee_detail,
             ipc::get_session_detail,

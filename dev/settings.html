@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>설정 확인 (T30)</title>
+    <script type="module" src="./settings.ts"></script>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+      }
+      .controls {
+        flex: none;
+        padding: 8px 12px;
+      }
+      .controls button {
+        margin: 3px;
+      }
+      #app {
+        flex: 1;
+        height: auto;
+        min-height: 0;
+      }
+      #status {
+        margin: 4px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="controls" aria-label="설정 검증 조작">
+      <strong>설정 확인 (합성 데이터)</strong>
+      <button id="open">설정 열기</button>
+      <button id="fail-save">다음 저장 실패</button>
+      <button id="fail-copy">다음 복사 실패</button>
+      <button id="fail-get">다음 설정 읽기 실패</button>
+      <button id="hq">본사 제목 보기</button>
+      <button id="visit">사장님 방문</button>
+      <p id="status" role="status"></p>
+    </section>
+    <div class="ow-app" id="app">
+      <div id="side"></div>
+      <main class="ow-main">
+        <header id="header"></header>
+        <div class="ow-stage" id="stage"></div>
+      </main>
+      <div class="ow-panel-host" id="panel"></div>
+    </div>
+  </body>
+</html>

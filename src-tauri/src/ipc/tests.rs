@@ -35,6 +35,8 @@ struct Env {
     _dir: tempfile::TempDir,
     world: Arc<Mutex<OfficeWorld>>,
     ipc: Ipc,
+    diag: Mutex<Diag>,
+    runtime: Runtime,
 }
 
 fn wsl_host() -> Host {
@@ -61,6 +63,8 @@ fn env(scale: Scale) -> Env {
     let world = Arc::new(Mutex::new(world_with_hosts(scale, dir.path())));
     let ipc = Ipc::new(world.clone(), RoomBook::load(dir.path()));
     Env {
+        diag: Mutex::new(Diag::open(dir.path(), false)),
+        runtime: Runtime::default(),
         _dir: dir,
         world,
         ipc,
@@ -669,10 +673,10 @@ fn set_settings_scale_rebuilds_and_failed_save_still_applies() {
         ..SettingsDto::default()
     };
     // 빈 칸은 건드리지 않는다
-    apply_settings(&e.ipc, &book, SettingsDto::default()).unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, SettingsDto::default()).unwrap();
     assert!(e.ipc.poll(&mut sent, now).0.is_none());
 
-    apply_settings(&e.ipc, &book, small.clone()).unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, small.clone()).unwrap();
     assert_eq!(SettingsBook::load(dir.path()).scale(), Some(Scale::Small));
     let (list, state) = e.ipc.poll(&mut sent, now);
     let list = list.unwrap();
@@ -687,7 +691,7 @@ fn set_settings_scale_rebuilds_and_failed_save_still_applies() {
         scale: Some(Scale::Large),
         ..SettingsDto::default()
     };
-    assert!(apply_settings(&e.ipc, &broken, large).is_err());
+    assert!(apply_settings(&e.ipc, &broken, &e.diag, &e.runtime, large).is_err());
     assert_eq!(broken.scale(), Some(Scale::Large));
     assert!(e.ipc.poll(&mut sent, now).0.unwrap().scale == Scale::Large);
 }
@@ -707,23 +711,154 @@ fn set_settings_company_name_alone() {
         ..SettingsDto::default()
     };
 
-    apply_settings(&e.ipc, &book, name("야근상사")).unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, name("야근상사")).unwrap();
     let want = SettingsDto {
         scale: Some(Scale::Small),
         company_name: Some("야근상사".into()),
+        manual_paths: Some(Vec::new()),
+        sound: Some(false),
+        os_notifications: Some(true),
+        boss_name: None,
+        raw_diagnostics: Some(false),
     };
     assert_eq!(settings_dto(&SettingsBook::load(dir.path())), want);
     // 규모를 건드리지 않았으니 재배치도 없다
     assert!(e.ipc.poll(&mut sent, now).0.is_none());
 
     // 빈 칸(null)은 이름을 건드리지 않는다
-    apply_settings(&e.ipc, &book, SettingsDto::default()).unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, SettingsDto::default()).unwrap();
     assert_eq!(settings_dto(&book), want);
 
-    apply_settings(&e.ipc, &book, name("")).unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, name("")).unwrap();
     let dto = settings_dto(&SettingsBook::load(dir.path()));
     assert_eq!(dto.company_name, None);
     assert_eq!(dto.scale, Some(Scale::Small));
+}
+
+/// 부분 갱신·null·빈 값·기본값이 재시작 뒤에도 같은 계약을 유지한다.
+#[test]
+fn set_settings_round_trip_and_partial_updates() {
+    let e = env(Scale::Large);
+    let dir = tempfile::tempdir().unwrap();
+    let book = SettingsBook::load(dir.path());
+    let initial = settings_dto(&book);
+    assert_eq!(initial.sound, Some(false));
+    assert_eq!(initial.os_notifications, Some(true));
+    assert_eq!(initial.raw_diagnostics, Some(false));
+    assert_eq!(initial.boss_name, None);
+    assert_eq!(initial.manual_paths, Some(Vec::new()));
+    let patch: SettingsDto = serde_json::from_value(serde_json::json!({
+        "scale": "Small", "companyName": "회사", "sound": true,
+        "osNotifications": false, "rawDiagnostics": true,
+        "bossName": format!("  {}  ", "가".repeat(21)),
+        "manualPaths": [{"vendor": "Codex", "root": "D:/fixture/sessions"}]
+    }))
+    .unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, patch).unwrap();
+    let restored = settings_dto(&SettingsBook::load(dir.path()));
+    assert_eq!(restored.boss_name, Some("가".repeat(20)));
+    assert_eq!(restored.sound, Some(true));
+    assert_eq!(restored.os_notifications, Some(false));
+    assert_eq!(restored.raw_diagnostics, Some(true));
+    assert_eq!(
+        restored.manual_paths.as_ref().unwrap()[0].root,
+        "D:/fixture/sessions"
+    );
+    let unchanged: SettingsDto = serde_json::from_value(serde_json::json!({
+        "bossName": null, "manualPaths": null, "sound": null,
+        "osNotifications": null, "rawDiagnostics": null
+    }))
+    .unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, unchanged).unwrap();
+    assert_eq!(settings_dto(&SettingsBook::load(dir.path())), restored);
+    apply_settings(
+        &e.ipc,
+        &book,
+        &e.diag,
+        &e.runtime,
+        SettingsDto {
+            boss_name: Some("  ".into()),
+            manual_paths: Some(Vec::new()),
+            sound: Some(false),
+            ..SettingsDto::default()
+        },
+    )
+    .unwrap();
+    let cleared = settings_dto(&SettingsBook::load(dir.path()));
+    assert_eq!(cleared.boss_name, None);
+    assert_eq!(cleared.manual_paths, Some(Vec::new()));
+    assert_eq!(cleared.sound, Some(false));
+    assert_eq!(cleared.raw_diagnostics, restored.raw_diagnostics);
+    assert_eq!(cleared.os_notifications, restored.os_notifications);
+    assert_eq!(cleared.company_name, restored.company_name);
+    assert_eq!(cleared.scale, restored.scale);
+}
+
+/// 잘못된 경로가 있으면 다른 설정의 저장이나 world 재배치도 시작하지 않는다.
+#[test]
+fn invalid_manual_path_rejects_the_whole_settings_patch() {
+    let e = env(Scale::Large);
+    let dir = tempfile::tempdir().unwrap();
+    let book = SettingsBook::load(dir.path());
+    book.set_scale(Scale::Large).unwrap();
+    let before = std::fs::read(dir.path().join("settings.json")).unwrap();
+    let dto: SettingsDto = serde_json::from_value(serde_json::json!({
+        "scale": "Small", "sound": true,
+        "manualPaths": [{"vendor": "Claude", "root": "../projects"}]
+    }))
+    .unwrap();
+    assert!(apply_settings(&e.ipc, &book, &e.diag, &e.runtime, dto).is_err());
+    assert_eq!(book.scale(), Some(Scale::Large));
+    assert_eq!(settings_dto(&book).sound, Some(false));
+    assert_eq!(
+        std::fs::read(dir.path().join("settings.json")).unwrap(),
+        before
+    );
+    assert_eq!(e.ipc.snapshot(t0()).list.scale, Scale::Large);
+}
+
+/// 저장 실패에도 한 요청에 들어온 설정은 모두 메모리에 적용한다.
+#[test]
+fn settings_save_failure_keeps_all_changes_in_memory() {
+    let e = env(Scale::Large);
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("not_a_directory");
+    std::fs::write(&file, "x").unwrap();
+    let book = SettingsBook::load(&file);
+    let dto: SettingsDto = serde_json::from_value(serde_json::json!({
+        "scale": "Small", "companyName": "회사", "bossName": "이름",
+        "sound": true, "osNotifications": false, "rawDiagnostics": true,
+        "manualPaths": [{"vendor": "Claude", "root": "D:/fixture/projects"}]
+    }))
+    .unwrap();
+    assert!(apply_settings(&e.ipc, &book, &e.diag, &e.runtime, dto.clone()).is_err());
+    assert_eq!(settings_dto(&book), dto);
+    assert_eq!(e.ipc.snapshot(t0()).list.scale, Scale::Small);
+    assert!(e.runtime.rescan.load(std::sync::atomic::Ordering::Relaxed));
+    let mut kind = tool("diagnostic", ToolKind::Shell, "custom SECRET");
+    if let EventKind::ToolCall { summary, .. } = &mut kind {
+        summary.command_key = Some("custom".into());
+        summary.command_norm = Some("custom SECRET".into());
+    }
+    lock(&e.diag).observe_event(&ev("a", 0, kind), t0());
+    lock(&e.diag).flush().unwrap();
+    let log = e._dir.path().join("unhandled.jsonl");
+    assert!(std::fs::read_to_string(&log).unwrap().contains("SECRET"));
+    assert!(
+        apply_settings(
+            &e.ipc,
+            &book,
+            &e.diag,
+            &e.runtime,
+            SettingsDto {
+                raw_diagnostics: Some(false),
+                ..SettingsDto::default()
+            }
+        )
+        .is_err()
+    );
+    lock(&e.diag).flush().unwrap();
+    assert!(!std::fs::read_to_string(log).unwrap().contains("SECRET"));
 }
 
 /// 중소기업 사무실의 연출에는 어느 팀 것인지 실린다
@@ -1229,6 +1364,8 @@ fn bindings() -> String {
         Light,
         Scale,
         SettingsDto,
+        ManualPath,
+        crate::settings::ManualVendor,
         StepState,
         StartupSummary,
         StartupDetail,

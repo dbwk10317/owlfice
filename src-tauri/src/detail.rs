@@ -377,6 +377,13 @@ pub fn open_path(world: &Mutex<OfficeWorld>, target: OpenTarget) -> Result<(), D
     bounded(world, wsl, move |deadline| launch(plan, deadline))
 }
 
+pub fn open_log_folder(path: &Path) -> Result<(), DetailError> {
+    launch(
+        Launch::Folder(path.to_path_buf()),
+        Instant::now() + std::time::Duration::from_secs(2),
+    )
+}
+
 /// 대상을 경로로 바꾼다. 파일은 건드리지 않는다
 fn resolve_open(
     world: &Mutex<OfficeWorld>,

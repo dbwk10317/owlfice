@@ -82,3 +82,22 @@ test("Tab 가두기는 조상이 hidden 인 버튼을 마지막으로 잡지 않
   expect(document.activeElement).toBe(m.closeBtn);
   b.remove();
 });
+
+test("입력·선택·여러 줄 입력도 초점을 가두고 disabled fieldset은 건너뛴다", () => {
+  const m = openModal(document, { width: 580, titleId: "t" });
+  const input = document.createElement("input");
+  const select = document.createElement("select");
+  const textarea = document.createElement("textarea");
+  const disabled = document.createElement("fieldset");
+  disabled.disabled = true;
+  disabled.append(document.createElement("input"));
+  m.modal.append(input, select, textarea, disabled);
+  textarea.focus();
+  press("Tab");
+  expect(document.activeElement).toBe(input);
+  document.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, cancelable: true }),
+  );
+  expect(document.activeElement).toBe(textarea);
+  m.close();
+});

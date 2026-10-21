@@ -15,7 +15,7 @@ use windows_sys::Win32::System::Registry::{
 };
 use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
-use super::{Host, HostKind, ReadMode, Site, Vendor};
+use super::{Candidate, CandidateResult, Host, HostKind, ReadMode, Site, Vendor};
 
 /// Lxss 레지스트리의 배포판 하나
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +43,16 @@ pub fn find_distros(
     roots: &dyn Fn(&str) -> Vec<PathBuf>,
     printenv: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<WslDistro> {
+    find_distros_reporting(lxss, running, roots, printenv, &mut Vec::new())
+}
+
+fn find_distros_reporting(
+    lxss: &[LxssEntry],
+    running: &dyn Fn() -> Option<Vec<String>>,
+    roots: &dyn Fn(&str) -> Vec<PathBuf>,
+    printenv: &dyn Fn(&str) -> Option<String>,
+    candidates: &mut Vec<Candidate>,
+) -> Vec<WslDistro> {
     if lxss.is_empty() {
         return Vec::new();
     }
@@ -57,11 +67,27 @@ pub fn find_distros(
                 label: e.name.clone(),
             };
             let running = on.as_ref().map(|names| names.contains(&e.name));
+            let first = candidates.len();
             let sites = if running == Some(true) {
-                sites_of(e, &host, roots, printenv)
+                sites_of(e, &host, roots, printenv, candidates)
             } else {
                 Vec::new()
             };
+            for vendor in [Vendor::Claude, Vendor::Codex] {
+                if !candidates[first..].iter().any(|c| c.vendor == vendor) {
+                    candidates.push(Candidate {
+                        host: host.clone(),
+                        vendor,
+                        // 소등·홈 탐색 실패에서는 경로를 알아내려고 UNC를 더 열지 않는다.
+                        root: None,
+                        result: if running == Some(false) {
+                            CandidateResult::Offline
+                        } else {
+                            CandidateResult::Unknown
+                        },
+                    });
+                }
+            }
             WslDistro {
                 host,
                 running,
@@ -76,6 +102,7 @@ fn sites_of(
     host: &Host,
     roots: &dyn Fn(&str) -> Vec<PathBuf>,
     printenv: &dyn Fn(&str) -> Option<String>,
+    candidates: &mut Vec<Candidate>,
 ) -> Vec<Site> {
     let Some(root) = roots(&e.name).into_iter().find(|r| r.is_dir()) else {
         return Vec::new();
@@ -89,8 +116,18 @@ fn sites_of(
     // ponytail: 기본 사용자는 레지스트리 DefaultUid 로만 정한다(/etc/wsl.conf 의 [user] default 는 안 본다), 그 구성이 보이면 올린다
     if let Some(home) = home {
         return [
-            site(host, Vendor::Claude, home.join(".claude").join("projects")),
-            site(host, Vendor::Codex, home.join(".codex").join("sessions")),
+            site(
+                host,
+                Vendor::Claude,
+                home.join(".claude").join("projects"),
+                candidates,
+            ),
+            site(
+                host,
+                Vendor::Codex,
+                home.join(".codex").join("sessions"),
+                candidates,
+            ),
         ]
         .into_iter()
         .flatten()
@@ -106,8 +143,8 @@ fn sites_of(
     let codex = var("CODEX_HOME").or_else(|| Some(format!("{}/.codex", linux_home.as_ref()?)));
     let at = |linux: Option<String>, sub: &str| under_root(&root, &linux?).map(|p| p.join(sub));
     [
-        at(claude, "projects").and_then(|r| site(host, Vendor::Claude, r)),
-        at(codex, "sessions").and_then(|r| site(host, Vendor::Codex, r)),
+        at(claude, "projects").and_then(|r| site(host, Vendor::Claude, r, candidates)),
+        at(codex, "sessions").and_then(|r| site(host, Vendor::Codex, r, candidates)),
     ]
     .into_iter()
     .flatten()
@@ -115,8 +152,24 @@ fn sites_of(
 }
 
 /// Antigravity CLI는 파서가 생기는 T32에서 더한다
-fn site(host: &Host, vendor: Vendor, root: PathBuf) -> Option<Site> {
-    root.is_dir().then(|| Site {
+fn site(
+    host: &Host,
+    vendor: Vendor,
+    root: PathBuf,
+    candidates: &mut Vec<Candidate>,
+) -> Option<Site> {
+    let found = root.is_dir();
+    candidates.push(Candidate {
+        host: host.clone(),
+        vendor,
+        root: Some(root.clone()),
+        result: if found {
+            CandidateResult::Found
+        } else {
+            CandidateResult::Missing
+        },
+    });
+    found.then(|| Site {
         host: host.clone(),
         vendor,
         root,
@@ -178,7 +231,12 @@ fn parse_running(bytes: &[u8]) -> Vec<String> {
 
 /// 실제 환경의 WSL 배포판 목록. 켜진 배포판만 UNC로 본다
 pub(super) fn discover() -> Vec<WslDistro> {
-    find_distros(
+    discover_with_candidates().0
+}
+
+pub(super) fn discover_with_candidates() -> (Vec<WslDistro>, Vec<Candidate>) {
+    let mut candidates = Vec::new();
+    let distros = find_distros_reporting(
         &read_lxss(),
         &|| run_wsl(&["-l", "--running", "-q"]).map(|b| parse_running(&b)),
         &unc_roots,
@@ -186,7 +244,9 @@ pub(super) fn discover() -> Vec<WslDistro> {
             run_wsl(&["-d", name, "--", "printenv"])
                 .map(|b| String::from_utf8_lossy(&b).into_owned())
         },
-    )
+        &mut candidates,
+    );
+    (distros, candidates)
 }
 
 fn unc_roots(name: &str) -> Vec<PathBuf> {
@@ -360,6 +420,51 @@ mod tests {
     }
 
     const PASSWD: &str = "root:x:0:0:root:/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n";
+
+    #[test]
+    fn candidate_report_keeps_missing_paths_and_never_looks_up_stopped_homes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = fake_root(tmp.path(), "On", PASSWD);
+        fs::create_dir_all(root.join("home/me/.claude/projects")).unwrap();
+        let mut candidates = Vec::new();
+        let distros = find_distros_reporting(
+            &[entry("Off", Some(1000)), entry("On", Some(1000))],
+            &|| Some(vec!["On".into()]),
+            &|name| {
+                assert_eq!(name, "On");
+                vec![root.clone()]
+            },
+            &|_| panic!("홈이 있으면 printenv를 부르지 않는다"),
+            &mut candidates,
+        );
+        assert!(distros[0].sites.is_empty());
+        assert_eq!(distros[1].sites.len(), 1);
+        assert_eq!(candidates.len(), 4);
+        assert!(
+            candidates[..2]
+                .iter()
+                .all(|c| c.root.is_none() && c.result == CandidateResult::Offline)
+        );
+        assert_eq!(candidates[2].result, CandidateResult::Found);
+        assert_eq!(candidates[3].result, CandidateResult::Missing);
+        assert_eq!(
+            candidates[3].root,
+            Some(root.join("home/me/.codex/sessions"))
+        );
+        candidates.clear();
+        find_distros_reporting(
+            &[entry("Unknown", Some(1000))],
+            &|| None,
+            &|_| panic!("켜짐을 모르면 UNC를 건드리지 않는다"),
+            &|_| panic!(),
+            &mut candidates,
+        );
+        assert!(
+            candidates
+                .iter()
+                .all(|c| c.root.is_none() && c.result == CandidateResult::Unknown)
+        );
+    }
 
     #[test]
     fn no_registry_gives_empty_and_runs_nothing() {

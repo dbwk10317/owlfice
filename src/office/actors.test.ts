@@ -27,7 +27,16 @@ import {
   type OwlMeta,
   type Owls,
 } from "./actors.ts";
-import { CLAP_MS, ENTER_MS, WALK_MAX_MS } from "./anim-queue.ts";
+import {
+  CLAP_MS,
+  ENTER_MS,
+  STAMP_MS,
+  VISIT_STAY_MS,
+  WALK_MAX_MS,
+  stand,
+  walkMs,
+  walkPath,
+} from "./anim-queue.ts";
 import { gridToScreen, parseFloorplan, type Kind } from "./floorplan.ts";
 import { toCss } from "./renderer.ts";
 import { empKey } from "../ticker.ts";
@@ -840,4 +849,197 @@ test("두 sync 사이에 지나간 DTO 의 cue(earlier)도 재생한다", () => 
   const o = office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 })])]);
   layer.sync(o, "large", NOW, { earlier: [cue({ kind: "Enter", agent: "a" })] });
   expect(posOf(layer, "a")).toEqual(screen(...DOOR));
+});
+
+// ---------- 사장님 방문·반려 ----------
+
+const visitCue = (text = "배포 상황 보고하세요") => cue({ kind: "BossVisit", text });
+const BOSS_IN = [team("t", [boss()])];
+const frontOf = (seat: { gx: number; gy: number }) => ({ gx: seat.gx, gy: seat.gy + 2, z: 0 });
+// 대기업 부장 좌석 앞까지 문에서 걷는 시간과 나가는 시간
+const SEAT_BOSS = fp.layouts.large.seats.boss[0];
+const ARRIVE = walkMs(walkPath(fp, stand(fp, "door"), frontOf(SEAT_BOSS)));
+const LEAVE = walkMs(walkPath(fp, frontOf(SEAT_BOSS), stand(fp, "exit")));
+
+test("BossVisit cue 로 사장님 액터가 생기고 도착 5초 뒤 나가 사라진다, 부장은 펄쩍, 인터폰이 울린다", () => {
+  const { layer, overlay, world } = newLayer({ owls: labeled });
+  const ring = vi.fn();
+  layer.onRing = ring;
+  const sp = speciesOf("boss", meta.employeeSpecies);
+  layer.sync(office(BOSS_IN), "large", NOW);
+  const base = world.children.length;
+  layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+  expect(world.children).toHaveLength(base + 1);
+  expect(ring).toHaveBeenCalledWith(NOW);
+  expect(bodyOf(layer, "boss")).toBe(`body/${sp}/jump_f_0`);
+  const visitor = world.children[base] as Container;
+  expect((visitor.children[0] as Sprite).texture.label).toMatch(/^body\/snowy\/walk_[fb]_/);
+  expect((visitor.children[1] as Sprite).texture.label).toMatch(/^outfit\/boss\/walk_[fb]_/);
+  // 걷는 동안은 말풍선이 없고, 도착하면 보인다
+  const bubble = overlay.querySelector<HTMLElement>(".ow-bubble")!;
+  expect(bubble.textContent).toBe("배포 상황 보고하세요");
+  layer.update(NOW + 100);
+  expect(bubble.hidden).toBe(true);
+  layer.update(NOW + ARRIVE - 1);
+  expect(bubble.hidden).toBe(true);
+  layer.update(NOW + ARRIVE);
+  expect(bubble.hidden).toBe(false);
+  expect(world.children).toHaveLength(base + 1);
+  // 도착 5초 뒤 문으로 나가 사라진다
+  layer.update(NOW + ARRIVE + VISIT_STAY_MS - 1);
+  expect(world.children).toHaveLength(base + 1);
+  layer.update(NOW + ARRIVE + VISIT_STAY_MS);
+  expect(world.children).toHaveLength(base + 1);
+  layer.update(NOW + ARRIVE + VISIT_STAY_MS + LEAVE);
+  expect(world.children).toHaveLength(base);
+  expect(overlay.querySelector(".ow-bubble")).toBeNull();
+});
+
+test("BossVisit: instant(사무실 전환·숨김 복귀)면 사장님이 오지 않고, 말풍선은 30자에서 자른다", () => {
+  const { layer, overlay, world } = newLayer();
+  const ring = vi.fn();
+  layer.onRing = ring;
+  layer.sync(office(BOSS_IN), "large", NOW);
+  const base = world.children.length;
+  layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW + 1, { instant: true });
+  expect(world.children).toHaveLength(base);
+  expect(ring).not.toHaveBeenCalled();
+  // 조용한 재구성에 남은 방문 cue 도 지나간 일이다
+  layer.sync(withCues(office(BOSS_IN), [visitCue()], true), "large", NOW + 2);
+  expect(world.children).toHaveLength(base);
+  layer.sync(withCues(office(BOSS_IN), [visitCue("가".repeat(40))]), "large", NOW + 3);
+  expect(overlay.querySelector(".ow-bubble")!.textContent).toBe(`${"가".repeat(30)}…`);
+});
+
+test("Reject cue: 부장이 머리를 긁고, 결재판 자리에 도장이 1초 보인다", () => {
+  const { layer } = newLayer({ owls: labeled });
+  layer.sync(office(BOSS_IN), "large", NOW);
+  layer.sync(withCues(office(BOSS_IN), [cue({ kind: "Reject", agent: "boss" })]), "large", NOW);
+  const stamp = layer.rootOf("t", "boss")!.children.slice(-1)[0] as Sprite;
+  expect(bodyOf(layer, "boss")).toMatch(/\/scratch_f_/);
+  expect(stamp.visible).toBe(true);
+  layer.update(NOW + STAMP_MS - 1);
+  expect(stamp.visible).toBe(true);
+  layer.update(NOW + STAMP_MS);
+  expect(stamp.visible).toBe(false);
+  // 조용한 재구성에서는 다시 보이지 않는다
+  layer.sync(
+    withCues(office(BOSS_IN), [cue({ kind: "Reject", agent: "boss" })], true),
+    "large",
+    NOW + 5000,
+  );
+  expect(stamp.visible).toBe(false);
+  expect(bodyOf(layer, "boss")).toMatch(/\/sit_f_/);
+});
+
+test("움직임 줄이기: 사장님은 걷지 않고 바로 서고 도착 정확히 5초 뒤 사라진다", () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  try {
+    const { layer, world } = newLayer();
+    layer.sync(office(BOSS_IN), "large", NOW);
+    const base = world.children.length;
+    layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+    expect(world.children).toHaveLength(base + 1);
+    const v = world.children[base] as Container;
+    const to = gridToScreen(SEAT_BOSS.gx, SEAT_BOSS.gy + 2);
+    expect({ x: v.position.x, y: v.position.y }).toEqual({
+      x: roundEven(to.x),
+      y: roundEven(to.y),
+    });
+    layer.update(NOW + VISIT_STAY_MS - 1);
+    expect(world.children).toHaveLength(base + 1);
+    layer.update(NOW + VISIT_STAY_MS);
+    expect(world.children).toHaveLength(base);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("사장님은 방문 중 사무실을 옮기거나 그 팀이 퇴근하면 바로 없다, 퇴근한 팀에는 오지 않는다", () => {
+  const { layer, overlay, world } = newLayer();
+  const ring = vi.fn();
+  layer.onRing = ring;
+  layer.sync(office(BOSS_IN), "large", NOW);
+  const base = world.children.length;
+  const visit = () => withCues(office(BOSS_IN), [visitCue()]);
+  layer.sync(visit(), "large", NOW);
+  expect(world.children).toHaveLength(base + 1);
+  layer.sync(office(BOSS_IN), "large", NOW + 100, { instant: true });
+  expect(world.children).toHaveLength(base);
+  expect(overlay.querySelector(".ow-bubble")).toBeNull();
+  layer.sync(visit(), "large", NOW + 200);
+  expect(world.children).toHaveLength(base + 1);
+  layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW + 300);
+  expect(world.children).toHaveLength(base);
+  // 퇴근한 팀은 인터폰도 부장 펄쩍도 없다
+  ring.mockClear();
+  layer.sync(
+    withCues(office([team("t", [boss()], { phase: "Off" })]), [visitCue()]),
+    "large",
+    NOW + 400,
+  );
+  expect(ring).not.toHaveBeenCalled();
+  expect(world.children).toHaveLength(base);
+});
+
+test("사장님 자리는 그 팀 부장의 실제 좌석 앞: 팀장석 3번·간이 책상", () => {
+  const stands = (slot: number) => {
+    const { layer, world } = newLayer();
+    const t = [team("t", [boss()], { deskSlot: slot })];
+    layer.sync(office(t), "small", NOW);
+    layer.sync(withCues(office(t), [visitCue()]), "small", NOW);
+    layer.update(NOW + 60_000 - VISIT_STAY_MS);
+    const v = world.children[world.children.length - 1] as Container;
+    return { x: v.position.x, y: v.position.y };
+  };
+  const s = fp.layouts.small.seats;
+  for (const [slot, seat] of [
+    [3, s.boss[3]],
+    [4, s.spare[0]],
+    [5, s.spare[1]],
+  ] as const) {
+    const want = gridToScreen(seat.gx, seat.gy + 2);
+    expect(stands(slot)).toEqual({ x: roundEven(want.x), y: roundEven(want.y) });
+  }
+});
+
+test("같은 팀에 BossVisit 이 또 오면 앞 사장님을 없애고 하나만 둔다", () => {
+  const { layer, overlay, world } = newLayer();
+  layer.sync(office(BOSS_IN), "large", NOW);
+  const base = world.children.length;
+  layer.sync(withCues(office(BOSS_IN), [visitCue("하나")]), "large", NOW, {
+    earlier: [cue({ kind: "BossVisit", text: "앞" })],
+  });
+  expect(world.children).toHaveLength(base + 1);
+  expect(overlay.querySelectorAll(".ow-bubble")).toHaveLength(1);
+  expect(overlay.querySelector(".ow-bubble")!.textContent).toBe("하나");
+  layer.sync(withCues(office(BOSS_IN), [visitCue("둘")]), "large", NOW + 1000);
+  expect(world.children).toHaveLength(base + 1);
+  expect(overlay.querySelector(".ow-bubble")!.textContent).toBe("둘");
+});
+
+test("장면을 다시 지어 attach 하면 방문 중인 사장님 말풍선이 오버레이에 다시 붙는다", () => {
+  const { layer, overlay } = newLayer();
+  layer.sync(office(BOSS_IN), "large", NOW);
+  layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+  overlay.querySelector(".ow-bubble")!.remove();
+  layer.attach(new Container());
+  expect(overlay.querySelector(".ow-bubble")).not.toBeNull();
+});
+
+test("반려 도장은 걷는 동안 숨고 긁기가 시작된 때부터 1초 보인다", () => {
+  const { layer } = newLayer({ owls: labeled });
+  layer.sync(office(BOSS_IN), "large", NOW);
+  const moved = [team("t", [boss("TeamLead", "Pace")])];
+  layer.sync(withCues(office(moved), [cue({ kind: "Reject", agent: "boss" })]), "large", NOW);
+  const root = layer.rootOf("t", "boss")!;
+  const stamp = root.children.slice(-1)[0] as Sprite;
+  expect(bodyOf(layer, "boss")).toMatch(/\/walk_/);
+  expect(stamp.visible).toBe(false);
+  // 걷기(0.5초 이상)가 끝나면 긁는다
+  layer.update(NOW + WALK_MAX_MS);
+  expect(bodyOf(layer, "boss")).toMatch(/\/scratch_/);
+  expect(stamp.visible).toBe(true);
+  layer.update(NOW + WALK_MAX_MS + STAMP_MS);
+  expect(stamp.visible).toBe(false);
 });

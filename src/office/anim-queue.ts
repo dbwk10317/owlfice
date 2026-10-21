@@ -9,6 +9,12 @@ export const WALK_MAX_MS = 1500;
 export const ENTER_MS = 4000;
 export const CLAP_MS = 1000;
 export const REJECT_HOLD_MS = 4000;
+export const SCRATCH_MS = 2000;
+export const JUMP_MS = 400;
+export const RING_MS = 1000;
+export const STAMP_MS = 1000;
+/** 사장님이 부장 책상 앞에 도착한 뒤 서 있는 시간 */
+export const VISIT_STAY_MS = 5000;
 /** 이보다 많이 쌓이면 중간을 건너뛰고 마지막 상태로 점프 */
 export const MAX_STEPS = 5;
 // 방 사이 거리(약 100~390px, 중앙값 250px)가 0.5~1.5초에 고르게 들어오는 속도.
@@ -16,6 +22,8 @@ export const MAX_STEPS = 5;
 const WALK_PX_PER_S = 260;
 const CLAP: Look = { pose: "clap", dir: "f" };
 const IDLE_LOOK: Look = { pose: "idle", dir: "f" };
+const SCRATCH: Look = { pose: "scratch", dir: "f" };
+export const JUMP: Look = { pose: "jump", dir: "f" };
 
 export interface Pt {
   gx: number;
@@ -68,7 +76,7 @@ export const HIDDEN: Target = {
 const same = (a: Pt | null, b: Pt | null) =>
   a === b || (!!a && !!b && a.gx === b.gx && a.gy === b.gy && a.z === b.z);
 
-function stand(fp: Floorplan, name: string, i = 0): Pt {
+export function stand(fp: Floorplan, name: string, i = 0): Pt {
   const [gx, gy, z = 0] = fp.stands[name][i];
   return { gx, gy, z };
 }
@@ -104,7 +112,7 @@ function segLen(a: Pt, b: Pt): number {
 }
 
 // 0.5–1.5초로 자른다 (HANDOFF 7)
-function walkMs(path: Pt[]): number {
+export function walkMs(path: Pt[]): number {
   let px = 0;
   for (let i = 1; i < path.length; i++) px += segLen(path[i - 1], path[i]);
   return Math.min(WALK_MAX_MS, Math.max(WALK_MIN_MS, (px / WALK_PX_PER_S) * 1000));
@@ -330,9 +338,13 @@ function along(path: Pt[], f: number): { at: Pt; seg: number } {
 
 /**
  * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire 는 자리 이동(retarget)이 이미 걷게 했다.
- * ponytail: 도장·트럭·사장님 방문·사이렌 같은 나머지 연출은 아직 없어 무시한다, T24~T26 이 여기에 넣는다
+ * 사장님 방문(BossVisit)은 직원 큐가 아니라 ActorLayer 가 액터를 만들어 한다.
+ * ponytail: 도장·트럭·사이렌 같은 나머지 연출은 아직 없어 무시한다, T25~T26 이 여기에 넣는다
  */
 export function playCue(cue: CueDto, track: Track | undefined, now: number): void {
   if (cue.kind === "Clap") track?.pose(CLAP, CLAP_MS, now);
-  else if (cue.kind === "Reject") track?.holdIdle(REJECT_HOLD_MS, now);
+  else if (cue.kind === "Reject") {
+    track?.holdIdle(REJECT_HOLD_MS, now);
+    track?.pose(SCRATCH, SCRATCH_MS, now);
+  }
 }

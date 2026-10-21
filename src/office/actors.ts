@@ -5,7 +5,20 @@ import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from
 import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
 import { empKey } from "../ticker.ts";
-import { HIDDEN, Track, canWander, playCue, type Target } from "./anim-queue.ts";
+import {
+  HIDDEN,
+  JUMP,
+  JUMP_MS,
+  STAMP_MS,
+  Track,
+  VISIT_STAY_MS,
+  canWander,
+  playCue,
+  stand,
+  walkMs,
+  walkPath,
+  type Target,
+} from "./anim-queue.ts";
 import { gridToScreen, themeOf, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
 import { placeSprite } from "./sprites.ts";
 
@@ -13,6 +26,10 @@ const BLINK_MS = 150;
 const ZZ_OFFSET: [number, number] = [6, -10];
 const BADGE_OFFSET: [number, number] = [14, 6];
 const BUBBLE_MS = 4000;
+/** 사장님 말풍선은 30자에서 자른다 (HANDOFF 5절) */
+const BOSS_TEXT_MAX = 30;
+/** 사장님이 부장 좌석에서 떨어져 서는 거리 (gy 칸) */
+const VISIT_FRONT = 2;
 
 export interface OwlMeta {
   anchor: [number, number];
@@ -346,7 +363,8 @@ export function bubbleText(agentId: string, rank: string, b: Bubble): string | n
 
 // ---------- 액터 층 ----------
 
-interface Actor {
+/** 그리는 데 필요한 것. 사장님 방문 액터는 직원이 아니라 이것만 가진다 */
+interface Body {
   /** agent_id. 종·말풍선 문구 해시용 */
   id: string;
   /** actors 맵 키 (empKey) */
@@ -368,12 +386,29 @@ interface Actor {
   track: Track;
   animStart: number;
   nextBlink: number;
-  emp: EmployeeDto;
   zz: HTMLElement | null;
   badge: HTMLElement | null;
   bubble: HTMLElement | null;
+  /** 반려 도장. `stampUntil` 까지 결재판 자리에 보인다 */
+  stamp: Sprite | null;
+  /** 반려 도장을 기다리는 중: scratch 가 시작되면 그때부터 1초 */
+  stampArmed: boolean;
+  stampUntil: number;
+}
+
+interface Actor extends Body {
+  emp: EmployeeDto;
   /** 말풍선 사건 시각(ms). 4초가 지나면 update 가 숨긴다 */
   bubbleAt: number;
+}
+
+/** 사장님 방문: 문에서 걸어와 `leaveAt` 에 퇴장한다 (HANDOFF 5절) */
+interface Visitor {
+  teamId: string;
+  body: Body;
+  arriveAt: number;
+  leaveAt: number;
+  leaving: boolean;
 }
 
 type ToCss = (x: number, y: number) => { left: number; top: number };
@@ -399,6 +434,9 @@ export class ActorLayer {
   private nametagName: HTMLElement;
   private nametagText: HTMLElement;
   private lastOffice: OfficeDto | null = null;
+  private visitors: Visitor[] = [];
+  /** 사장님이 오면 인터폰이 울린다 (소품 층이 건다) */
+  onRing: ((now: number) => void) | null = null;
   /** 직원을 눌렀을 때 (직원 상세 팝업). 마운트하는 쪽이 건다 */
   onPick: ((teamId: string, agentId: string) => void) | null = null;
 
@@ -423,6 +461,11 @@ export class ActorLayer {
   attach(world: Container): void {
     this.world = world;
     for (const a of this.actors.values()) world.addChild(a.root);
+    for (const v of this.visitors) {
+      world.addChild(v.body.root);
+      if (v.body.bubble && !v.body.bubble.isConnected)
+        this.overlay.insertBefore(v.body.bubble, this.nametag);
+    }
   }
 
   /**
@@ -442,13 +485,15 @@ export class ActorLayer {
     this.lastOffice = office;
     const instant = opts.instant || (fresh && !!office?.rebuilt);
     const cuesOf = new Map<string, CueDto[]>();
+    const visits: CueDto[] = [];
     for (const c of fresh && !opts.instant
       ? [...(opts.earlier ?? []), ...(office?.cues ?? [])]
       : [])
       if ("agent" in c) {
         const key = empKey(c.teamId, c.agent);
         cuesOf.set(key, [...(cuesOf.get(key) ?? []), c]);
-      } else playCue(c, undefined, now);
+      } else if (c.kind === "BossVisit") visits.push(c);
+      else playCue(c, undefined, now);
     const placed = office ? layoutActors(this.fp, kind, office) : [];
     const present = new Set(
       office?.teams.flatMap((t) => t.employees.map((e) => empKey(t.teamId, e.agentId))),
@@ -486,7 +531,12 @@ export class ActorLayer {
       // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (PLAN 4.8)
       if (instant || (!old && !entering)) a.track.reset(target, now);
       if (entering || (old && !instant)) a.track.retarget(target, now, entering);
-      for (const c of cues) playCue(c, a.track, now);
+      for (const c of cues) {
+        // 반려는 지나간 일이라 조용한 재구성에서는 다시 보이지 않는다
+        if (c.kind === "Reject" && instant) continue;
+        playCue(c, a.track, now);
+        if (c.kind === "Reject") this.stamp(a);
+      }
       this.setBadge(a);
       this.setBubble(a, now);
       if (!a.root.parent && this.world) this.world.addChild(a.root);
@@ -505,6 +555,14 @@ export class ActorLayer {
         a.spot = "";
         if (this.hovered === a.key) this.hover(null);
       }
+    // 방문 중에 사무실을 옮기거나 그 팀이 퇴근하면 사장님도 없다
+    for (const v of this.visitors.filter(
+      (v) => instant || !office?.teams.some((t) => t.teamId === v.teamId && t.phase !== "Off"),
+    ))
+      this.dropVisitor(v);
+    // 부장 큐가 새 자리로 정해진 뒤에 펄쩍을 얹는다
+    if (office && !instant)
+      for (const c of visits) if (c.kind === "BossVisit") this.visit(c, office, kind, now);
     this.update(now);
     this.placeOverlay();
     return placed;
@@ -512,42 +570,16 @@ export class ActorLayer {
 
   update(now: number): void {
     let moved = false;
-    for (const a of this.actors.values()) {
-      const s = a.track.update(now);
-      if (!s.at) {
-        if (a.root.visible && this.hovered === a.key) this.hover(null);
-        a.root.visible = false;
-        continue;
+    for (const a of this.actors.values()) moved = this.draw(a, now) || moved;
+    for (const v of this.visitors) {
+      if (!v.leaving && now >= v.leaveAt) {
+        v.body.track.retarget(HIDDEN, now);
+        v.leaving = true;
       }
-      const p = gridToScreen(s.at.gx, s.at.gy, s.at.z);
-      const x = roundEven(p.x);
-      const y = roundEven(p.y);
-      if (x !== a.x || y !== a.y || s.flip !== a.root.scale.x < 0) moved = true;
-      a.x = x;
-      a.y = y;
-      a.root.position.set(x, y);
-      // 기준점 x=8 이 가운데라 뒤집어도 발이 제자리다 (HANDOFF 6.4)
-      a.root.scale.x = s.flip ? -1 : 1;
-      a.root.zIndex = zIndexOf(s.depth, a.seq);
-      a.root.visible = true;
-      if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir) a.animStart = now;
-      if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir || s.look.held !== a.look.held) {
-        a.look = s.look;
-        this.setHeld(a);
-        this.setZz(a);
-        moved = true;
-      }
-      if (!this.owls) continue;
-      const pose = this.owls.meta.poses[a.look.pose];
-      const n = pose?.dirs[a.look.dir] ?? 1;
-      let frame = 0;
-      if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
-      else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
-        // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
-        if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
-        frame = now >= a.nextBlink ? 1 : 0;
-      }
-      this.setFrame(a, frame);
+      moved = this.draw(v.body, now) || moved;
+      if (v.leaving && !v.body.root.visible) this.dropVisitor(v);
+      else if (v.body.bubble)
+        v.body.bubble.hidden = !(now >= v.arriveAt && now < v.arriveAt + BUBBLE_MS);
     }
     for (const a of this.actors.values())
       if (a.bubble) a.bubble.hidden = !(Math.abs(now - a.bubbleAt) < BUBBLE_MS);
@@ -555,10 +587,52 @@ export class ActorLayer {
     this.fillNametag(now);
   }
 
+  /** 한 몸을 지금 모습으로 그린다. 오버레이를 다시 놓아야 하면 true */
+  private draw(a: Body, now: number): boolean {
+    const s = a.track.update(now);
+    if (!s.at) {
+      if (a.root.visible && this.hovered === a.key) this.hover(null);
+      a.root.visible = false;
+      return false;
+    }
+    let moved = false;
+    const p = gridToScreen(s.at.gx, s.at.gy, s.at.z);
+    const x = roundEven(p.x);
+    const y = roundEven(p.y);
+    if (x !== a.x || y !== a.y || s.flip !== a.root.scale.x < 0) moved = true;
+    a.x = x;
+    a.y = y;
+    a.root.position.set(x, y);
+    // 기준점 x=8 이 가운데라 뒤집어도 발이 제자리다 (HANDOFF 6.4)
+    a.root.scale.x = s.flip ? -1 : 1;
+    a.root.zIndex = zIndexOf(s.depth, a.seq);
+    a.root.visible = true;
+    if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir) a.animStart = now;
+    if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir || s.look.held !== a.look.held) {
+      a.look = s.look;
+      this.setHeld(a);
+      this.setZz(a);
+      moved = true;
+    }
+    this.placeStamp(a, now);
+    if (!this.owls) return moved;
+    const pose = this.owls.meta.poses[a.look.pose];
+    const n = pose?.dirs[a.look.dir] ?? 1;
+    let frame = 0;
+    if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
+    else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
+      // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
+      if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
+      frame = now >= a.nextBlink ? 1 : 0;
+    }
+    this.setFrame(a, frame);
+    return moved;
+  }
+
   /** 1× 캔버스 좌표 → 오버레이 CSS px 변환을 받아 DOM 요소를 다시 놓는다 (HANDOFF 6.1). */
   placeOverlay(toCss?: ToCss): void {
     if (toCss) this.toCss = toCss;
-    for (const a of this.actors.values()) {
+    for (const a of [...this.actors.values(), ...this.visitors.map((v) => v.body)]) {
       const h = this.head(a);
       if (a.zz) this.put(a.zz, h.x + ZZ_OFFSET[0], h.y + ZZ_OFFSET[1]);
       if (a.badge) this.put(a.badge, h.x + BADGE_OFFSET[0], h.y + BADGE_OFFSET[1]);
@@ -599,15 +673,22 @@ export class ActorLayer {
 
   private create(teamId: string, emp: EmployeeDto, key: string, now: number): Actor {
     const id = emp.agentId;
-    const root = new Container();
-    root.eventMode = "static";
-    root.cursor = "pointer";
-    root.hitArea = new Rectangle(-8, -23, 16, 24);
-    root.on("pointerover", () => this.hover(key));
-    root.on("pointerout", () => {
+    const b = this.body(id, key, now);
+    b.root.eventMode = "static";
+    b.root.cursor = "pointer";
+    b.root.hitArea = new Rectangle(-8, -23, 16, 24);
+    b.root.on("pointerover", () => this.hover(key));
+    b.root.on("pointerout", () => {
       if (this.hovered === key) this.hover(null);
     });
-    root.on("pointertap", () => this.onPick?.(teamId, id));
+    b.root.on("pointertap", () => this.onPick?.(teamId, id));
+    const a: Actor = Object.assign(b, { emp, bubbleAt: 0 });
+    this.actors.set(key, a);
+    return a;
+  }
+
+  private body(id: string, key: string, now: number): Body {
+    const root = new Container();
     const layers: Sprite[] = [];
     if (this.owls) {
       const [ax, ay] = this.owls.meta.anchor;
@@ -619,7 +700,7 @@ export class ActorLayer {
         root.addChild(s);
       }
     } else root.addChild(this.fallbackBody());
-    const a: Actor = {
+    return {
       id,
       key,
       root,
@@ -641,14 +722,101 @@ export class ActorLayer {
       }),
       animStart: now,
       nextBlink: now + 3000 + Math.random() * 2000,
-      emp,
       zz: null,
       badge: null,
       bubble: null,
-      bubbleAt: 0,
+      stamp: null,
+      stampArmed: false,
+      stampUntil: 0,
     };
-    this.actors.set(key, a);
-    return a;
+  }
+
+  /**
+   * 사장님 방문 (S03): 문에서 부장 책상 앞까지 걸어와 5초 서 있다 나간다. 인터폰이 울리고 부장이 펄쩍 뛴다.
+   * 사장님은 직원이 아니라 연출용 액터라 카드·이름표·눌림이 없다.
+   */
+  private visit(
+    c: Extract<CueDto, { kind: "BossVisit" }>,
+    office: OfficeDto,
+    kind: Kind,
+    now: number,
+  ): void {
+    const team = office.teams.find((t) => t.teamId === c.teamId);
+    const lead = team?.employees[0];
+    if (!team || !lead || team.phase === "Off") return;
+    if (kind === "small" && team.deskSlot === null) return;
+    const { spots, index } = seatSpots(this.fp, kind, team, lead, true);
+    const seat = spots[Math.min(index, spots.length - 1)];
+    if (!seat) return;
+    // 같은 팀에 또 오면 앞 사장님은 없던 것으로
+    for (const v of this.visitors.filter((v) => v.teamId === c.teamId)) this.dropVisitor(v);
+    this.onRing?.(now);
+    this.actors.get(empKey(c.teamId, lead.agentId))?.track.pose(JUMP, JUMP_MS, now);
+    // 그 부장 좌석 앞(화면 아래쪽)에서 부장을 마주 본다
+    const to = { gx: seat.gx, gy: seat.gy + VISIT_FRONT, z: 0 };
+    const id = `boss-visit:${c.teamId}`;
+    const b = this.body(id, id, now);
+    if (this.owls) {
+      b.species = "snowy";
+      b.outfit = "boss";
+    }
+    const door = stand(this.fp, "door");
+    const plain = { wander: false, pace: false, sitOn: false };
+    b.track.reset({ at: door, look: IDLE, depth: door.gx + door.gy, ...plain }, now);
+    // 책상 앞에서 부장을 마주 보면 화면에는 등이 보인다
+    b.track.retarget(
+      { at: to, look: { pose: "idle", dir: "b" }, depth: to.gx + to.gy, ...plain },
+      now,
+    );
+    // 같은 depth 의 소품·직원 위에 그린다
+    b.seq = this.fp.layouts[kind].placements.length + 1000;
+    const arriveAt = now + (reducedMotion() ? 0 : walkMs(walkPath(this.fp, door, to)));
+    const text = Array.from(c.text);
+    b.bubble = this.overlay.ownerDocument.createElement("div");
+    b.bubble.setAttribute("aria-hidden", "true");
+    b.bubble.className = "ow-bubble";
+    b.bubble.hidden = true;
+    b.bubble.textContent =
+      text.length > BOSS_TEXT_MAX ? `${text.slice(0, BOSS_TEXT_MAX).join("")}…` : c.text;
+    this.overlay.insertBefore(b.bubble, this.nametag);
+    if (this.world) this.world.addChild(b.root);
+    this.visitors.push({
+      teamId: c.teamId,
+      body: b,
+      arriveAt,
+      leaveAt: arriveAt + VISIT_STAY_MS,
+      leaving: false,
+    });
+  }
+
+  private dropVisitor(v: Visitor): void {
+    v.body.root.destroy({ children: true });
+    v.body.bubble?.remove();
+    this.visitors = this.visitors.filter((x) => x !== v);
+  }
+
+  /** 반려 도장: 결재판(손) 자리에 1초 */
+  private stamp(a: Body): void {
+    a.stamp ??= placeSprite(this.office, "stamp_reject/default", 0, 0);
+    a.stampArmed = true;
+    if (!a.stamp.parent) a.root.addChild(a.stamp);
+  }
+
+  private placeStamp(a: Body, now: number): void {
+    if (!a.stamp) return;
+    // 걷기 뒤에 긁기가 시작돼도 긁는 동안 1초 보인다
+    const scratching = a.look.pose === "scratch";
+    if (a.stampArmed && scratching) {
+      a.stampArmed = false;
+      a.stampUntil = now + STAMP_MS;
+    }
+    a.stamp.visible = scratching && now < a.stampUntil;
+    if (!a.stamp.visible || !this.owls) return;
+    // 몸이 좌우로 뒤집혀도 도장 글자는 뒤집지 않는다
+    a.stamp.scale.x = a.root.scale.x;
+    const { anchors, anchor } = this.owls.meta;
+    const hand = (anchors[`${a.look.pose}_${a.look.dir}_0`] ?? anchors.carry_f_0).hand;
+    a.stamp.position.set(hand[0] - anchor[0], hand[1] - anchor[1] - 4);
   }
 
   private fallbackBody(): Graphics {
@@ -663,7 +831,7 @@ export class ActorLayer {
       .fill(0x18181b);
   }
 
-  private setFrame(a: Actor, frame: number): void {
+  private setFrame(a: Body, frame: number): void {
     if (!this.owls) return;
     const keys = owlFrameKeys(this.owls.textures, a.species, a.outfit, a.role, a.look, frame);
     keys.forEach((k, i) => {
@@ -673,7 +841,7 @@ export class ActorLayer {
     });
   }
 
-  private setHeld(a: Actor): void {
+  private setHeld(a: Body): void {
     const name = this.owls ? a.look.held : undefined;
     if (name === a.heldName) return;
     a.held?.destroy();
@@ -692,7 +860,7 @@ export class ActorLayer {
     a.root.addChild(a.held);
   }
 
-  private setZz(a: Actor): void {
+  private setZz(a: Body): void {
     const want = a.look.pose === "sleep";
     if (want && !a.zz) {
       a.zz = this.overlay.ownerDocument.createElement("div");
@@ -743,7 +911,7 @@ export class ActorLayer {
     a.bubble.textContent = text;
   }
 
-  private head(a: Actor): { x: number; y: number } {
+  private head(a: Body): { x: number; y: number } {
     const meta = this.owls?.meta;
     const anchor = meta?.anchors[`${a.look.pose}_${a.look.dir}_0`];
     if (!meta || !anchor) return { x: a.x, y: a.y - 18 };

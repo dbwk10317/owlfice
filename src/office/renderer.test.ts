@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import type { CueDto, OfficeDto, TeamDto } from "../types/ipc.ts";
-import { canvasScale, cueCollector, panLimits, teamOfProp, toCss } from "./renderer.ts";
+import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
+import { canvasAria, canvasScale, cueCollector, panLimits, teamOfProp, toCss } from "./renderer.ts";
 
 test("배율은 장치 픽셀 기준 정수, CSS 크기는 백킹 / DPR", () => {
   // 2× 는 1040×640 장치 픽셀이 필요하다 (PLAN 3.2)
@@ -105,4 +105,15 @@ test("사규 액자는 가장 최근 활동 팀, 팀장석 책상은 그 자리(
   expect(teamOfProp("boss_desk_2", o)).toBeUndefined(); // 빈 책상
   expect(teamOfProp("rules_frame", null)).toBeUndefined();
   expect(teamOfProp("tv", o)).toBeUndefined();
+});
+
+test("캔버스 aria-label 은 그린 사무실의 이름·직원 수·장애를 따르고, 사무실이 없으면 없다", () => {
+  const list = { offices: [{ officeId: "o1", label: "B동 203호" }] } as OfficeListDto;
+  const emp = (n: number) => ({ employees: Array.from({ length: n }) }) as unknown as TeamDto;
+  const office = (incident: boolean) =>
+    ({ officeId: "o1", teams: [emp(2), emp(1)], shared: { incident } }) as OfficeDto;
+  expect(canvasAria(office(false), list)).toBe("B동 203호 사무실 · 직원 3명");
+  expect(canvasAria(office(true), list)).toBe("B동 203호 사무실 · 직원 3명 · 장애 중");
+  expect(canvasAria(null, list)).toBeNull();
+  expect(canvasAria({ ...office(false), officeId: "x" }, list)).toBeNull();
 });

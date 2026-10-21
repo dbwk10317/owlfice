@@ -219,6 +219,18 @@ function metaHead(t: TeamSummaryDto, large: boolean): string {
 const unpickable = (vacant: boolean, id: string | null): boolean => vacant || id === null;
 
 const teamName = (t: TeamSummaryDto) => fill(P.teamName, { boss: t.bossName });
+
+/** 팝업 제목·사무실 이름. 클릭이 준 officeId 로 목록에서 찾는다: 사무실 전환 중엔 선택과 다를 수 있다. 팀을 못 찾으면 사무실 이름 */
+export function popupNames(
+  list: OfficeListDto | null,
+  officeId: string,
+  teamId: string,
+): { officeName: string; teamLabel: string } {
+  const o = list?.offices.find((x) => x.officeId === officeId);
+  const officeName = o?.label ?? "";
+  const t = o?.teams.find((x) => x.teamId === teamId);
+  return { officeName, teamLabel: t ? teamName(t) : officeName };
+}
 const ariaOf = (name: string, state: string, asking: boolean) =>
   [name, DOT_WORD[state], asking ? P.asking : ""].filter(Boolean).join(", ");
 
@@ -557,9 +569,10 @@ export function mountSidebar(
   let lastList: OfficeListDto | null = null;
   let slideIn = false; // 첫 목록은 그냥 깔고, 그 뒤 새 행만 미끄러져 들어온다
 
-  function openDetail(v: RowView): void {
+  // opener: 닫을 때 초점이 돌아갈 곳. 키보드(→)는 행 버튼이라야 ↑↓ 로빙이 이어진다
+  function openDetail(v: RowView, opener: HTMLElement): void {
     const d = v.model.detail;
-    if (d) opts.onDetail?.(d.officeId, d.teamId, v.model.name, v.info);
+    if (d) opts.onDetail?.(d.officeId, d.teamId, v.model.name, opener);
   }
 
   function newRow(m: RowModel): RowView {
@@ -620,7 +633,7 @@ export function mountSidebar(
       fold,
       info,
     };
-    info.addEventListener("click", () => openDetail(v));
+    info.addEventListener("click", () => openDetail(v, info));
     // 모델은 갱신마다 바뀌므로 눌린 순간의 것을 본다
     main.addEventListener("click", () => pick(v.model.targetId));
     fold?.addEventListener("click", () => toggle(v.model.foldKey!, true));
@@ -798,7 +811,7 @@ export function mountSidebar(
       const row = rowViews.find((v) => v.main === e.target);
       if (row?.model.detail) {
         e.preventDefault();
-        openDetail(row);
+        openDetail(row, row.main);
       }
       return;
     }

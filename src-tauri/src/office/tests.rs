@@ -2879,3 +2879,27 @@ fn observed_entrypoint_beats_registry() {
     assert!(!t.set_registry(None, registry_product("claude-desktop"), &mut Vec::new()));
     assert_eq!(t.product, Product::ClaudeCli);
 }
+
+/// 실적 요약 (3.7): 같은 항목은 횟수만 올리고 자리는 처음 본 순서 그대로
+#[test]
+fn record_counts_repeats_in_first_seen_order() {
+    let mut s = Sim::new();
+    s.on(MAIN, 1, call("e1", ToolKind::FileEdit, file("b.rs")))
+        .on(MAIN, 2, call("e2", ToolKind::FileEdit, file("a.rs")))
+        .on(MAIN, 3, call("e3", ToolKind::FileWrite, file("b.rs")))
+        .on(MAIN, 4, call("e4", ToolKind::FileEdit, file("b.rs")))
+        .on(MAIN, 5, call("r1", ToolKind::FileRead, file("b.rs")))
+        .on(MAIN, 6, call("c1", ToolKind::Shell, cmd("cargo fmt")))
+        .on(MAIN, 7, call("c2", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 8, call("c3", ToolKind::Shell, cmd("cargo fmt")));
+    let r = &s.boss().record;
+    let own = |v: &[(&str, u32)]| -> Vec<(String, u32)> {
+        v.iter().map(|(s, n)| (s.to_string(), *n)).collect()
+    };
+    assert_eq!(r.files_edited.items, own(&[("b.rs", 3), ("a.rs", 1)]));
+    assert_eq!(r.files_read.items, own(&[("b.rs", 1)]));
+    assert_eq!(
+        r.commands.items,
+        own(&[("cargo fmt", 2), ("cargo test", 1)])
+    );
+}

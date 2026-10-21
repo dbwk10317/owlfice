@@ -59,19 +59,20 @@ export function openSessionDetail(
   const note = h(doc, "p", "ow-pop__note");
   note.setAttribute("role", "alert");
   note.hidden = true;
+  const open = async (target: OpenTarget, failText = detailErrorText): Promise<void> => {
+    note.hidden = true;
+    try {
+      await deps.invoke("open_path", { target });
+    } catch (e) {
+      note.textContent = failText(e);
+      note.hidden = false;
+    }
+  };
   const openBtn = (label: string, svg: string, target: OpenTarget) => {
     const b = h(doc, "button", "ow-btn");
     b.setAttribute("type", "button");
     b.append(icon(doc, svg), label);
-    b.addEventListener("click", async () => {
-      note.hidden = true;
-      try {
-        await deps.invoke("open_path", { target });
-      } catch (e) {
-        note.textContent = detailErrorText(e);
-        note.hidden = false;
-      }
-    });
+    b.addEventListener("click", () => void open(target));
     return b;
   };
   const { officeId, teamId } = ref;
@@ -177,8 +178,21 @@ export function openSessionDetail(
         s: c.sawon,
       }),
     );
-    // ponytail: 바깥 주소를 여는 길이 없어(open_path 는 경로만, opener 플러그인 없음) 링크로 만들지 않고 보여 주기만 한다, 여는 길이 생기면 링크로
-    if (dto.pr) kv(S.pr, h(doc, "span", "ow-kv__pr", `#${dto.pr.number} ${dto.pr.url}`));
+    if (dto.pr) {
+      // 주소는 넘기지 않는다: 백엔드가 그 팀의 PR 주소를 검사해 연다
+      const pr = h(doc, "button", "ow-kv__pr", `#${dto.pr.number} ${dto.pr.url}`);
+      pr.setAttribute("type", "button");
+      pr.title = dto.pr.url;
+      pr.addEventListener(
+        "click",
+        // open_failed 문구는 탐색기 이야기라 브라우저로 여는 PR 에는 맞지 않는다
+        () =>
+          void open({ kind: "Pr", officeId, teamId }, (e) =>
+            String(e) === "open_failed" ? S.prOpenFailed : detailErrorText(e),
+          ),
+      );
+      kv(S.pr, pr);
+    }
     return dl;
   }
 

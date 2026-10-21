@@ -195,7 +195,8 @@
     "turns": "턴 수", "tokens": "토큰 사용량", "tokensValue": "입력 {in} · 출력 {out}", "people": "직원 수",
     "peopleValue": "{n}명 (부장 {b} · 과장 {g} · 대리 {d} · 사원 {s})", "pr": "PR", "recent": "최근 사건",
     "estimateLegend": "추정은 기록이 없어 시간으로 유추한 상태", "more": "더 보기", "moreLimit": "최대 100개",
-    "openRaw": "원본 파일 폴더 열기", "openWork": "작업 폴더 열기", "copyId": "세션 ID 복사", "close": "닫기"
+    "openRaw": "원본 파일 폴더 열기", "openWork": "작업 폴더 열기", "copyId": "세션 ID 복사", "close": "닫기",
+    "prOpenFailed": "PR 주소를 열지 못했어요."
   },
 
   "employeeDetail": {
@@ -204,6 +205,11 @@
     "input": "입력", "result": "결과", "cut": "가운데 {size} 생략 · 앞뒤 2KB만 표시", "openRaw": "원본 열기",
     "summary": "실적 요약", "readFiles": "읽은 파일", "editedFiles": "수정한 파일", "commands": "실행한 명령", "times": "{n}회",
     "running": "진행 중 · {sec}초", "started": "백그라운드 시작", "ok": "성공", "fail": "실패", "failTests": "실패 · 합격 {pass} / 반려 {fail}", "unknown": "결과 확인 불가"
+  },
+
+  "timelineKind": {
+    "ToolCall": "호출", "ToolResult": "결과", "UserMessage": "지시", "AssistantText": "답변", "SubagentSpawn": "채용", "SubagentDone": "보고 완료",
+    "PermissionRequest": "결재 요청", "ContextCompaction": "서류 정리", "TitleChanged": "사규 교체", "PrLinked": "PR 등록"
   },
 
   "detailError": {

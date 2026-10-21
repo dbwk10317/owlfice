@@ -728,8 +728,8 @@ impl Team {
             EventKind::ToolCall { tool, summary, .. } => {
                 let path = summary.path.as_deref();
                 match tool {
-                    ToolKind::FileRead => r.files_read.push_new(path),
-                    ToolKind::FileWrite | ToolKind::FileEdit => r.files_edited.push_new(path),
+                    ToolKind::FileRead => r.files_read.add(path),
+                    ToolKind::FileWrite | ToolKind::FileEdit => r.files_edited.add(path),
                     _ => {}
                 }
                 // 명령으로 한 읽기(`cat`)도 실행한 명령이다
@@ -737,7 +737,7 @@ impl Team {
                     .command_norm
                     .as_deref()
                     .map(|c| sentence::cut(c, COMMAND_CHARS));
-                r.commands.push_new(cmd.as_deref());
+                r.commands.add(cmd.as_deref());
             }
             _ => {}
         }

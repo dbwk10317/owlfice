@@ -369,7 +369,13 @@ lineIdx: number,
 /**
  * 큰 결과가 분리된 `tool-results/` 파일. 세션 폴더 안인 것만
  */
-sidecar: string | null, };
+sidecar: string | null, 
+/**
+ * 결과 본문에서 센 테스트 합격·반려 수
+ */
+test: TestDto | null, };
+
+export type TestDto = { passed: number, failed: number, };
 
 export type ToolOutcome = "Ok" | "Err" | "Rejected" | "Started" | "Unknown";
 
@@ -394,7 +400,12 @@ bossName: string | null,
 /**
  * 서브는 받은 프롬프트 전문, 부장은 첫 사장님 메시지
  */
-instruction: string | null, filesRead: Array<string>, filesEdited: Array<string>, commands: Array<string>, };
+instruction: string | null, filesRead: Array<string>, filesEdited: Array<CountDto>, commands: Array<CountDto>, };
+
+/**
+ * 실적 요약 한 줄: 처음 본 순서의 항목과 나온 횟수
+ */
+export type CountDto = { item: string, times: number, };
 
 /**
  * 직급별 직원 수. 퇴장한 직원도 센다
@@ -431,7 +442,7 @@ recentError: DetailError | null, };
 /**
  * `open_path` 대상. 경로는 백엔드가 아는 것만 연다. 프론트가 경로를 넘기는 길은 두지 않는다
  */
-export type OpenTarget = { "kind": "SourceFolder", officeId: string, teamId: string, } | { "kind": "WorkFolder", officeId: string, teamId: string, } | { "kind": "SourceLine", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, } | { "kind": "Sidecar", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, };
+export type OpenTarget = { "kind": "SourceFolder", officeId: string, teamId: string, } | { "kind": "WorkFolder", officeId: string, teamId: string, } | { "kind": "SourceLine", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, } | { "kind": "Sidecar", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, } | { "kind": "Pr", officeId: string, teamId: string, };
 
 /**
  * 상세 커맨드의 에러 코드

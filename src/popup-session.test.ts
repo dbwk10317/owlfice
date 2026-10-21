@@ -29,6 +29,7 @@ function event(i: number, over: Partial<EventDto> = {}): EventDto {
     lineNo: i + 1,
     lineIdx: 0,
     sidecar: null,
+    test: null,
     ...over,
   };
 }
@@ -240,6 +241,35 @@ test("바닥 버튼은 open_path 로 원본 폴더·작업 폴더를 열고 실�
   await flush();
   expect(note.hidden).toBe(false);
   expect(note.textContent).toBe(phrases.detailError.open_failed);
+});
+
+test("PR 줄을 누르면 주소 없이 그 팀의 Pr 대상으로 open_path 를 부르고 실패하면 PR 문구를 보인다", async () => {
+  let fail = false;
+  const s = setup({ open: () => (fail ? reject("open_failed") : undefined) });
+  await flush();
+  const pr = s.q<HTMLButtonElement>(".ow-kv__pr")!;
+  expect(pr.tagName).toBe("BUTTON");
+  expect(pr.textContent).toBe("#142 https://github.com/x/y/pull/142");
+  pr.click();
+  await flush();
+  expect(s.calls.filter(([c]) => c === "open_path").map(([, a]) => a)).toEqual([
+    { target: { kind: "Pr", officeId: "o1", teamId: "t1" } },
+  ]);
+  const note = s.q(".ow-pop__note")!;
+  expect(note.hidden).toBe(true);
+  fail = true;
+  pr.click();
+  await flush();
+  expect(note.hidden).toBe(false);
+  expect(note.textContent).toBe("PR 주소를 열지 못했어요.");
+});
+
+test("PR 줄 실패가 open_failed 가 아니면 코드별 문구를 보인다", async () => {
+  const s = setup({ open: () => reject("not_found") });
+  await flush();
+  s.q<HTMLButtonElement>(".ow-kv__pr")!.click();
+  await flush();
+  expect(s.q(".ow-pop__note")!.textContent).toBe(phrases.detailError.not_found);
 });
 
 test("Esc 로 닫으면 연 버튼으로 초점이 돌아가고, 닫은 뒤 늦게 온 응답은 그리지 않는다", async () => {

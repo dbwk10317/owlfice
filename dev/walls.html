@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>벽 글자와 캔버스 툴팁</title>
+    <link rel="stylesheet" href="../design/handoff/tokens.css" />
+    <link rel="stylesheet" href="../src/styles/app.css" />
+    <style>
+      body {
+        margin: 16px;
+        background: #f1f1ee;
+        font: 13px/1.5 system-ui;
+      }
+      .ow-stage {
+        width: 1040px;
+        height: 640px;
+      }
+      #controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      #status {
+        min-height: 24px;
+        white-space: pre-wrap;
+      }
+    </style>
+    <script type="module" src="./walls.ts"></script>
+  </head>
+  <body>
+    <h1>벽 글자·통계·툴팁 확인</h1>
+    <p>
+      액자 두 글자는 원래 11px 픽셀 글꼴입니다. 통계판은 커밋·파일 / 명령·턴 순서이고 +는 10
+      이상입니다.
+    </p>
+    <div id="controls"></div>
+    <div id="status" role="status"></div>
+    <div class="ow-stage" id="office"></div>
+  </body>
+</html>

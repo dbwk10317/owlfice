@@ -102,6 +102,7 @@ const shared = (incident: boolean): OfficeDto["shared"] => ({
 });
 
 const LARGE: OfficeDto = {
+  roomRecent: [],
   stateSeq: 1,
   officeId: "dev-large",
   rebuilt: false,
@@ -193,6 +194,7 @@ const LARGE: OfficeDto = {
 };
 
 const SMALL: OfficeDto = {
+  roomRecent: [],
   stateSeq: 1,
   officeId: "vendor/codex",
   rebuilt: false,

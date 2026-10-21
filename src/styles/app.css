@@ -4,6 +4,29 @@ html,
 body {
   margin: 0;
 }
+.ow-canvas-tooltip {
+  position: fixed;
+  transform: none;
+  z-index: 100;
+  box-sizing: border-box;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+}
+.ow-overlay .ow-canvas-pick {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.ow-prop-pick {
+  position: absolute;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.ow-prop-pick:focus-visible {
+  outline: 2px solid var(--ow-ink);
+}
 .ow-app {
   position: relative; /* 현황판 드로어의 기준 */
 }

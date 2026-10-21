@@ -307,6 +307,136 @@ const FIXTURES: [&str; 6] = [
     "codex/ask-reject-compact",
 ];
 
+#[test]
+fn wall_room_events_merge_by_time_team_agent_and_existing_order() {
+    let e = env(Scale::Small);
+    let mut w = lock(&e.world);
+    for session in ["b", "a"] {
+        let mut t = team(session);
+        t.preregister("0-sub", None, None, None, 1, t0());
+        for employee in &mut t.employees {
+            for n in 0..4 {
+                let mut activity = employee.activity.clone();
+                activity.room = Room::Dev;
+                activity.sentence = format!("{session}:{}:{n}", employee.id);
+                activity.since = t0()
+                    + Duration::seconds(if session == "b" && employee.id == "b" && n == 3 {
+                        20
+                    } else {
+                        10
+                    });
+                employee.room_recent.push_front(activity);
+            }
+            for room in [Room::Door, Room::TeamLead] {
+                let mut activity = employee.activity.clone();
+                activity.room = room;
+                employee.room_recent.push_back(activity);
+            }
+        }
+        w.put_team(
+            key("windows", Vendor::Claude, session),
+            t,
+            t0() + Duration::seconds(20),
+            true,
+        );
+    }
+    let dto = office_dto(&w, &OfficeId::Vendor(Vendor::Claude), false, Vec::new()).unwrap();
+    assert_eq!(
+        dto.room_recent.iter().map(|r| r.room).collect::<Vec<_>>(),
+        [Room::TeamLead, Room::Dev, Room::Door]
+    );
+    let events = &dto.room_recent[1].events;
+    assert_eq!(events.len(), 10);
+    assert_eq!(
+        events
+            .iter()
+            .map(|e| e.activity.sentence.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "b:b:3",
+            "a:0-sub:3",
+            "a:0-sub:2",
+            "a:0-sub:1",
+            "a:0-sub:0",
+            "a:a:3",
+            "a:a:2",
+            "a:a:1",
+            "a:a:0",
+            "a:a-s:3"
+        ]
+    );
+    assert_eq!(events[0].team_id, "team/claude/b/windows");
+    assert_eq!(events[0].agent_id, "b");
+    assert_eq!(events[1].team_id, "team/claude/a/windows");
+    assert_eq!(events[1].agent_id, "0-sub");
+    for t in w.teams.values_mut() {
+        t.employees.reverse();
+        t.desk_slot = t.desk_slot.map(|slot| 3 - slot);
+    }
+    let reordered = office_dto(&w, &OfficeId::Vendor(Vendor::Claude), false, Vec::new()).unwrap();
+    assert_eq!(dto.room_recent, reordered.room_recent);
+}
+
+#[test]
+fn wall_stats_deduplicate_files_per_team_and_sum_command_counts() {
+    let e = env(Scale::Small);
+    let mut w = lock(&e.world);
+    let mut a = team("a");
+    let main = Arc::make_mut(&mut a.employees[0].record);
+    for _ in 0..2 {
+        main.files_edited.add(Some("src/shared.rs"));
+        main.commands.add(Some("cargo check"));
+    }
+    let sub = Arc::make_mut(&mut a.employees[1].record);
+    sub.files_edited.add(Some("src/shared.rs"));
+    sub.files_edited.add(Some("src/other.rs"));
+    for _ in 0..3 {
+        sub.commands.add(Some("cargo check"));
+    }
+    a.turns = 2;
+    a.commits = 1;
+    let mut b = team("b");
+    let main = Arc::make_mut(&mut b.employees[0].record);
+    main.files_edited.add(Some("src/shared.rs"));
+    main.commands.add(Some("cargo check"));
+    b.turns = 3;
+    b.commits = 2;
+    for t in [a, b] {
+        w.put_team(key("windows", Vendor::Claude, &t.id), t, t0(), true);
+    }
+    let id = OfficeId::Vendor(Vendor::Claude);
+    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    assert_eq!(
+        dto.shared.stats,
+        BoardStatsDto {
+            commits: 3,
+            files_edited: 3,
+            commands: 6,
+            turns: 5
+        }
+    );
+    let json = serde_json::to_value(&dto).unwrap();
+    assert_eq!(json["shared"]["stats"]["filesEdited"], 3);
+    assert_eq!(json["roomRecent"], serde_json::json!([]));
+    let a = w
+        .teams
+        .get_mut(&key("windows", Vendor::Claude, "a"))
+        .unwrap();
+    a.commits = u32::MAX;
+    a.turns = u32::MAX;
+    Arc::make_mut(&mut a.employees[0].record).commands.items[0].1 = u32::MAX;
+    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    assert_eq!(
+        dto.shared.stats,
+        BoardStatsDto {
+            commits: u32::MAX,
+            files_edited: 3,
+            commands: u32::MAX,
+            turns: u32::MAX
+        }
+    );
+}
+
 /// 직원 문장·since·confidence 가 상태 기계 값 그대로 실린다
 #[test]
 fn employee_activity_is_carried_verbatim() {
@@ -1072,6 +1202,8 @@ fn bindings() -> String {
         Dot,
         Border,
         OfficeDto,
+        RoomRecentDto,
+        RoomEventDto,
         CueDto,
         SelectResponseDto,
         TeamDto,
@@ -1079,6 +1211,7 @@ fn bindings() -> String {
         Meeting,
         Review,
         SharedPropsDto,
+        BoardStatsDto,
         Activity,
         Bubble,
         BubbleSay,

@@ -105,14 +105,18 @@ export type Border = "Plain" | "Failed" | "Running";
 /**
  * `office-state` 페이로드. 스냅샷의 `selected`, `select_office` 응답도 같은 꼴이다
  */
-export type OfficeDto = { stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, cues: Array<CueDto>, };
+export type OfficeDto = { stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, roomRecent: Array<RoomRecentDto>, cues: Array<CueDto>, };
+
+export type RoomRecentDto = { room: Room, events: Array<RoomEventDto>, };
+
+export type RoomEventDto = { teamId: string, agentId: string, activity: Activity, };
 
 /**
  * 연출 신호와 그 팀. 중소기업은 한 사무실에 팀이 여럿이라 팀 단위 연출(사장님 방문, 분갈이 등)에 필요하다
  */
 export type CueDto = { teamId: string, } & ({ "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Depart", agent: string, } | { "kind": "Stamp", passed: number, failed: number, estimated: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Paper", agent: string, on: boolean, });
 
-export type SelectResponseDto = { requestId: number, stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, cues: Array<CueDto>, };
+export type SelectResponseDto = { requestId: number, stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, roomRecent: Array<RoomRecentDto>, cues: Array<CueDto>, };
 
 export type TeamDto = { teamId: string, title: string, 
 /**
@@ -218,7 +222,9 @@ incident: boolean, night: boolean,
 /**
  * 테스트실 결과판 = 테스트를 가장 늦게 끝낸 팀 결과
  */
-test: TestVerdict | null, };
+test: TestVerdict | null, stats: BoardStatsDto, };
+
+export type BoardStatsDto = { commits: number, filesEdited: number, commands: number, turns: number, };
 
 export type Activity = { 
 /**

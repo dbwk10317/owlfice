@@ -2,6 +2,7 @@
 import {
   Application,
   Container,
+  Polygon,
   TextureStyle,
   UPDATE_PRIORITY,
   type Sprite,
@@ -12,7 +13,9 @@ import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { fill } from "../text.ts";
 import { ActorLayer, seatProps } from "./actors.ts";
-import { DRIVEN_PROP, PropsLayer, ScreenLabel } from "./props.ts";
+import { DRIVEN_PROP, PropsLayer, ScreenLabel, loadWallFont } from "./props.ts";
+import { LADDER_MS } from "./anim-queue.ts";
+import { CanvasTooltip, propTooltip, roomTooltip } from "./canvas-tooltip.ts";
 import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
 import {
   CANVAS_H,
@@ -110,6 +113,7 @@ export interface Scene {
   driven: Map<string, Sprite>;
   /** 눌러서 세션 상세를 여는 소품 (사규 액자, 팀장석 책상) */
   clickable: Map<string, Sprite>;
+  rooms: Map<string, Container>;
   /** 칸반 포스트잇·TV 선이 얹히는 벽 컨테이너 */
   wall: Container;
 }
@@ -155,6 +159,23 @@ export function buildScene(
       const p = gridToScreen(i, j);
       base.addChild(placeSprite(sheet, tileFrame(fp, i, j, theme, incident), p.x, p.y));
     }
+  const rooms = new Map<string, Container>();
+  for (const [id, room] of Object.entries(fp.rooms)) {
+    const [x, y, w, h] = room.rect;
+    const points = [
+      [x, y],
+      [w, y],
+      [w, h],
+      [x, h],
+    ].flatMap(([gx, gy]) => {
+      const p = gridToScreen(gx, gy);
+      return [p.x, p.y];
+    });
+    const hit = new Container({ eventMode: "static", cursor: "pointer" });
+    hit.hitArea = new Polygon(points);
+    base.addChild(hit);
+    rooms.set(id, hit);
+  }
 
   // 장애 빛은 평면도 기본이 숨김이고 장애 중에만 보인다 (참조 make_canvas_images 와 같다)
   const placements = fp.layouts[kind].placements.filter(
@@ -203,7 +224,7 @@ export function buildScene(
 
   const root = new Container();
   root.addChild(base, win, world, over);
-  return { root, lit: [base, world], world, toggled, driven, clickable, wall: base };
+  return { root, lit: [base, world], world, toggled, driven, clickable, rooms, wall: base };
 }
 
 /**
@@ -266,6 +287,7 @@ export async function mountOffice(
   opts: OfficeOptions = {},
 ): Promise<OfficeHandle> {
   const app = await createOfficeApp();
+  await loadWallFont();
   const assets = await loadOfficeAssets();
   const fp = assets.floorplan;
   const owls = await loadOwls().catch((e) => {
@@ -298,6 +320,7 @@ export async function mountOffice(
   miniInner.append(miniCanvas, miniView);
   minimap.append(miniInner);
   stage.append(wrap, minimap);
+  const tooltip = new CanvasTooltip(stage);
   const miniCtx = miniCanvas.getContext("2d");
 
   let scene: Scene | null = null;
@@ -311,18 +334,44 @@ export async function mountOffice(
   reducedMotion.addEventListener("change", () => {
     if (reducedMotion.matches) switchFade?.cancel();
   });
-  actors.onPick = (teamId, agentId) => opts.onEmployee?.(officeId, teamId, agentId);
+  let suppressClick = false;
+  actors.onPick = (teamId, agentId) => {
+    if (!suppressClick) {
+      tooltip.close();
+      opts.onEmployee?.(officeId, teamId, agentId);
+    }
+  };
+  actors.onBossPick = (teamId, x, y) => {
+    if (!suppressClick)
+      showAt(shown?.teams.find((t) => t.teamId === teamId)?.props.bossVisit ?? "", x, y);
+  };
   actors.onRing = (now) => props?.ring(now);
   actors.onDoor = (now) => props?.openDoor(now);
   actors.onCue = (c, now, o) => props?.cue(c, now, o);
-  actors.onLadder = (at, now) => props?.ladder(at, now);
+  actors.onLadder = (at, now, title) => {
+    props?.ladder(at, now);
+    props?.deferTitle(title, at + LADDER_MS);
+  };
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
+  let propPicks: { el: HTMLButtonElement; x: number; y: number; w: number; h: number }[] = [];
   let fit = canvasScale(CANVAS_W, CANVAS_H, 1);
   let dpr = 1;
   // 무대의 사용 가능 크기, 장치 픽셀
   let avail = { w: CANVAS_W, h: CANVAS_H };
   const pan = { x: 0, y: 0, maxX: 0, maxY: 0 };
   let notifiedScale = 0; // 0 이라 첫 layout() 이 현재 값을 알린다
+
+  function showAt(text: string, x: number, y: number): void {
+    const rect = wrap.getBoundingClientRect();
+    const p = toCss(x, y, fit.scale, dpr);
+    tooltip.show(text, rect.left + p.left, rect.top + p.top);
+  }
+
+  function showRoom(id: string): void {
+    const r = fp.rooms[id];
+    if (suppressClick || !r || !shown) return;
+    showAt(roomTooltip(id, r.name, shown, Date.now()), r.label[0], r.label[1]);
+  }
 
   // ---------- 조명: 바뀌면 1.5초 보간 ----------
   let lightFrom: Rgb = WHITE;
@@ -386,10 +435,13 @@ export async function mountOffice(
         sprite.eventMode = "static";
         sprite.cursor = "pointer";
         sprite.on("pointertap", () => {
+          if (suppressClick) return;
+          tooltip.close();
           const team = teamOfProp(id, shown);
           if (team && shown) opts.onSession?.(shown.officeId, team.teamId);
         });
       }
+      for (const [id, room] of next.rooms) room.on("pointertap", () => showRoom(id));
       props = new PropsLayer(fp, assets.sheet, kind, next, screenLabel);
       scene?.root.destroy({ children: true });
       scene = next;
@@ -398,7 +450,10 @@ export async function mountOffice(
       buildLabels(kind);
     }
     officeId = office?.officeId ?? "";
-    if (switched) props?.reset();
+    if (switched || resumed || office?.rebuilt) {
+      props?.reset();
+      tooltip.close();
+    }
     // 사무실을 바꾼 첫 스냅샷, 숨은 창에서 돌아온 스냅샷은 걷지 않고 제자리 (cue 도 버린다)
     actors.sync(office, kind, Date.now(), {
       instant: switched || resumed,
@@ -427,12 +482,41 @@ export async function mountOffice(
     overlay.replaceChildren();
     const names = phrases.rooms as Record<string, string>;
     labels = Object.entries(fp.rooms).map(([k, room]) => {
-      const el = document.createElement("div");
-      el.className = "ow-roomlabel";
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "ow-roomlabel ow-canvas-pick";
       el.textContent = (kind === "small" && k === "boss" ? names.bossSmall : names[k]) ?? room.name;
       overlay.append(el);
+      el.addEventListener("click", () => showRoom(k));
       return { el, x: room.label[0], y: room.label[1] };
     });
+    for (const p of propPicks) p.el.remove();
+    propPicks = fp.layouts[kind].placements
+      .filter((p) => ["clock", "attendance", "stats_board"].includes(p.id))
+      .map((p) => {
+        const el = document.createElement("button");
+        el.type = "button";
+        el.className = "ow-prop-pick ow-canvas-pick";
+        el.setAttribute(
+          "aria-label",
+          { clock: "벽시계", attendance: "근태판", stats_board: "오늘의 통계" }[p.id]!,
+        );
+        const frame = assets.sheet.data.frames[`${p.sprite}/${p.state}`] as {
+          frame: { w: number; h: number };
+          anchorPx?: number[];
+        };
+        const [ax, ay] = frame.anchorPx ?? [0, 0];
+        const open = () => {
+          if (suppressClick) return;
+          const r = el.getBoundingClientRect();
+          tooltip.show(propTooltip(p.id, shown, Date.now()), r.right, r.bottom, el);
+        };
+        el.addEventListener("pointerenter", open);
+        el.addEventListener("focus", open);
+        el.addEventListener("click", open);
+        actorOverlay.append(el);
+        return { el, x: p.x - ax, y: p.y - ay, w: frame.frame.w, h: frame.frame.h };
+      });
     placeLabels();
   }
 
@@ -442,10 +526,21 @@ export async function mountOffice(
       l.el.style.left = `${p.left}px`;
       l.el.style.top = `${p.top}px`;
     }
+    for (const p of propPicks) {
+      const at = toCss(p.x, p.y, fit.scale, dpr);
+      const size = toCss(p.w, p.h, fit.scale, dpr);
+      Object.assign(p.el.style, {
+        left: `${at.left}px`,
+        top: `${at.top}px`,
+        width: `${size.left}px`,
+        height: `${size.top}px`,
+      });
+    }
   }
 
   // ---------- 배율·패닝 ----------
   function layout(): void {
+    tooltip.close();
     dpr = window.devicePixelRatio || 1;
     fit = canvasScale(avail.w, avail.h, dpr);
     if (app.renderer.width !== fit.backingW || app.renderer.height !== fit.backingH)
@@ -497,7 +592,7 @@ export async function mountOffice(
   let drag: { id: number; sx: number; sy: number; x0: number; y0: number; moved: boolean } | null =
     null;
   wrap.addEventListener("pointerdown", (e) => {
-    if (minimap.hidden) return;
+    suppressClick = false;
     drag = {
       id: e.pointerId,
       sx: e.clientX - pan.x,
@@ -518,12 +613,20 @@ export async function mountOffice(
     if (!drag.moved) {
       if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < DRAG_PX) return;
       drag.moved = true;
-      wrap.setPointerCapture(e.pointerId);
+      suppressClick = true;
+      tooltip.close();
+      if (!minimap.hidden) wrap.setPointerCapture(e.pointerId);
     }
     movePan(e.clientX - drag.sx, e.clientY - drag.sy);
   });
   const endDrag = (e: PointerEvent) => {
-    if (drag?.id === e.pointerId) drag = null;
+    if (drag?.id === e.pointerId) {
+      drag = null;
+      // pointerup 뒤 이어지는 click까지 막고, 다음 hover는 다시 연다.
+      setTimeout(() => {
+        suppressClick = false;
+      }, 0);
+    }
   };
   wrap.addEventListener("pointerup", endDrag);
   wrap.addEventListener("pointercancel", endDrag);
@@ -550,6 +653,7 @@ export async function mountOffice(
   let resumed = false;
   const cues = cueCollector();
   store.subscribe(() => {
+    if (store.state.selectedId !== officeId) tooltip.close();
     dirty = true;
     if (store.state.selectedId !== officeId) switchFade?.cancel();
     cues.see(store.state.office, document.hidden);

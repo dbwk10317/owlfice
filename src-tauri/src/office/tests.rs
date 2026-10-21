@@ -3167,6 +3167,155 @@ fn observed_entrypoint_beats_registry() {
     assert_eq!(t.product, Product::ClaudeCli);
 }
 
+#[test]
+fn wall_room_history_keeps_ten_per_room_across_moves() {
+    let mut events = Vec::new();
+    for n in 0..13 {
+        let secs = n * 4;
+        events.extend([
+            ev(MAIN, secs, call("edit", ToolKind::FileEdit, file("a.rs"))),
+            ev(MAIN, secs + 1, result("edit", ToolOutcome::Ok)),
+            ev(
+                MAIN,
+                secs + 2,
+                call("review", ToolKind::GitDiff, cmd("git diff")),
+            ),
+            ev(MAIN, secs + 3, result("review", ToolOutcome::Ok)),
+        ]);
+    }
+    events.push(ev(
+        MAIN,
+        52,
+        call("pending", ToolKind::Build, cmd("cargo build")),
+    ));
+    let rebuilt = replayed(MAIN, &events, at(60));
+    let incremental = stepwise(MAIN, &events, at(60));
+    let e = boss(&rebuilt);
+    assert_eq!(e.recent.len(), 3);
+    assert_eq!(e.room_recent.len(), 20);
+    for (room, offset) in [(Room::TeamLead, 1), (Room::Review, 3)] {
+        let times: Vec<_> = e
+            .room_recent
+            .iter()
+            .filter(|a| a.room == room)
+            .map(|a| a.since)
+            .collect();
+        assert_eq!(
+            times,
+            (3..13)
+                .rev()
+                .map(|n| at(n * 4 + offset))
+                .collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(e.room_recent, boss(&incremental).room_recent);
+    assert_eq!(e.recent, boss(&incremental).recent);
+}
+
+#[test]
+fn wall_commits_count_only_confirmed_unmixed_success_once() {
+    let mut events = Vec::new();
+    for (n, (tool, outcome, confidence, compound)) in [
+        (
+            ToolKind::GitCommit,
+            ToolOutcome::Ok,
+            Confirmed,
+            Compound::Single,
+        ),
+        (
+            ToolKind::GitCommit,
+            ToolOutcome::Err,
+            Confirmed,
+            Compound::Single,
+        ),
+        (
+            ToolKind::GitCommit,
+            ToolOutcome::Ok,
+            Inferred,
+            Compound::Single,
+        ),
+        (
+            ToolKind::GitCommit,
+            ToolOutcome::Ok,
+            Confirmed,
+            Compound::Mixed,
+        ),
+        (
+            ToolKind::GitCommit,
+            ToolOutcome::Unknown,
+            Inferred,
+            Compound::Single,
+        ),
+        (
+            ToolKind::GitCommit,
+            ToolOutcome::Rejected,
+            Confirmed,
+            Compound::Single,
+        ),
+        (
+            ToolKind::GitPush,
+            ToolOutcome::Ok,
+            Confirmed,
+            Compound::Single,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let secs = n as i64 * 3;
+        let mut done = result("c", outcome);
+        if let EventKind::ToolResult {
+            outcome_confidence, ..
+        } = &mut done
+        {
+            *outcome_confidence = confidence;
+        }
+        events.extend([
+            ev(
+                MAIN,
+                secs,
+                call(
+                    "c",
+                    tool,
+                    ToolSummary {
+                        compound,
+                        ..cmd("git commit")
+                    },
+                ),
+            ),
+            ev(MAIN, secs + 1, done.clone()),
+            ev(MAIN, secs + 2, done),
+        ]);
+    }
+    events.extend([
+        ev(MAIN, 21, child_spawn(SUB)),
+        ev(
+            SUB,
+            22,
+            call("background", ToolKind::GitCommit, cmd("git commit")),
+        ),
+        ev(SUB, 23, result("background", ToolOutcome::Started)),
+        ev(SUB, 24, result("background", ToolOutcome::Ok)),
+        ev(SUB, 25, result("background", ToolOutcome::Ok)),
+    ]);
+    let mut s = Sim::new();
+    for event in &events {
+        let ts = event.ts.unwrap();
+        s.team.tick(ts, utc(), &mut s.cues);
+        s.team.apply(event, &mut s.cues);
+        let want = if ts < at(1) {
+            0
+        } else if ts < at(24) {
+            1
+        } else {
+            2
+        };
+        assert_eq!(s.team.commits, want, "{ts}");
+    }
+    assert_eq!(replayed(MAIN, &events, at(25)).commits, s.team.commits);
+    assert_eq!(stepwise(MAIN, &events, at(25)).commits, s.team.commits);
+}
+
 /// 실적 요약 (3.7): 같은 항목은 횟수만 올리고 자리는 처음 본 순서 그대로
 #[test]
 fn record_counts_repeats_in_first_seen_order() {

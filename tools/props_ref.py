@@ -11,6 +11,8 @@ dev/props.ts 의 CASES 와 같은 상태여야 한다. TV 선은 그림에 넣�
 import os
 import sys
 
+from PIL import Image, ImageDraw
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(ROOT, "design", "tools"))
@@ -19,7 +21,7 @@ import owlfice_art as art
 
 OUT = os.path.join(ROOT, "dev", "ref")
 
-# (이름, kind, theme, night, 상태, 보임, 포스트잇 (슬롯, 색), 전광판, 종이 수, 피자 수)
+# (이름, kind, theme, night, 상태, 보임, 포스트잇 (슬롯, 색), 전광판, 종이 수, 피자 수, 통계)
 CASES = [
     (
         "props-large-claude",
@@ -32,6 +34,7 @@ CASES = [
         "37",
         3,
         2,
+        (1, 2, 3, 4),
     ),
     (
         "props-small-codex-night",
@@ -56,8 +59,30 @@ CASES = [
         "1234",
         10,
         8,
+        (0, 9, 10, 12345),
     ),
 ]
+
+
+def stats_board_sprite(placement, stats):
+    canvas = Image.new("RGBA", (art.W, art.H), (0, 0, 0, 0))
+    x, y = placement["x"], placement["y"]
+    art.place(canvas, "stats_board/default", x, y)
+    draw = ImageDraw.Draw(canvas)
+    draw.polygon(
+        [(x - 1, y - 28), (x - 13, y - 22), (x - 13, y - 9), (x - 1, y - 15)],
+        fill=(40, 70, 56, 255),
+    )
+    for i, n in enumerate(stats):
+        dx = x - 12 + (i % 2) * 6
+        dy = y - 21 - (i % 2) * 3 + (i // 2) * 7
+        if n > 9:
+            draw.rectangle((dx, dy + 2, dx + 2, dy + 2), fill=(220, 230, 220, 255))
+            draw.rectangle((dx + 1, dy + 1, dx + 1, dy + 3), fill=(220, 230, 220, 255))
+        else:
+            art.place(canvas, f"digit/{n}", dx, dy)
+    bounds = canvas.getbbox()
+    return {"img": canvas.crop(bounds), "anchor": [x - bounds[0], y - bounds[1]]}
 
 
 def main():
@@ -69,21 +94,43 @@ def main():
     art.build_wallsegs()
     art.FLOORPLAN.update(art.floorplan_json())
     os.makedirs(OUT, exist_ok=True)
-    for name, kind, theme, night, state, visible, kanban, safe, balls, pizza in CASES:
+    original_board = art.OFFICE["stats_board/default"]
+    for (
+        name,
+        kind,
+        theme,
+        night,
+        state,
+        visible,
+        kanban,
+        safe,
+        balls,
+        pizza,
+        stats,
+    ) in CASES:
         cubicle = art.THEMES[theme]["cubicle"]
-        img, _ = art.render_scene(
-            kind,
-            theme,
-            [],
-            state=state,
-            visible=visible,
-            tints={f"dev_part_{i}": cubicle for i in range(6)},
-            night=night,
-            kanban=kanban,
-            safe=safe,
-            balls=balls,
-            pizza=pizza,
+        placement = next(
+            p
+            for p in art.FLOORPLAN["layouts"][kind]["placements"]
+            if p["id"] == "stats_board"
         )
+        art.OFFICE["stats_board/default"] = stats_board_sprite(placement, stats)
+        try:
+            img, _ = art.render_scene(
+                kind,
+                theme,
+                [],
+                state=state,
+                visible=visible,
+                tints={f"dev_part_{i}": cubicle for i in range(6)},
+                night=night,
+                kanban=kanban,
+                safe=safe,
+                balls=balls,
+                pizza=pizza,
+            )
+        finally:
+            art.OFFICE["stats_board/default"] = original_board
         path = os.path.join(OUT, f"{name}.png")
         img.save(path)
         print(path)

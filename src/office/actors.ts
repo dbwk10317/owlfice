@@ -487,9 +487,10 @@ export class ActorLayer {
   /** 새 cue 마다 (소품 층이 건다). 사무실 전환·조용한 재구성이면 부르지 않는다 */
   onCue: ((cue: CueDto, now: number, office: OfficeDto | null) => void) | null = null;
   /** 직원이 사다리에 오르기 시작하는 시각 (소품 층이 사다리를 건다). 움직임 줄이기·사무실 전환이면 부르지 않는다 */
-  onLadder: ((startAt: number, now: number) => void) | null = null;
+  onLadder: ((startAt: number, now: number, title: string) => void) | null = null;
   /** 직원을 눌렀을 때 (직원 상세 팝업). 마운트하는 쪽이 건다 */
   onPick: ((teamId: string, agentId: string) => void) | null = null;
+  onBossPick: ((teamId: string, x: number, y: number) => void) | null = null;
 
   /** `office` 는 손에 드는 물건(held_*)을 꺼내는 사무실 시트, `overlay` 는 이름표·Zzz·배지를 넣을 DOM 층. */
   constructor(
@@ -671,7 +672,7 @@ export class ActorLayer {
     const start = this.actors
       .get(empKey(c.teamId, pick.emp.agentId))
       ?.track.errand(to, LADDER_LOOK, LADDER_MS, now);
-    if (start != null) this.onLadder?.(start, now);
+    if (start != null) this.onLadder?.(start, now, c.title);
   }
 
   update(now: number): void {
@@ -845,7 +846,7 @@ export class ActorLayer {
 
   /**
    * 사장님 방문 (S03): 문에서 부장 책상 앞까지 걸어와 5초 서 있다 나간다. 인터폰이 울리고 부장이 펄쩍 뛴다.
-   * 사장님은 직원이 아니라 연출용 액터라 카드·이름표·눌림이 없다.
+   * 사장님은 직원 카드 대신 방문한 팀의 마지막 메시지를 연다.
    */
   private visit(
     c: Extract<CueDto, { kind: "BossVisit" }>,
@@ -868,6 +869,9 @@ export class ActorLayer {
     const to = { gx: seat.gx, gy: seat.gy + VISIT_FRONT, z: 0 };
     const id = `boss-visit:${c.teamId}`;
     const b = this.body(id, id, now);
+    b.root.eventMode = "static";
+    b.root.cursor = "pointer";
+    b.root.on("pointertap", () => this.onBossPick?.(c.teamId, b.root.x, b.root.y));
     if (this.owls) {
       b.species = "snowy";
       b.outfit = "boss";

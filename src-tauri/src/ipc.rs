@@ -749,7 +749,7 @@ impl Ipc {
             }
             b.book.unsaved()
         };
-        if let Some(Err(e)) = save.map(|s| s.write()) {
+        if let Some(e) = save.and_then(|s| s.write_report()) {
             eprintln!("방 번호 저장 실패: {e}");
         }
     }

@@ -85,7 +85,7 @@ export function gridToScreen(gx: number, gy: number, z = 0): { x: number; y: num
   return { x: ORIGIN_X + (gx - gy) * 12, y: ORIGIN_Y + (gx + gy) * 6 - z };
 }
 
-/** 동 글자(PLAN 2.1) → 테마. A·B Claude, C·D Codex, E·F Antigravity(Gemini). */
+/** 동 글자(docs/CONTRACTS.md C2) → 테마. A·B Claude, C·D Codex, E·F Antigravity(Gemini). */
 export function themeOf(building: string | undefined): Theme {
   if (building === "C" || building === "D") return "codex";
   if (building === "E" || building === "F") return "gemini";

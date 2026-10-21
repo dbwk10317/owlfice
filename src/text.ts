@@ -26,7 +26,7 @@ export function durationText(sec: number, withSec: boolean): string {
 
 /**
  * 문장의 `{elapsed}` 를 채운다. 백엔드가 자리를 둔 문장(flag)에서만 채우고,
- * 에이전트가 쓴 글 속의 같은 글자나 백틱 코드 조각 안은 그대로 둔다 (PLAN 4.8).
+ * 에이전트가 쓴 글 속의 같은 글자나 백틱 코드 조각 안은 그대로 둔다 (docs/CONTRACTS.md C10).
  */
 export function fillElapsed(sentence: string, sec: number | null, flag: boolean): string {
   if (!flag || !sentence.includes("{elapsed}")) return sentence;

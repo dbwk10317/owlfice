@@ -1,4 +1,4 @@
-//! 담당 (PLAN 4.7.5)과 오늘의 업무 (4.7.6). 이벤트 순서만 보고 정해서 재구성과 실행 중 적용이 같다
+//! 담당과 오늘의 업무 (docs/CONTRACTS.md C8). 이벤트 순서만 보고 정해서 재구성과 실행 중 적용이 같다
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -27,7 +27,7 @@ const CATEGORIES: [Role; 5] = [
     Role::Writer,
 ];
 
-/// 이 수 미만의 분류되는 파일(서로 다른 경로)을 만졌으면 수습. PLAN 에 기준이 없어 정했다
+/// 이 수 미만의 분류되는 파일(서로 다른 경로)을 만졌으면 수습
 const TRAINEE_BELOW: usize = 5;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -52,7 +52,7 @@ impl Touched {
         if self.seen.len() < TRAINEE_BELOW {
             return Role::Trainee;
         }
-        // ponytail: 동률은 4.7.5 나열 순서(백엔드부터)로 정한다, 다른 순서가 필요해지면 올린다
+        // ponytail: 동률은 docs/CONTRACTS.md C8 나열 순서(백엔드부터)로 정한다, 다른 순서가 필요해지면 올린다
         let mut best = (0, Role::Trainee);
         for r in CATEGORIES {
             let n = self.counts[r as usize];
@@ -148,9 +148,8 @@ pub enum WorkType {
     NewDev,
 }
 
-/// 첫 20개 호출까지만 본다. 그 뒤는 고정 (4.7.6)
+/// 첫 20개 호출까지만 본다. 그 뒤는 고정 (docs/CONTRACTS.md C8)
 const WINDOW: u32 = 20;
-/// 패턴 기준은 PLAN 에 숫자가 없어 정했다
 const REFACTOR_MIN_EDITS: u32 = 3;
 const RESEARCH_MIN_CALLS: u32 = 3;
 

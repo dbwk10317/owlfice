@@ -1,4 +1,4 @@
-// 백엔드가 보내는 전체 스냅샷을 받아 seq 규칙으로 걸러 단일 상태에 둔다 (PLAN 4.3, 4.8).
+// 백엔드가 보내는 전체 스냅샷을 받아 seq 규칙으로 걸러 단일 상태에 둔다 (docs/CONTRACTS.md C4·C9).
 // DTO 전체 모양은 ts-rs 가 만든다. 여기서는 규칙에 필요한 필드만 안다.
 
 export interface ListMsg {

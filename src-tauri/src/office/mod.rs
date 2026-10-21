@@ -1,4 +1,4 @@
-//! 상태 기계 (PLAN 4.7). 좌석·담당·업무 유형·타임라인은 다른 티켓에서 붙인다
+//! 상태 기계 (docs/CONTRACTS.md C8)
 
 pub mod classify;
 pub mod names;
@@ -22,7 +22,7 @@ use crate::parse::{
 };
 use work::{Role, Touched, WorkTally, WorkType};
 
-/// 직원 타임라인(3.7)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
+/// 직원 타임라인(docs/CONTRACTS.md C9)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub enum TimelineKind {
     UserMessage,
@@ -66,7 +66,7 @@ pub fn call_hash(call_id: &str) -> u64 {
     h.finish()
 }
 
-/// 타임라인 한 칸 (4.7 `timeline`): 원본 줄 위치와, 그 줄만 다시 읽어서는 모르는 값.
+/// 타임라인 한 칸 (docs/CONTRACTS.md C8 `timeline`): 원본 줄 위치와, 그 줄만 다시 읽어서는 모르는 값.
 /// 결과 판정은 앞 줄의 호출·백그라운드 상태에 기대서 줄 하나를 새 파서에 넣으면 달라진다
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Mark {
@@ -94,7 +94,7 @@ impl Mark {
     }
 }
 
-/// 팝업(3.7)과 통계가 쓰는 기록. world 가 틱마다 팀을 복제해 비교하므로 Arc 로 싸서 복제·비교를 포인터 하나로 줄인다
+/// 팝업(docs/CONTRACTS.md C9)과 통계가 쓰는 기록. world 가 틱마다 팀을 복제해 비교하므로 Arc 로 싸서 복제·비교를 포인터 하나로 줄인다
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Record {
     pub timeline: Vec<Mark>,
@@ -132,14 +132,14 @@ impl Counted {
     }
 }
 
-/// 팀의 토큰 사용량 합 (3.7 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
+/// 팀의 토큰 사용량 합 (docs/CONTRACTS.md C9 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 pub struct Tokens {
     pub input: u64,
     pub output: u64,
 }
 
-/// 직원 직급 (PLAN 4.7.4). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
+/// 직원 직급 (docs/CONTRACTS.md C8). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub enum Rank {
     Bujang,
@@ -148,7 +148,7 @@ pub enum Rank {
     Sawon,
 }
 
-/// 사무실 안 구역 (PLAN 2.3)
+/// 사무실 안 구역 (docs/CONTRACTS.md C2)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Room {
     TeamLead,
@@ -183,7 +183,7 @@ pub enum Pose {
 #[serde(rename_all = "camelCase")]
 pub struct Activity {
     /// 시간이 흐르며 바뀌는 문장은 경과 대신 `{elapsed}` 자리를 둔다. 프론트가 `since` 로 채워야
-    /// 매초 상태를 다시 보내지 않는다 (4.8)
+    /// 매초 상태를 다시 보내지 않는다 (docs/CONTRACTS.md C9)
     pub sentence: String,
     pub room: Room,
     pub since: DateTime<Utc>,
@@ -194,11 +194,11 @@ pub struct Activity {
     /// 함께 도는 호출 수. `+n` 배지와 문장의 "(외 n건)"
     pub extra: u32,
     /// 문장에 `{elapsed}` 자리가 있나. 에이전트가 쓴 글 속의 같은 글자를 프론트가 채우지 않게,
-    /// 문장 모양이 아니라 우리가 틀로 둔 자리인지로 정한다 (4.8)
+    /// 문장 모양이 아니라 우리가 틀로 둔 자리인지로 정한다 (docs/CONTRACTS.md C9)
     pub elapsed: bool,
 }
 
-/// 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (4.8)
+/// 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (docs/CONTRACTS.md C9)
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Bubble {
@@ -244,11 +244,11 @@ pub struct PendingCall {
     pub tool: ToolKind,
     pub summary: ToolSummary,
     pub started: DateTime<Utc>,
-    /// 큰 파일·연속 읽기라서 소스 서고로 가는 FileRead (4.7.1). 시작할 때 정해 둔다
+    /// 큰 파일·연속 읽기라서 소스 서고로 가는 FileRead (docs/CONTRACTS.md C8). 시작할 때 정해 둔다
     pub big_read: bool,
 }
 
-/// 오늘 실적 (3.5 카드의 여섯 칸)
+/// 오늘 실적 (docs/CONTRACTS.md C3 카드의 여섯 칸)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 pub struct Counters {
     pub read: u32,
@@ -262,10 +262,10 @@ pub struct Counters {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Employee {
     pub id: String,
-    /// 비어 있으면 world 가 채운다. 이름은 사무실 안에서 겹치지 않아야 해서 팀이 정할 수 없다 (4.7.7)
+    /// 비어 있으면 world 가 채운다. 이름은 사무실 안에서 겹치지 않아야 해서 팀이 정할 수 없다 (docs/CONTRACTS.md C8)
     pub name: String,
     pub rank: Rank,
-    /// 만진 파일로 정한 담당 (4.7.5)
+    /// 만진 파일로 정한 담당 (docs/CONTRACTS.md C8)
     pub role: Role,
     touched: Touched,
     pub model: Option<String>,
@@ -277,9 +277,9 @@ pub struct Employee {
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     pub retired_at: Option<DateTime<Utc>>,
-    /// 서브 퇴근 시각 (`retired_at` + 10분, 4.7.2). 재출근하면 `retired_at` 과 함께 지운다
+    /// 서브 퇴근 시각 (`retired_at` + 10분, docs/CONTRACTS.md C8). 재출근하면 `retired_at` 과 함께 지운다
     pub departed_at: Option<DateTime<Utc>>,
-    /// 개발실·임시 책상 자리 번호. world 가 사무실 단위로 준다 (4.7.9)
+    /// 개발실·임시 책상 자리 번호. world 가 사무실 단위로 준다 (docs/CONTRACTS.md C8)
     pub seat: Option<u8>,
     /// 결과 안 온 호출 전부. 대표는 마지막
     pub pending: Vec<PendingCall>,
@@ -288,7 +288,7 @@ pub struct Employee {
     pub quiet_since: Option<DateTime<Utc>>,
     /// 부장만 쓴다
     pub waiting_user_since: Option<DateTime<Utc>>,
-    /// 반려 직후 4초 (2.5 우선순위 3번)
+    /// 반려 직후 4초 (docs/CONTRACTS.md C2 우선순위)
     pub rejected_at: Option<DateTime<Utc>>,
     /// 허가 대기 질문. 그 Ask 호출의 결과가 오면 지운다
     pub asking: Option<String>,
@@ -298,11 +298,11 @@ pub struct Employee {
     pub context_window: Option<u64>,
     pub parent: Option<String>,
     pub depth: u8,
-    /// 모르는 agent_id 로 먼저 만든 임시 직원이면 Inferred (4.3)
+    /// 모르는 agent_id 로 먼저 만든 임시 직원이면 Inferred (docs/CONTRACTS.md C4)
     pub confidence: Confidence,
-    /// 서브 종료 추정용: 마지막 레코드가 tool_use 없는 assistant 였나 (4.7.2)
+    /// 서브 종료 추정용: 마지막 레코드가 tool_use 없는 assistant 였나 (docs/CONTRACTS.md C8)
     pub last_was_text: bool,
-    /// 파일별 수정 호출 시각. 반복 수정 문장(3.5, S43)이 쓴다
+    /// 파일별 수정 호출 시각. 반복 수정 문장(docs/CONTRACTS.md C3, S43)이 쓴다
     // ponytail: "오늘 n번째"는 직원 수명 동안 센다, 실적 칸의 자정 리셋을 정할 때 같이 올린다
     pub edits: HashMap<String, Vec<DateTime<Utc>>>,
     /// 직전 Test 가 실패했으면 (실패한 테스트, 연속 실패 수). 다음 Test·Edit 이 "빨간불 끄는 중"
@@ -316,7 +316,7 @@ pub struct Employee {
     logged: bool,
     /// 서브가 첫 일을 받아 직급 말풍선을 냈나
     greeted: bool,
-    /// 말풍선을 낸 모르는 도구 이름. 같은 도구는 처음 한 번만 (3.6)
+    /// 말풍선을 낸 모르는 도구 이름. 같은 도구는 처음 한 번만 (docs/CONTRACTS.md C3)
     unknown_tools: HashSet<String>,
     /// Script 의 대체 말풍선을 이미 냈나
     script_said: bool,
@@ -361,11 +361,11 @@ pub struct TeamProps {
     /// 화분 성장도 = 부장 컨텍스트 사용률 (0~1). 분갈이 직후 0
     pub plant: Option<f32>,
     pub light: Light,
-    /// 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (4.7.9)
+    /// 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (docs/CONTRACTS.md C8)
     pub light_at: DateTime<Utc>,
     /// 테스트 결과를 아직 못 봤으면 null
     pub test: Option<TestVerdict>,
-    /// 결과판을 마지막으로 바꾼 테스트 시각. 공유 결과판은 이것이 가장 늦은 팀 것이다 (4.7.9)
+    /// 결과판을 마지막으로 바꾼 테스트 시각. 공유 결과판은 이것이 가장 늦은 팀 것이다 (docs/CONTRACTS.md C8)
     pub test_at: DateTime<Utc>,
     pub trash: u32,
     /// 무재해 전광판의 시작 시각
@@ -383,7 +383,7 @@ pub struct Incident {
     pub last_error: DateTime<Utc>,
 }
 
-/// 프론트 연출 힌트 (4.8 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
+/// 프론트 연출 힌트 (docs/CONTRACTS.md C9 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(tag = "kind")]
 #[ts(rename = "AnimCue")]
@@ -432,7 +432,7 @@ pub enum Cue {
         agent: String,
         on: bool,
     },
-    /// 프론트에 안 가는 미대응 기록 (4.11). 재구성이 cue 를 버릴 때 함께 버려져 다시 세지 않게 같은 길로 낸다.
+    /// 프론트에 안 가는 미대응 기록 (docs/CONTRACTS.md C11). 재구성이 cue 를 버릴 때 함께 버려져 다시 세지 않게 같은 길로 낸다.
     /// world 가 outbox 대신 따로 모으고 "cue 가 있었나" 에도 넣지 않는다
     #[serde(skip)]
     #[ts(skip)]
@@ -446,55 +446,55 @@ impl Cue {
     }
 }
 
-/// 세션 하나 (4.7). 사무실 합성·좌석은 world 몫이다
+/// 세션 하나 (docs/CONTRACTS.md C8). 사무실 합성·좌석은 world 몫이다
 #[derive(Debug, Clone, PartialEq)]
 pub struct Team {
     pub id: String,
     pub product: Product,
-    /// jsonl 이 동을 정했나. 정하기 전에만 등록부 entrypoint 를 쓴다 (4.4.1 쓰임 3)
+    /// jsonl 이 동을 정했나. 정하기 전에만 등록부 entrypoint 를 쓴다 (docs/CONTRACTS.md C5)
     product_known: bool,
     /// 마지막 SessionMeta 의 동(관측했거나 기본값)과 등록부 entrypoint 의 동. product 는 둘에서 정한다
     log_product: Product,
     registry_product: Option<Product>,
     pub title: String,
-    /// jsonl 제목 이벤트의 값과 등록부의 사용자 이름. 등록부 이름이 지금 값이라 있으면 이긴다 (4.4.1 쓰임 2)
+    /// jsonl 제목 이벤트의 값과 등록부의 사용자 이름. 등록부 이름이 지금 값이라 있으면 이긴다 (docs/CONTRACTS.md C5)
     log_title: String,
     registry_name: Option<String>,
-    /// 오늘의 업무 (4.7.6)
+    /// 오늘의 업무 (docs/CONTRACTS.md C8)
     pub work_type: WorkType,
     work: WorkTally,
     pub cwd: PathBuf,
     pub git_branch: Option<String>,
     pub started: DateTime<Utc>,
-    /// 읽은 이벤트 ts 의 최댓값. mtime 이 아니다 (2.5)
+    /// 읽은 이벤트 ts 의 최댓값. mtime 이 아니다 (docs/CONTRACTS.md C2)
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
     pub alive_in_registry: bool,
     /// 졸음이 30분을 넘었지만 프로세스가 살아 있어 퇴근하지 않았다 (S58 대기 중). 틱이 정한다
     pub idle_alive: bool,
-    /// 팀장석 번호. 0~3 팀장석, 4~5 간이 책상, None 은 카드만. world 가 입장 때 준다 (4.7.9)
+    /// 팀장석 번호. 0~3 팀장석, 4~5 간이 책상, None 은 카드만. world 가 입장 때 준다 (docs/CONTRACTS.md C8)
     pub desk_slot: Option<u8>,
     /// 첫 번째가 부장
     pub employees: Vec<Employee>,
     pub props: TeamProps,
     pub incident: Option<Incident>,
     pub stats: stats::TeamStats,
-    /// 파일별 직전 ts. ts 없는 레코드가 다른 파일 시각을 쓰지 않게 (4.3 "순서")
+    /// 파일별 직전 ts. ts 없는 레코드가 다른 파일 시각을 쓰지 않게 (docs/CONTRACTS.md C4 "순서")
     file_ts: HashMap<PathBuf, DateTime<Utc>>,
     /// 노랑으로 켜기 전 색. 확정 결과 없이 끝나면 이 색으로 돌아간다
     light_before: Light,
     light_at_before: DateTime<Utc>,
-    /// 마지막으로 퇴근에서 깨어난 때와 그때의 피자 수 (4.7.2 피자)
+    /// 마지막으로 퇴근에서 깨어난 때와 그때의 피자 수 (docs/CONTRACTS.md C8 피자)
     awake_since: DateTime<Utc>,
     pizza_at_wake: u32,
-    /// 처음 본 거래처·스킬 말풍선용 (3.6)
+    /// 처음 본 거래처·스킬 말풍선용 (docs/CONTRACTS.md C3)
     seen_vendors: HashSet<String>,
     seen_skills: HashSet<String>,
     /// 이 팀 이벤트가 나온 파일. `Mark.source` 가 가리킨다
     pub sources: Vec<PathBuf>,
     /// 다음 `Mark.seq`
     seq: u64,
-    /// 사장님 메시지 수 (3.7 턴 수)
+    /// 사장님 메시지 수 (docs/CONTRACTS.md C9 턴 수)
     pub turns: u32,
     pub commits: u32,
     /// 사용량을 한 번도 못 봤으면 None

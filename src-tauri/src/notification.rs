@@ -1,4 +1,4 @@
-//! 창이 가려진 동안 오래 이어진 결재 대기만 알린다 (PLAN 3.6).
+//! 창이 가려진 동안 오래 이어진 결재 대기만 알린다 (docs/CONTRACTS.md C3).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};

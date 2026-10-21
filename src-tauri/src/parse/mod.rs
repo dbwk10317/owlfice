@@ -1,4 +1,4 @@
-//! 제품별 레코드를 공통 Event로 (PLAN 4.6)
+//! 제품별 레코드를 공통 Event로 (docs/CONTRACTS.md C7)
 
 pub mod claude;
 pub mod codex;
@@ -22,7 +22,7 @@ pub struct Event {
     pub raw_ref: RawRef,
 }
 
-/// `generation` 은 파일 세대 (4.5)
+/// `generation` 은 파일 세대 (docs/CONTRACTS.md C6)
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RawRef {
     pub path: PathBuf,
@@ -31,7 +31,7 @@ pub struct RawRef {
     pub line_no: u64,
 }
 
-/// 파일 하나(메인 또는 서브 기록)마다 하나 둔다. 파일이 Reset되면 새로 만든다 (4.3)
+/// 파일 하나(메인 또는 서브 기록)마다 하나 둔다. 파일이 Reset되면 새로 만든다 (docs/CONTRACTS.md C4)
 pub trait Parser {
     /// TailReader의 한 줄을 이벤트로. 연출로 못 바꾼 모양은 `unhandled` 에 구조만 넣는다
     fn parse_line(
@@ -41,23 +41,23 @@ pub trait Parser {
         unhandled: &mut Vec<Unhandled>,
     ) -> Vec<Event>;
 
-    /// 다 읽은 뒤에도 이 파일로 팀을 만들지 않는다 (Codex 자식·내부 rollout, 4.6.2)
+    /// 다 읽은 뒤에도 이 파일로 팀을 만들지 않는다 (Codex 자식·내부 rollout, docs/CONTRACTS.md C7)
     fn side(&self) -> bool {
         false
     }
 }
 
-/// 원본 레코드를 보는 파서만 아는 미대응 재료 (4.11). 원문 값은 담지 않는다.
+/// 원본 레코드를 보는 파서만 아는 미대응 재료 (docs/CONTRACTS.md C11). 원문 값은 담지 않는다.
 /// 이벤트에서 알 수 있는 kind(`command`·`mcp_server`·`skill` 등)와 집계·저장은 diag 몫이다.
 /// 상태 기계만 아는 둘(StateConflict·ScenarioGap)도 같은 모양으로 diag 에 넘긴다. 값은 정해진 낱말뿐이다
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Unhandled {
-    /// 이벤트 자기 연출(`masked`)이 2.5 우선순위로 더 높은 상태(`winner`)에 가려졌다
+    /// 이벤트 자기 연출(`masked`)이 docs/CONTRACTS.md C2 우선순위로 더 높은 상태(`winner`)에 가려졌다
     StateConflict {
         winner: &'static str,
         masked: &'static str,
     },
-    /// cue 없이 바뀐 2.4 상태 단어. `team` 이면 직원이 아니라 팀 단계다. `via` 는 이벤트 종류 또는 `tick`
+    /// cue 없이 바뀐 docs/CONTRACTS.md C2 상태 단어. `team` 이면 직원이 아니라 팀 단계다. `via` 는 이벤트 종류 또는 `tick`
     ScenarioGap {
         team: bool,
         from: &'static str,
@@ -89,7 +89,7 @@ pub enum Unhandled {
     },
 }
 
-/// 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)
+/// 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (docs/CONTRACTS.md C2)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub enum Confidence {
     Confirmed,
@@ -101,7 +101,7 @@ pub enum EventKind {
     UserMessage {
         text: String,
     },
-    /// 본문이 거의 비어 있어 preview를 두지 않는다. 연출 신호가 아니다 (4.7.2)
+    /// 본문이 거의 비어 있어 preview를 두지 않는다. 연출 신호가 아니다 (docs/CONTRACTS.md C8)
     Thinking,
     AssistantText {
         text: String,
@@ -128,7 +128,7 @@ pub enum EventKind {
         effort: Option<String>,
         depth: u8,
     },
-    /// 완료 기록에서 낸다 (4.6.1~4.6.3). 못 봤으면 추정 (4.7.2)
+    /// 완료 기록에서 낸다 (docs/CONTRACTS.md C7). 못 봤으면 추정 (docs/CONTRACTS.md C8)
     SubagentDone {
         child_id: String,
     },
@@ -165,7 +165,7 @@ pub enum EventKind {
         model: Option<String>,
         title: Option<String>,
         product: Product,
-        /// 기록에서 제품 값(Claude entrypoint, Codex originator)을 봤나. false 면 product 는 기본값이라 등록부가 덮을 수 있다 (4.4.1 쓰임 3)
+        /// 기록에서 제품 값(Claude entrypoint, Codex originator)을 봤나. false 면 product 는 기본값이라 등록부가 덮을 수 있다 (docs/CONTRACTS.md C5)
         product_observed: bool,
         git_branch: Option<String>,
     },
@@ -257,7 +257,7 @@ pub enum TodoStatus {
     Done,
 }
 
-/// 파이프(pipefail 꺼짐)·`||`·`;`·개행·단독 `&`·분석 불가 구문은 개별 명령의 성공을 보증하지 못해 Mixed (4.6.4)
+/// 파이프(pipefail 꺼짐)·`||`·`;`·개행·단독 `&`·분석 불가 구문은 개별 명령의 성공을 보증하지 못해 Mixed (docs/CONTRACTS.md C7)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Compound {
     Single,
@@ -712,7 +712,7 @@ fn message_value(v: &str) -> String {
     first.unwrap_or(v).to_string()
 }
 
-/// 대표 분류 우선순위 (4.6.4 3번). 마지막 명령 기준이 아니다
+/// 대표 분류 우선순위 (docs/CONTRACTS.md C7). 마지막 명령 기준이 아니다
 fn rank(k: &ToolKind) -> u8 {
     match k {
         ToolKind::Release => 11,
@@ -730,7 +730,7 @@ fn rank(k: &ToolKind) -> u8 {
     }
 }
 
-/// 셸 명령 문자열 하나를 분류한다 (PLAN 4.6.4)
+/// 셸 명령 문자열 하나를 분류한다 (docs/CONTRACTS.md C7)
 pub fn classify_command(cmd: &str) -> Classified {
     let s = scan(cmd);
     let mut best: Option<SegClass> = None;
@@ -780,7 +780,7 @@ pub(crate) fn count_before(line: &str, word: &str) -> Option<u32> {
     })
 }
 
-/// 도장 숫자만 뽑는다. 성공·실패 판정에는 쓰지 않는다 (4.6.1)
+/// 도장 숫자만 뽑는다. 성공·실패 판정에는 쓰지 않는다 (docs/CONTRACTS.md C7)
 pub(crate) fn parse_test_result(text: &str) -> Option<TestResult> {
     let pick = |l: &str| {
         count_before(l, "passed").map(|passed| TestResult {
@@ -806,7 +806,7 @@ pub(crate) fn parse_test_result(text: &str) -> Option<TestResult> {
         })
 }
 
-/// 4.6.1 매핑표의 `mcp__` 행. 도구 이름의 단어가 외근(웹)인지 거래처(Mcp)인지 정한다
+/// `mcp__` 도구 이름의 단어가 외근(웹)인지 거래처(Mcp)인지 정한다 (docs/CONTRACTS.md C7)
 pub(crate) fn mcp_kind(name: &str) -> ToolKind {
     let rest = name.strip_prefix("mcp__").unwrap_or(name);
     let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));

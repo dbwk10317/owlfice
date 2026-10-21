@@ -1,4 +1,4 @@
-//! Claude 세션 등록부 (PLAN 4.4.1)
+//! Claude 세션 등록부 (docs/CONTRACTS.md C5)
 
 use std::collections::HashMap;
 use std::fs;
@@ -15,7 +15,7 @@ use windows_sys::Win32::System::Threading::{
 
 use super::Product;
 
-/// 프로세스 생성 시각이 등록부 startedAt 보다 이만큼 넘게 늦으면 pid 를 물려받은 다른 프로세스다 (4.4.1 쓰임 1)
+/// 프로세스 생성 시각이 등록부 startedAt 보다 이만큼 넘게 늦으면 pid 를 물려받은 다른 프로세스다 (docs/CONTRACTS.md C5)
 const REUSE_SLACK_MS: i64 = 5_000;
 
 /// `<home>\sessions\<pid>.json` 한 개. 알 수 없는 필드는 무시한다.
@@ -52,7 +52,7 @@ impl RegistryEntry {
             .filter(|n| !n.is_empty() && self.name_source.as_deref() == Some("user"))
     }
 
-    /// 동 보조 (4.4.1 쓰임 3)
+    /// 동 보조 (docs/CONTRACTS.md C5)
     pub fn product(&self) -> Option<Product> {
         self.entrypoint
             .as_deref()
@@ -70,7 +70,7 @@ where
     Ok(serde_json::from_value(v).ok())
 }
 
-/// 등록부를 한 번 읽은 결과. 없는 것과 못 본 것을 나눈다 (4.5)
+/// 등록부를 한 번 읽은 결과. 없는 것과 못 본 것을 나눈다 (docs/CONTRACTS.md C6)
 #[derive(Debug, Default)]
 pub struct RegistryRead {
     pub entries: Vec<RegistryEntry>,

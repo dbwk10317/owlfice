@@ -1,4 +1,4 @@
-//! owlfice-probe: 탐색 결과와 이벤트 열을 JSON으로 낸다 (PLAN 4.12)
+//! owlfice-probe: 탐색 결과와 이벤트 열을 JSON으로 낸다 (docs/CONTRACTS.md C12)
 
 use std::fs;
 use std::io::{self, Write};
@@ -156,13 +156,13 @@ fn read_file(path: &Path, out: &mut impl Write) -> io::Result<()> {
     }
 }
 
-// ponytail: 4.10 은 60초 동안 팀 4개(5MB + 2MB×4)를 재지만 여기는 횟수만 채우고 파일은 100KB 하나다.
-// 나열은 N=50 이라 p99 가 최대와 같다. 실측값을 4.10 예산과 직접 견주게 되면 그때 올린다
+// ponytail: docs/CONTRACTS.md C13 은 60초 동안 팀 4개(5MB + 2MB×4)를 재지만 여기는 횟수만 채우고 파일은 100KB 하나다.
+// 나열은 N=50 이라 p99 가 최대와 같다. 실측값을 docs/CONTRACTS.md C13 예산과 직접 견주게 되면 그때 올린다
 const BENCH_N: [usize; 4] = [1000, 100, 200, 50];
-/// 읽기 한 번에 붙이는 양은 이 둘의 곱(100KB). 4.10 "Hot 틱 (읽기 포함, 100KB)"
+/// 읽기 한 번에 붙이는 양은 이 둘의 곱(100KB). docs/CONTRACTS.md C13 "Hot 틱 (읽기 포함, 100KB)"
 const LINE_BYTES: usize = 1024;
 const LINES_PER_READ: usize = 100;
-/// 4.10 "Scan 1회 (로컬 프로젝트 폴더 25개)"
+/// docs/CONTRACTS.md C13 "Scan 1회 (로컬 프로젝트 폴더 25개)"
 const PROJECTS: usize = 25;
 
 struct Stat {

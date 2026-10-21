@@ -1,4 +1,4 @@
-//! IPC 계약 (PLAN 4.8). 프론트 타입은 여기서 ts-rs 로 만든다 (`src/types/ipc.ts`)
+//! IPC 계약 (docs/CONTRACTS.md C9). 프론트 타입은 여기서 ts-rs 로 만든다 (`src/types/ipc.ts`)
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -24,7 +24,7 @@ use crate::parse::{Confidence, TodoItem, ToolKind, ToolOutcome};
 use crate::runtime::Runtime;
 use crate::settings::{ManualPath, SettingsBook};
 
-/// 최대 5회/초 (4.8)
+/// 최대 5회/초 (docs/CONTRACTS.md C9)
 const PUBLISH_EVERY: StdDuration = StdDuration::from_millis(200);
 
 /// `office-list` 페이로드
@@ -85,7 +85,7 @@ pub struct WorldDto {
     pub selected: Option<OfficeDto>,
 }
 
-/// 사이드바 한 줄 (3.3). 대기업은 팀 하나, 중소기업은 층 하나
+/// 사이드바 한 줄 (docs/CONTRACTS.md C3). 대기업은 팀 하나, 중소기업은 층 하나
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct OfficeSummaryDto {
@@ -98,16 +98,16 @@ pub struct OfficeSummaryDto {
     pub label: String,
     /// 팀 중 가장 활발한 단계
     pub phase: TeamPhase,
-    /// 팀 중 가장 급한 점 (3.3 중소기업 층 점)
+    /// 팀 중 가장 급한 점 (docs/CONTRACTS.md C3 중소기업 층 점)
     pub dot: Dot,
-    /// 허가 대기는 점이 아니라 결재판 아이콘이라(3.3 범례) 점 우선순위에 넣지 않고 따로 둔다
+    /// 허가 대기는 점이 아니라 결재판 아이콘이라(docs/CONTRACTS.md C3 범례) 점 우선순위에 넣지 않고 따로 둔다
     pub asking: bool,
     pub border: Border,
     pub delayed: bool,
     pub teams: Vec<TeamSummaryDto>,
 }
 
-/// 팀 한 줄 (3.3). 대기업에서는 사무실 줄의 둘째 줄 재료
+/// 팀 한 줄 (docs/CONTRACTS.md C3). 대기업에서는 사무실 줄의 둘째 줄 재료
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamSummaryDto {
@@ -129,11 +129,11 @@ pub struct TeamSummaryDto {
     pub delayed: bool,
     /// 호스트 배지 (`WSL`). Windows 는 null
     pub host_badge: Option<String>,
-    /// 오늘의 업무 (3.3 사무실 한 줄)
+    /// 오늘의 업무 (docs/CONTRACTS.md C3 사무실 한 줄)
     pub work_type: WorkType,
 }
 
-/// 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
+/// 상태 점 (docs/CONTRACTS.md C3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Dot {
     Incident,
@@ -146,7 +146,7 @@ pub enum Dot {
     Off,
 }
 
-/// 줄 테두리 (3.3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
+/// 줄 테두리 (docs/CONTRACTS.md C3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Border {
     Plain,
@@ -216,7 +216,7 @@ pub struct TeamDto {
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
     pub work_type: WorkType,
-    /// 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (4.7.9)
+    /// 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (docs/CONTRACTS.md C8)
     pub desk_slot: Option<u8>,
     /// 첫 번째가 부장
     pub employees: Vec<EmployeeDto>,
@@ -226,14 +226,14 @@ pub struct TeamDto {
     pub idle_alive: bool,
 }
 
-/// 직원 카드 한 장 (3.5)
+/// 직원 카드 한 장 (docs/CONTRACTS.md C3)
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EmployeeDto {
     pub agent_id: String,
     pub name: String,
     pub rank: Rank,
-    /// 담당 (3.5 카드)
+    /// 담당 (docs/CONTRACTS.md C3 카드)
     pub role: Role,
     pub model: Option<String>,
     pub description: Option<String>,
@@ -264,7 +264,7 @@ pub struct EmployeeDto {
     pub review: Option<Review>,
 }
 
-/// 미팅실 소품 재료 (3.4 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
+/// 미팅실 소품 재료 (docs/CONTRACTS.md C3 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind")]
 pub enum Meeting {
@@ -272,7 +272,7 @@ pub enum Meeting {
     Skill,
 }
 
-/// 리뷰실 소품 재료 (3.4 리뷰실)
+/// 리뷰실 소품 재료 (docs/CONTRACTS.md C3 리뷰실)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Review {
@@ -282,7 +282,7 @@ pub struct Review {
     pub approved: bool,
 }
 
-/// 사무실 공유 소품 (4.7.9 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
+/// 사무실 공유 소품 (docs/CONTRACTS.md C8 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedPropsDto {
@@ -312,7 +312,7 @@ pub struct BoardStatsDto {
     pub turns: u32,
 }
 
-/// 타임라인 커서 (4.8): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
+/// 타임라인 커서 (docs/CONTRACTS.md C9): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CursorDto {
@@ -330,7 +330,7 @@ pub struct ClipDto {
     pub bytes: u64,
 }
 
-/// 타임라인 한 칸 (3.7). 원본 줄을 다시 읽어 만든다
+/// 타임라인 한 칸 (docs/CONTRACTS.md C9). 원본 줄을 다시 읽어 만든다
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EventDto {
@@ -378,7 +378,7 @@ pub struct CountDto {
     pub times: u32,
 }
 
-/// 직원 상세 팝업 (3.7) 중 원본을 다시 읽지 않는 부분
+/// 직원 상세 팝업 (docs/CONTRACTS.md C9) 중 원본을 다시 읽지 않는 부분
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EmployeeDetailDto {
@@ -415,7 +415,7 @@ pub struct PrDto {
     pub url: String,
 }
 
-/// 세션 상세 팝업 (3.7)
+/// 세션 상세 팝업 (docs/CONTRACTS.md C9)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDetailDto {
@@ -486,7 +486,7 @@ pub enum DetailError {
     NotFound,
     /// Reset 으로 세대가 바뀌었다. 첫 페이지부터 다시 연다
     CursorInvalid,
-    /// WSL 배포판이 꺼졌거나 통신 지연 중이라 파일에 손대지 않았다 (4.4.2)
+    /// WSL 배포판이 꺼졌거나 통신 지연 중이라 파일에 손대지 않았다 (docs/CONTRACTS.md C5)
     HostOffline,
     /// 읽기가 상한 시간을 넘겼다
     Timeout,
@@ -538,7 +538,7 @@ fn parse_vendor(s: &str) -> Option<Vendor> {
         .find(|v| vendor_str(*v) == s)
 }
 
-/// 중소기업 층 (2.1)
+/// 중소기업 층 (docs/CONTRACTS.md C2)
 fn vendor_floor(v: Vendor) -> u32 {
     match v {
         Vendor::Claude => 1,
@@ -547,7 +547,7 @@ fn vendor_floor(v: Vendor) -> u32 {
     }
 }
 
-/// 동 (2.1)
+/// 동 (docs/CONTRACTS.md C2)
 pub(crate) fn building(p: Product) -> &'static str {
     match p {
         Product::ClaudeDesktop => "A",
@@ -978,7 +978,7 @@ impl Ipc {
         }
     }
 
-    /// 선택을 바꾸고 그 사무실 상태를 바로 돌려준다. 상태는 이미 있다 (4.5 선택 전환).
+    /// 선택을 바꾸고 그 사무실 상태를 바로 돌려준다. 상태는 이미 있다 (docs/CONTRACTS.md C6 선택 전환).
     /// 두 요청이 뒤바뀌어 오면 늦은 옛 요청을 무시한다. 안 그러면 백엔드 선택이 store 와 어긋난다
     pub fn select(&self, office_id: &str, request_id: u64) -> Result<SelectResponseDto, String> {
         let id =
@@ -1019,7 +1019,7 @@ impl Ipc {
         });
         let state = w.selected.clone().and_then(|sel| {
             let quiet = rebuilt.contains(&sel);
-            // 조용한 재구성에서는 방금 시작된 세션의 출근만 낸다 (4.3)
+            // 조용한 재구성에서는 방금 시작된 세션의 출근만 낸다 (docs/CONTRACTS.md C4)
             let cues: Vec<CueDto> = outbox
                 .into_iter()
                 .filter(|(o, _, c)| *o == sel && (!quiet || matches!(c, Cue::Enter { .. })))
@@ -1046,7 +1046,7 @@ pub fn get_world_snapshot(ipc: State<'_, Arc<Ipc>>) -> WorldDto {
 }
 
 /// 저장이 실패해도 이번 실행의 설정은 바뀐다. 에러는 저장 실패를 알린다.
-/// 규모가 바뀌면 world 가 재배치하고(4.7.9) 발행기가 rebuilt 로 낸다
+/// 규모가 바뀌면 world 가 재배치하고(docs/CONTRACTS.md C8) 발행기가 rebuilt 로 낸다
 pub fn apply_settings(
     ipc: &Ipc,
     book: &SettingsBook,

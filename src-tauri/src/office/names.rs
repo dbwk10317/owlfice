@@ -1,4 +1,4 @@
-//! 직원 이름, 방 번호, 층 번호 (PLAN 4.7.7, 4.7.8, 4.7.9, 4.4.2).
+//! 직원 이름, 방 번호, 층 번호 (docs/CONTRACTS.md C8·C5).
 //! 저장 폴더는 인자로 받는다. 실제 경로 `%APPDATA%\Owlfice` 는 부르는 쪽이 정한다.
 
 use chrono::{DateTime, Duration, Utc};

@@ -1,4 +1,4 @@
-//! Claude Code 기록 파서 (PLAN 4.6.1)
+//! Claude Code 기록 파서 (docs/CONTRACTS.md C7)
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -51,7 +51,7 @@ struct Meta {
     branch: Option<String>,
 }
 
-/// entrypoint 값 → 동 (4.4.1). jsonl 과 세션 등록부가 같이 쓴다. 모르는 값은 B동
+/// entrypoint 값 → 동 (docs/CONTRACTS.md C5). jsonl 과 세션 등록부가 같이 쓴다. 모르는 값은 B동
 pub fn product_of(entrypoint: &str) -> Product {
     match entrypoint {
         "claude-desktop" => Product::ClaudeDesktop,
@@ -63,7 +63,7 @@ pub fn product_of(entrypoint: &str) -> Product {
 struct Call {
     name: String,
     test: bool,
-    /// 단독 `&` 로 띄워 셸이 즉시 0을 돌려준 명령 (4.6.4)
+    /// 단독 `&` 로 띄워 셸이 즉시 0을 돌려준 명령 (docs/CONTRACTS.md C7)
     async_unknown: bool,
     /// `run_in_background: true` Bash·PowerShell. 서브 파일의 결과에는 backgroundTaskId 가 없다
     background: bool,
@@ -306,7 +306,7 @@ impl ClaudeParser {
             ..Call::default()
         };
         let mut extra = None;
-        // 순서대로 첫 매치 (4.6.1 매핑표)
+        // 순서대로 첫 매치 (docs/CONTRACTS.md C7)
         let kind = match name {
             "TodoWrite" | "mcp__ccd_turn__update_plan" => {
                 extra = Some(EventKind::TodoChanged {
@@ -530,7 +530,7 @@ impl ClaudeParser {
         out.push(ctx.ev(EventKind::SubagentSpawn {
             child_id: child.to_string(),
             prompt: pick("/prompt", input.and_then(|i| i.prompt.as_ref())).unwrap_or_default(),
-            // 동기 결과에는 resolvedModel이 없어 호출의 별칭으로 둔다 (4.7.4가 별칭을 받는다)
+            // 동기 결과에는 resolvedModel이 없어 호출의 별칭으로 둔다 (docs/CONTRACTS.md C8가 별칭을 받는다)
             model: pick("/resolvedModel", input.and_then(|i| i.model.as_ref())),
             description: pick("/description", input.and_then(|i| i.description.as_ref())),
             effort: None,

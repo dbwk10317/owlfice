@@ -1,9 +1,9 @@
-//! 기동 단계 진행 (PLAN 3.8 로딩 화면, 4.8 `startup-progress`)
+//! 기동 단계 진행 (docs/CONTRACTS.md C4·C9)
 //!
 //! 이벤트 하나는 로딩 화면의 한 줄이다. 단계 본줄은 `Running` 에서 `Done` 이나 `Error` 로 끝나고,
 //! 단계 밑에 붙는 알림 줄(`WslOff`, `WslFail`, `SettingsBroken`)은 summary 종류로 구분하며 본줄의 상태를 바꾸지 않는다.
 //! 알림 줄의 상태는 모양이다: 꺼진 WSL 은 경고가 아니라 `Done`(소등), 접근 실패는 `Warn`.
-//! 프론트가 늦게 구독해도 따라잡도록 마지막 상태를 모아 두었다가 `get_startup_progress` 로 돌려준다 (4.3 시작 순서와 같은 이유).
+//! 프론트가 늦게 구독해도 따라잡도록 마지막 상태를 모아 두었다가 `get_startup_progress` 로 돌려준다 (docs/CONTRACTS.md C4 시작 순서와 같은 이유).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -21,7 +21,7 @@ use crate::office::{Rank, TeamPhase};
 
 pub const EVENT: &str = "startup-progress";
 
-/// 이 안에 수정된 팀을 "불 켜진 팀"으로 센다. 읽기 전이라 2.4 의 퇴근 문턱(30분)을 mtime 으로 어림한다
+/// 이 안에 수정된 팀을 "불 켜진 팀"으로 센다. 읽기 전이라 docs/CONTRACTS.md C2 의 퇴근 문턱(30분)을 mtime 으로 어림한다
 const LIT_WITHIN: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -47,7 +47,7 @@ pub enum StartupSummary {
     Rented {
         buildings: Vec<String>,
     },
-    /// 3단계 실패: 세션 폴더를 하나도 못 찾음 (3.9)
+    /// 3단계 실패: 세션 폴더를 하나도 못 찾음 (docs/CONTRACTS.md C3)
     NoFolders,
     /// 4단계: 불 켜진 팀 수
     Teams {
@@ -61,7 +61,7 @@ pub enum StartupSummary {
         daeri: u32,
         sawon: u32,
     },
-    /// 알림 줄: 꺼진 배포판 (3.9 "소등")
+    /// 알림 줄: 꺼진 배포판 (docs/CONTRACTS.md C3 "소등")
     WslOff {
         floor: u32,
         distro: String,
@@ -71,7 +71,7 @@ pub enum StartupSummary {
         floor: u32,
         distro: String,
     },
-    /// 알림 줄: 설정 파일 손상 (3.9)
+    /// 알림 줄: 설정 파일 손상 (docs/CONTRACTS.md C3)
     SettingsBroken,
 }
 
@@ -253,7 +253,7 @@ impl ScanWatch {
 
 /// 기동이 바깥 세계에 하는 일. 실제 앱은 lib.rs, 테스트는 가짜 Site·가짜 Probe 로 바꿔 끼운다
 pub trait Boot {
-    /// 규모를 고를 때까지 기다린다 (3.8 "고르기 전에는 진행하지 않는다"). 이미 있으면 바로 돌아온다
+    /// 규모를 고를 때까지 기다린다 (docs/CONTRACTS.md C4 "고르기 전에는 진행하지 않는다"). 이미 있으면 바로 돌아온다
     fn wait_for_scale(&self);
     /// 2단계: Windows 의 Site 와 WSL 배포판 (꺼진 배포판 포함)
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>);
@@ -268,7 +268,7 @@ pub trait Boot {
 pub struct Limits {
     /// 4~5단계가 호스트를 기다리는 최대 시간 (둘이 마감 하나를 나눠 쓴다). 지나면 그 호스트는 "응답 없음"으로 두고 진행한다
     pub step: Duration,
-    /// 진행 상황을 내는 최소 간격 (4.8 "1초에 한 번 이하")
+    /// 진행 상황을 내는 최소 간격 (docs/CONTRACTS.md C9 "1초에 한 번 이하")
     pub tick: Duration,
 }
 

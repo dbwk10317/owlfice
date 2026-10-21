@@ -1,4 +1,4 @@
-//! 증분 파일 읽기 (PLAN 4.5)
+//! 증분 파일 읽기 (docs/CONTRACTS.md C6)
 
 pub mod scheduler;
 
@@ -14,7 +14,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
 };
 
-/// 한 번의 `read_new_lines` 가 읽는 상한 (PLAN 4.5). 호출자가 `max_bytes` 로 넘긴다
+/// 한 번의 `read_new_lines` 가 읽는 상한 (docs/CONTRACTS.md C6). 호출자가 `max_bytes` 로 넘긴다
 pub const MAX_READ_BYTES: usize = 8 * 1024 * 1024;
 /// 개행 없는 미완성 줄을 쥐고 있을 수 있는 상한. 넘으면 그 줄을 버린다
 const MAX_REMAINDER: usize = 64 * 1024 * 1024;
@@ -36,7 +36,7 @@ pub struct Line {
 /// `read_new_lines` 의 결과. `commit` 하기 전에는 TailReader의 상태를 바꾸지 않는다
 #[derive(Debug)]
 pub struct Pending {
-    /// true면 `lines` 는 새 세대의 0바이트부터다. 상위는 4.3 재구성 규칙대로 다시 만든다
+    /// true면 `lines` 는 새 세대의 0바이트부터다. 상위는 docs/CONTRACTS.md C4 재구성 규칙대로 다시 만든다
     pub reset: bool,
     pub lines: Vec<Line>,
     /// 64MB를 넘어 버린 줄 수
@@ -190,7 +190,7 @@ impl TailReader {
             || m.len() > self.consumed())
     }
 
-    /// Scan 시점에 경로의 파일 ID와 열린 핸들의 ID를 대조한다 (PLAN 4.4.2, 규칙 (b)).
+    /// Scan 시점에 경로의 파일 ID와 열린 핸들의 ID를 대조한다 (docs/CONTRACTS.md C5).
     /// 다르면 새 핸들을 따로 쥐어 두고, 다음 `read_new_lines` 가 Reset으로 알린다.
     /// 상태는 commit 때만 바뀌므로 여기서도 `file` 을 바꾸지 않는다
     pub fn verify_path(&mut self) -> io::Result<()> {

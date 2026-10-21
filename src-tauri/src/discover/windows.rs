@@ -1,4 +1,4 @@
-//! Windows 홈과 환경변수에서 Site 찾기 (PLAN 4.4.1)
+//! Windows 홈과 환경변수에서 Site 찾기 (docs/CONTRACTS.md C5)
 
 use std::path::PathBuf;
 

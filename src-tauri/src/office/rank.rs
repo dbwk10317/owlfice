@@ -1,6 +1,6 @@
 use super::Rank;
 
-/// 서브에이전트 직급 (PLAN 4.7.4 표). 부분 문자열이 아니라 토큰 단위로 맞춘다.
+/// 서브에이전트 직급 (docs/CONTRACTS.md C8). 부분 문자열이 아니라 토큰 단위로 맞춘다.
 /// `gemini` 안의 `mini` 가 Sawon으로 걸리면 안 되기 때문이다.
 pub fn rank_of(model: Option<&str>, effort: Option<&str>) -> Rank {
     let lower = model.unwrap_or("").to_lowercase();

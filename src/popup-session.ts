@@ -1,4 +1,4 @@
-// 세션 상세 팝업 (PLAN 3.7, HANDOFF 4.6). 정보는 메모리에서, 최근 사건은 원본 줄을 다시 읽어 온다 (get_session_detail).
+// 세션 상세 팝업 (docs/CONTRACTS.md C9, HANDOFF 4.6). 정보는 메모리에서, 최근 사건은 원본 줄을 다시 읽어 온다 (get_session_detail).
 import phrases from "../design/handoff/phrases.ko.json";
 import checkSvg from "../design/handoff/icons/check.svg?raw";
 import copySvg from "../design/handoff/icons/copy.svg?raw";

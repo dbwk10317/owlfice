@@ -35,7 +35,7 @@ selectedId: string | null,
 selectRequest: number, };
 
 /**
- * 사이드바 한 줄 (3.3). 대기업은 팀 하나, 중소기업은 층 하나
+ * 사이드바 한 줄 (docs/CONTRACTS.md C3). 대기업은 팀 하나, 중소기업은 층 하나
  */
 export type OfficeSummaryDto = { officeId: string, 
 /**
@@ -51,16 +51,16 @@ room: number | null, label: string,
  */
 phase: TeamPhase, 
 /**
- * 팀 중 가장 급한 점 (3.3 중소기업 층 점)
+ * 팀 중 가장 급한 점 (docs/CONTRACTS.md C3 중소기업 층 점)
  */
 dot: Dot, 
 /**
- * 허가 대기는 점이 아니라 결재판 아이콘이라(3.3 범례) 점 우선순위에 넣지 않고 따로 둔다
+ * 허가 대기는 점이 아니라 결재판 아이콘이라(docs/CONTRACTS.md C3 범례) 점 우선순위에 넣지 않고 따로 둔다
  */
 asking: boolean, border: Border, delayed: boolean, teams: Array<TeamSummaryDto>, };
 
 /**
- * 팀 한 줄 (3.3). 대기업에서는 사무실 줄의 둘째 줄 재료
+ * 팀 한 줄 (docs/CONTRACTS.md C3). 대기업에서는 사무실 줄의 둘째 줄 재료
  */
 export type TeamSummaryDto = { teamId: string, bossName: string, title: string, 
 /**
@@ -88,17 +88,17 @@ delayed: boolean,
  */
 hostBadge: string | null, 
 /**
- * 오늘의 업무 (3.3 사무실 한 줄)
+ * 오늘의 업무 (docs/CONTRACTS.md C3 사무실 한 줄)
  */
 workType: WorkType, };
 
 /**
- * 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
+ * 상태 점 (docs/CONTRACTS.md C3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
  */
 export type Dot = "Incident" | "Working" | "Waiting" | "Dozing" | "IdleAlive" | "Off";
 
 /**
- * 줄 테두리 (3.3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
+ * 줄 테두리 (docs/CONTRACTS.md C3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
  */
 export type Border = "Plain" | "Failed" | "Running";
 
@@ -128,7 +128,7 @@ building: string, hostBadge: string | null,
  */
 delayed: boolean, folder: string, started: string, lastActivity: string, phase: TeamPhase, workType: WorkType, 
 /**
- * 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (4.7.9)
+ * 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (docs/CONTRACTS.md C8)
  */
 deskSlot: number | null, 
 /**
@@ -141,11 +141,11 @@ employees: Array<EmployeeDto>, props: TeamProps, incident: Incident | null,
 idleAlive: boolean, };
 
 /**
- * 직원 카드 한 장 (3.5)
+ * 직원 카드 한 장 (docs/CONTRACTS.md C3)
  */
 export type EmployeeDto = { agentId: string, name: string, rank: Rank, 
 /**
- * 담당 (3.5 카드)
+ * 담당 (docs/CONTRACTS.md C3 카드)
  */
 role: Role, model: string | null, description: string | null, activity: Activity, 
 /**
@@ -182,12 +182,12 @@ meeting: Meeting | null,
 review: Review | null, };
 
 /**
- * 미팅실 소품 재료 (3.4 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
+ * 미팅실 소품 재료 (docs/CONTRACTS.md C3 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
  */
 export type Meeting = { "kind": "Mcp", server: string, } | { "kind": "Skill" };
 
 /**
- * 리뷰실 소품 재료 (3.4 리뷰실)
+ * 리뷰실 소품 재료 (docs/CONTRACTS.md C3 리뷰실)
  */
 export type Review = { 
 /**
@@ -200,7 +200,7 @@ pens: number,
 approved: boolean, };
 
 /**
- * 사무실 공유 소품 (4.7.9 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
+ * 사무실 공유 소품 (docs/CONTRACTS.md C8 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
  */
 export type SharedPropsDto = { 
 /**
@@ -229,7 +229,7 @@ export type BoardStatsDto = { commits: number, filesEdited: number, commands: nu
 export type Activity = { 
 /**
  * 시간이 흐르며 바뀌는 문장은 경과 대신 `{elapsed}` 자리를 둔다. 프론트가 `since` 로 채워야
- * 매초 상태를 다시 보내지 않는다 (4.8)
+ * 매초 상태를 다시 보내지 않는다 (docs/CONTRACTS.md C9)
  */
 sentence: string, room: Room, since: string, 
 /**
@@ -242,12 +242,12 @@ expectedSecs: number | null, pose: Pose, confidence: Confidence,
 extra: number, 
 /**
  * 문장에 `{elapsed}` 자리가 있나. 에이전트가 쓴 글 속의 같은 글자를 프론트가 채우지 않게,
- * 문장 모양이 아니라 우리가 틀로 둔 자리인지로 정한다 (4.8)
+ * 문장 모양이 아니라 우리가 틀로 둔 자리인지로 정한다 (docs/CONTRACTS.md C9)
  */
 elapsed: boolean, };
 
 /**
- * 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (4.8)
+ * 마지막 말풍선. 풀에서 문구를 고르는 것은 프론트다 (docs/CONTRACTS.md C9)
  */
 export type Bubble = { 
 /**
@@ -261,7 +261,7 @@ at: string, say: BubbleSay, };
 export type BubbleSay = { "kind": "Say", text: string, } | { "kind": "Mcp", server: string, tool: string, } | { "kind": "NewVendor", server: string, } | { "kind": "NewSkill", skill: string, } | { "kind": "Rank" } | { "kind": "Incident" } | { "kind": "AllGreen" } | { "kind": "TooLong" } | { "kind": "ThinkingDuck" } | { "kind": "PlanApproval" } | { "kind": "Scratch" } | { "kind": "Compaction" } | { "kind": "UnknownTool" } | { "kind": "ScriptFallback" } | { "kind": "UnknownResult" };
 
 /**
- * 오늘 실적 (3.5 카드의 여섯 칸)
+ * 오늘 실적 (docs/CONTRACTS.md C3 카드의 여섯 칸)
  */
 export type Counters = { read: number, edit: number, shell: number, outside: number, meeting: number, errors: number, };
 
@@ -271,7 +271,7 @@ export type TeamProps = { bossVisit: string | null,
  */
 plant: number | null, light: Light, 
 /**
- * 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (4.7.9)
+ * 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (docs/CONTRACTS.md C8)
  */
 lightAt: string, 
 /**
@@ -279,7 +279,7 @@ lightAt: string,
  */
 test: TestVerdict | null, 
 /**
- * 결과판을 마지막으로 바꾼 테스트 시각. 공유 결과판은 이것이 가장 늦은 팀 것이다 (4.7.9)
+ * 결과판을 마지막으로 바꾼 테스트 시각. 공유 결과판은 이것이 가장 늦은 팀 것이다 (docs/CONTRACTS.md C8)
  */
 testAt: string, trash: number, 
 /**
@@ -295,12 +295,12 @@ export type TestVerdict = "Pass" | "Fail";
 export type Incident = { since: string, lastError: string, };
 
 /**
- * 프론트 연출 힌트 (4.8 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
+ * 프론트 연출 힌트 (docs/CONTRACTS.md C9 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
  */
 export type AnimCue = { "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Depart", agent: string, } | { "kind": "Stamp", passed: number, failed: number, estimated: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Paper", agent: string, on: boolean, };
 
 /**
- * 직원 직급 (PLAN 4.7.4). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
+ * 직원 직급 (docs/CONTRACTS.md C8). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
  */
 export type Rank = "Bujang" | "Gwajang" | "Daeri" | "Sawon";
 
@@ -315,7 +315,7 @@ export type Role = "Backend" | "Frontend" | "Qa" | "DevOps" | "Writer" | "Traine
 export type WorkType = "CodeReview" | "BugFix" | "Refactor" | "Docs" | "Research" | "NewDev";
 
 /**
- * 사무실 안 구역 (PLAN 2.3)
+ * 사무실 안 구역 (docs/CONTRACTS.md C2)
  */
 export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" | "Incident" | "Meeting" | "Shipping" | "Pantry" | "Outside" | "Door";
 
@@ -376,7 +376,7 @@ export type StartupProgressDto = {
 step: number, state: StepState, summary: StartupSummary, detail: StartupDetail | null, };
 
 /**
- * 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (PLAN 2.5)
+ * 확인됨은 레코드가 직접 말한 것, 추정은 본문 정규식 등으로 짐작한 것 (docs/CONTRACTS.md C2)
  */
 export type Confidence = "Confirmed" | "Inferred";
 
@@ -385,7 +385,7 @@ export type TodoItem = { content: string, status: TodoStatus, };
 export type TodoStatus = "Pending" | "InProgress" | "Done";
 
 /**
- * 타임라인 커서 (4.8): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
+ * 타임라인 커서 (docs/CONTRACTS.md C9): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
  */
 export type CursorDto = { generation: number, byteOffset: number, };
 
@@ -399,7 +399,7 @@ export type ClipDto = { head: string, tail: string,
 bytes: number, };
 
 /**
- * 타임라인 한 칸 (3.7). 원본 줄을 다시 읽어 만든다
+ * 타임라인 한 칸 (docs/CONTRACTS.md C9). 원본 줄을 다시 읽어 만든다
  */
 export type EventDto = { 
 /**
@@ -452,17 +452,17 @@ export type TestDto = { passed: number, failed: number, };
 export type ToolOutcome = "Ok" | "Err" | "Rejected" | "Started" | "Unknown";
 
 /**
- * 팀의 토큰 사용량 합 (3.7 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
+ * 팀의 토큰 사용량 합 (docs/CONTRACTS.md C9 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
  */
 export type Tokens = { input: number, output: number, };
 
 /**
- * 직원 타임라인(3.7)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
+ * 직원 타임라인(docs/CONTRACTS.md C9)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
  */
 export type TimelineKind = "UserMessage" | "AssistantText" | "ToolCall" | "ToolResult" | "SubagentSpawn" | "SubagentDone" | "PermissionRequest" | "ContextCompaction" | "TitleChanged" | "PrLinked";
 
 /**
- * 직원 상세 팝업 (3.7) 중 원본을 다시 읽지 않는 부분
+ * 직원 상세 팝업 (docs/CONTRACTS.md C9) 중 원본을 다시 읽지 않는 부분
  */
 export type EmployeeDetailDto = { agentId: string, name: string, rank: Rank, role: Role, model: string | null, hiredAt: string, retiredAt: string | null, 
 /**
@@ -487,7 +487,7 @@ export type HeadcountDto = { bujang: number, gwajang: number, daeri: number, saw
 export type PrDto = { number: number, url: string, };
 
 /**
- * 세션 상세 팝업 (3.7)
+ * 세션 상세 팝업 (docs/CONTRACTS.md C9)
  */
 export type SessionDetailDto = { sessionId: string, title: string, 
 /**

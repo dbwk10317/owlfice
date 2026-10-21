@@ -1,4 +1,4 @@
-// 사내 방송 티커 (PLAN 3.5, HANDOFF 4.5). 직원 행적(recent)에서 새로 생긴 줄을 사건으로 모아 시간순으로 흘린다.
+// 사내 방송 티커 (docs/CONTRACTS.md C3, HANDOFF 4.5). 직원 행적(recent)에서 새로 생긴 줄을 사건으로 모아 시간순으로 흘린다.
 import phrases from "../design/handoff/phrases.ko.json";
 import { reducedMotion } from "./loading.ts";
 import { fill, hhmm } from "./text.ts";
@@ -24,7 +24,7 @@ const RANK_LABEL: Record<Rank, string> = {
 };
 export const rankLabel = (r: Rank): string => RANK_LABEL[r];
 
-/** 직원 식별 키. 중소기업 사무실은 여러 호스트의 팀을 담아 agentId 만으로는 겹칠 수 있다 (PLAN 4.7.9) */
+/** 직원 식별 키. 중소기업 사무실은 여러 호스트의 팀을 담아 agentId 만으로는 겹칠 수 있다 (docs/CONTRACTS.md C8) */
 export const empKey = (teamId: string, agentId: string): string => `${teamId}\u0000${agentId}`;
 
 /** "{boss} 부장 팀". 부장은 team.employees[0] */

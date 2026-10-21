@@ -225,7 +225,7 @@
   overflow-y: auto;
 }
 
-/* 창 너비 구간 (PLAN 3.2). data-mode 는 mountSidebar 가 정한다 */
+/* 창 너비 구간 (design/HANDOFF.md 2.2). data-mode 는 mountSidebar 가 정한다 */
 .ow-side-host[data-mode="rail"] .ow-rail {
   display: flex;
 }

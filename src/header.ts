@@ -1,4 +1,4 @@
-// 가운데 머리말 (HANDOFF 4.3)과 창 너비 구간 (PLAN 3.2). store 가 바뀌면 바뀐 칸만 고친다.
+// 가운데 머리말 (HANDOFF 4.3)과 창 너비 구간 (design/HANDOFF.md 2.2). store 가 바뀌면 바뀐 칸만 고친다.
 import "../design/handoff/tokens.css";
 import phrases from "../design/handoff/phrases.ko.json";
 import nightSvg from "../design/handoff/icons/night.svg?raw";

@@ -1,4 +1,4 @@
-// 직원 상세 팝업 (PLAN 3.7, HANDOFF 4.6). 요약은 메모리에서, 타임라인은 원본 파일을 50개씩 다시 읽어 온다.
+// 직원 상세 팝업 (docs/CONTRACTS.md C9, HANDOFF 4.6). 요약은 메모리에서, 타임라인은 원본 파일을 50개씩 다시 읽어 온다.
 import phrases from "../design/handoff/phrases.ko.json";
 import chevronSvg from "../design/handoff/icons/chevron-right.svg?raw";
 import editSvg from "../design/handoff/icons/edit.svg?raw";

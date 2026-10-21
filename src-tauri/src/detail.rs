@@ -1,5 +1,5 @@
-//! 팝업 두 종류(PLAN 3.7)의 재료: 직원 타임라인 페이징, 직원·세션 상세, 탐색기 열기 (4.8).
-//! 원문은 메모리에 들지 않고 RawRef 로 원본 줄을 다시 읽는다. 읽은 원문은 돌려주기만 하고 로그에 남기지 않는다 (4.11)
+//! 팝업 두 종류의 재료: 직원 타임라인 페이징, 직원·세션 상세, 탐색기 열기 (docs/CONTRACTS.md C9).
+//! 원문은 메모리에 들지 않고 RawRef 로 원본 줄을 다시 읽는다. 읽은 원문은 돌려주기만 하고 로그에 남기지 않는다 (docs/CONTRACTS.md C11)
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -28,7 +28,7 @@ use crate::parse::claude::content_text;
 use crate::parse::{Event, EventKind, Parser, RawRef, ToolKind, ToolOutcome, ToolSummary};
 use crate::tail::scheduler::{is_subagent, make_parser};
 
-/// IPC 를 오래 막지 않는 상한 (4.4.2: 켜진 배포판도 UNC 가 멈출 수 있다). 테스트는 막힌 읽기를 기다려야 해서 짧다
+/// IPC 를 오래 막지 않는 상한 (docs/CONTRACTS.md C5: 켜진 배포판도 UNC 가 멈출 수 있다). 테스트는 막힌 읽기를 기다려야 해서 짧다
 const READ_LIMIT: Duration = if cfg!(test) {
     Duration::from_millis(500)
 } else {
@@ -36,10 +36,10 @@ const READ_LIMIT: Duration = if cfg!(test) {
 };
 const PAGE: u32 = 50;
 const PAGE_MAX: u32 = 200;
-/// 세션 상세의 최근 사건 (3.7). "더 보기" 는 `RECENT_MAX` 까지
+/// 세션 상세의 최근 사건 (docs/CONTRACTS.md C9). "더 보기" 는 `RECENT_MAX` 까지
 const RECENT: u32 = 20;
 const RECENT_MAX: u32 = 100;
-/// 결과·입력·본문은 앞뒤 2KB (3.7)
+/// 결과·입력·본문은 앞뒤 2KB (docs/CONTRACTS.md C9)
 const BODY_CLIP: usize = 2048;
 /// tail 의 줄 상한과 같다. 이보다 긴 줄은 처음부터 이벤트가 되지 못했다
 const LINE_MAX: u64 = 64 * 1024 * 1024;
@@ -49,7 +49,7 @@ const URL_MAX: usize = 2048;
 const UNREADABLE: &str = "원본 줄을 다시 읽지 못했습니다";
 const MISSING: &str = "원본 줄에서 이 기록을 찾지 못했습니다";
 
-/// 다시 읽을 칸 하나. 잠금 안에서 모으고 읽기는 잠금 밖에서 한다 (4.3)
+/// 다시 읽을 칸 하나. 잠금 안에서 모으고 읽기는 잠금 밖에서 한다 (docs/CONTRACTS.md C4)
 #[derive(Debug, Clone, PartialEq)]
 struct Want {
     agent: String,
@@ -139,7 +139,7 @@ fn find_employee<'a>(
         .ok_or(DetailError::NotFound)
 }
 
-/// 파일에 손대도 되나. 꺼진 배포판은 경로 접근(열기·is_file·탐색기)이 깨운다 (4.4.2).
+/// 파일에 손대도 되나. 꺼진 배포판은 경로 접근(열기·is_file·탐색기)이 깨운다 (docs/CONTRACTS.md C5).
 /// WSL 은 핸들을 쥔 근무 중인 팀만 배포판이 켜진 게 확실하고, Probe 사이(최대 30초)에는 "의심 아님"만으로 알 수 없다.
 /// 모르는 호스트도 같다. 되면 WSL 호스트 id (읽기가 걸리면 의심으로 돌리려고)
 fn host_ready(w: &OfficeWorld, key: &TeamKey, t: &Team) -> Result<Option<String>, DetailError> {
@@ -216,7 +216,7 @@ fn find_mark(tl: &[Mark], c: CursorDto, line_idx: u32) -> Result<usize, DetailEr
     Ok(i)
 }
 
-/// 직원 타임라인 한 페이지, 최신부터 (4.8 `get_employee_timeline`)
+/// 직원 타임라인 한 페이지, 최신부터 (docs/CONTRACTS.md C9 `get_employee_timeline`)
 pub fn employee_timeline(
     world: &Mutex<OfficeWorld>,
     office_id: &str,
@@ -246,7 +246,7 @@ pub fn employee_timeline(
     bounded(world, wsl, move |deadline| read_events(&wants, deadline))
 }
 
-/// 직원 상세 팝업 중 메모리에 있는 것 (3.7)
+/// 직원 상세 팝업 중 메모리에 있는 것 (docs/CONTRACTS.md C9)
 pub fn employee_detail(
     world: &Mutex<OfficeWorld>,
     office_id: &str,
@@ -293,7 +293,7 @@ fn counts(u: &Counted) -> Vec<CountDto> {
         .collect()
 }
 
-/// 세션 상세 팝업 (3.7, 4.8 `get_session_detail`). 원본 줄을 못 읽어도 메모리 값은 돌려주고 `recent_error` 로 알린다
+/// 세션 상세 팝업 (docs/CONTRACTS.md C9, docs/CONTRACTS.md C9 `get_session_detail`). 원본 줄을 못 읽어도 메모리 값은 돌려주고 `recent_error` 로 알린다
 pub fn session_detail(
     world: &Mutex<OfficeWorld>,
     office_id: &str,
@@ -1002,7 +1002,7 @@ fn raw_result(rec: &Value, call: u64, vendor: Vendor) -> Option<RawResult> {
     }
 }
 
-/// Claude 세션 폴더 `<프로젝트>/<세션>/`. 서브 기록도 결과 파일은 부모 세션 폴더에 둔다 (4.6.1)
+/// Claude 세션 폴더 `<프로젝트>/<세션>/`. 서브 기록도 결과 파일은 부모 세션 폴더에 둔다 (docs/CONTRACTS.md C7)
 fn session_dir(path: &Path) -> Option<PathBuf> {
     if is_subagent(path) {
         path.parent()?.parent().map(Path::to_path_buf)
@@ -1011,7 +1011,7 @@ fn session_dir(path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// 분리된 큰 결과 파일 (4.6.1). 구조 필드가 먼저, 없으면 본문의 `<persisted-output>` 참조.
+/// 분리된 큰 결과 파일 (docs/CONTRACTS.md C7). 구조 필드가 먼저, 없으면 본문의 `<persisted-output>` 참조.
 /// 레코드 값이라 믿지 않는다: 경로에서 `<세션>/tool-results/<이름>` 만 받아 이 세션 폴더 아래로 다시 만든다.
 /// 기록의 절대 경로는 WSL 이면 리눅스 경로라 그대로 열 수도 없다
 fn sidecar(rec: Option<&Value>, text: &str, session_dir: &Path) -> Option<PathBuf> {

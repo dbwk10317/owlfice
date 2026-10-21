@@ -1,4 +1,4 @@
-//! Codex 기록 파서 (PLAN 4.6.2)
+//! Codex 기록 파서 (docs/CONTRACTS.md C7)
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -15,7 +15,6 @@ use crate::discover::Product;
 /// 승인 창 거부 때 하네스가 쓰는 문구. 결과 text 안에서는 따옴표가 `\"` 로 이스케이프돼 있다
 const REJECTED: &str = r#"Rejected(\"rejected by user\")"#;
 const QUESTION_REPLY: &str = "<send_user_message_question_reply>";
-// ponytail: 미리보기 길이는 PLAN에 정한 값이 없다, 팝업(3.7)을 붙일 때 맞춘다
 const PREVIEW_CHARS: usize = 200;
 
 /// rollout 파일 하나에 하나. 파일이 Reset되면 새로 만든다
@@ -69,7 +68,7 @@ enum Wait {
 struct ExecWait {
     /// 이 호출이 부른 `tools.<이름>`. item 은 맞는 종류를 부른 exec 에만 붙는다
     tools: Vec<String>,
-    /// 단독 `&` 로 띄운 명령. 셸이 즉시 0을 돌려준다 (4.6.4)
+    /// 단독 `&` 로 띄운 명령. 셸이 즉시 0을 돌려준다 (docs/CONTRACTS.md C7)
     async_unknown: bool,
     /// Test 로 분류된 호출. 결과 본문에서 도장 숫자를 뽑는다
     test: bool,
@@ -584,7 +583,7 @@ impl CodexParser {
                 ) else {
                     return;
                 };
-                // 압축 직후의 0은 사용량이 아니다 (4.6.1)
+                // 압축 직후의 0은 사용량이 아니다 (docs/CONTRACTS.md C7)
                 if input == 0 && output == 0 {
                     return;
                 }
@@ -768,7 +767,7 @@ impl Parser for CodexParser {
             .collect()
     }
 
-    /// 부모 thread 가 있는 자식이거나 내부 에이전트의 rollout 은 팀이 되지 않는다 (4.6.2)
+    /// 부모 thread 가 있는 자식이거나 내부 에이전트의 rollout 은 팀이 되지 않는다 (docs/CONTRACTS.md C7)
     fn side(&self) -> bool {
         self.silent || self.parent.is_some()
     }

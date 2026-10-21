@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""실제 세션 파일을 fixture로 바꾸고, fixtures/ 에 실제 값이 남았는지 검사한다 (PLAN 4.12).
+"""실제 세션 파일을 fixture로 바꾸고, fixtures/ 에 실제 값이 남았는지 검사한다 (docs/CONTRACTS.md C12).
 
 호출: uv run python tools/anonymize.py <claude|codex|check> ...
   claude SRC.jsonl OUT [--lines 1-3,100-140] [--agent ID[:1-30,400-420]]...
@@ -177,7 +177,7 @@ DROP_KEYS = {
     "permission_profile", "file_system_sandbox_policy", "sandbox_policy", "thread_settings", "rate_limits",
     "internal_chat_message_metadata_passthrough", "mcp_attribution", "last_agent_message",
 }  # fmt: skip
-# Claude 내장 다섯, Codex custom_tool_call 의 exec, Codex exec 안 JS 의 tools.<이름> 넷 (PLAN 4.6.2), 내부 도구
+# Claude 내장 다섯, Codex custom_tool_call 의 exec, Codex exec 안 JS 의 tools.<이름> 넷 (docs/CONTRACTS.md C7), 내부 도구
 TOOL_NAMES = {
     "Agent", "Bash", "Edit", "Read", "Write", "exec", "exec_command", "write_stdin", "apply_patch", "web__run",
     "mcp__ccd_pr__bind_pr", "mcp__ccd_pr__get_status", "request_user_input_async", "sleep",
@@ -203,7 +203,7 @@ TUR_KEEP = {
 }  # fmt: skip
 META_KEEP = {
     "user_input_order"
-}  # Codex 줄 metadata 에서 UserMessage 근거(PLAN 4.6.2)만 남긴다
+}  # Codex 줄 metadata 에서 UserMessage 근거(docs/CONTRACTS.md C7)만 남긴다
 KEEP_RECORDS = {
     "user", "assistant", "system", "queue-operation", "custom-title", "agent-name", "pr-link", "attachment",
     "last-prompt", "mode", "atis-latch", "session_meta", "turn_context", "response_item", "event_msg",
@@ -748,7 +748,7 @@ class Anon:
 
 
 def split_shell(cmd: str) -> list[str]:
-    """따옴표 안의 구분자는 자르지 않는 간단한 분해 (PLAN 4.6.4와 같은 규칙)."""
+    """따옴표 안의 구분자는 자르지 않는 간단한 분해 (docs/CONTRACTS.md C7과 같은 규칙)."""
     parts: list[str] = []
     cur, quote, i = "", "", 0
     while i < len(cmd):

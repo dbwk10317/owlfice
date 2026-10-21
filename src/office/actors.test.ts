@@ -847,7 +847,7 @@ test("rebuilt·instant 는 큐를 비우고 바로 제자리, rebuilt 의 출근
     instant: true,
   });
   expect(posOf(layer, "a")).toEqual(SEAT0);
-  // 방금 시작된 세션의 조용한 재구성: 출근만 연출한다 (PLAN 4.3)
+  // 방금 시작된 세션의 조용한 재구성: 출근만 연출한다 (docs/CONTRACTS.md C4)
   const o2 = office([
     team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 }), emp("c", "Dev", "Type", { seat: 1 })]),
   ]);

@@ -33,7 +33,7 @@ export async function loadOfficeAssets(): Promise<OfficeAssets> {
   return { sheet, floorplan: parseFloorplan(raw) };
 }
 
-/** 올빼미 시트. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (PLAN 4.9). */
+/** 올빼미 시트. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (design/HANDOFF.md 11절). */
 export async function loadOwls(): Promise<Owls> {
   await initAssets();
   const sheet = await Assets.load<Spritesheet>("/owls.json");

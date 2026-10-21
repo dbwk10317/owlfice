@@ -1,5 +1,5 @@
-// 직원별 연출 큐: 자리 이동 걷기, cue 재생, 건너뛰기, 결재 대기 왕복, 유휴 동작 (PLAN 4.9, HANDOFF 5·6.4·7).
-// 자리는 스냅샷이 정한다. 큐는 "어떻게 거기 갔는지"만 꾸민다 (PLAN 4.8).
+// 직원별 연출 큐: 자리 이동 걷기, cue 재생, 건너뛰기, 결재 대기 왕복, 유휴 동작 (docs/CONTRACTS.md C10, HANDOFF 5·6.4·7).
+// 자리는 스냅샷이 정한다. 큐는 "어떻게 거기 갔는지"만 꾸민다 (docs/CONTRACTS.md C10).
 import type { CueDto, Pose, Room } from "../types/ipc.ts";
 import type { Look } from "./actors.ts";
 import { gridToScreen, roomAt, type Floorplan } from "./floorplan.ts";
@@ -109,7 +109,7 @@ const roomIn = (fp: Floorplan, p: Pt) => roomAt(fp, p.gx, p.gy) ?? "dev";
 
 /**
  * floorplan.path 규칙: 현재 위치 → 현재 방 entry → 개발실 통로(dev entry) → 목표 방 entry → 목표.
- * 같은 방이면 직선 하나. A* 없이 직선 구간만 (PLAN 4.9).
+ * 같은 방이면 직선 하나. A* 없이 직선 구간만 (docs/CONTRACTS.md C10).
  */
 export function walkPath(fp: Floorplan, from: Pt, to: Pt): Pt[] {
   const a = roomIn(fp, from);
@@ -152,7 +152,7 @@ function facing(a: Pt, b: Pt): { dir: "f" | "b"; flip: boolean } {
 // ---------- 유휴 동작 ----------
 
 /**
- * 큐가 비고 자기 좌석에 있는 직원만. 사장님 손이 필요한 상태(허가 대기·결재 대기)와 장애 상황실은 하지 않는다 (PLAN 4.9).
+ * 큐가 비고 자기 좌석에 있는 직원만. 사장님 손이 필요한 상태(허가 대기·결재 대기)와 장애 상황실은 하지 않는다 (docs/CONTRACTS.md C10).
  * 조는 직원은 자리를 뜨면 Zzz 가 깜빡여 뺀다.
  */
 export function canWander(room: Room, pose: Pose, seated: boolean): boolean {
@@ -263,7 +263,7 @@ export class Track {
     return busyUntil + (go.kind === "walk" ? go.ms : 0);
   }
 
-  /** 반려 직후 사장님 손이 필요한 동안(needs_boss)은 유휴 동작을 미룬다 (PLAN 4.7.2) */
+  /** 반려 직후 사장님 손이 필요한 동안(needs_boss)은 유휴 동작을 미룬다 (docs/CONTRACTS.md C8) */
   holdIdle(ms: number, now: number): void {
     this.nextIdle = Math.max(this.nextIdle, now + ms);
   }

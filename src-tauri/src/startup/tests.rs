@@ -503,7 +503,7 @@ fn panic_in_startup_still_ends_every_step_with_error() {
     assert_eq!(last(&seen.lock().unwrap()), Some((7, StepState::Error)));
 }
 
-/// 첫 실행(규모 없음)은 규모를 고르기 전에 2단계가 나가지 않는다 (3.8 "고르기 전에는 진행하지 않는다")
+/// 첫 실행(규모 없음)은 규모를 고르기 전에 2단계가 나가지 않는다 (docs/CONTRACTS.md C4)
 #[test]
 fn nothing_runs_until_the_scale_is_chosen() {
     let tmp = tempfile::tempdir().unwrap();

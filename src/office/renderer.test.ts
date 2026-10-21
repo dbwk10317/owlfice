@@ -22,7 +22,7 @@ test("액자 클릭은 포커스 팀을 따르고 팀장석 클릭은 자기 팀
 });
 
 test("배율은 장치 픽셀 기준 정수, CSS 크기는 백킹 / DPR", () => {
-  // 2× 는 1040×640 장치 픽셀이 필요하다 (PLAN 3.2)
+  // 2× 는 1040×640 장치 픽셀이 필요하다 (design/HANDOFF.md 6.1)
   expect(canvasScale(1040, 664, 1)).toEqual({
     scale: 2,
     backingW: 1040,

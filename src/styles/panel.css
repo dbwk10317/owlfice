@@ -89,6 +89,7 @@
 .ow-now {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  overflow-wrap: anywhere; /* 긴 경로·명령은 띄어쓰기가 없어 안 자르면 칸 밖으로 잘린다 */
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

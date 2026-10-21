@@ -306,6 +306,8 @@ pub struct Employee {
     pub red: Option<(String, u32)>,
     /// 리뷰실에 들어온 뒤 응답에서 센 `파일:줄` 지적 수 (빨간펜)
     pub review_pens: u32,
+    /// 리뷰실에서 한 말에 승인 문구가 나왔나 (리뷰 화면 초록 도장). 새 리뷰를 시작하면 내린다
+    pub approved: bool,
     pub bubble: Option<Bubble>,
     /// 지금 활동이 이미 행적에 들어갔나 (끝난 일)
     logged: bool,
@@ -342,6 +344,13 @@ pub enum Light {
     Red,
 }
 
+/// 마지막 테스트 결과 (테스트실 결과판)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub enum TestVerdict {
+    Pass,
+    Fail,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamProps {
@@ -351,6 +360,10 @@ pub struct TeamProps {
     pub light: Light,
     /// 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (4.7.9)
     pub light_at: DateTime<Utc>,
+    /// 테스트 결과를 아직 못 봤으면 null
+    pub test: Option<TestVerdict>,
+    /// 결과판을 마지막으로 바꾼 테스트 시각. 공유 결과판은 이것이 가장 늦은 팀 것이다 (4.7.9)
+    pub test_at: DateTime<Utc>,
     pub trash: u32,
     /// 무재해 전광판의 시작 시각
     pub safe_since: DateTime<Utc>,
@@ -450,6 +463,8 @@ pub struct Team {
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
     pub alive_in_registry: bool,
+    /// 졸음이 30분을 넘었지만 프로세스가 살아 있어 퇴근하지 않았다 (S58 대기 중). 틱이 정한다
+    pub idle_alive: bool,
     /// 팀장석 번호. 0~3 팀장석, 4~5 간이 책상, None 은 카드만. world 가 입장 때 준다 (4.7.9)
     pub desk_slot: Option<u8>,
     /// 첫 번째가 부장

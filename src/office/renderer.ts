@@ -384,7 +384,7 @@ export async function mountOffice(
           if (team && shown) opts.onSession?.(shown.officeId, team.teamId);
         });
       }
-      props = new PropsLayer(fp, assets.sheet, kind, next, props?.memory, screenLabel);
+      props = new PropsLayer(fp, assets.sheet, kind, next, screenLabel);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);
@@ -405,9 +405,7 @@ export async function mountOffice(
     setCanvasAria(office, list);
     propsAt = Date.now();
     props?.update(office, propsAt);
-    // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
-    const off = !office || office.teams.every((t) => t.phase === "Off");
-    setLight(off ? "off" : office.shared.night ? "night" : null, switched);
+    setLight(lightOf(office), switched);
     stepLight(0);
   }
 
@@ -600,4 +598,15 @@ export function canvasAria(office: OfficeDto | null, list: OfficeListDto): strin
   const n = office.teams.reduce((sum, t) => sum + t.employees.length, 0);
   const tpl = office.shared.incident ? phrases.canvas.ariaIncident : phrases.canvas.aria;
   return fill(tpl, { office: name, n });
+}
+
+/**
+ * 사무실 조명 (HANDOFF 5절): 모두 퇴근이면 off, 남은 팀이 모두 대기 중(S58)이면 dim, 야근이면 night.
+ * HANDOFF 에 순서가 없어 off > dim > night 로 정했다
+ */
+export function lightOf(office: OfficeDto | null): LightName | null {
+  const live = office?.teams.filter((t) => t.phase !== "Off") ?? [];
+  if (live.length === 0) return "off";
+  if (live.every((t) => t.idleAlive)) return "dim";
+  return office?.shared.night ? "night" : null;
 }

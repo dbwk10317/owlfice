@@ -1,10 +1,11 @@
 {
   "v": 3,
-  "createdOnFiles": {"v": 1, "at": "2026-10-20T04:10:00Z"},
-  "title": "야근불 · Owlfice 앱 디자인",
+  "createdOnFiles": {"v": 1, "at": "2026-10-21T06:30:00Z"},
+  "title": "Owlfice 디자인 재검토",
   "launch": {"view": "canvas"},
   "pages": [],
   "boards": {
+    "Proposal.dc.html": {"x": 0, "y": -1500, "w": 1280, "h": 1160, "title": "실측 반영 · 사무실 구성 재검토 (2026-10-21)"},
     "Main.dc.html": {"x": 0, "y": 0, "w": 1600, "h": 960, "title": "메인 · 대기업 · 1600 (캔버스 2×)"},
     "MainSmb.dc.html": {"x": 1680, "y": 0, "w": 1280, "h": 800, "title": "메인 · 중소기업 · 야근 모드 · 1280 (캔버스 1×)"},
     "Onboarding.dc.html": {"x": 0, "y": 1380, "w": 1280, "h": 800, "title": "첫 실행 · 회사 규모 선택"},
@@ -21,6 +22,7 @@
     "Sprites.dc.html": {"x": 1840, "y": 5160, "w": 1760, "h": 4900, "title": "스프라이트 시트"}
   },
   "order": [
+    "Proposal.dc.html",
     "Main.dc.html", "MainSmb.dc.html",
     "Onboarding.dc.html", "Loading.dc.html", "Empty.dc.html", "NoFolders.dc.html",
     "SessionDetail.dc.html", "EmployeeDetail.dc.html", "Settings.dc.html",
@@ -28,11 +30,17 @@
     "Components.dc.html", "Sprites.dc.html"
   ],
   "notes": {
-    "t1": {"x": 0, "y": -300, "text": "메인 화면", "kind": "title1", "maxW": 2960},
-    "t2": {"x": 0, "y": 1080, "text": "첫 실행 · 빈 상태 · 실패", "kind": "title1", "maxW": 5360},
-    "t3": {"x": 0, "y": 2300, "text": "팝업", "kind": "title1", "maxW": 2760},
-    "t4": {"x": 0, "y": 3720, "text": "반응형", "kind": "title1", "maxW": 2560},
-    "t5": {"x": 0, "y": 4860, "text": "UI 키트 · 스프라이트", "kind": "title1", "maxW": 3600}
+    "t-proposal": {"x": 0, "y": -1740, "text": "실측 반영 제안 · 2026-10-21 (개발 중반, 32/46 티켓)", "kind": "title1", "maxW": 1280},
+    "t-main": {"x": 0, "y": -240, "text": "메인 화면", "kind": "title1", "maxW": 2960},
+    "t-first": {"x": 0, "y": 1140, "text": "첫 실행 · 로딩 · 빈 상태 · 실패", "kind": "title1", "maxW": 5360},
+    "t-popup": {"x": 0, "y": 2360, "text": "팝업", "kind": "title1", "maxW": 2760},
+    "t-resp": {"x": 0, "y": 3780, "text": "반응형", "kind": "title1", "maxW": 2400},
+    "t-kit": {"x": 0, "y": 4920, "text": "UI 키트 · 스프라이트", "kind": "title1", "maxW": 3600},
+    "n-main": {"x": -440, "y": 0, "w": 360, "fill": "orange", "text": "구현(t52 기준)과 다른 곳\n· 소리 토글·브랜치 칩: 1차 미구현 (기능·데이터 없음). 시안엔 둔다.\n· 카드 아바타: 아직 단색 자리표시. 올빼미 아바타(HANDOFF 6.4)는 남은 일.\n· 배율은 장치 픽셀 기준이라 150% 화면에선 1280 창도 2× (PLAN 3.2). 시안의 '1600부터 2×'는 100% 기준.\n· 사이드바 간판은 div (설정 팝업 T30 뒤 button). 바닥의 '지금 다시 찾기'는 재탐색 IPC 가 없어 뺐다."},
+    "n-smb": {"x": 2980, "y": 0, "w": 360, "fill": "orange", "text": "중소기업 실측 반영\n· 팀장석 4 + 간이 2, 그 뒤는 카드만 (PLAN 4.7.9). 명패 글자는 T35 뒤.\n· 근태판 칸: 출근·외근·외출·퇴근 (PLAN 3.4 정의됨).\n· 조명 우선순위 off > dim > night."},
+    "n-onb": {"x": -440, "y": 1380, "w": 360, "fill": "orange", "text": "규모 선택 (t52)\n기본 창 높이 720에서 건물 2배(300)까지 넣으면 넘쳐 스크롤이 생겼다. 창 높이 800 미만이면 건물을 숨긴다. 건물은 바로 다음 로딩 화면이 보여 준다."},
+    "n-empty": {"x": 2720, "y": 2200, "w": 360, "fill": "orange", "text": "빈 상태 (t52)\n현황판 '출근한 직원이 없습니다'는 사무실을 안 골랐을 때(모두 퇴근)도 보인다. 이전엔 숨겨져 빈 판만 남았다."},
+    "n-kit": {"x": -440, "y": 5160, "w": 360, "fill": "red", "text": "tokens.css 고침 (t52)\n`.ow-app button` 초기화(padding:0)가 <button> 으로 만든 카드·행·그룹·.ow-btn 의 padding 을 이겨 레이아웃이 무너졌다. 초기화는 `:where()` 로 특이성 0, 그리고 시안처럼 `box-sizing: border-box` 를 .ow-app 전체에. 티커 항목에 선택자를 한 단계 더 쓴 우회도 이제 필요 없다."}
   },
   "designSystems": []
 }

@@ -50,6 +50,9 @@ function emp(
     contextUsed: null,
     contextWindow: null,
     bubble: null,
+    jobs: 0,
+    meeting: null,
+    review: null,
     ...o,
   };
 }
@@ -93,6 +96,7 @@ function office(subs: EmployeeDto[], plant: number, title: string, cues: CueDto[
         employees: [lead(), ...subs],
         props: { plant } as OfficeDto["teams"][number]["props"],
         incident: null,
+        idleAlive: false,
       },
     ],
   };

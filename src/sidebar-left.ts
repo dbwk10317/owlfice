@@ -8,6 +8,7 @@ import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
 import evictedSvg from "../design/handoff/icons/evicted.svg?raw";
 import infoSvg from "../design/handoff/icons/info.svg?raw";
 import emptySvg from "../design/handoff/icons/empty-building.svg?raw";
+import logoUrl from "../design/assets/logo.png";
 import type {
   Border,
   Dot,
@@ -55,6 +56,7 @@ export const DOT_STATE: Record<Dot, string> = {
   Working: "working",
   Waiting: "waiting",
   Dozing: "sleepy",
+  IdleAlive: "idle-alive",
   Off: "off",
 };
 // 상태 점은 색만으로 말하지 않는다 (HANDOFF 10절)
@@ -63,6 +65,7 @@ const DOT_WORD: Record<string, string> = {
   working: P.stateWorking,
   waiting: P.stateWaiting,
   sleepy: P.stateSleepy,
+  "idle-alive": P.idleAlive,
   off: P.stateOff,
 };
 // 동 글자 = 제품 (PLAN 2부). 제품이 색을 정한다
@@ -500,6 +503,7 @@ interface RowView extends View {
   dot: El;
   ask: El;
   name: El;
+  idle: El;
   chip: El;
   host: El;
   head: El;
@@ -533,8 +537,20 @@ export function mountSidebar(
 
   const aside = mk(doc, "aside", "ow-sidebar");
   aside.setAttribute("aria-label", phrases.header.officeSelect);
+  // ponytail: 간판은 설정 팝업을 여는 버튼이다 (HANDOFF 4.1), 설정 팝업(T30)이 생기면 button 으로 바꾼다
+  const brand = mk(doc, "div", "ow-brand");
+  const logo = doc.createElement("img");
+  logo.className = "ow-brand__logo ow-px";
+  logo.src = logoUrl;
+  logo.alt = "";
+  const brandSub = mk(doc, "span", "ow-brand__sub", phrases.app.brandSub);
+  const brandText = mk(doc, "span", "ow-brand__text");
+  brandText.append(mk(doc, "b", "ow-brand__name", phrases.app.brand), brandSub);
+  brand.append(logo, brandText);
   const listEl = mk(doc, "div", "ow-sidebar__list");
-  aside.append(listEl);
+  // ponytail: 바닥의 "지금 다시 찾기" 버튼은 재탐색 커맨드가 없어 뺐다, IPC 가 생기면 붙인다
+  const footer = mk(doc, "div", "ow-sidebar__footer", phrases.sidebar.autoCheck);
+  aside.append(brand, listEl, footer);
   // 레일·드롭다운 모드에선 aside 가 숨으므로 토스트 칸은 aside 밖에 둔다
   const toastSlot = mk(doc, "div", "ow-toast-slot");
   toastSlot.setAttribute("role", "status");
@@ -588,11 +604,12 @@ export function mountSidebar(
     const top = mk(doc, "span", "ow-row__top");
     const square = m.kind === "floor" ? mk(doc, "span", "ow-square") : null;
     const name = mk(doc, "span", "ow-row__name ow-truncate");
+    const idle = mk(doc, "span", "ow-chip ow-row__idle", P.idleAlive);
     const chip = mk(doc, "span", "ow-worktype");
     const host = mk(doc, "span", "ow-host");
-    chip.hidden = host.hidden = true;
+    idle.hidden = chip.hidden = host.hidden = true;
     if (square) top.append(square);
-    top.append(name, chip, host);
+    top.append(name, idle, chip, host);
     const meta = mk(doc, "span", "ow-row__meta ow-truncate");
     const head = mk(doc, "span", "ow-row__head");
     const elapsed = mk(doc, "span", "ow-row__elapsed");
@@ -625,6 +642,7 @@ export function mountSidebar(
       dot,
       ask,
       name,
+      idle,
       chip,
       host,
       head,
@@ -683,7 +701,10 @@ export function mountSidebar(
     }
     if (changed(L, "head", m.metaHead)) v.head.textContent = m.metaHead;
     fillElapsed(v);
-    if (changed(L, "state", m.state)) v.dot.dataset.state = m.state;
+    if (changed(L, "state", m.state)) {
+      v.dot.dataset.state = m.state;
+      v.idle.hidden = m.state !== "idle-alive";
+    }
     if (changed(L, "ring", m.ring)) {
       if (m.ring) v.dot.dataset.ring = m.ring;
       else delete v.dot.dataset.ring;
@@ -897,8 +918,10 @@ export function mountSidebar(
     showing = true;
     const el = toastEl(doc, m);
     toastSlot.append(el);
+    root.classList.add("has-toast");
     toastTimer = setTimeout(() => {
       el.remove();
+      root.classList.remove("has-toast");
       showing = false;
       pump();
     }, TOAST_MS);
@@ -927,6 +950,8 @@ export function mountSidebar(
       lastList = list;
     }
     root.dataset.scale = list.scale === "Large" ? "large" : "small";
+    brandSub.textContent =
+      list.scale === "Large" ? phrases.app.brandSub : phrases.app.brandSubSmall;
     const plan: Plan =
       list.offices.length === 0
         ? { items: [{ t: "empty", key: "empty" }], selectables: [] }

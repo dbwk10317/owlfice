@@ -130,7 +130,7 @@
 | **근무 중** | 팀 파일이 3분 안에 바뀌었거나, 결과를 기다리는 도구 호출이 있음 | 확인됨 |
 | **출근** | 직원이 새로 생겨 문으로 들어와 자리에 앉는 4초짜리 연출 상태. 부장은 새 세션 발견(첫 레코드가 60초 이내, 4.5), 서브는 SubagentSpawn. 끝나면 근무 중 | 확인됨 |
 | **졸음** | 3분~30분 무변경이고 진행 중 호출 없음. 부장이 탕비실 소파에서 졺 | 확인됨 |
-| **퇴근** | 30분 넘게 무변경이고 세션 등록부(4.4.1)에 살아 있는 프로세스가 없음. 등록부에 있으면 졸음을 유지하고 조명만 어둡게 | 확인됨 |
+| **퇴근** | 30분 넘게 무변경이고 세션 등록부(4.4.1)에 살아 있는 프로세스가 없음. 등록부에 있으면 졸음을 유지하고 조명만 어둡게. 서브는 따로: 종료 10분 뒤 혼자 문으로 나간다 (4.7.2). 실제 기록에서 한 세션이 서브를 수십 명 뽑아 탕비실에 다 남길 수 없다 | 확인됨 (서브 퇴근은 종료가 추정이면 추정) |
 | **응답 대기** | 사장님 메시지나 도구 결과가 들어간 뒤 에이전트의 다음 레코드가 아직 없음. "생각하는 중"이라고 보는 구간 | 추정 |
 | **결재 대기** | 에이전트가 턴을 끝내고 사장님 입력을 기다림 | 추정 (3초 디바운스) |
 | **허가 대기** | 에이전트가 사장님의 결정을 명시적으로 요청함 (`AskUserQuestion`, `ExitPlanMode`, Codex `request_user_input`). 옛 이름 "승인 대기" | 확인됨 |
@@ -313,7 +313,7 @@
 
 **개발실**
 - 소품: 파티션 책상 6자리, 자리마다 모니터 두 대, 의자, 담당별 소품(색상표, 돋보기 등).
-- 서브에이전트가 생기면 빈 자리 중 가장 앞 번호에 앉는다. 자리는 그 직원이 떠날 때까지 유지된다. 7명째부터는 복도에 접이식 책상 4자리가 펴지고 "임시 책상" 쪽지가 붙는다. 그 이상은 임시 책상에 겹쳐 앉고 "만석" 쪽지.
+- 서브에이전트가 생기면 빈 자리 중 가장 앞 번호에 앉는다. 자리는 그 직원이 떠날 때까지 유지된다. 7명째부터는 복도에 접이식 책상 4자리가 펴지고 "임시 책상" 쪽지가 붙는다. 그 이상은 좌석이 없다: 겹쳐 앉히지 않고 마지막 임시 책상 위에 "+n" 배지(HANDOFF 4.4)와 "만석" 쪽지. 겹친 올빼미는 누가 누군지 못 읽는다.
 - 중소기업에서는 모든 팀의 서브가 한 개발실을 쓴다. 자리 파티션 색이 팀 색이다.
 - 파일 수정·작성 중: 키보드를 두드리고 모니터에 초록 글자가 흐른다.
 - 파일 읽기 중: 모니터를 보며 마우스 휠만 굴린다 (소스 서고에 가지 않는 짧은 읽기).
@@ -371,13 +371,13 @@
 
 **탕비실**
 - 소품: 커피머신, 에너지 드링크 냉장고, 콘솔 게임기, 안마의자, 소파, 피자 상자 쌓이는 자리.
-- 일 끝난 서브에이전트: 게임기 앞에 앉거나 안마의자에 눕는다.
+- 일 끝난 서브에이전트: 게임기 앞에 앉거나 안마의자에 눕는다. 10분 뒤 문으로 나가 퇴근한다 (4.7.2. 카드는 3.5 퇴근 묶음, 근태판 자석은 퇴근 칸). 쉬는 자리가 차면 겹치지 않고 마지막 자리에 "+n" 배지.
 - 팀이 3분 넘게 조용함(진행 중 호출 없음): 부장이 소파로 와서 존다. Zzz. 중소기업은 팀마다 따로.
 - 팀 활성 2시간 초과: 피자 상자가 1시간마다 하나씩 쌓인다. 중소기업은 가장 오래 활성인 팀 기준.
 - 야근 모드(22시~06시): 팀장실 창밖이 밤, 탕비실에 컵라면, 사무실 조명이 노랗게 바뀐다.
 
 **출입문과 근태판**
-- 근태판: 자석판에 직원마다 색 자석 하나 (1x에서 2×2 픽셀이라 글자는 못 쓴다. 이름은 툴팁). 칸은 출근·외근·외출·퇴근 (외근 = 웹 검색으로 나감, 외출 = 탕비실에서 조는 중, 퇴근 = 퇴근한 팀과 서브 종료, 나머지는 출근). 직원 상태에 따라 자석이 옮겨 다닌다. 중소기업은 팀별 줄.
+- 근태판: 자석판에 직원마다 색 자석 하나 (1x에서 2×2 픽셀이라 글자는 못 쓴다. 이름은 툴팁). 칸은 출근·외근·외출·퇴근 (외근 = 웹 검색으로 나감, 외출 = 탕비실에서 조는 중, 퇴근 = 퇴근한 팀과 퇴근한 서브(`departed_at`), 나머지는 출근. 종료 뒤 탕비실에 있는 10분은 외출). 직원 상태에 따라 자석이 옮겨 다닌다. 중소기업은 팀별 줄.
 - 사장님 등장: 사용자 메시지가 오면 사장님(왕관 쓴 올빼미)이 문으로 들어와 그 메시지를 받은 부장의 책상 쪽으로 걸어가며 말풍선에 메시지 첫 30자. 인터폰이 울리고 부장이 펄쩍 뛴다. 사장님은 5초 뒤 문으로 나간다.
 - 중소기업 팀 출근: 새 세션이 생기면 새 부장이 문으로 들어와 빈 팀장석에 앉는다. 팀 퇴근: 부장과 그 팀 서브가 문으로 나간다.
 
@@ -474,6 +474,7 @@
 
 - 부장이 항상 맨 위. 그 아래는 마지막 사건이 최근인 순서. 중소기업은 팀 묶음을 마지막 사건 최근 순으로, 묶음 안에서 같은 규칙.
 - 탕비실 직원은 카드가 반투명, 맨 아래.
+- 퇴근한 서브(`departed_at`)의 카드는 그 아래 "퇴근 n" 묶음에 접힌다 (기본 접힘, 사이드바 퇴근 묶음과 같은 모양). 펼치면 60% 불투명. 카드 클릭은 그대로 직원 상세. 재출근하면 묶음에서 나온다.
 - 사고 난 직원 카드는 1초간 좌우로 흔들린다. 반려는 흔들지 않고 결재판 아이콘만 1초.
 - 새 직원은 카드가 위에서 미끄러져 들어오고 "입사했습니다!" 토스트.
 - 카드 클릭: 직원 상세 팝업.
@@ -584,6 +585,7 @@
 | S18 | 명령 2분 초과 | 땀방울 | | "서버실에서 땀 흘리는 중" |
 | S19 | 서브에이전트 생성 | 호출 시점에 부장 손뼉. 자식 ID 확인 시 새 직원 출근: 입장·착석(4초), 근태판 자석 추가 | 직원 수 +1 | 새 카드 "출근 중 · 자리 찾는 중" + "입사했습니다!" 토스트 |
 | S20 | 서브에이전트 종료 (비동기는 추정, 동기는 확인됨) | 직원이 탕비실로, 게임기 앞 착석, 근태판 자석 '퇴근' | | 카드 반투명, 맨 아래로 |
+| S62 | 서브 퇴근 (종료 10분 뒤) | 직원이 문으로 걸어 나가 사라짐, 근태판 자석 '퇴근' 칸 | | 카드가 "퇴근 n" 묶음으로 접힘 |
 | S21 | 외부 MCP 호출 | 미팅실 이동, 화면에 상호, 명함 | | "거래처 `x`와 `y` 건으로 미팅 중" |
 | S22 | 스킬 사용 | 미팅실 매뉴얼 펼침 | | "외주 매뉴얼 `x` 펼쳐보는 중" |
 | S23 | 웹 검색 | 직원 퇴장, "외근 중" 팻말 | | "'검색어' 건으로 외근 중" |
@@ -1167,6 +1169,7 @@ pub struct Employee {
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     pub retired_at: Option<DateTime<Utc>>,
+    pub departed_at: Option<DateTime<Utc>>, // 서브 퇴근 (retired_at + 10분, 4.7.2). 캔버스에서 사라지고 카드는 퇴근 묶음
     pub pending: Vec<PendingCall>,    // 결과 안 온 호출 전부. 병렬 호출 대비. 대표 = 가장 최근
     pub background: Vec<BackgroundJob>,             // Started 로 끝난 호출. 랙 위 작업표 종이. 완료 알림·TaskStop·팀 퇴근으로 정리, 시간 제한 없음
     pub quiet_since: Option<DateTime<Utc>>,         // 응답 대기 시작: 이 직원 파일의 마지막 user / tool_result 시각
@@ -1198,7 +1201,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | ToolResult Rejected | pending 제거, sentence "반려됨: …", 결재판 반려 cue. 사고로 세지 않는다. `quiet_since = ev.ts` |
 | ToolResult Started | pending에서 빼서 `background` 로 옮긴다. 작업표 종이 cue, 직원은 자리로. 완료 알림이 오면 그때 Ok/Err 규칙을 적용한다 (S61) |
 | ToolResult Unknown, 또는 Inferred | pending·background 제거. 신호등·무재해·출고·EMA 모두 건드리지 않는다. 행적 "결과 확인 불가" (S59). `quiet_since = ev.ts` |
-| SubagentSpawn | child_id가 없으면 Employee 생성 (이름, 직급은 `model`(resolvedModel), 좌석 배정, Confirmed), 출근 cue. 임시 직원(4.3 사전 등록)이면 모델·설명·직급을 채우고 Confirmed로 올린다. 이미 있고 `retired_at` 이 있으면 Spawn 의 ts 가 그보다 뒤일 때만 재출근: `retired_at = None`, 좌석 재배정, 재출근 cue (S60). 앞선 ts 의 중복 Spawn(meta.json 선발견, Codex 중복 started)은 무시한다. 퇴근한 직원 파일의 이벤트도 같은 규칙이다. 그 외엔 모델·description만 갱신 |
+| SubagentSpawn | child_id가 없으면 Employee 생성 (이름, 직급은 `model`(resolvedModel), 좌석 배정, Confirmed), 출근 cue. 임시 직원(4.3 사전 등록)이면 모델·설명·직급을 채우고 Confirmed로 올린다. 이미 있고 `retired_at` 이 있으면 Spawn 의 ts 가 그보다 뒤일 때만 재출근: `retired_at = None`, `departed_at = None`, 좌석 재배정, 재출근 cue (S60. 퇴근했던 서브는 문으로 다시 들어온다). 앞선 ts 의 중복 Spawn(meta.json 선발견, Codex 중복 started)은 무시한다. 퇴근한 직원 파일의 이벤트도 같은 규칙이다. 그 외엔 모델·description만 갱신 |
 | (모르는 agent_id의 첫 이벤트) | 임시 Employee 생성 (이름은 해시, 직급 사원, Inferred) 뒤 그 이벤트를 적용한다. 서브 파일을 Spawn보다 먼저 읽은 경우 |
 | SubagentDone | room=탕비실, retired_at 설정, 좌석 반납. 이후 그 직원 파일에 새 이벤트가 오면 재출근 (S60) |
 | PermissionRequest | 해당 agent room=출입문, sentence "결재판 들고 문 앞 대기: …", Confirmed |
@@ -1232,6 +1235,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | (직원) `pending` 경과 > 30분, 또는 팀이 Off로 바뀜 | 그 호출을 `Unknown` 으로 정리. 결과가 영영 오지 않는 호출(프로세스 종료, 연결 단절)의 뒷정리. 단 사장님 결정을 기다리는 호출(Ask, Codex `escalated`)은 30분으로 포기하지 않는다. 자리를 비운 사장님을 30분 넘게 기다리는 것이 정상이고, 죽은 세션은 팀 Off 가 정리한다 | |
 | (직원) `background` 작업 | 시간 제한 없음. 완료 알림(Ok/Err 규칙 적용), `TaskStop` 의 성공 결과(Unknown), 팀 Off(Unknown) 중 먼저 오는 것으로 정리하고 작업표를 뗀다. 작업표에는 경과 시간만 | |
 | (서브) 완료 기록(4.6.1~4.6.3)을 못 본 채 `pending`·`background` 비어 있고, 마지막 레코드가 tool_use 없는 assistant이고, 60초 무변경 | SubagentDone | 추정 |
+| (서브) `retired_at` + 10분 (목표값: 종료 뒤 탕비실에 머무는 시간) | 퇴근: `departed_at` = `retired_at` + 10분 (문턱 시각), 좌석·탕비실 자리 반납, cue `depart`. 캔버스에서 빠지고 카드는 퇴근 묶음(3.5), 근태판 자석은 퇴근 칸. 그 뒤 새 이벤트가 오면 재출근(S60)으로 둘 다 None | 종료가 추정이면 추정 |
 | 현지 22~06시 | props.night = true | |
 | 활성 경과 매 60분 (2시간 이후) | props.pizza += 1. 활성 경과는 팀이 마지막으로 퇴근(Off)에서 깨어난 때부터 센다 | |
 | incident 중 에러 없이 120초 | incident=None | |
@@ -1339,12 +1343,13 @@ Tauri 커맨드 (프론트 → 백엔드):
 | `ticker` | `{ts, office_id, team_id, agent_id, text}` | 사건마다 |
 | `toast` | `{text, kind}` | 입주·퇴거·퇴근·재출근·팀 출근 등 |
 
-`AnimCue` 는 프론트가 재생할 연출 지시다. 예: `{kind: "move", agent, to: "archive"}`, `{kind: "boss_visit", team, text}`, `{kind: "stamp", result: "pass", pass: 12, fail: 0}`, `{kind: "truck"}`, `{kind: "return"}` (반송), `{kind: "reject", agent}` (반려), `{kind: "siren", on: true}`, `{kind: "frame_swap", title}`, `{kind: "repot", team}`, `{kind: "team_enter", team}`, `{kind: "team_leave", team}`, `{kind: "paper", agent, on: true}` (작업표), `{kind: "rehire", agent}` (재출근). 상태(어디 있나)는 `EmployeeDto` 가 진실이고 `AnimCue` 는 "어떻게 거기 갔는지"를 꾸미는 힌트다. 큐를 놓쳐도 다음 상태로 자리는 맞는다. 조용한 재구성(`rebuilt: true`) 중에는 cues가 비어 있다. 팀 단위 cue 는 `team_id` 를 단다 (중소기업 사무실에는 팀이 여럿이다).
+`AnimCue` 는 프론트가 재생할 연출 지시다. 예: `{kind: "move", agent, to: "archive"}`, `{kind: "boss_visit", team, text}`, `{kind: "stamp", result: "pass", pass: 12, fail: 0}`, `{kind: "truck"}`, `{kind: "return"}` (반송), `{kind: "reject", agent}` (반려), `{kind: "siren", on: true}`, `{kind: "frame_swap", title}`, `{kind: "repot", team}`, `{kind: "team_enter", team}`, `{kind: "team_leave", team}`, `{kind: "paper", agent, on: true}` (작업표), `{kind: "rehire", agent}` (재출근), `{kind: "depart", agent}` (서브 퇴근, 문으로 걸어 나간다). 상태(어디 있나)는 `EmployeeDto` 가 진실이고 `AnimCue` 는 "어떻게 거기 갔는지"를 꾸미는 힌트다. 큐를 놓쳐도 다음 상태로 자리는 맞는다. 조용한 재구성(`rebuilt: true`) 중에는 cues가 비어 있다. 팀 단위 cue 는 `team_id` 를 단다 (중소기업 사무실에는 팀이 여럿이다).
 
 시간과 말풍선은 백엔드가 재료만 준다. 문구 틀은 `phrases.ko.json` 이 갖고 프론트가 채운다.
 - 경과 시간: 시간이 흐르며 바뀌는 문장(3.5 표의 "· 12초째", "(8초)", "자리 비움 2분", "(`npm test` · 2분 40초)")은 `Activity.sentence` 에 `{elapsed}` 자리를 두고, 프론트가 `since` 로 1초마다 채운다 (`units`). 그 밖의 문장과 `recent` 에는 두지 않는다. 백틱 코드 조각 안의 같은 글자는 채우지 않는다.
 - 말풍선: `EmployeeDto.bubble` 은 마지막 말풍선의 종류·재료와 시각 `at` 이다. 무슨 일에 어떤 종류가 붙는지는 백엔드가 정하고(3.4, 3.6, HANDOFF 5절 "말풍선" 열), 풀에서 고르기는 프론트가 `phrases.bubble` 에서 한다. 프론트는 `at` 이 4초 안일 때만 그린다 (재구성·다시 불러오기 뒤 옛 말풍선이 뜨지 않게). 점선·장애·허가 대기 모양은 그 직원의 활동에서 정한다.
 - 병렬 호출 수 `Activity.extra` 는 `+n` 배지와 "(외 n건)" 이 같이 쓴다.
+- 소품 재료는 문장을 다시 읽지 않고 필드로 준다: `EmployeeDto.jobs`(백그라운드 명령 수, 작업표), `meeting`(미팅실에 있을 때 MCP 서버 또는 스킬), `review`(리뷰실에 있을 때 빨간펜 수·승인 문구), `TeamProps.test`·`test_at` 과 `SharedPropsDto.test`(테스트 결과판, 공유는 가장 늦은 팀), `TeamDto.idle_alive`(S58, 졸음 30분 넘고 프로세스 살아 있음. 목록 점은 `IdleAlive`). cue 는 순간 연출에만 쓰고 소품 상태를 cue 로 기억하지 않는다.
 
 프론트 수신 규칙: 스트림마다 따로 센다. `office-list` 는 `list_seq` < 마지막 list_seq → 버림. `office-state` 는 `state_seq` < 그 사무실의 마지막 state_seq → 버림 (같으면 멱등 적용), `office_id` ≠ 현재 선택 → 버림. `rebuilt` → 애니메이션 없이 즉시 배치. `select_office` 응답과 스냅샷의 `selected` 도 `office-state` 와 같은 state_seq 규칙을 거친다. 시작 순서는 4.3 (구독 먼저, 스냅샷 다음, 스냅샷 seq 이하의 버퍼 이벤트 폐기).
 
@@ -1493,8 +1498,13 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 | T48 | WSL 세션 등록부 (4.4.1): WSL 홈의 `sessions/*.json` 을 읽어 생존 표시 | 중 | T03 T12 T47 | 6부 "WSL Claude 생존 판정" 을 먼저 실측하고 그 결과대로. 꺼진 배포판은 건드리지 않는다 (T03 과 같은 검증) |
 | T49 | 미대응 로그 `state_conflict`·`scenario_gap` (4.11 표. T38 이 T11 뒤로 미룬 두 kind) | 하 | T11 T38 | 2.5 우선순위로 가려진 동시 상태와 cue 없는 전이가 fixture replay 에서 unhandled.jsonl 에 집계된다 |
 | T51 | 벽 글자·숫자와 캔버스 툴팁 (3.4 "벽과 소품"·"사무실 안 상호작용" 중 맡은 티켓이 없던 것): 사규 액자 제목(Galmuri11 `BitmapText` 세로, `rules_frame.textArea`), 오늘의 통계 보드 숫자, 벽시계·근태판·통계 보드 툴팁, 방 클릭 최근 사건 10개, 사장님 클릭 마지막 메시지 전문 | 중 | T23 T27 | 3.4 의 해당 항목 전부 (팀장석 명패 글자는 그림·자리가 HANDOFF 에 없어 T35 뒤). 제목이 바뀌면 액자 글자가 사다리 연출(T26b) 끝에 바뀐다. 기본 상태 참조 비교는 다른 픽셀 0 |
+| T52 | UI 레이아웃 붕괴 수정: tokens.css 버튼 초기화를 `:where()` 로, `box-sizing: border-box`, 사이드바 간판·바닥, 긴 문장 줄바꿈, 규모 선택 화면 높이 | 하 | T17 T21 | 끝남 (t52-ui-polish). 카드·행의 computed padding 이 tokens.css 값과 같다. 같은 실수는 docs/RULES.md |
+| T53 | 캔버스 시안을 Claude 안 Design 캔버스로 이전 (독립형 Claude Design 종료 대비), 실측 반영 제안 보드 | 하 | — | 끝남 (t53-design-canvas). HANDOFF 0절 링크가 새 캔버스, blobs.json 이 새 자산 주소 |
+| T54 | 서브 퇴근 (백엔드): `departed_at`, 4.7.2 전이(종료 + 10분, 문턱 시각), 재출근 때 해제, cue `depart`, DTO·ts 바인딩, 근태판 재료 | 중 | T11 T26b | `async-subagent` fixture replay 에서 서브 종료 10분 뒤(논리 시계) `departedAt` 이 찍히고 좌석·탕비실 자리가 비며, 그 뒤 그 직원 파일에 새 이벤트가 오면 재출근. 단위 테스트는 논리 시계로 |
+| T55 | 서브 퇴근·자리 초과 (캔버스): `depart` cue 에 문으로 걸어 나가 사라짐(큐 규칙은 anim-queue), 근태판 자석 '퇴근' 칸, 좌석·탕비실 자리가 차면 겹침 대신 `ow-crowd` "+n" (HANDOFF 4.4), `note_full` 유지 | 중 | T54 T22 T23 | replay: 퇴장 연출 뒤 캔버스에서 사라지고 자석이 퇴근 칸. `dev/actors.html` 에 직원 12명 장면: 올빼미가 겹치지 않고 마지막 임시 책상에 "+2". 기본 상태 참조 비교는 다른 픽셀 0 |
+| T56 | 퇴근 서브 카드 묶음 (현황판): `departedAt` 카드는 맨 아래 "퇴근 n" 접힌 묶음, 펼치면 60% 불투명, 카드 클릭 직원 상세 유지, 인원 칩·티커는 그대로 | 하 | T54 T21 | jsdom 테스트: 퇴근 서브 3명이 묶음으로 접히고 토글되며, 재출근하면 묶음에서 나온다 |
 | T50 | 1.0 전 PLAN 정리: 코드 주석·AGENTS·docs 가 가리키는 PLAN 계약(절 번호)을 옮길 영구 문서를 사용자와 정하고 참조를 갱신한 뒤 PLAN 을 지운다 (AGENTS 7절) | 중 | T37 | 저장소에 PLAN 절을 가리키는 참조가 없다. 옮긴 계약은 docs/ 에 있다 |
-| T37 | S01~S61 체크리스트 전체 통과 | 하 | T01~T30, T34~T36, T38, T45~T49, T51 필수. T31~T33은 조건이 성립했을 때만 (T13 결과, Gemini·Codex 포맷 확인) | 체크리스트 문서에 날짜·확인자·재현 방법(replay/실제/창 크기). 조건부 티켓이 빠졌으면 그 시나리오는 "해당 없음"으로 표기 |
+| T37 | S01~S61 체크리스트 전체 통과 | 하 | T01~T30, T34~T36, T38, T45~T49, T51~T56 필수. T31~T33은 조건이 성립했을 때만 (T13 결과, Gemini·Codex 포맷 확인) | 체크리스트 문서에 날짜·확인자·재현 방법(replay/실제/창 크기). 조건부 티켓이 빠졌으면 그 시나리오는 "해당 없음"으로 표기 |
 
 ### 5.5 주니어에게 티켓을 줄 때
 

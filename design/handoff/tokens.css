@@ -155,7 +155,10 @@
 
 /* ---------- 바탕 ---------- */
 .ow-app { font: var(--ow-text-body); color: var(--ow-ink); background: var(--ow-bg); -webkit-font-smoothing: antialiased; display: flex; height: 100vh; overflow: hidden; }
-.ow-app button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left; }
+/* 시안과 같은 상자 셈법. 없으면 너비 + 안쪽 여백이 칸을 넘친다 */
+.ow-app, .ow-app *, .ow-app *::before, .ow-app *::after { box-sizing: border-box; }
+/* 버튼 초기화는 특이성 0: 카드·행·그룹처럼 <button> 으로 만든 컴포넌트의 padding·margin 을 이기면 안 된다 */
+:where(.ow-app button) { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left; }
 .ow-app :focus-visible { outline: 2px solid var(--ow-ink); outline-offset: 2px; border-radius: var(--ow-radius-sm); }
 .ow-mono { font-family: var(--ow-font-mono); }
 .ow-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

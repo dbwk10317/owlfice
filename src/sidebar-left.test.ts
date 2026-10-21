@@ -329,6 +329,32 @@ test("행 버튼 이름에 이름·상태·업무·폴더·경과가 들어간�
   s.dispose();
 });
 
+test("30분 조용·프로세스 있음: 노란 idle-alive 점과 대기 중 칩, 깨어나면 칩이 사라진다", () => {
+  const idle = (dot: Dot) =>
+    office("101", { phase: "Dozing", dot, teams: [team("t-101", { phase: "Dozing", dot })] });
+  const s = setup(list([idle("IdleAlive")]));
+  const row = rowByName(s.root, "B동 101");
+  const chip = byClass(row, "ow-row__idle")[0];
+  expect([dotOf(row).dataset.state, chip.hidden, chip.textContent]).toEqual([
+    "idle-alive",
+    false,
+    "대기 중",
+  ]);
+  expect(byClass(row, "ow-row__main")[0].getAttribute("aria-label")).toContain("대기 중");
+  s.store.applyList(list([idle("Dozing")]));
+  expect([dotOf(row).dataset.state, chip.hidden]).toEqual(["sleepy", true]);
+  // 중소기업 팀 행도 같다
+  s.store.applyList(
+    list(
+      [office("vendor/claude", { floor: 1, teams: [team("t", { dot: "IdleAlive" })] })],
+      "Small",
+    ),
+  );
+  const teamRow = rowByName(s.root, "김하늘 부장 팀");
+  expect(byClass(teamRow, "ow-row__idle")[0].hidden).toBe(false);
+  s.dispose();
+});
+
 test("로빙 tabindex: 정지점은 하나, ↑↓ 로 옮긴다", () => {
   const s = setup(list([office("101"), office("102"), office("103")]));
   const mains = rows(s.root).map((r) => byClass(r, "ow-row__main")[0]);

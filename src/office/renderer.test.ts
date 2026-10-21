@@ -1,6 +1,14 @@
 import { expect, test } from "vite-plus/test";
 import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
-import { canvasAria, canvasScale, cueCollector, panLimits, teamOfProp, toCss } from "./renderer.ts";
+import {
+  canvasAria,
+  canvasScale,
+  cueCollector,
+  lightOf,
+  panLimits,
+  teamOfProp,
+  toCss,
+} from "./renderer.ts";
 
 test("배율은 장치 픽셀 기준 정수, CSS 크기는 백킹 / DPR", () => {
   // 2× 는 1040×640 장치 픽셀이 필요하다 (PLAN 3.2)
@@ -116,4 +124,16 @@ test("캔버스 aria-label 은 그린 사무실의 이름·직원 수·장애를
   expect(canvasAria(office(true), list)).toBe("B동 203호 사무실 · 직원 3명 · 장애 중");
   expect(canvasAria(null, list)).toBeNull();
   expect(canvasAria({ ...office(false), officeId: "x" }, list)).toBeNull();
+});
+
+test("조명: 모두 퇴근이면 off, 남은 팀이 모두 대기 중이면 dim, 야근이면 night. off > dim > night", () => {
+  const t = (phase: TeamDto["phase"], idleAlive = false) => ({ phase, idleAlive }) as TeamDto;
+  const o = (night: boolean, ...teams: TeamDto[]) => ({ teams, shared: { night } }) as OfficeDto;
+  expect(lightOf(null)).toBe("off");
+  expect(lightOf(o(true, t("Off")))).toBe("off");
+  // 퇴근한 팀은 대기 중 판정에서 뺀다
+  expect(lightOf(o(true, t("Dozing", true), t("Off")))).toBe("dim");
+  expect(lightOf(o(false, t("Dozing", true), t("Dozing")))).toBeNull();
+  expect(lightOf(o(true, t("Dozing", true), t("Working")))).toBe("night");
+  expect(lightOf(o(false, t("Working")))).toBeNull();
 });

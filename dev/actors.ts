@@ -54,6 +54,9 @@ function emp(
     contextUsed: null,
     contextWindow: null,
     bubble: null,
+    jobs: 0,
+    meeting: null,
+    review: null,
     ...o,
   };
 }
@@ -88,6 +91,7 @@ function team(
     employees,
     props: {} as TeamDto["props"],
     incident: null,
+    idleAlive: false,
   };
 }
 
@@ -137,7 +141,9 @@ const LARGE: OfficeDto = {
         "`cargo build` 실행 중 · {elapsed}째",
       ),
       emp("L-test", "오사원", "Sawon", "Qa", "Test", "Sit", "`npm test` 돌리는 중 · {elapsed}째"),
-      emp("L-review", "윤과장", "Gwajang", "Backend", "Review", "Sit", "PR 리뷰 중 · 빨간펜 2개"),
+      emp("L-review", "윤과장", "Gwajang", "Backend", "Review", "Sit", "PR 리뷰 중 · 빨간펜 2개", {
+        review: { pens: 2, approved: false },
+      }),
       emp(
         "L-meet",
         "장대리",
@@ -203,11 +209,15 @@ const SMALL: OfficeDto = {
     team("c", "D", 2, [
       emp("S-c", "다부장", "Bujang", "Backend", "Door", "Sit", "계획 결재 올립니다"),
       emp("S-c1", "다대리", "Daeri", "Writer", "Archive", "Sit", "서류철 꺼내는 중"),
-      emp("S-c2", "다사원", "Sawon", "Backend", "Review", "Sit", "PR 리뷰 중"),
+      emp("S-c2", "다사원", "Sawon", "Backend", "Review", "Sit", "PR 리뷰 중", {
+        review: { pens: 0, approved: false },
+      }),
     ]),
     team("d", "C", 4, [
       emp("S-d", "라부장", "Bujang", "Qa", "Pantry", "Sleep", "졸음"),
-      emp("S-d1", "라사원", "Sawon", "Frontend", "Meeting", "Sit", "외주 매뉴얼 펼쳐보는 중"),
+      emp("S-d1", "라사원", "Sawon", "Frontend", "Meeting", "Sit", "외주 매뉴얼 펼쳐보는 중", {
+        meeting: { kind: "Skill" },
+      }),
       emp("S-d2", "라대리", "Daeri", "DevOps", "Shipping", "Sit", "출고 포장 중"),
     ]),
     // 결재 대기: 부장이 boss_pace 에 선다 (왕복 걷기는 T22)

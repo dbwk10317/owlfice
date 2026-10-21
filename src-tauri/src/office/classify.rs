@@ -11,7 +11,7 @@ use super::stats::TeamStats;
 use super::work::{Role, Touched, WorkTally, WorkType, touches_file};
 use super::{
     Activity, Bubble, BubbleSay, Counters, Cue, Employee, Incident, Light, Mark, PendingCall, Pose,
-    Rank, Room, Team, TeamPhase, TeamProps, TimelineKind, Tokens, call_hash,
+    Rank, Room, Team, TeamPhase, TeamProps, TestVerdict, TimelineKind, Tokens, call_hash,
 };
 use crate::discover::Product;
 use crate::parse::{
@@ -112,6 +112,7 @@ impl Employee {
             edits: HashMap::new(),
             red: None,
             review_pens: 0,
+            approved: false,
             bubble: None,
             logged: false,
             greeted: false,
@@ -173,6 +174,8 @@ impl TeamProps {
             plant: None,
             light: Light::Off,
             light_at: at,
+            test: None,
+            test_at: at,
             trash: 0,
             safe_since: at,
             pizza: 0,
@@ -204,6 +207,7 @@ impl Team {
             last_activity: started,
             phase: TeamPhase::Working,
             alive_in_registry: false,
+            idle_alive: false,
             desk_slot: None,
             employees: vec![boss],
             props: TeamProps::new(started),
@@ -290,6 +294,7 @@ impl Team {
                     self.pizza_at_wake = self.props.pizza;
                 }
                 self.phase = TeamPhase::Working;
+                self.idle_alive = false;
             }
             self.last_activity = self.last_activity.max(t);
         }
@@ -363,6 +368,7 @@ impl Team {
                 // 리뷰실에서 한 말의 `파일:줄` 이 빨간펜이다. 리뷰 중엔 리뷰실에 남는다 (3.4)
                 let (sentence, room) = if e.activity.room == Room::Review {
                     e.review_pens += count_file_lines(text);
+                    e.approved |= approves(text);
                     (sentence::review(e.review_pens), Room::Review)
                 } else {
                     (sentence::report(text), home_room(e))
@@ -414,6 +420,7 @@ impl Team {
                 }
                 if is_review(tool) && e.activity.room != Room::Review {
                     e.review_pens = 0;
+                    e.approved = false;
                 }
                 if *tool == ToolKind::FileEdit
                     && let Some(p) = &summary.path
@@ -856,6 +863,9 @@ impl Team {
                 self.give_up_all(i, at, cues);
             }
         }
+        // 퇴근 문턱을 넘고도 프로세스가 살아 졸음에 남았다 (S58). 넘는 틱에 팀이 바뀌어 스냅샷이 나간다
+        self.idle_alive =
+            self.phase == TeamPhase::Dozing && quiet > OFF_AFTER && self.alive_in_registry;
         let hour = now.with_timezone(&local).hour();
         self.props.night = self.phase != TeamPhase::Off && !(6..22).contains(&hour);
         if self.phase == TeamPhase::Working {
@@ -1011,6 +1021,8 @@ impl Team {
                             passed: 0,
                             failed: 0,
                         });
+                        self.props.test = Some(verdict(t.failed));
+                        self.props.test_at = ts;
                         cues.push(Cue::Stamp {
                             passed: t.passed,
                             failed: t.failed,
@@ -1019,6 +1031,8 @@ impl Team {
                     }
                     (ToolKind::Test, false) => {
                         if let Some(t) = test_result {
+                            self.props.test = Some(verdict(t.failed));
+                            self.props.test_at = ts;
                             cues.push(Cue::Stamp {
                                 passed: t.passed,
                                 failed: t.failed,
@@ -1077,6 +1091,11 @@ impl Team {
                         self.props.light_at = ts;
                         let fails = e.red.as_ref().map_or(0, |r| r.1);
                         e.red = Some((sentence::failed_test(&call, preview), fails + 1));
+                        // 결과 숫자 없는 Mixed 는 실패한 게 테스트인지 모른다 (Ok 쪽과 같은 기준)
+                        if declares || test_result.is_some() {
+                            self.props.test = Some(TestVerdict::Fail);
+                            self.props.test_at = ts;
+                        }
                         if let Some(t) = test_result {
                             cues.push(Cue::Stamp {
                                 passed: t.passed,
@@ -1784,6 +1803,22 @@ fn is_review(tool: &ToolKind) -> bool {
         ToolKind::GitDiff | ToolKind::PrView => true,
         ToolKind::Skill { name } => name.to_ascii_lowercase().contains("review"),
         _ => false,
+    }
+}
+
+/// 리뷰 승인 문구 (3.4 리뷰실). 대소문자는 가리지 않는다
+// ponytail: 낱말 경계를 안 봐서 "미승인"·"disapprove" 도 승인으로 센다, 오판 사례가 나오면 경계를 본다
+fn approves(text: &str) -> bool {
+    let t = text.to_lowercase();
+    ["lgtm", "승인", "approve"].iter().any(|w| t.contains(w))
+}
+
+/// 테스트 결과판: 실패가 하나라도 있으면 실패. 도장(프론트)과 같은 기준
+fn verdict(failed: u32) -> TestVerdict {
+    if failed > 0 {
+        TestVerdict::Fail
+    } else {
+        TestVerdict::Pass
     }
 }
 

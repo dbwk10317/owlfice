@@ -728,6 +728,238 @@ fn shared_light_follows_latest_result() {
     );
 }
 
+fn tool(id: &str, tool: ToolKind, command: &str) -> EventKind {
+    let mut summary = call(t0()).summary;
+    summary.command = Some(command.into());
+    EventKind::ToolCall {
+        call_id: id.into(),
+        tool,
+        summary,
+    }
+}
+
+fn done(id: &str, outcome: ToolOutcome, test_result: Option<TestResult>) -> EventKind {
+    EventKind::ToolResult {
+        call_id: id.into(),
+        outcome,
+        outcome_confidence: Confidence::Confirmed,
+        preview: String::new(),
+        test_result,
+    }
+}
+
+/// 작업표·미팅실·리뷰실 재료가 문장이 아니라 카드 값으로 실린다. 재구성해도 같다
+#[test]
+fn employee_carries_jobs_meeting_and_review() {
+    let e = env(Scale::Large);
+    let k = key("windows", Vendor::Claude, "a");
+    let mut w = lock(&e.world);
+    w.put_team(k.clone(), team("a"), t0(), true);
+    let id = w.office_of(&k);
+    let mut events = Vec::new();
+    let mut step = |w: &mut OfficeWorld, secs: i64, kind: EventKind| {
+        let ev = ev("a", secs, kind);
+        w.apply(&k, std::slice::from_ref(&ev), t0());
+        events.push(ev);
+        office_dto(w, &id, false, Vec::new()).unwrap().teams[0].employees[0].clone()
+    };
+    let shell = || ToolKind::Shell;
+
+    step(&mut w, 1, tool("bg1", shell(), "npm run dev"));
+    assert_eq!(
+        step(&mut w, 2, done("bg1", ToolOutcome::Started, None)).jobs,
+        1
+    );
+    step(&mut w, 3, tool("bg2", shell(), "npm run watch"));
+    assert_eq!(
+        step(&mut w, 4, done("bg2", ToolOutcome::Started, None)).jobs,
+        2
+    );
+    assert_eq!(step(&mut w, 5, done("bg1", ToolOutcome::Ok, None)).jobs, 1);
+
+    let mcp = ToolKind::Mcp {
+        server: "figma".into(),
+        tool: "get_file".into(),
+    };
+    let b = step(&mut w, 10, tool("m", mcp, ""));
+    assert_eq!(
+        (b.meeting, b.review),
+        (
+            Some(Meeting::Mcp {
+                server: "figma".into()
+            }),
+            None
+        )
+    );
+    assert_eq!(
+        step(&mut w, 11, done("m", ToolOutcome::Ok, None)).meeting,
+        None
+    );
+    let skill = ToolKind::Skill { name: "pdf".into() };
+    assert_eq!(
+        step(&mut w, 12, tool("s", skill, "")).meeting,
+        Some(Meeting::Skill)
+    );
+    assert_eq!(
+        step(&mut w, 13, done("s", ToolOutcome::Ok, None)).meeting,
+        None
+    );
+
+    let review = |pens, approved| Some(Review { pens, approved });
+    let text = |t: &str| EventKind::AssistantText { text: t.into() };
+    assert_eq!(
+        step(&mut w, 20, tool("d", ToolKind::GitDiff, "git diff")).review,
+        review(0, false)
+    );
+    step(&mut w, 21, done("d", ToolOutcome::Ok, None));
+    assert_eq!(
+        step(&mut w, 22, text("`a.rs:3` 경계 오류")).review,
+        review(1, false)
+    );
+    assert_eq!(
+        step(&mut w, 23, text("나머지는 lgtm")).review,
+        review(1, true)
+    );
+    let live = step(&mut w, 24, text("`b.rs:9` 도 한 줄"));
+    assert_eq!(live.review, review(2, true));
+
+    // 리뷰실을 떠나면 없고, 새로 리뷰를 시작하면 승인이 내려간다
+    assert_eq!(
+        step(&mut w, 30, tool("x", ToolKind::FileEdit, "")).review,
+        None
+    );
+    step(&mut w, 31, done("x", ToolOutcome::Ok, None));
+    let live = step(&mut w, 32, tool("p", ToolKind::PrView, "gh pr view"));
+    assert_eq!(live.review, review(0, false));
+
+    let rebuilt = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
+    let again = employee_dto(&rebuilt.employees[0]);
+    assert_eq!(
+        (again.jobs, again.meeting, again.review),
+        (live.jobs, live.meeting, live.review)
+    );
+}
+
+/// 결과판: 팀은 마지막 테스트 결과, 공유는 테스트를 가장 늦게 끝낸 팀 것. 숫자 없는 Mixed 는 바꾸지 않는다
+#[test]
+fn test_board_follows_the_latest_test() {
+    let e = env(Scale::Small);
+    let (a, b) = (
+        key("windows", Vendor::Claude, "a"),
+        key("windows", Vendor::Claude, "b"),
+    );
+    let mut w = lock(&e.world);
+    w.put_team(a.clone(), team("a"), t0(), true);
+    w.put_team(b.clone(), team("b"), t0(), true);
+    let office = OfficeId::Vendor(Vendor::Claude);
+    let shared = |w: &OfficeWorld| {
+        office_dto(w, &office, false, Vec::new())
+            .unwrap()
+            .shared
+            .test
+    };
+    let run = |w: &mut OfficeWorld, k: &TeamKey, secs: i64, mixed: bool, end: EventKind| {
+        let mut call = tool("t", ToolKind::Test, "cargo test");
+        if let EventKind::ToolCall { summary, .. } = &mut call
+            && mixed
+        {
+            summary.compound = Compound::Mixed;
+        }
+        let s = k.session.as_str();
+        w.apply(k, &[ev(s, secs - 1, call), ev(s, secs, end)], t0());
+        w.teams[k].props.test
+    };
+    let numbers = |passed, failed| Some(TestResult { passed, failed });
+    assert_eq!(shared(&w), None);
+
+    let pass = done("t", ToolOutcome::Ok, numbers(3, 0));
+    assert_eq!(run(&mut w, &a, 10, false, pass), Some(TestVerdict::Pass));
+    let fail = done("t", ToolOutcome::Err, None);
+    assert_eq!(run(&mut w, &b, 20, false, fail), Some(TestVerdict::Fail));
+    assert_eq!(shared(&w), Some(TestVerdict::Fail));
+
+    // 숫자 없는 Mixed 는 성공이든 실패든 결과판을 건드리지 않는다
+    let mixed_ok = done("t", ToolOutcome::Ok, None);
+    assert_eq!(run(&mut w, &a, 30, true, mixed_ok), Some(TestVerdict::Pass));
+    let mixed_err = done("t", ToolOutcome::Err, None);
+    assert_eq!(
+        run(&mut w, &a, 32, true, mixed_err),
+        Some(TestVerdict::Pass)
+    );
+    assert_eq!(w.teams[&a].props.test_at, t0() + Duration::seconds(10));
+    assert_eq!(shared(&w), Some(TestVerdict::Fail));
+
+    // 숫자가 있는 Mixed 는 추정 도장과 함께 바꾼다
+    let mixed_fail = done("t", ToolOutcome::Ok, numbers(2, 1));
+    assert_eq!(
+        run(&mut w, &a, 40, true, mixed_fail),
+        Some(TestVerdict::Fail)
+    );
+    let pass = done("t", ToolOutcome::Ok, numbers(3, 0));
+    assert_eq!(run(&mut w, &a, 50, false, pass), Some(TestVerdict::Pass));
+    // 활동이 더 늦은 팀이라도 테스트가 더 이르면 지지 않는다
+    w.apply(&b, &[visit("b", 60)], t0());
+    assert_eq!(shared(&w), Some(TestVerdict::Pass));
+}
+
+/// S58: 졸음이 30분을 넘었는데 프로세스가 살아 있으면 넘는 틱에 대기 중이 켜지고 상태가 나간다.
+/// 다시 일하면 꺼지고, 프로세스가 없으면 그대로 퇴근한다
+#[test]
+fn idle_alive_turns_on_when_the_off_threshold_passes() {
+    let e = env(Scale::Large);
+    let (a, b) = (
+        key("windows", Vendor::Claude, "a"),
+        key("windows", Vendor::Claude, "b"),
+    );
+    {
+        let mut w = lock(&e.world);
+        let mut alive = team("a");
+        alive.alive_in_registry = true;
+        w.put_team(a.clone(), alive, t0(), true);
+        w.put_team(b.clone(), team("b"), t0(), true);
+        let office = w.office_of(&a);
+        assert!(w.select(Some(office)));
+    }
+    let mut sent = Sent::default();
+    let tick = |mins: i64, secs: i64| {
+        let now = t0() + Duration::minutes(mins) + Duration::seconds(secs);
+        lock(&e.world).tick(now, "windows");
+        now
+    };
+    let now = tick(5, 0);
+    e.ipc.poll(&mut sent, now);
+    let now = tick(30, 0);
+    assert!(e.ipc.poll(&mut sent, now).1.is_none(), "30분 정각은 아직");
+
+    let now = tick(30, 1);
+    let (list, state) = e.ipc.poll(&mut sent, now);
+    let state = state.expect("넘는 틱에 상태가 나간다");
+    assert_eq!(
+        (state.teams[0].phase, state.teams[0].idle_alive),
+        (TeamPhase::Dozing, true)
+    );
+    let dots: Vec<(String, Dot)> = list
+        .unwrap()
+        .offices
+        .iter()
+        .map(|o| (o.teams[0].team_id.clone(), o.dot))
+        .collect();
+    assert!(
+        dots.contains(&(team_id_str(&a), Dot::IdleAlive)),
+        "{dots:?}"
+    );
+    // 프로세스가 없으면 그대로 퇴근
+    assert!(dots.contains(&(team_id_str(&b), Dot::Off)), "{dots:?}");
+    assert!(!lock(&e.world).teams[&b].idle_alive);
+
+    lock(&e.world).apply(&a, &[visit("a", 31 * 60)], now);
+    let state = e.ipc.poll(&mut sent, now).1.unwrap();
+    assert_eq!(
+        (state.teams[0].phase, state.teams[0].idle_alive),
+        (TeamPhase::Working, false)
+    );
+}
+
 /// 방 번호는 팀 키 전체로 묶는다. 같은 세션 id 라도 제조사·호스트가 다르면 다른 방이다. 저장도 된다
 #[test]
 fn rooms_are_keyed_by_whole_team_key_and_saved() {
@@ -808,12 +1040,15 @@ fn bindings() -> String {
         SelectResponseDto,
         TeamDto,
         EmployeeDto,
+        Meeting,
+        Review,
         SharedPropsDto,
         Activity,
         Bubble,
         BubbleSay,
         Counters,
         TeamProps,
+        TestVerdict,
         Incident,
         Cue,
         Rank,

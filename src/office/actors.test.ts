@@ -20,7 +20,6 @@ import {
   bubbleText,
   fnv1a64,
   layoutActors,
-  meetingCall,
   owlFrameKeys,
   roundEven,
   seatProps,
@@ -94,6 +93,9 @@ function emp(
     contextUsed: null,
     contextWindow: null,
     bubble: null,
+    jobs: 0,
+    meeting: null,
+    review: null,
     ...o,
   };
 }
@@ -114,6 +116,7 @@ function team(teamId: string, employees: EmployeeDto[], o: Partial<TeamDto> = {}
     employees,
     props: {} as TeamDto["props"],
     incident: null,
+    idleAlive: false,
     ...o,
   };
 }
@@ -1143,22 +1146,12 @@ test("땀방울: 쪼그려 앉은 지 2분이 넘어야 보이고 일어서면 �
 
 // ---------- 미팅실·외근 (T26) ----------
 
-test("미팅실: MCP 는 서서, 스킬은 앉아서 (둘 다 Meeting·Sit 이라 문장으로 가른다)", () => {
-  const look = (sentence: string) =>
-    at(
-      "large",
-      office([team("t", [boss(), emp("a", "Meeting", "Sit", { activity: act(sentence) })])]),
-      "a",
-    )!.look;
-  expect(look("거래처 `figma`와 `get_file` 건으로 미팅 중")).toEqual({ pose: "idle", dir: "f" });
-  expect(look("외주 매뉴얼 `pdf` 펼쳐보는 중")).toEqual({ pose: "sit", dir: "f" });
-  expect(meetingCall(act("거래처 `figma` 미팅 완료"))).toEqual({ kind: "mcp", server: "figma" });
-  expect(meetingCall({ room: "Dev", sentence: "거래처 `x`와 `y` 건으로 미팅 중" })).toBeNull();
+test("미팅실: MCP 는 서서, 스킬은 앉아서 (둘 다 Meeting·Sit 이라 meeting 값으로 가른다)", () => {
+  const look = (meeting: EmployeeDto["meeting"]) =>
+    at("large", office([team("t", [boss(), emp("a", "Meeting", "Sit", { meeting })])]), "a")!.look;
+  expect(look({ kind: "Mcp", server: "figma" })).toEqual({ pose: "idle", dir: "f" });
+  expect(look({ kind: "Skill" })).toEqual({ pose: "sit", dir: "f" });
 });
-
-function act(sentence: string, room: Room = "Meeting") {
-  return { ...emp("x", room).activity, sentence };
-}
 
 // 외근: 숨었다 돌아오는 직원이 있는 층
 function awayLayer(o: { owls?: Owls | null } = {}) {

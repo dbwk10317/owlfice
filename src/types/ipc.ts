@@ -93,9 +93,9 @@ hostBadge: string | null,
 workType: WorkType, };
 
 /**
- * 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
+ * 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
  */
-export type Dot = "Incident" | "Working" | "Waiting" | "Dozing" | "Off";
+export type Dot = "Incident" | "Working" | "Waiting" | "Dozing" | "IdleAlive" | "Off";
 
 /**
  * 줄 테두리 (3.3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
@@ -130,7 +130,11 @@ deskSlot: number | null,
 /**
  * 첫 번째가 부장
  */
-employees: Array<EmployeeDto>, props: TeamProps, incident: Incident | null, };
+employees: Array<EmployeeDto>, props: TeamProps, incident: Incident | null, 
+/**
+ * 30분 넘게 조용하지만 프로세스가 살아 있다 (S58). 살아 있는 팀이 모두 그러면 조명이 어둡다
+ */
+idleAlive: boolean, };
 
 /**
  * 직원 카드 한 장 (3.5)
@@ -155,7 +159,37 @@ parent: string | null, depth: number, confidence: Confidence, contextUsed: numbe
 /**
  * 마지막 말풍선
  */
-bubble: Bubble | null, };
+bubble: Bubble | null, 
+/**
+ * 백그라운드로 도는 명령 수 (작업표)
+ */
+jobs: number, 
+/**
+ * 미팅실에 있을 때만: 대표 진행 중 호출이 무엇인가
+ */
+meeting: Meeting | null, 
+/**
+ * 리뷰실에 있을 때만
+ */
+review: Review | null, };
+
+/**
+ * 미팅실 소품 재료 (3.4 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
+ */
+export type Meeting = { "kind": "Mcp", server: string, } | { "kind": "Skill" };
+
+/**
+ * 리뷰실 소품 재료 (3.4 리뷰실)
+ */
+export type Review = { 
+/**
+ * 빨간 포스트잇 수 (`파일:줄` 지적)
+ */
+pens: number, 
+/**
+ * 승인 문구가 나왔다 (초록 도장)
+ */
+approved: boolean, };
 
 /**
  * 사무실 공유 소품 (4.7.9 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
@@ -176,7 +210,11 @@ frameTitle: string, kanban: Array<TodoItem>,
 /**
  * 장애 상황실 = 어느 팀이든 장애
  */
-incident: boolean, night: boolean, };
+incident: boolean, night: boolean, 
+/**
+ * 테스트실 결과판 = 테스트를 가장 늦게 끝낸 팀 결과
+ */
+test: TestVerdict | null, };
 
 export type Activity = { 
 /**
@@ -225,11 +263,24 @@ plant: number | null, light: Light,
 /**
  * 신호등을 마지막으로 바꾼 빌드·테스트 시각. 공유 신호등은 이것이 가장 늦은 팀 색이다 (4.7.9)
  */
-lightAt: string, trash: number, 
+lightAt: string, 
+/**
+ * 테스트 결과를 아직 못 봤으면 null
+ */
+test: TestVerdict | null, 
+/**
+ * 결과판을 마지막으로 바꾼 테스트 시각. 공유 결과판은 이것이 가장 늦은 팀 것이다 (4.7.9)
+ */
+testAt: string, trash: number, 
 /**
  * 무재해 전광판의 시작 시각
  */
 safeSince: string, pizza: number, kanban: Array<TodoItem>, night: boolean, pr: [number, string] | null, };
+
+/**
+ * 마지막 테스트 결과 (테스트실 결과판)
+ */
+export type TestVerdict = "Pass" | "Fail";
 
 export type Incident = { since: string, lastError: string, };
 

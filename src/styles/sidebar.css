@@ -94,6 +94,12 @@
 .ow-row__meta {
   white-space: nowrap;
 }
+/* "대기 중" 칩 (HANDOFF 4.2 idle-alive). 크기는 시안 Components 범례 */
+.ow-row__idle {
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+}
 .ow-row.is-floor .ow-row__fold {
   margin-top: 6px;
 }

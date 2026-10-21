@@ -42,6 +42,9 @@ function boss(room: Room, pose: Pose): EmployeeDto {
     contextUsed: null,
     contextWindow: null,
     bubble: null,
+    jobs: 0,
+    meeting: null,
+    review: null,
   };
 }
 
@@ -77,6 +80,7 @@ function office(room: Room, pose: Pose, cues: CueDto[] = []): OfficeDto {
         employees: [boss(room, pose)],
         props: {} as OfficeDto["teams"][number]["props"],
         incident: null,
+        idleAlive: false,
       },
     ],
   };

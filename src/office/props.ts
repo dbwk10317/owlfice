@@ -3,7 +3,6 @@
 import { Graphics, type Sprite, type Spritesheet } from "pixi.js";
 import type { CueDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
-import { empKey } from "../ticker.ts";
 import {
   gridToScreen,
   hexToRgb,
@@ -12,7 +11,7 @@ import {
   type Kind,
   type Seat,
 } from "./floorplan.ts";
-import { meetingCall, seated } from "./actors.ts";
+import { seated } from "./actors.ts";
 import {
   DOOR_OPEN_MS,
   FIREWORKS_MS,
@@ -87,21 +86,21 @@ interface RoomFx {
   skill: boolean;
   /** 리뷰실에 직원이 있으면 빨간펜 수, 없으면 null */
   pens: number | null;
+  /** 리뷰실 직원 중 승인 문구를 낸 사람이 있다 */
+  approved: boolean;
 }
 
 // 미팅실·리뷰실도 공용 방이라 어느 팀이든 일하면 켠다 (labFx 와 같은 규칙)
-// ponytail: 빨간펜 수는 DTO 필드가 없어 백엔드 문장("빨간펜 n개")에서 읽는다, 필드가 생기면 그것으로
 function roomFx(office: OfficeDto | null): RoomFx {
-  const fx: RoomFx = { vendor: null, skill: false, pens: null };
+  const fx: RoomFx = { vendor: null, skill: false, pens: null, approved: false };
   for (const team of office?.teams ?? []) {
     if (team.phase === "Off") continue;
-    for (const { activity: a } of team.employees) {
-      const call = meetingCall(a);
-      if (call?.kind === "mcp") fx.vendor ??= call.server;
-      else if (call) fx.skill = true;
-      else if (a.room === "Review") {
-        const n = Number(/빨간펜 (\d+)개/.exec(a.sentence)?.[1] ?? 0);
-        fx.pens = Math.max(fx.pens ?? 0, n);
+    for (const { meeting, review } of team.employees) {
+      if (meeting?.kind === "Mcp") fx.vendor ??= meeting.server;
+      else if (meeting) fx.skill = true;
+      else if (review) {
+        fx.pens = Math.max(fx.pens ?? 0, review.pens);
+        fx.approved ||= review.approved;
       }
     }
   }
@@ -133,6 +132,7 @@ const MAGNET_BY_TEAM: MagnetColor[] = ["teal", "violet", "coral", "yellow", "blu
 /** 근태판 칸 번호 (props.attendance.columns) */
 const COL_IN = 0;
 const COL_OUT = 1;
+const COL_NAP = 2;
 const COL_OFF = 3;
 
 export interface Magnet {
@@ -142,9 +142,8 @@ export interface Magnet {
 }
 
 /**
- * 직원마다 자석 하나: 퇴근한 팀·퇴장한 서브는 퇴근, 외근은 외근, 나머지는 출근. 한 칸에 슬롯 수까지만 (넘치면 뒤 직원은 자석이 없다).
- * 중소기업은 모든 팀을 한 판에 합친다 (labFx 와 같은 규칙).
- * ponytail: 외출 칸은 DTO 로 가릴 수 있는 상태가 없어 비워 둔다, 외출을 뜻하는 상태가 생기면 채운다
+ * 직원마다 자석 하나: 퇴근한 팀·퇴장한 서브는 퇴근, 외근은 외근, 탕비실에서 조는 직원은 외출, 나머지는 출근.
+ * 한 칸에 슬롯 수까지만 (넘치면 뒤 직원은 자석이 없다). 중소기업은 모든 팀을 한 판에 합친다 (labFx 와 같은 규칙).
  */
 export function magnets(office: OfficeDto | null, kind: Kind, slots: number): Magnet[] {
   const used = [0, 0, 0, 0];
@@ -156,7 +155,9 @@ export function magnets(office: OfficeDto | null, kind: Kind, slots: number): Ma
           ? COL_OFF
           : emp.activity.room === "Outside"
             ? COL_OUT
-            : COL_IN;
+            : emp.activity.room === "Pantry" && emp.activity.pose === "Sleep"
+              ? COL_NAP
+              : COL_IN;
       const line = used[col]++;
       if (line >= slots) return;
       const color =
@@ -297,14 +298,6 @@ interface PropMeta {
 
 type Frames = Record<string, { anchorPx: [number, number] } | undefined>;
 
-/** 장면을 다시 지어도 남겨야 하는 것. DTO 에 없어 cue 로만 알 수 있다 */
-export interface Remembered {
-  /** 백그라운드 명령 중인 직원 (작업표 한 장이 보인다) */
-  tickets: Set<string>;
-  /** 마지막 테스트 결과 */
-  board: "pass" | "fail" | undefined;
-}
-
 interface Fx {
   until: number;
   parts: Sprite[];
@@ -379,7 +372,6 @@ export class PropsLayer {
     private readonly sheet: Spritesheet,
     private readonly kind: Kind,
     private readonly target: PropsTarget,
-    readonly memory: Remembered = { tickets: new Set(), board: undefined },
     private readonly label: ScreenLabel | null = null,
   ) {
     this.meta = (
@@ -436,16 +428,11 @@ export class PropsLayer {
   }
 
   /**
-   * 한 번 일어나는 소품 연출: 도장·트럭·반송·폭죽, 작업표 (S15 S16 S30 S31 S48, S61).
+   * 한 번 일어나는 소품 연출: 도장·트럭·반송·폭죽 (S15 S16 S30 S31 S48).
    * 사무실 전환·조용한 재구성이면 부르지 않는다 (ActorLayer 가 거른다).
    */
   cue(c: CueDto, now: number, office: OfficeDto | null = null): void {
-    if (c.kind === "Paper") {
-      const key = empKey(c.teamId, c.agent);
-      if (c.on) this.memory.tickets.add(key);
-      else this.memory.tickets.delete(key);
-      this.showTicket();
-    } else if (c.kind === "Stamp") this.stamp(c, now);
+    if (c.kind === "Stamp") this.stamp(c, now);
     else if (c.kind === "Truck") this.truck(now);
     else if (c.kind === "Return") this.returned(now);
     else if (c.kind === "Fireworks") this.fireworks(now);
@@ -485,10 +472,8 @@ export class PropsLayer {
     this.tick(now);
   }
 
-  /** 사무실 전환: 지난 사무실의 작업표·테스트 결과와 진행 중인 효과를 지운다 */
+  /** 사무실 전환: 지난 사무실에서 진행 중인 효과를 지운다 */
   reset(): void {
-    this.memory.tickets.clear();
-    this.memory.board = undefined;
     for (const [id, r] of this.repots) {
       const sprite = this.target.driven.get(id);
       if (sprite) sprite.visible = r.on;
@@ -500,8 +485,6 @@ export class PropsLayer {
 
   private stamp(c: Extract<CueDto, { kind: "Stamp" }>, now: number): void {
     const fail = c.failed > 0;
-    this.memory.board = fail ? "fail" : "pass";
-    this.state("test_board", this.memory.board);
     const key = `stamp_${fail ? "fail" : "pass"}${c.estimated ? "_est" : ""}/default`;
     const { gx, gy, z } = STAMP_AT;
     const s = this.fxSprite(key, gx, gy, z);
@@ -582,9 +565,10 @@ export class PropsLayer {
   }
 
   // ponytail: 작업표는 한 장만 보인다 (평면도에 job_ticket 이 하나), 명령 수만큼 쌓기는 아트가 생기면
-  private showTicket(): void {
+  private showTicket(office: OfficeDto | null): void {
     const ticket = this.target.driven.get("job_ticket");
-    if (ticket) ticket.visible = this.memory.tickets.size > 0;
+    if (ticket)
+      ticket.visible = (office?.teams ?? []).some((t) => t.employees.some((e) => e.jobs > 0));
   }
 
   private updateBoxes(n: number): void {
@@ -620,8 +604,8 @@ export class PropsLayer {
     this.lab = labFx(office);
     this.updateBoxes(this.lab.boxes);
     this.state("terminal", this.lab.shell ? "on" : undefined);
-    this.state("test_board", this.memory.board);
-    this.showTicket();
+    this.state("test_board", shared?.test ? shared.test.toLowerCase() : undefined);
+    this.showTicket(office);
     this.updateRooms(office);
     // 대기업은 팀 하나가 팀장석 하나, 중소기업은 팀장석 번호가 deskSlot
     this.fx = this.bossSeats.map((_, i) =>
@@ -653,7 +637,7 @@ export class PropsLayer {
     const fx = roomFx(office);
     this.incident = office?.shared.incident ?? false;
     this.state("meeting_screen", fx.vendor !== null ? "on" : undefined);
-    this.state("review_screen", fx.pens !== null ? "code" : undefined);
+    this.state("review_screen", fx.approved ? "approved" : fx.pens !== null ? "code" : undefined);
     this.state("whiteboard", this.incident ? "scribble" : undefined);
     this.state("incident_table", this.incident ? "on" : undefined);
     const ms = this.pl.get("meeting_screen");
@@ -682,7 +666,6 @@ export class PropsLayer {
 
   /** 지적마다 리뷰 화면 위에 빨간 포스트잇. 화면 슬롯 수까지만 */
   private updatePens(pens: number): void {
-    // ponytail: 승인 문구(review_screen approved)는 DTO 에 신호가 없어 못 켠다, T25b 가 백엔드 스냅샷 값을 주면
     const rs = this.pl.get("review_screen");
     const slots = this.meta.review_screen?.slots ?? [];
     const n = Math.min(slots.length, pens);

@@ -1,16 +1,7 @@
 // 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 세 겹 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
-import type {
-  Activity,
-  Bubble,
-  CueDto,
-  EmployeeDto,
-  OfficeDto,
-  Pose,
-  Room,
-  TeamDto,
-} from "../types/ipc.ts";
+import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
 import { empKey } from "../ticker.ts";
@@ -130,20 +121,6 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
   TeamLead: { at: ["boss_pace"], look: IDLE },
   Dev: { at: ["dev_center"], look: IDLE },
 };
-
-/**
- * 미팅실 호출이 MCP 인가 스킬인가. 둘 다 Meeting·Sit 로 와서 DTO 로는 못 가르고 백엔드 문장 틀로 가른다
- * (classify.rs sentence::call·done: "거래처 `서버`…", "외주 매뉴얼 `이름`…").
- * ponytail: 문장 틀이 바뀌면 깨진다, DTO 에 호출 종류가 생기면 그것으로
- */
-export function meetingCall(
-  a: Pick<Activity, "room" | "sentence">,
-): { kind: "mcp"; server: string } | { kind: "skill" } | null {
-  if (a.room !== "Meeting") return null;
-  const mcp = /^거래처 `([^`]*)`/.exec(a.sentence);
-  if (mcp) return { kind: "mcp", server: mcp[1] };
-  return a.sentence.startsWith("외주 매뉴얼 ") ? { kind: "skill" } : null;
-}
 
 /** 방·자세 → 자리와 sprite 자세. null 은 그리지 않는다 (외근). */
 export function placeRule(room: Room, pose: Pose, boss: boolean): Rule | null {
@@ -278,7 +255,7 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
       const spot = spots[Math.min(k, spots.length - 1)];
       used.add(spot.id);
       // 스킬은 앉아서 매뉴얼을 펼치고 MCP 는 서서 미팅한다 (HANDOFF 5절)
-      const skill = emp.activity.pose === "Sit" && meetingCall(emp.activity)?.kind === "skill";
+      const skill = emp.activity.pose === "Sit" && emp.meeting?.kind === "Skill";
       const p = gridToScreen(spot.gx, spot.gy, spot.z);
       out.push({
         emp,

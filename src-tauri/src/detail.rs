@@ -480,26 +480,30 @@ fn explorer_arg(path: &str, select: bool) -> String {
     }
 }
 
+/// 결과 파일 경로. 그 자리의 줄이 같은 기록(시각, 호출 ID)일 때만 줄에 적힌 경로를 따른다.
+/// 파일을 여는 일이라 화면보다 엄격하게 timestamp 없는 줄은 받지 않는다 (find_event 는 받는다)
+fn sidecar_path(w: &Want) -> Result<PathBuf, DetailError> {
+    let mut file = Lines::open(&w.path, w.vendor).ok_or(DetailError::OpenFailed)?;
+    let line = file
+        .at(&w.path, &w.mark, true)
+        .ok_or(DetailError::OpenFailed)?;
+    let rec = line
+        .rec
+        .as_ref()
+        .filter(|r| raw_ts_matches(r, w.mark.ts))
+        .ok_or(DetailError::CursorInvalid)?;
+    let text = raw_result(rec, w.mark.call, w.vendor)
+        .ok_or(DetailError::CursorInvalid)?
+        .text;
+    let dir = session_dir(&w.path).ok_or(DetailError::NotFound)?;
+    sidecar(Some(rec), &text, &dir).ok_or(DetailError::NotFound)
+}
+
 fn launch(plan: Launch, deadline: Instant) -> Result<(), DetailError> {
     let (path, select) = match plan {
         Launch::Select(p) => (p, true),
         Launch::Folder(p) => (p, false),
-        Launch::Sidecar(w) => {
-            let mut file = Lines::open(&w.path, w.vendor).ok_or(DetailError::OpenFailed)?;
-            let line = file
-                .at(&w.path, &w.mark, true)
-                .ok_or(DetailError::OpenFailed)?;
-            let rec = line.rec.as_ref();
-            let text = rec
-                .and_then(|r| raw_result(r, w.mark.call, w.vendor))
-                .map(|r| r.text)
-                .unwrap_or_default();
-            let dir = session_dir(&w.path).ok_or(DetailError::NotFound)?;
-            (
-                sidecar(rec, &text, &dir).ok_or(DetailError::NotFound)?,
-                true,
-            )
-        }
+        Launch::Sidecar(w) => (sidecar_path(&w)?, true),
     };
     // 따옴표는 인자 경계를 깬다. Windows 경로에는 없지만 WSL 경로에는 있을 수 있다
     let s = path

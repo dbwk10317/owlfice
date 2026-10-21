@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>소품 상태 비교</title>
+    <style>
+      body {
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        margin: 16px;
+        background: #f1f1ee;
+      }
+      section {
+        margin-bottom: 24px;
+      }
+      canvas {
+        image-rendering: pixelated;
+        width: 520px;
+        height: 320px;
+        background: #fff;
+        margin-right: 8px;
+        vertical-align: top;
+      }
+      .bad {
+        color: #b91c1c;
+        font-weight: 600;
+      }
+    </style>
+    <script type="module" src="./props.ts"></script>
+  </head>
+  <body>
+    <h1>소품 상태 비교 (T23)</h1>
+    <p>
+      왼쪽부터 참조 · 렌더러 1× · 다른 픽셀(빨강). 참조를 다시 만들려면
+      <code>uv run dev/props_ref.py</code> (기본 상태는 <code>uv run tools/ref_render.py</code>). TV
+      점은 참조에 없어 다른 픽셀로 나온다 (팀 수만큼).
+    </p>
+    <div id="out"></div>
+  </body>
+</html>

@@ -35,6 +35,7 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | Rust 테스트 | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | Rust 포맷 검사 | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
 | Rust 린트 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
+| 실제 세션으로 포맷 변화 확인 (PLAN 4.12 코퍼스 drift. 홈의 `.claude`·`.codex` 를 읽기만 한다) | `OWLFICE_CORPUS_DIR=$USERPROFILE cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture` (PowerShell은 `$env:OWLFICE_CORPUS_DIR=$env:USERPROFILE` 를 먼저) |
 | 이벤트 열 JSON 확인 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- events fixtures/claude/reject` |
 | 미대응 로그 요약 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- unhandled [경로]` |
 | fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 10 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |

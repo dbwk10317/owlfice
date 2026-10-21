@@ -8,7 +8,7 @@ import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
 import evictedSvg from "../design/handoff/icons/evicted.svg?raw";
 import infoSvg from "../design/handoff/icons/info.svg?raw";
 import emptySvg from "../design/handoff/icons/empty-building.svg?raw";
-import logoUrl from "../design/assets/logo.png";
+import logoUrl from "../design/assets/logo.png?no-inline";
 import settingsSvg from "../design/handoff/icons/settings.svg?raw";
 import refreshSvg from "../design/handoff/icons/refresh.svg?raw";
 import type {

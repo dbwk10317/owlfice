@@ -9,6 +9,7 @@ import {
 } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { ActorLayer, seatProps } from "./actors.ts";
+import { DRIVEN_PROP, PropsLayer } from "./props.ts";
 import type { CueDto, OfficeDto, OfficeListDto } from "../types/ipc.ts";
 import {
   CANVAS_H,
@@ -101,12 +102,16 @@ export interface Scene {
   world: Container;
   /** 평면도가 숨겨 둔 채 짓고 좌석 사용에 따라 켜는 소품 (임시·간이 책상, 쪽지) */
   toggled: Map<string, Sprite>;
+  /** 소품 상태가 바꾸는 평면도 소품 (신호등, 창, 화분, 휴지통, 전광판, 컵라면) */
+  driven: Map<string, Sprite>;
+  /** 칸반 포스트잇·TV 선이 얹히는 벽 컨테이너 */
+  wall: Container;
 }
 
 // 평면도에서 visible:false 이고 직원이 앉으면 보이는 소품 (HANDOFF 6.5)
 const SEAT_PROP = /^(temp_desk_|spare_desk_)\d+$|^note_temp$/;
 
-/** render_scene 의 그리기 순서 그대로. 소품은 평면도의 기본 상태 (상태 반영은 T23). */
+/** render_scene 의 그리기 순서 그대로. 소품은 평면도의 기본 상태, 상태는 PropsLayer 가 바꾼다. */
 export function buildScene(
   assets: OfficeAssets,
   kind: Kind,
@@ -131,9 +136,13 @@ export function buildScene(
   // 장애 빛은 평면도 기본이 숨김이고 장애 중에만 보인다 (참조 make_canvas_images 와 같다)
   const placements = fp.layouts[kind].placements.filter(
     (pl) =>
-      pl.visible !== false || (incident && pl.id === "glow_incident") || SEAT_PROP.test(pl.id),
+      pl.visible !== false ||
+      (incident && pl.id === "glow_incident") ||
+      SEAT_PROP.test(pl.id) ||
+      DRIVEN_PROP.test(pl.id),
   );
   const toggled = new Map<string, Sprite>();
+  const driven = new Map<string, Sprite>();
   // 깔개·벽 소품은 바닥 위에 배열 순서로, 월드는 depth 로 (render_scene 3·4단계)
   placements.forEach((pl, seq) => {
     const key = `${spriteName(pl, theme)}/${pl.state}`;
@@ -151,6 +160,10 @@ export function buildScene(
       return s;
     };
     const s = place(key, tint ? tintedTexture(sheet, key, tint) : undefined);
+    if (DRIVEN_PROP.test(pl.id)) {
+      driven.set(pl.id, s);
+      if (pl.visible === false) s.visible = false;
+    }
     if (SEAT_PROP.test(pl.id)) {
       s.visible = false;
       toggled.set(pl.id, s);
@@ -165,7 +178,7 @@ export function buildScene(
 
   const root = new Container();
   root.addChild(base, win, world, over);
-  return { root, lit: [base, world], world, toggled };
+  return { root, lit: [base, world], world, toggled, driven, wall: base };
 }
 
 /**
@@ -249,6 +262,9 @@ export async function mountOffice(
   const miniCtx = miniCanvas.getContext("2d");
 
   let scene: Scene | null = null;
+  let props: PropsLayer | null = null;
+  let shown: OfficeDto | null = null;
+  let propsAt = 0;
   let sceneKey = "";
   let officeId = "";
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
@@ -302,6 +318,7 @@ export async function mountOffice(
       // 새 장면을 다 지은 뒤에 옛것을 지운다. 짓다 던져도 화면은 옛 장면이 남는다
       const next = buildScene(assets, kind, theme, incident);
       actors.attach(next.world);
+      props = new PropsLayer(fp, assets.sheet, kind, next);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);
@@ -315,8 +332,11 @@ export async function mountOffice(
       earlier: cues.take(office),
     });
     resumed = false;
-    const props = seatProps(fp, kind, placed);
-    for (const [id, s] of scene?.toggled ?? []) s.visible = props.has(id);
+    const seated = seatProps(fp, kind, placed);
+    for (const [id, s] of scene?.toggled ?? []) s.visible = seated.has(id);
+    shown = office;
+    propsAt = Date.now();
+    props?.update(office, propsAt);
     // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
     const off = !office || office.teams.every((t) => t.phase === "Off");
     setLight(off ? "off" : office.shared.night ? "night" : null, switched);
@@ -445,7 +465,13 @@ export async function mountOffice(
         }
       }
       if (lightT < 1) stepLight(t.deltaMS);
-      actors.update(Date.now());
+      const now = Date.now();
+      // 무재해 분과 창밖 시각은 상태가 안 와도 흐른다. 바뀐 소품만 다시 그린다
+      if (now - propsAt >= 1000) {
+        propsAt = now;
+        props?.update(shown, now);
+      }
+      actors.update(now);
     },
     undefined,
     UPDATE_PRIORITY.HIGH,

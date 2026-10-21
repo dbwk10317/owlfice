@@ -4,6 +4,7 @@ import phrases from "../../design/handoff/phrases.ko.json";
 import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
+import { empKey } from "../ticker.ts";
 import { HIDDEN, Track, canWander, playCue, type Target } from "./anim-queue.ts";
 import { gridToScreen, themeOf, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
 import { placeSprite } from "./sprites.ts";
@@ -122,6 +123,7 @@ interface Spot {
   gy: number;
   z: number;
   depth: number;
+  desk?: string;
   look?: Look;
 }
 
@@ -129,7 +131,6 @@ export interface Placed {
   emp: EmployeeDto;
   team: TeamDto;
   spot: string;
-  overflow: boolean;
   x: number;
   y: number;
   gx: number;
@@ -173,14 +174,20 @@ function seatSpots(
   boss: boolean,
 ): { spots: Spot[]; index: number } {
   const s = fp.layouts[kind].seats;
-  const toSpot = (seat: { id: string; gx: number; gy: number; depth: number }): Spot => ({
+  const toSpot = (seat: {
+    id: string;
+    gx: number;
+    gy: number;
+    depth: number;
+    desk: string;
+  }): Spot => ({
     ...seat,
     z: 0,
   });
   if (!boss) {
     const spots = [...s.dev, ...s.temp].map(toSpot);
     // ponytail: 백엔드는 10명째 뒤 직원에게 좌석을 안 준다(카드만). 문서(3.4)대로 마지막 임시 책상에 겹치고 만석 쪽지를 붙인다
-    return { spots, index: emp.seat ?? spots.length - 1 };
+    return { spots, index: emp.seat ?? spots.length };
   }
   if (kind === "large") return { spots: s.boss.map(toSpot), index: 0 };
   // 팀장석 0~3, 간이 4~5 (PLAN 4.7.9). deskSlot null 은 layoutActors 가 먼저 거른다
@@ -217,7 +224,6 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
       start = Math.min(Math.max(0, start), spots.length - 1);
       let k = start;
       while (k < spots.length && used.has(spots[k].id)) k++;
-      const overflow = k >= spots.length;
       // ponytail: 자리가 모자라면 마지막 자리에 겹친다, 겹침 연출은 T29
       const spot = spots[Math.min(k, spots.length - 1)];
       used.add(spot.id);
@@ -226,7 +232,6 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
         emp,
         team,
         spot: spot.id,
-        overflow,
         x: roundEven(p.x),
         y: roundEven(p.y),
         gx: spot.gx,
@@ -243,18 +248,36 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
 
 /**
  * 평면도가 숨겨 둔 소품 중 지금 보여야 할 것: 임시·간이 책상과 쪽지 (HANDOFF 6.5).
+ * 가구는 지금 선 자리가 아니라 좌석 배정(seat, deskSlot)으로 정한다. 임시 자리 직원이 다른 방에 가도 책상은 남는다.
  * 만석 쪽지는 임시 책상 쪽지와 같은 자리에 놓고 그것을 대신한다.
  */
-export function seatProps(fp: Floorplan, kind: Kind, placed: Placed[]): Set<string> {
+export function seatProps(fp: Floorplan, kind: Kind, office: OfficeDto | null): Set<string> {
   const s = fp.layouts[kind].seats;
   const out = new Set<string>();
-  for (const p of placed) {
-    const seat = [...s.temp, ...s.spare].find((x) => x.id === p.spot);
-    if (!seat) continue;
-    out.add(seat.desk);
-    if (s.temp.includes(seat)) out.add(p.overflow ? "note_full" : "note_temp");
+  let temp = false;
+  let full = false;
+  for (const team of office?.teams ?? []) {
+    // 퇴근한 팀은 모두 퇴장했고 백엔드도 자리를 비운다
+    if (team.phase === "Off") continue;
+    team.employees.forEach((emp, i) => {
+      const boss = i === 0;
+      if (boss && kind === "small" && team.deskSlot === null) return;
+      // 퇴장한 서브는 백엔드가 자리를 비운다
+      if (!boss && emp.retiredAt !== null) return;
+      const { spots, index } = seatSpots(fp, kind, team, emp, boss);
+      const spot = spots[Math.min(index, spots.length - 1)];
+      if (!spot?.desk) return;
+      // 팀장석 책상은 평면도에 늘 있다. 켜는 건 간이·임시 책상뿐
+      const isTemp = s.temp.some((x) => x.id === spot.id);
+      if (!isTemp && !s.spare.some((x) => x.id === spot.id)) return;
+      out.add(spot.desk);
+      if (isTemp) {
+        temp = true;
+        full ||= index >= spots.length;
+      }
+    });
   }
-  if (out.has("note_full")) out.delete("note_temp");
+  if (temp) out.add(full ? "note_full" : "note_temp");
   return out;
 }
 
@@ -320,7 +343,10 @@ export function bubbleText(agentId: string, rank: string, b: Bubble): string | n
 // ---------- 액터 층 ----------
 
 interface Actor {
+  /** agent_id. 종·말풍선 문구 해시용 */
   id: string;
+  /** actors 맵 키 (empKey) */
+  key: string;
   root: Container;
   /** body, outfit, role. 아틀라스가 없으면 비어 있다 */
   layers: Sprite[];
@@ -394,7 +420,7 @@ export class ActorLayer {
   }
 
   /**
-   * 스냅샷 전체 교체. 같은 agent_id 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. 그린 자리를 돌려준다.
+   * 스냅샷 전체 교체. 같은 (team_id, agent_id) 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. 그린 자리를 돌려준다.
    * 자리가 바뀐 직원은 큐에 걷기를 넣는다. `instant` 면 큐를 비우고 바로 제자리, cue 는 버린다
    * (사무실 전환 첫 스냅샷, 숨은 창에서 돌아옴). 조용한 재구성도 바로 제자리지만 백엔드가 남긴 출근 cue 는 재생한다 (PLAN 4.3).
    * `earlier` 는 두 sync 사이에 도착해 지나간 DTO 들의 cue 다. `office` 자신의 cue 앞에 이어 재생한다.
@@ -413,34 +439,39 @@ export class ActorLayer {
     for (const c of fresh && !opts.instant
       ? [...(opts.earlier ?? []), ...(office?.cues ?? [])]
       : [])
-      if ("agent" in c) cuesOf.set(c.agent, [...(cuesOf.get(c.agent) ?? []), c]);
-      else playCue(c, undefined, now);
+      if ("agent" in c) {
+        const key = empKey(c.teamId, c.agent);
+        cuesOf.set(key, [...(cuesOf.get(key) ?? []), c]);
+      } else playCue(c, undefined, now);
     const placed = office ? layoutActors(this.fp, kind, office) : [];
-    const present = new Set(office?.teams.flatMap((t) => t.employees.map((e) => e.agentId)));
-    for (const [id, a] of this.actors)
-      if (!present.has(id)) {
+    const present = new Set(
+      office?.teams.flatMap((t) => t.employees.map((e) => empKey(t.teamId, e.agentId))),
+    );
+    for (const [key, a] of this.actors)
+      if (!present.has(key)) {
         a.root.destroy({ children: true });
         a.zz?.remove();
         a.badge?.remove();
         a.bubble?.remove();
-        this.actors.delete(id);
-        if (this.hovered === id) this.hover(null);
+        this.actors.delete(key);
+        if (this.hovered === key) this.hover(null);
       }
     const shown = new Set<string>();
     const seqBase = this.fp.layouts[kind].placements.length;
     placed.forEach((p, i) => {
-      const old = this.actors.get(p.emp.agentId);
-      const a = old ?? this.create(p.emp, now);
-      shown.add(a.id);
+      const key = empKey(p.team.teamId, p.emp.agentId);
+      const old = this.actors.get(key);
+      const a = old ?? this.create(p.emp, key, now);
+      shown.add(key);
       a.emp = p.emp;
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
       a.role = p.emp.role === "Trainee" ? null : p.emp.role.toLowerCase();
       // Pixi 는 직원이 다른 자리로 옮겨져도 pointerout 을 안 내서 이름표가 새 자리를 따라간다
-      if (a.spot !== p.spot && this.hovered === a.id) this.hover(null);
+      if (a.spot !== p.spot && this.hovered === key) this.hover(null);
       a.spot = p.spot;
       a.seq = seqBase + i;
-      const cues = cuesOf.get(a.id) ?? [];
+      const cues = cuesOf.get(key) ?? [];
       // 재출근도 문에서 걷지만, 탕비실 등에 보이던 퇴장 서브는 있던 자리에서 걷는다
       const entering =
         cues.some((c) => c.kind === "Enter") ||
@@ -455,10 +486,10 @@ export class ActorLayer {
       if (!a.root.parent && this.world) this.world.addChild(a.root);
     });
     for (const a of this.actors.values())
-      if (!shown.has(a.id)) {
+      if (!shown.has(a.key)) {
         if (instant) a.track.reset(HIDDEN, now);
         else a.track.retarget(HIDDEN, now);
-        for (const c of cuesOf.get(a.id) ?? []) playCue(c, a.track, now);
+        for (const c of cuesOf.get(a.key) ?? []) playCue(c, a.track, now);
         a.zz?.remove();
         a.zz = null;
         a.badge?.remove();
@@ -466,7 +497,7 @@ export class ActorLayer {
         a.bubble?.remove();
         a.bubble = null;
         a.spot = "";
-        if (this.hovered === a.id) this.hover(null);
+        if (this.hovered === a.key) this.hover(null);
       }
     this.update(now);
     this.placeOverlay();
@@ -478,7 +509,7 @@ export class ActorLayer {
     for (const a of this.actors.values()) {
       const s = a.track.update(now);
       if (!s.at) {
-        if (a.root.visible && this.hovered === a.id) this.hover(null);
+        if (a.root.visible && this.hovered === a.key) this.hover(null);
         a.root.visible = false;
         continue;
       }
@@ -534,9 +565,10 @@ export class ActorLayer {
     }
   }
 
-  hover(agentId: string | null): void {
-    const a = agentId ? this.actors.get(agentId) : undefined;
-    this.hovered = a?.root.visible ? a.id : null;
+  /** `key` 는 empKey(team_id, agent_id). null 이면 이름표를 닫는다. */
+  hover(key: string | null): void {
+    const a = key ? this.actors.get(key) : undefined;
+    this.hovered = a?.root.visible ? a.key : null;
     this.nametag.hidden = !this.hovered;
     if (!a || !this.hovered) return;
     const ranks = phrases.ranks as Record<string, string>;
@@ -546,8 +578,8 @@ export class ActorLayer {
   }
 
   /** 테스트·개발 페이지용: 지금 그린 직원의 루트 컨테이너. */
-  rootOf(agentId: string): Container | undefined {
-    return this.actors.get(agentId)?.root;
+  rootOf(teamId: string, agentId: string): Container | undefined {
+    return this.actors.get(empKey(teamId, agentId))?.root;
   }
 
   private fillNametag(now: number): void {
@@ -559,15 +591,15 @@ export class ActorLayer {
     if (this.nametagText.textContent !== text) this.nametagText.textContent = text;
   }
 
-  private create(emp: EmployeeDto, now: number): Actor {
+  private create(emp: EmployeeDto, key: string, now: number): Actor {
     const id = emp.agentId;
     const root = new Container();
     root.eventMode = "static";
     root.cursor = "pointer";
     root.hitArea = new Rectangle(-8, -23, 16, 24);
-    root.on("pointerover", () => this.hover(id));
+    root.on("pointerover", () => this.hover(key));
     root.on("pointerout", () => {
-      if (this.hovered === id) this.hover(null);
+      if (this.hovered === key) this.hover(null);
     });
     const layers: Sprite[] = [];
     if (this.owls) {
@@ -582,6 +614,7 @@ export class ActorLayer {
     } else root.addChild(this.fallbackBody());
     const a: Actor = {
       id,
+      key,
       root,
       layers,
       held: null,
@@ -607,7 +640,7 @@ export class ActorLayer {
       bubble: null,
       bubbleAt: 0,
     };
-    this.actors.set(id, a);
+    this.actors.set(key, a);
     return a;
   }
 

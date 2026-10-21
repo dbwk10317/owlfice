@@ -6,6 +6,7 @@ import { reducedMotion } from "../loading.ts";
 import {
   gridToScreen,
   hexToRgb,
+  themeOf,
   zIndexOf,
   type Floorplan,
   type Kind,
@@ -23,13 +24,13 @@ import {
   TRUCK_MS,
 } from "./anim-queue.ts";
 import type { Scene } from "./renderer.ts";
-import { placeSprite } from "./sprites.ts";
+import { placeSprite, tintedTexture } from "./sprites.ts";
 
 type PropsTarget = Pick<Scene, "wall" | "world" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
 export const DRIVEN_PROP =
-  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d|rack_\d|terminal|game_tv|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table)$/;
+  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|dev_part_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d|rack_\d|terminal|game_tv|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table)$/;
 
 /** 부장 자세로 정해지는 책상 소품 (HANDOFF 5절): 응답 대기 김, 러버덕 집어 듦, 결재 대기 화면보호기 */
 export interface BossFx {
@@ -617,9 +618,11 @@ export class PropsLayer {
   }
 
   /** office 가 null 이면 평면도 기본 상태 (그림을 더하지 않는다) */
-  update(office: OfficeDto | null, nowMs: number): void {
+  update(office: OfficeDto | null, nowMs: number, focusedTeam: string | null = null): void {
     const shared = office?.shared;
-    const title = shared?.frameTitle ?? "";
+    const focused =
+      this.kind === "small" ? office?.teams.find((t) => t.teamId === focusedTeam) : undefined;
+    const title = focused?.title ?? shared?.frameTitle ?? "";
     if (this.pendingTitle?.title !== title) {
       this.pendingTitle = null;
       this.drawTitle(title);
@@ -632,7 +635,8 @@ export class PropsLayer {
     if (ramen) ramen.visible = shared?.night ?? false;
 
     this.updatePlants(office);
-    this.updateKanban(shared?.kanban ?? []);
+    this.updatePartitions(office);
+    this.updateKanban(focused?.props.kanban ?? shared?.kanban ?? []);
     this.updateDigits(shared ? String(safeMinutes(shared.safeSince, nowMs)) : "");
     this.updatePapers(shared?.trash ?? 0);
     this.updatePizza(shared?.pizza ?? 0);
@@ -652,6 +656,30 @@ export class PropsLayer {
       ),
     );
     this.tick(nowMs);
+  }
+
+  private updatePartitions(office: OfficeDto | null): void {
+    if (this.kind !== "small") return;
+    this.fp.layouts.small.seats.dev.forEach((seat, index) => {
+      if (!seat.partition) return;
+      const part = this.target.driven.get(seat.partition);
+      const placement = this.pl.get(seat.partition);
+      if (!part || !placement) return;
+      const team = office?.teams.find(
+        (t) =>
+          t.phase !== "Off" &&
+          t.employees
+            .slice(1)
+            .some((e) => e.seat === index && e.retiredAt === null && e.departedAt === null),
+      );
+      const tint = team
+        ? this.fp.teamTints[
+            Math.min(team.deskSlot ?? this.fp.teamTints.length - 1, this.fp.teamTints.length - 1)
+          ]
+        : this.fp.themes[themeOf(office?.teams[0]?.building)].cubicle;
+      if (this.changed(seat.partition, tint))
+        part.texture = tintedTexture(this.sheet, `${placement.sprite}/${placement.state}`, tint);
+    });
   }
 
   /** 사다리의 실제 끝 시각만 기다린다. 다음 스냅샷이 다른 제목이면 update가 예약을 버린다. */

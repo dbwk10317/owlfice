@@ -50,6 +50,7 @@ import {
 import { gridToScreen, parseFloorplan, type Kind } from "./floorplan.ts";
 import { toCss } from "./renderer.ts";
 import { empKey } from "../ticker.ts";
+import { emp as testEmp, team as testTeam, office as testOffice } from "../test-office.ts";
 
 const fp = parseFloorplan(rawFloorplan);
 const meta = owlsJson.owlfice as unknown as OwlMeta;
@@ -163,6 +164,45 @@ function newLayer(o: { owls?: Owls | null } = {}) {
 }
 
 // ---------- 종 ----------
+
+test("팀 포커스는 부장을 2초 표시하고 활동 갱신으로 연장되지 않는다", () => {
+  const { layer, world } = newLayer();
+  const teams = [0, 1].map((deskSlot) =>
+    testTeam(
+      `t${deskSlot}`,
+      [
+        testEmp("boss", {
+          rank: "Bujang",
+          activity: { ...testEmp("boss").activity, room: "TeamLead", pose: "Sit" },
+        }),
+      ],
+      { deskSlot },
+    ),
+  );
+  layer.sync(testOffice("vendor/Claude", 1, teams), "small", NOW);
+  layer.highlightTeam("t0", NOW);
+  const ring = world.children[world.children.length - 1];
+  expect(layer.focusedTeam(NOW + 1999)).toBe("t0");
+  expect(ring.visible).toBe(true);
+  expect({ x: ring.x, y: ring.y }).toEqual({
+    x: layer.rootOf("t0", "boss")!.x,
+    y: layer.rootOf("t0", "boss")!.y,
+  });
+  layer.sync(testOffice("vendor/Claude", 2, [...teams].reverse()), "small", NOW + 1000);
+  layer.update(NOW + 2000);
+  expect(layer.focusedTeam(NOW + 2000)).toBeNull();
+  expect(ring.visible).toBe(false);
+  layer.highlightTeam("t1", NOW + 3000);
+  expect({ x: ring.x, y: ring.y }).toEqual({
+    x: layer.rootOf("t1", "boss")!.x,
+    y: layer.rootOf("t1", "boss")!.y,
+  });
+  layer.sync({ ...testOffice("vendor/Claude", 3, teams), rebuilt: true }, "small", NOW + 3100);
+  expect(layer.focusedTeam(NOW + 3100)).toBeNull();
+  layer.highlightTeam("t0", NOW + 4000);
+  layer.sync(testOffice("vendor/Codex", 1, teams), "small", NOW + 4100);
+  expect(layer.focusedTeam(NOW + 4100)).toBeNull();
+});
 
 test("종 해시는 백엔드 fnv1a64 와 같은 값이다 (names.rs 테스트 벡터)", () => {
   expect(fnv1a64("")).toBe(0xcbf29ce484222325n);

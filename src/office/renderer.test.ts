@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
 import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
+import { team as testTeam, office as testOffice } from "../test-office.ts";
 import {
   canvasAria,
   canvasScale,
@@ -9,6 +10,16 @@ import {
   teamOfProp,
   toCss,
 } from "./renderer.ts";
+
+test("액자 클릭은 포커스 팀을 따르고 팀장석 클릭은 자기 팀을 유지한다", () => {
+  const older = testTeam("old", [], { deskSlot: 0, lastActivity: "2026-01-01T00:00:00Z" });
+  const newer = testTeam("new", [], { deskSlot: 1, lastActivity: "2026-01-01T00:01:00Z" });
+  const o = testOffice("vendor/Claude", 1, [older, newer]);
+  expect(teamOfProp("rules_frame", o, "old")).toBe(older);
+  expect(teamOfProp("boss_desk_1", o, "old")).toBe(newer);
+  expect(teamOfProp("rules_frame", o)).toBe(newer);
+  expect(teamOfProp("rules_frame", o, "gone")).toBe(newer);
+});
 
 test("배율은 장치 픽셀 기준 정수, CSS 크기는 백킹 / DPR", () => {
   // 2× 는 1040×640 장치 픽셀이 필요하다 (PLAN 3.2)

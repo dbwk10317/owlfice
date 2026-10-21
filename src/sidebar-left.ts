@@ -38,6 +38,7 @@ export interface SidebarOptions {
   getWidth?: () => number;
   /** 행의 상세 버튼 (세션 상세를 연다). opener 는 닫을 때 초점이 돌아갈 버튼 */
   onDetail?: (officeId: string, teamId: string, name: string, opener: HTMLElement) => void;
+  onTeam?: (officeId: string, teamId: string) => void;
   /** 간판의 회사 이름. 없으면 기본 이름 */
   companyName?: string;
 }
@@ -659,7 +660,11 @@ export function mountSidebar(
     };
     info.addEventListener("click", () => openDetail(v, info));
     // 모델은 갱신마다 바뀌므로 눌린 순간의 것을 본다
-    main.addEventListener("click", () => pick(v.model.targetId));
+    main.addEventListener("click", () => {
+      pick(v.model.targetId);
+      if (v.model.kind === "team" && v.model.detail)
+        opts.onTeam?.(v.model.detail.officeId, v.model.detail.teamId);
+    });
     fold?.addEventListener("click", () => toggle(v.model.foldKey!, true));
     return v;
   }

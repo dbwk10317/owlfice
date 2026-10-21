@@ -443,6 +443,60 @@ fn result_is_clipped_and_sidecar_stays_in_session() {
     );
 }
 
+/// 결과 파일 열기도 화면처럼 그 자리의 줄이 같은 기록일 때만 경로를 낸다
+#[test]
+fn sidecar_path_requires_same_record() {
+    let (s, _) = synthetic();
+    let e = env();
+    e.put(&s, s.team(0));
+    let all = e.timeline(&s, SID, None, None).unwrap();
+    let d = all
+        .iter()
+        .find(|d| d.call_id.as_deref() == Some("toolu_big") && d.kind == TimelineKind::ToolResult)
+        .unwrap();
+    let w = match open(
+        &e,
+        OpenTarget::Sidecar {
+            office_id: s.office(),
+            team_id: s.team_id(),
+            agent_id: SID.into(),
+            cursor: d.cursor,
+            line_idx: d.line_idx,
+        },
+    ) {
+        Ok(Launch::Sidecar(w)) => w,
+        other => panic!("{other:?}"),
+    };
+    let want = s
+        .main
+        .with_extension("")
+        .join("tool-results")
+        .join("big.txt");
+    assert_eq!(sidecar_path(&w), Ok(want));
+
+    let orig = fs::read_to_string(&s.main).unwrap();
+    let rewrite = |from: &str, to: &str| {
+        assert!(orig.contains(from), "{from}");
+        fs::write(&s.main, orig.replacen(from, to, 1)).unwrap();
+        sidecar_path(&w)
+    };
+    // 같은 오프셋에 시각이 다른 기록
+    assert_eq!(rewrite(&ts(2), &ts(12)), Err(DetailError::CursorInvalid));
+    // 같은 오프셋에 다른 호출의 결과
+    assert_eq!(
+        rewrite(
+            "\"tool_use_id\":\"toolu_big\"",
+            "\"tool_use_id\":\"toolu_xxx\""
+        ),
+        Err(DetailError::CursorInvalid)
+    );
+    // timestamp 가 없는 줄
+    assert_eq!(
+        rewrite(&format!("\"timestamp\":\"{}\"", ts(2)), "\"ts\":\"x\""),
+        Err(DetailError::CursorInvalid)
+    );
+}
+
 /// 받은 지시(서브는 Spawn 프롬프트, 부장은 첫 사장님 메시지)와 중복 없는 실적 목록, 상사 이름
 #[test]
 fn employee_detail_has_instruction_and_lists() {

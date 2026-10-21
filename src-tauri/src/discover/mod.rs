@@ -2,6 +2,8 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 
 use crate::settings::{ManualPath, ManualVendor};
 
@@ -93,6 +95,137 @@ pub struct ScanResult {
     pub candidates: Vec<Candidate>,
 }
 
+type Roots = Vec<(Vendor, PathBuf)>;
+const REMOTE_LIMIT: Duration = Duration::from_secs(30);
+
+struct PendingScan {
+    roots: Roots,
+    started: Instant,
+    result: mpsc::Receiver<Option<ScanResult>>,
+}
+
+/// UNC가 멈춰도 Windows 탐색은 계속한다. 앱의 초기 탐색과 Probe가 같은 인스턴스를 쓴다.
+pub struct Scanner {
+    pending: Option<PendingScan>,
+    known: Vec<wsl::WslDistro>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl Scanner {
+    pub fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            pending: None,
+            known: Vec::new(),
+            wake: Arc::new(wake),
+        }
+    }
+
+    pub fn scan(&mut self, manual: &[ManualPath]) -> ScanResult {
+        self.scan_with(
+            input_roots(&|k| std::env::var(k).ok(), manual),
+            &Path::is_dir,
+            Instant::now(),
+            |roots| {
+                let (distros, candidates) = wsl::discover_with_candidates();
+                scan_roots(distros, candidates, roots, &Path::is_dir)
+            },
+        )
+    }
+
+    pub fn is_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    fn scan_with(
+        &mut self,
+        roots: Roots,
+        is_dir: &dyn Fn(&Path) -> bool,
+        now: Instant,
+        remote: impl FnOnce(Roots) -> ScanResult + Send + 'static,
+    ) -> ScanResult {
+        let mut found = None;
+        if let Some(pending) = &self.pending {
+            let result = match pending.result.try_recv() {
+                Ok(result) => Some(result),
+                Err(mpsc::TryRecvError::Disconnected) => Some(None),
+                Err(mpsc::TryRecvError::Empty) => None,
+            };
+            if let Some(result) = result {
+                if pending.roots == roots && now.duration_since(pending.started) <= REMOTE_LIMIT {
+                    found = result;
+                }
+                self.pending = None;
+            }
+        }
+        if let Some(found) = &found {
+            self.known = found.distros.clone();
+        } else if self.pending.is_none() {
+            let (tx, rx) = mpsc::channel();
+            let remote_roots = roots
+                .iter()
+                .filter(|(_, root)| wsl_path(root).is_some())
+                .cloned()
+                .collect();
+            let wake = self.wake.clone();
+            std::thread::spawn(move || {
+                let result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| remote(remote_roots)))
+                        .ok();
+                let _ = tx.send(result);
+                wake();
+            });
+            self.pending = Some(PendingScan {
+                roots: roots.clone(),
+                started: now,
+                result: rx,
+            });
+        }
+        // 기한이 지나도 receiver를 버리지 않는다. 취소할 수 없는 OS I/O 뒤에 작업을 쌓지 않기 위함이다.
+        let remote = found.unwrap_or_else(|| {
+            let distros: Vec<_> = self
+                .known
+                .iter()
+                .map(|d| wsl::WslDistro {
+                    host: d.host.clone(),
+                    running: None,
+                    sites: Vec::new(),
+                })
+                .collect();
+            let candidates = distros
+                .iter()
+                .flat_map(|d| {
+                    [Vendor::Claude, Vendor::Codex].map(|vendor| Candidate {
+                        host: d.host.clone(),
+                        vendor,
+                        root: None,
+                        result: CandidateResult::Unknown,
+                    })
+                })
+                .collect();
+            scan_roots(
+                distros,
+                candidates,
+                roots
+                    .iter()
+                    .filter(|(_, root)| wsl_path(root).is_some())
+                    .cloned(),
+                &|_| unreachable!("켜짐을 확인하지 않은 WSL 경로는 열지 않는다"),
+            )
+        });
+        let mut local = scan_roots(
+            Vec::new(),
+            Vec::new(),
+            roots
+                .into_iter()
+                .filter(|(_, root)| wsl_path(root).is_none()),
+            is_dir,
+        );
+        local.distros = remote.distros;
+        local.candidates.extend(remote.candidates);
+        local
+    }
+}
+
 /// 자동 탐색과 수동 세션 루트를 합친다. 수동 root는 projects/sessions 폴더 자체다.
 pub fn scan(manual: &[ManualPath]) -> ScanResult {
     let (distros, candidates) = wsl::discover_with_candidates();
@@ -110,6 +243,30 @@ fn scan_with(
     distros: Vec<wsl::WslDistro>,
     candidates: Vec<Candidate>,
     manual: &[ManualPath],
+    is_dir: &dyn Fn(&Path) -> bool,
+) -> ScanResult {
+    scan_roots(distros, candidates, input_roots(env, manual), is_dir)
+}
+
+fn input_roots(env: &dyn Fn(&str) -> Option<String>, manual: &[ManualPath]) -> Roots {
+    windows::candidate_roots(env)
+        .into_iter()
+        .chain(manual.iter().filter_map(|p| {
+            // 설정 저장 때도 검사하지만 공개 탐색에 직접 전달된 잘못된 입력 역시 열지 않는다.
+            p.validate().ok()?;
+            let vendor = match p.vendor {
+                ManualVendor::Claude => Vendor::Claude,
+                ManualVendor::Codex => Vendor::Codex,
+            };
+            Some((vendor, PathBuf::from(&p.root)))
+        }))
+        .collect()
+}
+
+fn scan_roots(
+    distros: Vec<wsl::WslDistro>,
+    candidates: Vec<Candidate>,
+    roots: impl IntoIterator<Item = (Vendor, PathBuf)>,
     is_dir: &dyn Fn(&Path) -> bool,
 ) -> ScanResult {
     let mut out = ScanResult {
@@ -131,19 +288,8 @@ fn scan_with(
             }
         }
     }
-    for (vendor, root) in windows::candidate_roots(env) {
+    for (vendor, root) in roots {
         add_root(&mut out, &mut seen, vendor, root, is_dir);
-    }
-    for p in manual {
-        // 설정 저장 때도 검사하지만 공개 scan에 직접 전달된 잘못된 입력 역시 열지 않는다.
-        if p.validate().is_err() {
-            continue;
-        }
-        let vendor = match p.vendor {
-            ManualVendor::Claude => Vendor::Claude,
-            ManualVendor::Codex => Vendor::Codex,
-        };
-        add_root(&mut out, &mut seen, vendor, PathBuf::from(&p.root), is_dir);
     }
     out
 }
@@ -267,6 +413,9 @@ pub fn live_claude_sessions() -> Vec<registry::RegistryEntry> {
 pub fn discover_wsl() -> Vec<wsl::WslDistro> {
     wsl::discover()
 }
+
+#[cfg(test)]
+mod scanner_tests;
 
 #[cfg(test)]
 mod tests {

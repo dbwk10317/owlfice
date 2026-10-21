@@ -258,7 +258,8 @@
     "cause": { "files": "세션 파일 {total}개 확인 중 ({done}/{total})", "wsl": "WSL 공유 응답 대기 ({distro})" },
     "slow": "건물주가 전화를 안 받네요...",
     "wslOff": "{floor}층 소등 ({distro} 꺼짐)",
-    "wslFail": "{floor}층 임대 실패 (WSL {distro} 응답 없음)"
+    "wslFail": "{floor}층 임대 실패 (WSL {distro} 응답 없음)",
+    "wslPending": "WSL 폴더는 탐색이 끝나면 추가합니다"
   },
 
   "empty": {

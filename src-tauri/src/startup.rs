@@ -49,6 +49,8 @@ pub enum StartupSummary {
     },
     /// 3단계 실패: 세션 폴더를 하나도 못 찾음 (docs/CONTRACTS.md C3)
     NoFolders,
+    /// 3단계: Windows 폴더는 없고 WSL 탐색은 별도로 진행 중이다.
+    WslPending,
     /// 4단계: 불 켜진 팀 수
     Teams {
         n: u32,
@@ -255,8 +257,11 @@ impl ScanWatch {
 pub trait Boot {
     /// 규모를 고를 때까지 기다린다 (docs/CONTRACTS.md C4 "고르기 전에는 진행하지 않는다"). 이미 있으면 바로 돌아온다
     fn wait_for_scale(&self);
-    /// 2단계: Windows 의 Site 와 WSL 배포판 (꺼진 배포판 포함)
+    /// 2단계: Windows의 Site와 이미 탐색된 WSL 배포판. WSL 탐색 완료는 기다리지 않는다.
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>);
+    fn discovery_pending(&self) -> bool {
+        false
+    }
     /// 호스트 스레드와 Probe 를 띄운다. 첫 Scan 마다 `watch` 에 알려야 한다
     fn spawn_hosts(&self, sites: Vec<Site>, distros: Vec<WslDistro>, watch: Arc<ScanWatch>);
     /// 6단계: 사이드바 구성
@@ -466,7 +471,9 @@ pub fn run(s: &Startup, boot: &dyn Boot, world: &Mutex<OfficeWorld>, lim: &Limit
         .chain(distros.iter().flat_map(|d| &d.sites))
         .map(|site| format!("{} {}", host_name(&site.host), site.vendor.label()))
         .collect();
-    if buildings.is_empty() {
+    if buildings.is_empty() && boot.discovery_pending() {
+        s.put(3, StepState::Done, StartupSummary::WslPending);
+    } else if buildings.is_empty() {
         s.put(3, StepState::Error, StartupSummary::NoFolders);
     } else {
         s.put(3, StepState::Done, StartupSummary::Rented { buildings });

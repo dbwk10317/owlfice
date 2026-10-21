@@ -90,6 +90,8 @@ function doneText(step: number, s: StartupSummary, company: string): string {
       return fill(tpl, { n: s.n, hosts: s.hosts.join(", ") });
     case "Rented":
       return fill(tpl, { buildings: s.buildings.join(" · ") });
+    case "WslPending":
+      return L.wslPending;
     case "Teams":
       return fill(tpl, { n: s.n });
     case "Hired":

@@ -11,7 +11,7 @@ use crate::parse::claude::ClaudeParser;
 use crate::parse::codex::CodexParser;
 use crate::parse::{
     Compound, Confidence, Event, EventKind, Parser, RawRef, TestResult, ToolKind, ToolOutcome,
-    ToolSummary,
+    ToolSummary, Unhandled,
 };
 
 use Confidence::{Confirmed, Inferred};
@@ -2902,4 +2902,160 @@ fn record_counts_repeats_in_first_seen_order() {
         r.commands.items,
         own(&[("cargo fmt", 2), ("cargo test", 1)])
     );
+}
+
+// ---------- 미대응 기록 (4.11 state_conflict·scenario_gap) ----------
+
+fn unhandled(cues: &[Cue]) -> Vec<&Unhandled> {
+    cues.iter()
+        .filter_map(|c| match c {
+            Cue::Unhandled(u) => Some(u),
+            _ => None,
+        })
+        .collect()
+}
+
+fn gaps(cues: &[Cue]) -> Vec<(bool, &str, &str, &str)> {
+    unhandled(cues)
+        .into_iter()
+        .filter_map(|u| match u {
+            Unhandled::ScenarioGap {
+                team,
+                from,
+                to,
+                via,
+            } => Some((*team, *from, *to, *via)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 병렬 호출(S53)에서 먼저 끝난 성공은 이미 대응한 시나리오라 남기지 않는다
+#[test]
+fn rejection_hidden_by_another_running_call_is_one_conflict() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("rm -rf build")))
+        .on(MAIN, 0, call("b", ToolKind::Shell, cmd("npm run lint")))
+        .on(MAIN, 0, call("c", ToolKind::FileRead, file("a.rs")))
+        .on(MAIN, 1, result("c", ToolOutcome::Ok))
+        .on(MAIN, 1, result("a", ToolOutcome::Rejected));
+    // 반려 cue 는 그대로 나가고 화면은 남은 호출을 보인다
+    assert!(s.cues.contains(&Cue::Reject { agent: MAIN.into() }));
+    assert_eq!(
+        unhandled(&s.cues),
+        [&Unhandled::StateConflict {
+            winner: "진행 중 호출",
+            masked: "반려",
+        }]
+    );
+}
+
+#[test]
+fn going_off_while_asking_is_one_conflict() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("q", ToolKind::Ask, summary()))
+        .on(MAIN, 0, ask("배포할까요?", false));
+    s.tick(31 * 60).tick(40 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Off);
+    // 허가 대기→퇴근 은 표에 있어 scenario_gap 으로 한 번 더 세지 않는다
+    assert_eq!(
+        unhandled(&s.cues),
+        [&Unhandled::StateConflict {
+            winner: "퇴근",
+            masked: "허가 대기",
+        }]
+    );
+}
+
+/// Codex 승인 추정으로 문 앞에 있는 동안 가려진 것은 허가 대기가 이긴 것이다
+#[test]
+fn escalation_wait_wins_as_asking() {
+    let escalated = ToolSummary {
+        escalated: true,
+        ..cmd("rm -rf build")
+    };
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("y", ToolKind::Shell, cmd("npm run lint")))
+        .on(MAIN, 1, call("x", ToolKind::Shell, escalated))
+        .tick(40);
+    assert_eq!(s.boss().activity.room, Room::Door);
+    s.on(MAIN, 41, result("y", ToolOutcome::Err));
+    assert!(unhandled(&s.cues).contains(&&Unhandled::StateConflict {
+        winner: "허가 대기",
+        masked: "사고",
+    }));
+}
+
+/// 출근만 하고 일 없이 3분이 지나 탕비실로 가는 것은 표에 있다 (S02·S35)
+#[test]
+fn boss_with_only_meta_dozes_without_gap() {
+    let mut s = Sim::new();
+    s.on(
+        MAIN,
+        0,
+        EventKind::SessionMeta {
+            cwd: PathBuf::from("w"),
+            model: None,
+            title: None,
+            product: Product::ClaudeCli,
+            product_observed: true,
+            git_branch: None,
+        },
+    )
+    .tick(4 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Dozing);
+    assert_eq!(unhandled(&s.cues), Vec::<&Unhandled>::new());
+}
+
+#[test]
+fn leaving_the_door_without_a_cue_is_a_gap() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("q", ToolKind::Ask, summary()))
+        .on(MAIN, 0, ask("배포할까요?", false));
+    s.cues.clear();
+    s.on(MAIN, 5, result("q", ToolOutcome::Ok));
+    assert_eq!(
+        gaps(&s.cues),
+        [(false, "허가 대기", "한가함", "ToolResult")]
+    );
+}
+
+/// 요구 → 읽기 → 테스트 실패 → 보고 → 결재 대기 → 졸음 → 퇴근 → 재방문. 표에 있는 전이와 cue 가 붙은 전이뿐이다
+#[test]
+fn request_fail_report_doze_off_and_revisit_has_no_gaps() {
+    let mut s = Sim::new();
+    s.on(
+        MAIN,
+        0,
+        EventKind::UserMessage {
+            text: "고쳐 줘".into(),
+        },
+    )
+    .on(MAIN, 5, call("r", ToolKind::FileRead, file("a.rs")))
+    .on(MAIN, 6, result("r", ToolOutcome::Ok))
+    .on(MAIN, 7, call("t", ToolKind::Test, cmd("cargo test")))
+    .on(MAIN, 9, result("t", ToolOutcome::Err))
+    .on(MAIN, 20, text("고쳤습니다"));
+    s.tick(25).tick(5 * 60).tick(40 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Off);
+    s.on(
+        MAIN,
+        50 * 60,
+        EventKind::UserMessage {
+            text: "다시".into(),
+        },
+    );
+    assert_eq!(gaps(&s.cues), []);
+}
+
+/// 사장님 방문 없이 졸던 팀이 깨는 것은 3.10 에 없다
+#[test]
+fn team_waking_from_doze_without_a_visit_is_a_gap() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, text("끝났습니다"));
+    s.tick(4 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Dozing);
+    s.cues.clear();
+    s.on(MAIN, 5 * 60, text("하나 더"));
+    assert!(gaps(&s.cues).contains(&(true, "졸음", "근무 중", "AssistantText")));
 }

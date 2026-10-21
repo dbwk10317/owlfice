@@ -16,6 +16,7 @@ use super::{
 use crate::discover::Product;
 use crate::parse::{
     Compound, Confidence, Event, EventKind, TestResult, ToolKind, ToolOutcome, ToolSummary,
+    Unhandled,
 };
 
 const RECENT: usize = 3;
@@ -256,8 +257,16 @@ impl Team {
         }
     }
 
-    /// 이벤트 하나를 적용한다 (4.7.1). 시각은 언제나 `ev.ts` 다. 없으면 같은 파일의 직전 ts
+    /// 이벤트 하나를 적용한다 (4.7.1). 시각은 언제나 `ev.ts` 다. 없으면 같은 파일의 직전 ts.
+    /// 끝에 `note_gaps` 를 본다
     pub fn apply(&mut self, ev: &Event, cues: &mut Vec<Cue>) {
+        let before = self.words();
+        let from = cues.len();
+        self.apply_event(ev, cues);
+        self.note_gaps(&before, from, event_name(&ev.kind), cues);
+    }
+
+    fn apply_event(&mut self, ev: &Event, cues: &mut Vec<Cue>) {
         if ev.kind == EventKind::Reset {
             // 팀 전체를 다시 만드는 것은 부르는 쪽 몫이다 (4.3 재구성 규칙)
             return;
@@ -326,13 +335,15 @@ impl Team {
                     self.work.message(text);
                     self.sync_work();
                 }
-                if !self.refresh(i, ts) && boss {
-                    self.employees[i].log_activity(Activity::new(
+                match (self.refresh(i, ts), boss) {
+                    (false, true) => self.employees[i].log_activity(Activity::new(
                         sentence::REQUEST,
                         Room::TeamLead,
                         ts,
                         Confidence::Confirmed,
-                    ));
+                    )),
+                    (true, true) => self.conflict(i, ts, conflict::REQUEST, cues),
+                    _ => {}
                 }
             }
             EventKind::Thinking => {
@@ -356,7 +367,9 @@ impl Team {
                 } else {
                     (sentence::report(text), home_room(e))
                 };
-                if !self.refresh(i, ts) {
+                if self.refresh(i, ts) {
+                    self.conflict(i, ts, conflict::REPORT, cues);
+                } else {
                     self.employees[i].log_activity(Activity {
                         pose: Pose::Type,
                         ..Activity::new(sentence, room, ts, Confidence::Confirmed)
@@ -494,7 +507,9 @@ impl Team {
                 let e = &mut self.employees[i];
                 let busy = e.asking.is_some()
                     || e.pending.last().is_some_and(|c| c.tool != ToolKind::Spawn);
-                if !busy && fresh {
+                if busy && fresh {
+                    self.conflict(i, ts, conflict::SPAWN, cues);
+                } else if fresh {
                     let room = room_for(&ToolKind::Spawn, e.is_boss(), false);
                     e.log_activity(Activity::new(
                         sentence::spawn(rank, desc.as_deref().unwrap_or(prompt)),
@@ -549,13 +564,15 @@ impl Team {
                 } else {
                     e.last_say = Some(sentence::REPOT_SAY.to_string());
                 }
-                if !self.refresh(i, ts) && boss {
-                    self.employees[i].log_activity(Activity::new(
+                match (self.refresh(i, ts), boss) {
+                    (false, true) => self.employees[i].log_activity(Activity::new(
                         sentence::REPOT,
                         Room::TeamLead,
                         ts,
                         Confidence::Confirmed,
-                    ));
+                    )),
+                    (true, true) => self.conflict(i, ts, conflict::REPOT, cues),
+                    _ => {}
                 }
                 self.employees[i].say(ts, BubbleSay::Compaction);
             }
@@ -762,8 +779,16 @@ impl Team {
 
     /// 시간 기반 전이 (4.7.2). `now` 는 벽시계 또는 논리 시계(4.3)다.
     /// `local` 은 야근 판정용 현지 시간대. 테스트가 실행 환경의 시간대에 기대지 않게 받는다.
-    /// 전이가 남기는 시각은 이 틱이 아니라 문턱 시각이다. 그래야 틱 간격과 무관하다 (4.3 재구성 규칙)
+    /// 전이가 남기는 시각은 이 틱이 아니라 문턱 시각이다. 그래야 틱 간격과 무관하다 (4.3 재구성 규칙).
+    /// 끝에 `note_gaps` 를 본다
     pub fn tick(&mut self, now: DateTime<Utc>, local: FixedOffset, cues: &mut Vec<Cue>) {
+        let before = self.words();
+        let from = cues.len();
+        self.tick_to(now, local, cues);
+        self.note_gaps(&before, from, "tick", cues);
+    }
+
+    fn tick_to(&mut self, now: DateTime<Utc>, local: FixedOffset, cues: &mut Vec<Cue>) {
         if let Some(at) = self
             .incident
             .as_ref()
@@ -814,6 +839,17 @@ impl Team {
         }
         if quiet > OFF_AFTER && !self.alive_in_registry && self.phase != TeamPhase::Off {
             self.phase = TeamPhase::Off;
+            // 사장님을 기다리던 호출은 30분 포기에서 빠져 퇴근이 덮는다 (4.7.2)
+            if self
+                .employees
+                .iter()
+                .any(|e| e.asking.is_some() || e.pending.iter().any(waits_for_boss))
+            {
+                cues.push(Cue::Unhandled(Unhandled::StateConflict {
+                    winner: word::OFF,
+                    masked: word::ASKING,
+                }));
+            }
             // 끝내 결과가 안 올 호출과 작업표의 뒷정리 (4.7.2)
             let at = self.last_activity + OFF_AFTER;
             for i in 0..self.employees.len() {
@@ -942,6 +978,11 @@ impl Team {
         let home = home_room(e);
         let confirmed = *outcome_confidence == Confidence::Confirmed;
         let declares = call.summary.compound != Compound::Mixed;
+        let own = match outcome {
+            ToolOutcome::Rejected => Some(conflict::REJECTED),
+            ToolOutcome::Err if confirmed => Some(conflict::ACCIDENT),
+            _ => None,
+        };
         match outcome {
             ToolOutcome::Started => {
                 e.background.push(call.clone());
@@ -1095,7 +1136,70 @@ impl Team {
                 self.restore_light(&call);
             }
         }
-        self.refresh(i, ts);
+        // 남은 호출이 결과 연출을 덮는다
+        if self.refresh(i, ts)
+            && let Some(m) = own
+        {
+            self.conflict(i, ts, m, cues);
+        }
+    }
+
+    /// 이벤트 자기 연출(`hidden`)이 허가 대기·진행 중 호출에 가려졌다 (2.5 우선순위 1·2번, 4.11 state_conflict).
+    /// 이긴 쪽은 화면의 문 앞과 같은 근거로 정한다. Codex 승인 추정의 문 앞은 refresh 가 아니라 tick 이 그려서
+    /// 방금 쓴 활동의 방으로는 알 수 없다
+    fn conflict(&self, i: usize, ts: DateTime<Utc>, hidden: &'static str, cues: &mut Vec<Cue>) {
+        let winner = if self.asking(&self.employees[i], ts) {
+            word::ASKING
+        } else {
+            conflict::PENDING
+        };
+        cues.push(Cue::Unhandled(Unhandled::StateConflict {
+            winner,
+            masked: hidden,
+        }));
+    }
+
+    /// 화면에 보이는 상태 단어: 팀 단계와 직원마다 (4.11 scenario_gap 의 직전 상태)
+    fn words(&self) -> (TeamPhase, Vec<&'static str>) {
+        let words = self
+            .employees
+            .iter()
+            .map(|e| state_word(self.phase, e))
+            .collect();
+        (self.phase, words)
+    }
+
+    /// `apply`·`tick` 한 번에서 연출 cue 가 하나도 안 나갔는데 상태가 바뀌었고 표에 없는 전이면
+    /// 미대응으로 cue 길에 함께 낸다 (4.11 scenario_gap). 재구성이 cue 를 버릴 때 같이 버려져 다시 세지 않는다.
+    /// 이 호출에서 새로 생긴 직원은 출근 연출이나 임시 직원이라 전이가 아니다
+    fn note_gaps(
+        &self,
+        before: &(TeamPhase, Vec<&'static str>),
+        from: usize,
+        via: &'static str,
+        cues: &mut Vec<Cue>,
+    ) {
+        if cues[from..].iter().any(Cue::shown) {
+            return;
+        }
+        let gap = |team, from, to| {
+            Cue::Unhandled(Unhandled::ScenarioGap {
+                team,
+                from,
+                to,
+                via,
+            })
+        };
+        let (phase, words) = before;
+        if *phase != self.phase && !TEAM_FOLLOWS.contains(&(*phase, self.phase)) {
+            cues.push(gap(true, phase_word(*phase), phase_word(self.phase)));
+        }
+        for (e, &was) in self.employees.iter().zip(words) {
+            let now = state_word(self.phase, e);
+            if was != now && !follows(was, now) {
+                cues.push(gap(false, was, now));
+            }
+        }
     }
 
     /// 허가 대기와 진행 중 호출은 다른 무엇보다 앞선다 (2.5 우선순위 1·2번). 그 문장을 썼으면 true
@@ -1447,6 +1551,196 @@ const COMMAND_CHARS: usize = 200;
 /// 퇴근한 직원은 그보다 뒤 ts 의 이벤트로만 돌아온다. 늦게 읽힌 옛 줄은 확인된 종료를 풀지 않는다 (4.7.1)
 fn rehires(e: &Employee, ts: Option<DateTime<Utc>>) -> bool {
     e.retired_at.is_some_and(|r| ts.is_some_and(|t| t > r))
+}
+
+/// 2.4 상태 단어. 미대응 기록(4.11)의 key 라서 정해진 낱말만 쓴다
+mod word {
+    pub const ARRIVING: &str = "출근";
+    pub const WORKING: &str = "근무 중";
+    /// 끝난 일만 행적에 남기고 진행 중인 일이 없다
+    pub const IDLE: &str = "한가함";
+    pub const THINKING: &str = "응답 대기";
+    pub const WAITING_USER: &str = "결재 대기";
+    pub const ASKING: &str = "허가 대기";
+    pub const REJECTED: &str = "반려";
+    pub const INCIDENT: &str = "상황실";
+    pub const DOZING: &str = "졸음";
+    pub const OFF: &str = "퇴근";
+    pub const SUB_DONE: &str = "서브 종료";
+}
+
+/// state_conflict 의 이긴 쪽(허가 대기·퇴근은 상태 단어)과 가려진 연출 이름 (4.11).
+/// 완료는 없다. 병렬 호출(S53)에서 먼저 끝난 결과가 남은 호출에 가리는 것은 이미 대응한 시나리오다
+mod conflict {
+    pub const PENDING: &str = "진행 중 호출";
+    pub const REQUEST: &str = "요구 접수";
+    pub const REPORT: &str = "보고";
+    pub const REPOT: &str = "분갈이";
+    pub const SPAWN: &str = "지시";
+    pub const REJECTED: &str = "반려";
+    pub const ACCIDENT: &str = "사고";
+}
+
+/// 상태만으로 화면이 따라가는 전이: (도착 상태, 떠나온 상태들). 프론트는 방·자세를 상태로 그려서 cue 가 없어도 된다.
+/// 출근에서는 입장 연출(Enter) 뒤 지금 상태로 간다. 출근 중 사건은 뒤에 재생한다 (S02·S19, 2.5). 퇴근에서는 불이 켜지며 돌아온다 (S37).
+/// 반려·서브 종료로 들어가는 전이와 서브 종료에서 나오는 전이는 cue(Reject·Retire·Rehire)가 늘 붙어 표에 없다.
+/// 허가 대기에서 나오는 전이(결재 통과·철회)는 3.10 에 시나리오가 없어 퇴근 말고는 표에 없다
+const FOLLOWS: &[(&str, &[&str])] = {
+    use word::*;
+    &[
+        // S07~S31: 호출마다 그 방으로 걸어간다
+        (
+            WORKING,
+            &[
+                ARRIVING,
+                IDLE,
+                THINKING,
+                WAITING_USER,
+                REJECTED,
+                INCIDENT,
+                DOZING,
+                OFF,
+            ],
+        ),
+        // S06·S12·S24: 결과·응답 뒤 자리에서 행적을 남긴다
+        (
+            IDLE,
+            &[
+                ARRIVING,
+                WORKING,
+                THINKING,
+                WAITING_USER,
+                REJECTED,
+                INCIDENT,
+                DOZING,
+                OFF,
+            ],
+        ),
+        // S04·S05: 침묵은 자세(의자 돌림, 러버덕)로 그린다
+        (THINKING, &[ARRIVING, WORKING, IDLE, REJECTED, DOZING, OFF]),
+        // S32: 화면보호기, 서성임
+        (WAITING_USER, &[ARRIVING, IDLE, OFF]),
+        // S34: 결재판 들고 문 앞
+        (
+            ASKING,
+            &[
+                ARRIVING,
+                WORKING,
+                IDLE,
+                THINKING,
+                WAITING_USER,
+                REJECTED,
+                INCIDENT,
+                DOZING,
+                OFF,
+            ],
+        ),
+        // S26: 경광등(Siren)은 사고 결과 때 나가고 부장은 다음 틱에 상황실로 간다
+        (INCIDENT, &[WORKING, IDLE, THINKING, REJECTED, OFF]),
+        // S33·S35: 탕비실 소파. 출근만 하고 3분 조용해도 간다 (S02)
+        (
+            DOZING,
+            &[
+                ARRIVING,
+                WORKING,
+                IDLE,
+                THINKING,
+                WAITING_USER,
+                REJECTED,
+                OFF,
+            ],
+        ),
+        // S36·S51: 조명이 꺼지고 직원이 나간다. 허가 대기가 덮이는 것은 state_conflict 가 센다
+        (
+            OFF,
+            &[
+                ARRIVING,
+                WORKING,
+                IDLE,
+                THINKING,
+                WAITING_USER,
+                ASKING,
+                REJECTED,
+                INCIDENT,
+                DOZING,
+            ],
+        ),
+        (ARRIVING, &[OFF]),
+    ]
+};
+
+fn follows(from: &str, to: &str) -> bool {
+    FOLLOWS
+        .iter()
+        .any(|(t, froms)| *t == to && froms.contains(&from))
+}
+
+/// 팀 단계의 같은 표. 졸다 깨는 것(사장님 방문 없이)은 3.10 에 시나리오가 없다
+const TEAM_FOLLOWS: &[(TeamPhase, TeamPhase)] = &[
+    // S35
+    (TeamPhase::Working, TeamPhase::Dozing),
+    // S36
+    (TeamPhase::Working, TeamPhase::Off),
+    (TeamPhase::Dozing, TeamPhase::Off),
+    // S37
+    (TeamPhase::Off, TeamPhase::Working),
+];
+
+/// 이미 정한 출력(활동·퇴장·팀 단계)에서 읽은 2.4 상태 단어. 상태 기계의 판정을 다시 하지 않는다
+fn state_word(phase: TeamPhase, e: &Employee) -> &'static str {
+    let a = &e.activity;
+    if e.retired_at.is_some() {
+        word::SUB_DONE
+    } else if phase == TeamPhase::Off {
+        word::OFF
+    } else if a.room == Room::Door {
+        word::ASKING
+    } else if a.room == Room::Incident {
+        word::INCIDENT
+    } else if a.pose == Pose::Sleep {
+        word::DOZING
+    } else if a.pose == Pose::Pace {
+        word::WAITING_USER
+    } else if matches!(a.pose, Pose::Think | Pose::Duck) {
+        word::THINKING
+    } else if sentence::is_rejected(&a.sentence) {
+        word::REJECTED
+    } else if a.sentence == sentence::ARRIVAL || a.sentence == sentence::ARRIVAL_BOSS {
+        word::ARRIVING
+    } else if e.logged {
+        word::IDLE
+    } else {
+        word::WORKING
+    }
+}
+
+fn phase_word(p: TeamPhase) -> &'static str {
+    match p {
+        TeamPhase::Working => word::WORKING,
+        TeamPhase::Dozing => word::DOZING,
+        TeamPhase::Off => word::OFF,
+    }
+}
+
+/// scenario_gap 의 via
+fn event_name(kind: &EventKind) -> &'static str {
+    match kind {
+        EventKind::UserMessage { .. } => "UserMessage",
+        EventKind::Thinking => "Thinking",
+        EventKind::AssistantText { .. } => "AssistantText",
+        EventKind::ToolCall { .. } => "ToolCall",
+        EventKind::ToolResult { .. } => "ToolResult",
+        EventKind::SubagentSpawn { .. } => "SubagentSpawn",
+        EventKind::SubagentDone { .. } => "SubagentDone",
+        EventKind::PermissionRequest { .. } => "PermissionRequest",
+        EventKind::ContextCompaction { .. } => "ContextCompaction",
+        EventKind::TitleChanged { .. } => "TitleChanged",
+        EventKind::PrLinked { .. } => "PrLinked",
+        EventKind::TodoChanged { .. } => "TodoChanged",
+        EventKind::TokenUsage { .. } => "TokenUsage",
+        EventKind::SessionMeta { .. } => "SessionMeta",
+        EventKind::Reset => "Reset",
+    }
 }
 
 /// 사장님 결재를 기다리는 호출. 자리를 비우면 30분을 넘길 수 있어 포기하지 않는다.
@@ -1980,8 +2274,13 @@ pub(crate) mod sentence {
             .unwrap_or_else(|| label(&call.tool))
     }
 
+    /// `rejected` 문장의 머리. 상태 단어(반려)가 이것으로 문장을 알아본다
+    const REJECTED: &str = "반려됨: ";
     pub fn rejected(call: &PendingCall) -> String {
-        format!("반려됨: {} 안 됩니다", subject(call))
+        format!("{REJECTED}{} 안 됩니다", subject(call))
+    }
+    pub fn is_rejected(s: &str) -> bool {
+        s.starts_with(REJECTED)
     }
     /// 표(3.5)의 문구를 그대로 쓴다. 추정 표시는 confidence 가 한다
     pub fn unknown(call: &PendingCall) -> String {

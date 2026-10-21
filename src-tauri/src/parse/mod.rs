@@ -48,9 +48,22 @@ pub trait Parser {
 }
 
 /// 원본 레코드를 보는 파서만 아는 미대응 재료 (4.11). 원문 값은 담지 않는다.
-/// 이벤트에서 알 수 있는 kind(`command`·`mcp_server`·`skill` 등)와 집계·저장은 diag 몫이다
+/// 이벤트에서 알 수 있는 kind(`command`·`mcp_server`·`skill` 등)와 집계·저장은 diag 몫이다.
+/// 상태 기계만 아는 둘(StateConflict·ScenarioGap)도 같은 모양으로 diag 에 넘긴다. 값은 정해진 낱말뿐이다
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Unhandled {
+    /// 이벤트 자기 연출(`masked`)이 2.5 우선순위로 더 높은 상태(`winner`)에 가려졌다
+    StateConflict {
+        winner: &'static str,
+        masked: &'static str,
+    },
+    /// cue 없이 바뀐 2.4 상태 단어. `team` 이면 직원이 아니라 팀 단계다. `via` 는 이벤트 종류 또는 `tick`
+    ScenarioGap {
+        team: bool,
+        from: &'static str,
+        to: &'static str,
+        via: &'static str,
+    },
     /// 모르는 최상위 `type`, Codex `payload.type`. `keys` 는 최상위 키 이름
     RecordType {
         type_name: String,

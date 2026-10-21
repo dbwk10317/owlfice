@@ -331,7 +331,11 @@ impl HostLoop {
         if self.suspect() {
             return;
         }
-        self.lock_world().tick(now, &self.host.id);
+        {
+            let mut w = self.lock_world();
+            w.tick(now, &self.host.id);
+            w.drain_unhandled(&self.diag, now);
+        }
         let names = self.lock_world().unsaved_names();
         if let Some(e) = names.and_then(|n| n.write_report()) {
             crate::oplog!("이름 저장 실패: {e}");
@@ -514,6 +518,7 @@ impl HostLoop {
             if !events.is_empty() {
                 w.apply(key, &events, now);
             }
+            w.drain_unhandled(&self.diag, now);
             w.teams.get(key).map(|t| t.product)
         };
         for ((p, pending), max) in batch.into_iter().zip(maxes) {
@@ -837,6 +842,8 @@ impl HostLoop {
         if let Some(ts) = last_ts {
             self.clock.observe(ts);
         }
+        // ponytail: 서브 파일이 새로 보여 다시 만들 때 그 틱에 처음 읽은 줄의 state_conflict·scenario_gap 은
+        // 재구성 cue 와 함께 버려져 덜 센다, 미대응 로그에서 서브 등장 직후 전이가 빠져 보이면 재구성 전 적용분과 나눠 센다
         self.observe(product, &heard, &heard_unhandled, now);
         Ok(())
     }
@@ -3186,5 +3193,109 @@ mod tests {
         e.at(t0() + secs(300));
         h.tick();
         assert_eq!(e.team(REJECT).turns, 2);
+    }
+
+    /// 결재(허가 대기)가 cue 없이 끝나고, 승인 창(require_escalated)이 뜬 채 세션이 끊기는 Codex 세션 (4.11).
+    /// 끊긴 것은 그 호출의 반려 줄 앞에서 잘라 재생한다
+    const STATE_FIXTURE: &str = "codex/ask-reject-compact";
+
+    fn state_host(e: &Env) -> HostLoop {
+        e.host(
+            win(),
+            vec![site_of(&win(), Vendor::Codex, &e.dir("sessions"))],
+        )
+    }
+
+    /// 빈 폴더에 한 줄씩 붙이며 틱을 돈다 (실행 중 append 재생). 붙인 파일과 마지막 시각에서 40분 뒤를 돌려준다
+    fn replay_state_fixture(e: &Env, h: &mut HostLoop) -> (PathBuf, DateTime<Utc>) {
+        let src = fs::read_dir(fixture(STATE_FIXTURE))
+            .unwrap()
+            .flatten()
+            .next()
+            .unwrap()
+            .path();
+        let dst = e.dir("sessions/2026/03/02").join(src.file_name().unwrap());
+        let lines: Vec<String> = lines_of(&src)
+            .into_iter()
+            .take_while(|l| !l.contains("rejected by user"))
+            .collect();
+        assert!(lines.last().unwrap().contains("token_usage_record"));
+        let mut last = None;
+        for l in &lines {
+            if let Some(t) = ts_of(l) {
+                e.at(t);
+                last = last.max(Some(t));
+            }
+            append(&dst, std::slice::from_ref(l));
+            h.tick();
+        }
+        let end = last.unwrap() + Duration::minutes(40);
+        e.at(end);
+        h.tick();
+        (dst, end)
+    }
+
+    /// unhandled.jsonl 의 state_conflict·scenario_gap 줄: (kind, key) → count
+    fn state_lines(diag: &Mutex<Diag>, dir: &Path) -> BTreeMap<(String, String), u64> {
+        diag.lock().unwrap().flush().unwrap();
+        let text = fs::read_to_string(dir.join("unhandled.jsonl")).unwrap_or_default();
+        text.lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .filter(|v| v["kind"] == "state_conflict" || v["kind"] == "scenario_gap")
+            .map(|v| {
+                let s = |k: &str| v[k].as_str().unwrap().to_string();
+                ((s("kind"), s("key")), v["count"].as_u64().unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fixture_replay_records_state_conflict_and_scenario_gap() {
+        let e = env();
+        let mut h = state_host(&e);
+        replay_state_fixture(&e, &mut h);
+        // 미대응 기록은 프론트 연출로 나가지 않는다
+        assert!(e.w().outbox.iter().all(|(.., c)| c.shown()));
+        let lines = state_lines(&e.diag, e.tmp.path());
+        let own = |kind: &str, key: &str| ((kind.to_string(), key.to_string()), 1);
+        assert_eq!(
+            lines,
+            BTreeMap::from([
+                own("scenario_gap", "허가 대기>한가함@ToolResult"),
+                own("state_conflict", "codex_app:퇴근>허가 대기"),
+            ])
+        );
+    }
+
+    #[test]
+    fn state_records_are_not_counted_again_on_reset_or_restart() {
+        let e = env();
+        let mut h = state_host(&e);
+        let (file, end) = replay_state_fixture(&e, &mut h);
+        let counted = state_lines(&e.diag, e.tmp.path());
+        assert_eq!(counted.len(), 2);
+        // 같은 내용의 새 파일로 바꾸면 Reset 으로 팀을 처음부터 다시 만든다. 퇴근 팀은 Cold 폴링 때 본다
+        let text = fs::read_to_string(&file).unwrap();
+        fs::rename(&file, file.with_extension("old")).unwrap();
+        fs::write(&file, text).unwrap();
+        e.at(end + COLD);
+        h.tick();
+        assert_eq!(h.files[&file].generation(), 1);
+        assert_eq!(state_lines(&e.diag, e.tmp.path()), counted);
+        // 재시작: 새 world 와 다시 연 미대응 로그로 같은 파일을 처음부터 읽는다
+        let world = Arc::new(Mutex::new(OfficeWorld::new(
+            Scale::Large,
+            NameBook::load(e.tmp.path()),
+            FixedOffset::east_opt(0).unwrap(),
+        )));
+        let diag = Arc::new(Mutex::new(Diag::open(e.tmp.path(), false)));
+        let clock = Arc::new(LogicalClock::new(end + COLD + SCAN, 0.0));
+        let sites = h.sites.clone();
+        let mut again = HostLoop::new(win(), sites, world.clone(), clock.clone(), diag.clone());
+        again.tick();
+        clock.observe(end + Duration::minutes(10));
+        again.tick();
+        assert_eq!(world.lock().unwrap().teams.len(), 1);
+        assert_eq!(state_lines(&diag, e.tmp.path()), counted);
     }
 }

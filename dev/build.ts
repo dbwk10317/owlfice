@@ -10,6 +10,7 @@ import type {
   OfficeListDto,
   Pose,
   Room,
+  TestVerdict,
 } from "../src/types/ipc.ts";
 
 const T = "t1";
@@ -46,11 +47,19 @@ function emp(agentId: string, rank: "Bujang" | "Daeri", room: Room, pose: Pose, 
     contextUsed: null,
     contextWindow: null,
     bubble: null,
+    jobs: 0,
+    meeting: null,
+    review: null,
   } satisfies EmployeeDto;
 }
 
 let seq = 1;
-function office(worker: EmployeeDto, light: Light, cues: CueDto[] = []): OfficeDto {
+function office(
+  worker: EmployeeDto,
+  light: Light,
+  cues: CueDto[] = [],
+  test: TestVerdict | null = null,
+): OfficeDto {
   const since = iso();
   return {
     stateSeq: seq++,
@@ -64,6 +73,7 @@ function office(worker: EmployeeDto, light: Light, cues: CueDto[] = []): OfficeD
       trash: 0,
       pizza: 0,
       kanban: [],
+      test,
     } as unknown as OfficeDto["shared"],
     cues,
     teams: [
@@ -82,6 +92,7 @@ function office(worker: EmployeeDto, light: Light, cues: CueDto[] = []): OfficeD
         employees: [emp("boss", "Bujang", "TeamLead", "Sit"), worker],
         props: {} as OfficeDto["teams"][number]["props"],
         incident: null,
+        idleAlive: false,
       },
     ],
   };
@@ -103,8 +114,13 @@ const store = {
     return () => listeners.delete(fn);
   },
 };
-const show = (worker: EmployeeDto, light: Light, cues: CueDto[] = []) => {
-  store.state.office = office(worker, light, cues);
+const show = (
+  worker: EmployeeDto,
+  light: Light,
+  cues: CueDto[] = [],
+  test: TestVerdict | null = null,
+) => {
+  store.state.office = office(worker, light, cues, test);
   for (const fn of listeners) fn();
 };
 
@@ -130,9 +146,12 @@ const STEPS: [string, () => void][] = [
       then(
         () => show(at("Test"), "Yellow"),
         () =>
-          show(emp("a", "Daeri", "Dev", "Type"), "Green", [
-            cue({ kind: "Stamp", passed: 12, failed: 0, estimated: false }),
-          ]),
+          show(
+            emp("a", "Daeri", "Dev", "Type"),
+            "Green",
+            [cue({ kind: "Stamp", passed: 12, failed: 0, estimated: false })],
+            "Pass",
+          ),
       ),
   ],
   [
@@ -141,9 +160,12 @@ const STEPS: [string, () => void][] = [
       then(
         () => show(at("Test"), "Yellow"),
         () =>
-          show(emp("a", "Daeri", "Dev", "Type"), "Red", [
-            cue({ kind: "Stamp", passed: 10, failed: 2, estimated: false }),
-          ]),
+          show(
+            emp("a", "Daeri", "Dev", "Type"),
+            "Red",
+            [cue({ kind: "Stamp", passed: 10, failed: 2, estimated: false })],
+            "Fail",
+          ),
       ),
   ],
   [
@@ -152,9 +174,12 @@ const STEPS: [string, () => void][] = [
       then(
         () => show(at("Test"), "Yellow"),
         () =>
-          show(emp("a", "Daeri", "Dev", "Type"), "Yellow", [
-            cue({ kind: "Stamp", passed: 12, failed: 0, estimated: true }),
-          ]),
+          show(
+            emp("a", "Daeri", "Dev", "Type"),
+            "Yellow",
+            [cue({ kind: "Stamp", passed: 12, failed: 0, estimated: true })],
+            "Pass",
+          ),
       ),
   ],
   ["평균 2배 초과 (S17)", () => show(at("Build", "Squat", 30_000), "Yellow")],
@@ -184,14 +209,8 @@ const STEPS: [string, () => void][] = [
         () => show(at("Shipping"), "Off", [cue({ kind: "Return" })]),
       ),
   ],
-  [
-    "백그라운드 명령, 작업표 꽂기 (S61)",
-    () => show(at("Dev", "Type"), "Off", [cue({ kind: "Paper", agent: "a", on: true })]),
-  ],
-  [
-    "작업표 빼기",
-    () => show(at("Dev", "Type"), "Off", [cue({ kind: "Paper", agent: "a", on: false })]),
-  ],
+  ["백그라운드 명령, 작업표 꽂기 (S61)", () => show({ ...at("Dev", "Type"), jobs: 1 }, "Off")],
+  ["작업표 빼기", () => show(at("Dev", "Type"), "Off")],
 ];
 const buttons = document.getElementById("buttons")!;
 for (const [label, run] of STEPS) {

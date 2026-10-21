@@ -470,59 +470,72 @@ test("출고장에 있는 직원마다 포장된 상자가 하나씩, 슬롯 수
   expect(boxes(n(0))).toBe(0);
 });
 
-test("백그라운드 명령: Paper cue 가 작업표를 꽂고 빼고, 장면을 다시 지어도 남는다", () => {
+/** 백그라운드 명령 수만 다른 직원 둘 */
+const jobsOf = (a: number, b: number) =>
+  crew({ ...emp("Dev"), jobs: a }, { ...emp("Dev", "Sit", "f"), jobs: b });
+const stampCue = (passed: number, failed: number, estimated = false) =>
+  ({ teamId: "t", kind: "Stamp", passed, failed, estimated }) as const;
+
+test("작업표: 어느 직원이든 백그라운드 명령이 있으면 보이고, 장면을 다시 지어도 스냅샷으로 같다", () => {
   const { scene, props } = layer();
-  const ticket = () => scene.driven.get("job_ticket")!.visible;
+  const ticket = (s: Built = scene) => s.driven.get("job_ticket")!.visible;
+  props.update(jobsOf(0, 0), NOW);
   expect(ticket()).toBe(false);
-  props.cue({ teamId: "t", kind: "Paper", agent: "a", on: true }, NOW);
-  props.cue({ teamId: "t", kind: "Paper", agent: "b", on: true }, NOW);
+  props.update(jobsOf(1, 2), NOW);
   expect(ticket()).toBe(true);
-  props.cue({ teamId: "t", kind: "Paper", agent: "a", on: false }, NOW);
+  props.update(jobsOf(0, 1), NOW);
   expect(ticket()).toBe(true);
-  // 장애로 장면을 다시 지어도 (renderer 가 memory 를 넘긴다) 작업표가 남는다
+  // 장애로 장면을 다시 지어도 같은 스냅샷이면 같다
   const next = buildScene(assets, "large", "claude", true);
-  const again = new PropsLayer(fp, sheet, "large", next, props.memory);
-  again.update(office(), NOW + 1000);
-  expect(next.driven.get("job_ticket")!.visible).toBe(true);
-  props.cue({ teamId: "t", kind: "Paper", agent: "b", on: false }, NOW);
-  again.update(office(), NOW + 2000);
-  expect(next.driven.get("job_ticket")!.visible).toBe(false);
+  new PropsLayer(fp, sheet, "large", next).update(jobsOf(0, 1), NOW + 1000);
+  expect(ticket(next)).toBe(true);
+  props.update(jobsOf(0, 0), NOW + 2000);
+  expect(ticket()).toBe(false);
 });
 
-test("reset: 사무실을 옮기면 작업표·테스트 결과·진행 중인 효과가 사라진다", () => {
+test("결과판: 공유 test 를 따르고 없으면 평면도 기본. 사무실을 옮겨도 스냅샷 그대로", () => {
   const { scene, props } = layer();
-  props.cue({ teamId: "t", kind: "Paper", agent: "a", on: true }, NOW);
+  const base = fp.layouts.large.placements.find((p) => p.id === "test_board")!;
+  props.update(office(), NOW);
+  expect(tex(scene, "test_board")).toBe(base.sprite + "/" + base.state);
+  props.update(office({ test: "Fail" }), NOW);
+  expect(tex(scene, "test_board")).toBe("test_board/fail");
+  props.update(office({ test: "Pass" }), NOW);
+  expect(tex(scene, "test_board")).toBe("test_board/pass");
+  props.reset();
+  props.update(office({ test: "Pass" }), NOW + 10);
+  expect(tex(scene, "test_board")).toBe("test_board/pass");
+  // 도장 cue 는 결과판을 바꾸지 않는다
+  props.cue(stampCue(1, 1), NOW + 20);
+  expect(tex(scene, "test_board")).toBe("test_board/pass");
+  props.update(office({ test: null }), NOW + 30);
+  expect(tex(scene, "test_board")).toBe(base.sprite + "/" + base.state);
+});
+
+test("reset: 사무실을 옮기면 진행 중인 효과가 사라진다", () => {
+  const { scene, props } = layer();
   props.cue({ teamId: "t", kind: "Stamp", passed: 1, failed: 1, estimated: false }, NOW);
   props.cue({ teamId: "t", kind: "Truck" }, NOW);
   props.reset();
   props.update(office(), NOW + 10);
-  expect(scene.driven.get("job_ticket")!.visible).toBe(false);
-  expect(tex(scene, "test_board")).toBe("test_board/pass");
   expect(count(scene, "stamp_fail/default") + count(scene, "truck/drive_0")).toBe(0);
 });
 
-const stampCue = (passed: number, failed: number, estimated = false) =>
-  ({ teamId: "t", kind: "Stamp", passed, failed, estimated }) as const;
-
-test("Stamp: 전부 통과 / 일부 실패 / 추정 각각의 도장과 결과판, 2초 뒤 도장만 사라진다", () => {
-  const cases: [number, number, boolean, string, string][] = [
-    [12, 0, false, "stamp_pass/default", "test_board/pass"],
-    [10, 2, false, "stamp_fail/default", "test_board/fail"],
-    [12, 0, true, "stamp_pass_est/default", "test_board/pass"],
-    [10, 2, true, "stamp_fail_est/default", "test_board/fail"],
+test("Stamp: 전부 통과 / 일부 실패 / 추정 각각의 도장, 2초 뒤 사라진다", () => {
+  const cases: [number, number, boolean, string][] = [
+    [12, 0, false, "stamp_pass/default"],
+    [10, 2, false, "stamp_fail/default"],
+    [12, 0, true, "stamp_pass_est/default"],
+    [10, 2, true, "stamp_fail_est/default"],
   ];
-  for (const [passed, failed, estimated, mark, board] of cases) {
+  for (const [passed, failed, estimated, mark] of cases) {
     const { scene, props } = layer();
     props.cue(stampCue(passed, failed, estimated), NOW);
     expect(count(scene, mark)).toBe(1);
-    expect(tex(scene, "test_board")).toBe(board);
     props.tick(NOW + STAMP_RESULT_MS - 1);
     expect(count(scene, mark)).toBe(1);
     props.tick(NOW + STAMP_RESULT_MS);
     expect(count(scene, mark)).toBe(0);
-    // 결과판은 다음 테스트까지 남고, 다시 그려도 유지된다
-    props.update(office(), NOW + STAMP_RESULT_MS + 1000);
-    expect(tex(scene, "test_board")).toBe(board);
   }
 });
 
@@ -616,18 +629,18 @@ function says(room: Room, sentence: string, o: object = {}): TeamDto["employees"
     ...o,
   } as TeamDto["employees"][number];
 }
-const MCP = "거래처 `figma`와 `get_file` 건으로 미팅 중";
-const SKILL = "외주 매뉴얼 `pdf` 펼쳐보는 중";
-const review = (n: number) => `PR 리뷰 중 · 빨간펜 ${n}개`;
+const MCP = { meeting: { kind: "Mcp", server: "figma" } };
+const SKILL = { meeting: { kind: "Skill" } };
+const review = (pens: number, approved = false) => ({ review: { pens, approved } });
 
 test("MCP 미팅: 화면 켜짐, 명함, 상호 글자(DOM). 스킬은 매뉴얼. 끝나면 기본", () => {
   const overlay = document.createElement("div");
   const label = new ScreenLabel(overlay);
   const scene = buildScene(assets, "large", "claude", false);
-  const props = new PropsLayer(fp, sheet, "large", scene, undefined, label);
+  const props = new PropsLayer(fp, sheet, "large", scene, label);
   const shown = () => (overlay.firstElementChild as HTMLElement).hidden;
 
-  props.update(crew(says("Meeting", MCP)), NOW);
+  props.update(crew(says("Meeting", "미팅 중", MCP)), NOW);
   expect(tex(scene, "meeting_screen")).toBe("meeting_screen/on");
   expect([count(scene, "business_card/default"), count(scene, "manual_open/default")]).toEqual([
     1, 0,
@@ -635,14 +648,14 @@ test("MCP 미팅: 화면 켜짐, 명함, 상호 글자(DOM). 스킬은 매뉴얼
   expect(overlay.textContent).toBe("figma");
   expect(shown()).toBe(false);
 
-  props.update(crew(says("Meeting", SKILL)), NOW);
+  props.update(crew(says("Meeting", "미팅 중", SKILL)), NOW);
   expect(tex(scene, "meeting_screen")).toBe("meeting_screen/off");
   expect([count(scene, "business_card/default"), count(scene, "manual_open/default")]).toEqual([
     0, 1,
   ]);
   expect(shown()).toBe(true);
 
-  props.update(crew(says("Dev", MCP)), NOW);
+  props.update(crew(says("Dev", "완료")), NOW);
   expect(count(scene, "manual_open/default")).toBe(0);
   props.update(null, NOW);
   expect(tex(scene, "meeting_screen")).toBe("meeting_screen/off");
@@ -651,8 +664,9 @@ test("MCP 미팅: 화면 켜짐, 명함, 상호 글자(DOM). 스킬은 매뉴얼
 test("상호는 textContent 로만 넣는다", () => {
   const overlay = document.createElement("div");
   const scene = buildScene(assets, "large", "claude", false);
-  const props = new PropsLayer(fp, sheet, "large", scene, undefined, new ScreenLabel(overlay));
-  props.update(crew(says("Meeting", "거래처 `<img src=x>`와 `t` 건으로 미팅 중")), NOW);
+  const props = new PropsLayer(fp, sheet, "large", scene, new ScreenLabel(overlay));
+  const meeting = { kind: "Mcp", server: "<img src=x>" };
+  props.update(crew(says("Meeting", "미팅 중", { meeting })), NOW);
   expect(overlay.querySelector("img")).toBeNull();
   expect(overlay.textContent).toBe("<img src=x>");
 });
@@ -678,12 +692,14 @@ test("외근 중인 직원 자리 책상 위에 팻말, 돌아오거나 퇴근·
   }
 });
 
-test("리뷰실: 직원이 있으면 화면 code, 빨간펜 수만큼 포스트잇(화면 슬롯 6개까지)", () => {
+test("리뷰실: 직원이 있으면 화면 code, 빨간펜 수만큼 포스트잇(화면 슬롯 6개까지), 승인이면 approved", () => {
   const { scene, props } = layer();
   const pens = () => count(scene, "postit_red/default");
-  props.update(crew(says("Review", review(0))), NOW);
+  const reviewing = (...r: ReturnType<typeof review>[]) =>
+    crew(...r.map((o, i) => says("Review", "리뷰 중", { agentId: "r" + i, ...o })));
+  props.update(reviewing(review(0)), NOW);
   expect([tex(scene, "review_screen"), pens()]).toEqual(["review_screen/code", 0]);
-  props.update(crew(says("Review", review(3))), NOW);
+  props.update(reviewing(review(3)), NOW);
   expect(pens()).toBe(3);
   const rs = fp.layouts.large.placements.find((p) => p.id === "review_screen")!;
   const slots = officeJson.owlfice.props.review_screen.slots;
@@ -691,12 +707,18 @@ test("리뷰실: 직원이 있으면 화면 code, 빨간펜 수만큼 포스트�
   expect(new Set(sprites(scene, "postit_red/default").map((s) => at([s.x, s.y])))).toEqual(
     new Set(slots.slice(0, 3).map(([dx, dy]) => at([rs.x + dx, rs.y + dy]))),
   );
-  props.update(crew(says("Review", review(9))), NOW);
+  props.update(reviewing(review(9)), NOW);
   expect(pens()).toBe(slots.length);
-  // 두 사람이 리뷰하면 더 많은 쪽
-  props.update(crew(says("Review", review(2)), says("Review", review(4), { agentId: "f" })), NOW);
-  expect(pens()).toBe(4);
-  props.update(crew(says("Dev", review(4))), NOW);
+  // 두 사람이 리뷰하면 더 많은 쪽, 한 사람이라도 승인하면 초록 도장
+  props.update(reviewing(review(2), review(4)), NOW);
+  expect([tex(scene, "review_screen"), pens()]).toEqual(["review_screen/code", 4]);
+  props.update(reviewing(review(2, true), review(4)), NOW);
+  expect([tex(scene, "review_screen"), pens()]).toEqual(["review_screen/approved", 4]);
+  // 장면을 다시 지어도 스냅샷이면 같다
+  const again = layer();
+  again.props.update(reviewing(review(2, true)), NOW);
+  expect(tex(again.scene, "review_screen")).toBe("review_screen/approved");
+  props.update(crew(says("Dev", "일하는 중")), NOW);
   expect([tex(scene, "review_screen"), pens()]).toEqual(["review_screen/off", 0]);
 });
 
@@ -803,13 +825,19 @@ test("게임기는 콘솔 자리에 앉은 직원만 켠다: 콘솔을 떠나거
   }
 });
 
-test("근태판: 외근은 외근 칸, 퇴근한 팀은 모두 퇴근 칸, 중소기업은 팀 색으로 팀을 합친다", () => {
+test("근태판: 외근은 외근 칸, 조는 부장은 외출 칸, 퇴근한 팀은 모두 퇴근 칸, 중소기업은 팀 색으로 팀을 합친다", () => {
   const { scene, props } = layer("small");
   const teamOf = (slot: number, ...e: TeamDto["employees"]) =>
     ({ ...team(slot, null), phase: "Working", employees: e }) as TeamDto;
   const off = { ...teamOf(1, sub("Dev")), phase: "Off" } as TeamDto;
+  const nap = says("Pantry", "졸음", { agentId: "z" });
+  nap.activity.pose = "Sleep";
   props.update(
-    office({}, [teamOf(0, sub("Dev"), sub("Outside"), sub("Pantry", { retiredAt: SINCE })), off]),
+    office({}, [
+      teamOf(0, sub("Dev"), sub("Outside"), sub("Pantry", { retiredAt: SINCE })),
+      off,
+      teamOf(2, nap),
+    ]),
     NOW,
   );
   expect(magnetsOn(scene)).toEqual([
@@ -817,6 +845,7 @@ test("근태판: 외근은 외근 칸, 퇴근한 팀은 모두 퇴근 칸, 중�
     ["magnet/teal", 1],
     ["magnet/teal", 3],
     ["magnet/violet", 3],
+    ["magnet/coral", 2],
   ]);
   props.update(null, NOW);
   expect(magnetsOn(scene)).toEqual([]);

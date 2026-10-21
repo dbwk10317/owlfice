@@ -16,10 +16,10 @@ use crate::office::names::RoomBook;
 use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
-    Activity, Bubble, Counters, Cue, Employee, Incident, Light, Rank, Team, TeamPhase, TeamProps,
-    TimelineKind, Tokens,
+    Activity, Bubble, Counters, Cue, Employee, Incident, Light, Rank, Room, Team, TeamPhase,
+    TeamProps, TestVerdict, TimelineKind, Tokens,
 };
-use crate::parse::{Confidence, TodoItem, ToolOutcome};
+use crate::parse::{Confidence, TodoItem, ToolKind, ToolOutcome};
 use crate::settings::SettingsBook;
 
 /// 최대 5회/초 (4.8)
@@ -106,7 +106,7 @@ pub struct TeamSummaryDto {
     pub work_type: WorkType,
 }
 
-/// 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근). 사무실 점은 팀 중 최솟값
+/// 상태 점 (3.3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Dot {
     Incident,
@@ -114,6 +114,8 @@ pub enum Dot {
     /// 초록 깜빡임: 결재 대기 또는 응답 대기
     Waiting,
     Dozing,
+    /// 노랑 + "대기 중" 칩: 30분 넘게 조용하지만 프로세스가 살아 있다 (S58)
+    IdleAlive,
     Off,
 }
 
@@ -177,6 +179,8 @@ pub struct TeamDto {
     pub employees: Vec<EmployeeDto>,
     pub props: TeamProps,
     pub incident: Option<Incident>,
+    /// 30분 넘게 조용하지만 프로세스가 살아 있다 (S58). 살아 있는 팀이 모두 그러면 조명이 어둡다
+    pub idle_alive: bool,
 }
 
 /// 직원 카드 한 장 (3.5)
@@ -207,6 +211,30 @@ pub struct EmployeeDto {
     pub context_window: Option<u64>,
     /// 마지막 말풍선
     pub bubble: Option<Bubble>,
+    /// 백그라운드로 도는 명령 수 (작업표)
+    pub jobs: u32,
+    /// 미팅실에 있을 때만: 대표 진행 중 호출이 무엇인가
+    pub meeting: Option<Meeting>,
+    /// 리뷰실에 있을 때만
+    pub review: Option<Review>,
+}
+
+/// 미팅실 소품 재료 (3.4 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "kind")]
+pub enum Meeting {
+    Mcp { server: String },
+    Skill,
+}
+
+/// 리뷰실 소품 재료 (3.4 리뷰실)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Review {
+    /// 빨간 포스트잇 수 (`파일:줄` 지적)
+    pub pens: u32,
+    /// 승인 문구가 나왔다 (초록 도장)
+    pub approved: bool,
 }
 
 /// 사무실 공유 소품 (4.7.9 합성 규칙). 대기업은 팀 하나라 그 팀 값과 같다
@@ -225,6 +253,8 @@ pub struct SharedPropsDto {
     /// 장애 상황실 = 어느 팀이든 장애
     pub incident: bool,
     pub night: bool,
+    /// 테스트실 결과판 = 테스트를 가장 늦게 끝낸 팀 결과
+    pub test: Option<TestVerdict>,
 }
 
 /// 타임라인 커서 (4.8): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
@@ -501,6 +531,7 @@ fn team_dot(t: &Team, now: DateTime<Utc>) -> Dot {
     }
     match t.phase {
         TeamPhase::Off => Dot::Off,
+        TeamPhase::Dozing if t.idle_alive => Dot::IdleAlive,
         TeamPhase::Dozing => Dot::Dozing,
         TeamPhase::Working => {
             // 서브가 일하는 동안 부장이 기다리는 것은 팀이 일하는 것이다
@@ -634,6 +665,23 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
         context_used: e.context_used,
         context_window: e.context_window,
         bubble: e.bubble.clone(),
+        jobs: u32::try_from(e.background.len()).unwrap_or(u32::MAX),
+        meeting: e
+            .pending
+            .last()
+            .filter(|_| e.activity.room == Room::Meeting)
+            .and_then(|c| match &c.tool {
+                ToolKind::Mcp { server, .. } => Some(Meeting::Mcp {
+                    server: server.clone(),
+                }),
+                // 리뷰 스킬은 리뷰실로 가서 미팅실에 있는 스킬은 리뷰가 아니다
+                ToolKind::Skill { .. } => Some(Meeting::Skill),
+                _ => None,
+            }),
+        review: (e.activity.room == Room::Review).then_some(Review {
+            pens: e.review_pens,
+            approved: e.approved,
+        }),
     }
 }
 
@@ -653,6 +701,7 @@ fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team) -> TeamDto {
         employees: t.employees.iter().map(employee_dto).collect(),
         props: t.props.clone(),
         incident: t.incident.clone(),
+        idle_alive: t.idle_alive,
     }
 }
 
@@ -679,6 +728,12 @@ fn shared(teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
         kanban: latest.map(|t| t.props.kanban.clone()).unwrap_or_default(),
         incident: teams.iter().any(|(_, t)| t.incident.is_some()),
         night: teams.iter().any(|(_, t)| t.props.night),
+        test: teams
+            .iter()
+            .map(|(_, t)| &t.props)
+            .filter(|p| p.test.is_some())
+            .max_by_key(|p| p.test_at)
+            .and_then(|p| p.test),
     }
 }
 

@@ -39,6 +39,9 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
     contextUsed: null,
     contextWindow: null,
     bubble: null,
+    jobs: 0,
+    meeting: null,
+    review: null,
     ...over,
   };
 }
@@ -62,6 +65,8 @@ export function team(id: string, employees: EmployeeDto[], over: Partial<TeamDto
       plant: null,
       light: "Off",
       lightAt: iso(13, 0),
+      test: null,
+      testAt: iso(13, 0),
       trash: 0,
       safeSince: iso(13, 0),
       pizza: 0,
@@ -70,6 +75,7 @@ export function team(id: string, employees: EmployeeDto[], over: Partial<TeamDto
       pr: null,
     },
     incident: null,
+    idleAlive: false,
     ...over,
   };
 }
@@ -94,6 +100,7 @@ export function office(
       kanban: [],
       incident: false,
       night: false,
+      test: null,
     },
     cues,
   };

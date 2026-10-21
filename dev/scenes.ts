@@ -51,6 +51,9 @@ function emp(
     contextUsed: null,
     contextWindow: null,
     bubble: null,
+    jobs: 0,
+    meeting: null,
+    review: null,
   } satisfies EmployeeDto;
 }
 
@@ -93,6 +96,7 @@ function office(
         employees: [boss, worker],
         props: {} as OfficeDto["teams"][number]["props"],
         incident: null,
+        idleAlive: false,
       },
     ],
   };
@@ -128,10 +132,19 @@ const then = (first: () => void, next: () => void) => {
   setTimeout(next, 150);
 };
 
-const mcp = emp("a", "Daeri", "Meeting", "Sit", "거래처 `figma`와 `get_file` 건으로 미팅 중");
-const skill = emp("a", "Daeri", "Meeting", "Sit", "외주 매뉴얼 `pdf` 펼쳐보는 중");
+const mcp: EmployeeDto = {
+  ...emp("a", "Daeri", "Meeting", "Sit", "거래처 `figma`와 `get_file` 건으로 미팅 중"),
+  meeting: { kind: "Mcp", server: "figma" },
+};
+const skill: EmployeeDto = {
+  ...emp("a", "Daeri", "Meeting", "Sit", "외주 매뉴얼 `pdf` 펼쳐보는 중"),
+  meeting: { kind: "Skill" },
+};
 const away = emp("a", "Daeri", "Outside", "Sit", "'검색어' 건으로 외근 중");
-const review = (n: number) => emp("a", "Daeri", "Review", "Sit", `PR 리뷰 중 · 빨간펜 ${n}개`);
+const review = (n: number): EmployeeDto => ({
+  ...emp("a", "Daeri", "Review", "Sit", `PR 리뷰 중 · 빨간펜 ${n}개`),
+  review: { pens: n, approved: false },
+});
 
 const STEPS: [string, () => void][] = [
   ["자리에 앉음", () => worker(desk())],

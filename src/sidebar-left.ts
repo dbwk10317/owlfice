@@ -55,6 +55,7 @@ export const DOT_STATE: Record<Dot, string> = {
   Working: "working",
   Waiting: "waiting",
   Dozing: "sleepy",
+  IdleAlive: "idle-alive",
   Off: "off",
 };
 // 상태 점은 색만으로 말하지 않는다 (HANDOFF 10절)
@@ -63,6 +64,7 @@ const DOT_WORD: Record<string, string> = {
   working: P.stateWorking,
   waiting: P.stateWaiting,
   sleepy: P.stateSleepy,
+  "idle-alive": P.idleAlive,
   off: P.stateOff,
 };
 // 동 글자 = 제품 (PLAN 2부). 제품이 색을 정한다
@@ -500,6 +502,7 @@ interface RowView extends View {
   dot: El;
   ask: El;
   name: El;
+  idle: El;
   chip: El;
   host: El;
   head: El;
@@ -588,11 +591,12 @@ export function mountSidebar(
     const top = mk(doc, "span", "ow-row__top");
     const square = m.kind === "floor" ? mk(doc, "span", "ow-square") : null;
     const name = mk(doc, "span", "ow-row__name ow-truncate");
+    const idle = mk(doc, "span", "ow-chip ow-row__idle", P.idleAlive);
     const chip = mk(doc, "span", "ow-worktype");
     const host = mk(doc, "span", "ow-host");
-    chip.hidden = host.hidden = true;
+    idle.hidden = chip.hidden = host.hidden = true;
     if (square) top.append(square);
-    top.append(name, chip, host);
+    top.append(name, idle, chip, host);
     const meta = mk(doc, "span", "ow-row__meta ow-truncate");
     const head = mk(doc, "span", "ow-row__head");
     const elapsed = mk(doc, "span", "ow-row__elapsed");
@@ -625,6 +629,7 @@ export function mountSidebar(
       dot,
       ask,
       name,
+      idle,
       chip,
       host,
       head,
@@ -683,7 +688,10 @@ export function mountSidebar(
     }
     if (changed(L, "head", m.metaHead)) v.head.textContent = m.metaHead;
     fillElapsed(v);
-    if (changed(L, "state", m.state)) v.dot.dataset.state = m.state;
+    if (changed(L, "state", m.state)) {
+      v.dot.dataset.state = m.state;
+      v.idle.hidden = m.state !== "idle-alive";
+    }
     if (changed(L, "ring", m.ring)) {
       if (m.ring) v.dot.dataset.ring = m.ring;
       else delete v.dot.dataset.ring;

@@ -8,15 +8,129 @@ pub mod work;
 pub mod world;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::{DefaultHasher, Hasher};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use ts_rs::TS;
 
 use crate::discover::Product;
-use crate::parse::{Confidence, TodoItem, ToolKind, ToolSummary};
+use crate::parse::{
+    Confidence, EventKind, TestResult, TodoItem, ToolKind, ToolOutcome, ToolSummary,
+};
 use work::{Role, Touched, WorkTally, WorkType};
+
+/// 직원 타임라인(3.7)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub enum TimelineKind {
+    UserMessage,
+    AssistantText,
+    ToolCall,
+    ToolResult,
+    SubagentSpawn,
+    SubagentDone,
+    PermissionRequest,
+    ContextCompaction,
+    TitleChanged,
+    PrLinked,
+}
+
+impl TimelineKind {
+    pub fn of(kind: &EventKind) -> Option<Self> {
+        Some(match kind {
+            EventKind::UserMessage { .. } => Self::UserMessage,
+            EventKind::AssistantText { .. } => Self::AssistantText,
+            EventKind::ToolCall { .. } => Self::ToolCall,
+            EventKind::ToolResult { .. } => Self::ToolResult,
+            EventKind::SubagentSpawn { .. } => Self::SubagentSpawn,
+            EventKind::SubagentDone { .. } => Self::SubagentDone,
+            EventKind::PermissionRequest { .. } => Self::PermissionRequest,
+            EventKind::ContextCompaction { .. } => Self::ContextCompaction,
+            EventKind::TitleChanged { .. } => Self::TitleChanged,
+            EventKind::PrLinked { .. } => Self::PrLinked,
+            EventKind::Thinking
+            | EventKind::TodoChanged { .. }
+            | EventKind::TokenUsage { .. }
+            | EventKind::SessionMeta { .. }
+            | EventKind::Reset => return None,
+        })
+    }
+}
+
+/// 호출과 결과를 다시 읽은 줄에서 찾는 열쇠. 문자열을 칸마다 들지 않으려고 해시로 둔다 (같은 실행 안에서만 비교한다)
+pub fn call_hash(call_id: &str) -> u64 {
+    let mut h = DefaultHasher::new();
+    h.write(call_id.as_bytes());
+    h.finish()
+}
+
+/// 타임라인 한 칸 (4.7 `timeline`): 원본 줄 위치와, 그 줄만 다시 읽어서는 모르는 값.
+/// 결과 판정은 앞 줄의 호출·백그라운드 상태에 기대서 줄 하나를 새 파서에 넣으면 달라진다
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mark {
+    /// `Team.sources` 번호. 칸마다 경로를 들면 팀을 복제할 때마다(틱마다) 할당이 칸 수만큼 생긴다
+    pub source: u32,
+    pub generation: u64,
+    pub byte_offset: u64,
+    pub line_no: u64,
+    /// 적용한 시각. ts 없는 레코드는 같은 파일의 직전 ts
+    pub ts: DateTime<Utc>,
+    /// 팀 안 적용 순서. 세션 상세가 직원들의 칸을 합칠 때 쓴다
+    pub seq: u64,
+    pub kind: TimelineKind,
+    /// 같은 줄에서 같은 kind 의 몇 번째 이벤트인가
+    pub nth: u8,
+    /// 호출·결과의 `call_hash`. 그 밖은 0
+    pub call: u64,
+    pub outcome: Option<(ToolOutcome, Confidence)>,
+    pub test: Option<TestResult>,
+}
+
+impl Mark {
+    pub fn same_line(&self, o: &Mark) -> bool {
+        (self.source, self.generation, self.byte_offset) == (o.source, o.generation, o.byte_offset)
+    }
+}
+
+/// 팝업(3.7)만 쓰는 기록. world 가 틱마다 팀을 복제해 비교하므로 Arc 로 싸서 복제·비교를 포인터 하나로 줄인다
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Record {
+    pub timeline: Vec<Mark>,
+    /// 띄운 쪽이 준 지시 전문 (SubagentSpawn.prompt)
+    pub prompt: Option<String>,
+    /// 부장의 첫 사장님 메시지
+    pub first_message: Option<String>,
+    /// 경로는 파서가 만든 상대 경로
+    pub files_read: Uniq,
+    pub files_edited: Uniq,
+    pub commands: Uniq,
+}
+
+/// 중복 없이 처음 본 순서로 쌓는 목록. 도구 호출마다 쌓으므로 검사는 집합으로 한다
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Uniq {
+    pub items: Vec<String>,
+    seen: HashSet<String>,
+}
+
+impl Uniq {
+    pub fn push_new(&mut self, item: Option<&str>) {
+        if let Some(s) = item.filter(|s| !s.is_empty())
+            && self.seen.insert(s.to_string())
+        {
+            self.items.push(s.to_string());
+        }
+    }
+}
+
+/// 팀의 토큰 사용량 합 (3.7 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+pub struct Tokens {
+    pub input: u64,
+    pub output: u64,
+}
 
 /// 직원 직급 (PLAN 4.7.4). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -202,6 +316,7 @@ pub struct Employee {
     spawn_logged: bool,
     /// "왜 이렇게 오래 걸려" 를 이미 낸 호출
     too_long: Option<String>,
+    pub record: Arc<Record>,
 }
 
 /// 선언 순서가 활발한 순서다. 사무실 단계는 팀 중 최솟값
@@ -326,6 +441,14 @@ pub struct Team {
     /// 처음 본 거래처·스킬 말풍선용 (3.6)
     seen_vendors: HashSet<String>,
     seen_skills: HashSet<String>,
+    /// 이 팀 이벤트가 나온 파일. `Mark.source` 가 가리킨다
+    pub sources: Vec<PathBuf>,
+    /// 다음 `Mark.seq`
+    seq: u64,
+    /// 사장님 메시지 수 (3.7 턴 수)
+    pub turns: u32,
+    /// 사용량을 한 번도 못 봤으면 None
+    pub tokens: Option<Tokens>,
 }
 
 #[cfg(test)]

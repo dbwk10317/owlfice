@@ -311,3 +311,129 @@ export type Confidence = "Confirmed" | "Inferred";
 export type TodoItem = { content: string, status: TodoStatus, };
 
 export type TodoStatus = "Pending" | "InProgress" | "Done";
+
+/**
+ * 타임라인 커서 (4.8): 원본 파일 세대와 그 줄의 시작 바이트. 페이지 마지막 칸의 값을 그대로 돌려준다
+ */
+export type CursorDto = { generation: number, byteOffset: number, };
+
+/**
+ * 긴 글의 앞뒤만. 잘렸으면 `tail` 이 끝부분이고, 안 잘렸으면 `head` 가 전문이고 `tail` 은 빈 글이다
+ */
+export type ClipDto = { head: string, tail: string, 
+/**
+ * 원문 바이트 수
+ */
+bytes: number, };
+
+/**
+ * 타임라인 한 칸 (3.7). 원본 줄을 다시 읽어 만든다
+ */
+export type EventDto = { 
+/**
+ * 다음 페이지를 열 때 `before` 로 보낸다
+ */
+cursor: CursorDto, agentId: string, ts: string, kind: TimelineKind, 
+/**
+ * 한 줄 요약
+ */
+summary: string, 
+/**
+ * 결과를 본문 정규식으로 짐작했으면 Inferred
+ */
+confidence: Confidence, 
+/**
+ * 원본의 도구 이름
+ */
+tool: string | null, 
+/**
+ * 호출과 그 결과가 같은 값을 가진다
+ */
+callId: string | null, 
+/**
+ * 도구 입력 원문 (앞뒤 2KB)
+ */
+input: ClipDto | null, outcome: ToolOutcome | null, 
+/**
+ * 결과·메시지·지시 원문 (앞뒤 2KB)
+ */
+body: ClipDto | null, 
+/**
+ * 원본 jsonl 과 줄 번호 (1 기준)
+ */
+path: string, lineNo: number, 
+/**
+ * 그 줄의 이벤트 중 몇 번째인가. 같은 줄의 칸을 `OpenTarget` 이 가른다
+ */
+lineIdx: number, 
+/**
+ * 큰 결과가 분리된 `tool-results/` 파일. 세션 폴더 안인 것만
+ */
+sidecar: string | null, };
+
+export type ToolOutcome = "Ok" | "Err" | "Rejected" | "Started" | "Unknown";
+
+/**
+ * 팀의 토큰 사용량 합 (3.7 세션 상세). 입력은 새로 보낸 몫(캐시 읽기 제외)이다
+ */
+export type Tokens = { input: number, output: number, };
+
+/**
+ * 직원 타임라인(3.7)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
+ */
+export type TimelineKind = "UserMessage" | "AssistantText" | "ToolCall" | "ToolResult" | "SubagentSpawn" | "SubagentDone" | "PermissionRequest" | "ContextCompaction" | "TitleChanged" | "PrLinked";
+
+/**
+ * 직원 상세 팝업 (3.7) 중 원본을 다시 읽지 않는 부분
+ */
+export type EmployeeDetailDto = { agentId: string, name: string, rank: Rank, role: Role, model: string | null, hiredAt: string, retiredAt: string | null, 
+/**
+ * 서브만. 상사 이름
+ */
+bossName: string | null, 
+/**
+ * 서브는 받은 프롬프트 전문, 부장은 첫 사장님 메시지
+ */
+instruction: string | null, filesRead: Array<string>, filesEdited: Array<string>, commands: Array<string>, };
+
+/**
+ * 직급별 직원 수. 퇴장한 직원도 센다
+ */
+export type HeadcountDto = { bujang: number, gwajang: number, daeri: number, sawon: number, };
+
+export type PrDto = { number: number, url: string, };
+
+/**
+ * 세션 상세 팝업 (3.7)
+ */
+export type SessionDetailDto = { sessionId: string, title: string, 
+/**
+ * 동 글자 (A~F)
+ */
+building: string, hostLabel: string, workType: WorkType, 
+/**
+ * 작업 폴더 전체 경로 (기록에 적힌 그대로)
+ */
+cwd: string, gitBranch: string | null, 
+/**
+ * 부장 모델
+ */
+model: string | null, started: string, lastActivity: string, turns: number, tokens: Tokens | null, headcount: HeadcountDto, pr: PrDto | null, 
+/**
+ * 최근 사건, 최신부터
+ */
+recent: Array<EventDto>, 
+/**
+ * 원본 줄을 못 읽어 `recent` 가 비었으면 이유. 나머지 값은 메모리에서 온 것이라 그대로 있다
+ */
+recentError: DetailError | null, };
+
+/**
+ * `open_path` 대상. 경로는 백엔드가 아는 것만 연다. 프론트가 경로를 넘기는 길은 두지 않는다
+ */
+export type OpenTarget = { "kind": "SourceFolder", officeId: string, teamId: string, } | { "kind": "WorkFolder", officeId: string, teamId: string, } | { "kind": "SourceLine", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, } | { "kind": "Sidecar", officeId: string, teamId: string, agentId: string, cursor: CursorDto, lineIdx: number, };
+
+/**
+ * 상세 커맨드의 에러 코드
+ */
+export type DetailError = "not_found" | "cursor_invalid" | "host_offline" | "timeout" | "open_failed";

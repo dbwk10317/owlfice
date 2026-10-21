@@ -1,7 +1,8 @@
 //! 이벤트 → 방·행동·문장 (PLAN 4.7.1), 시간 전이 (4.7.2)
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use chrono::{DateTime, Duration, FixedOffset, Timelike, Utc};
 
@@ -9,8 +10,8 @@ use super::rank::rank_of;
 use super::stats::TeamStats;
 use super::work::{Role, Touched, WorkTally, WorkType, touches_file};
 use super::{
-    Activity, Bubble, BubbleSay, Counters, Cue, Employee, Incident, Light, PendingCall, Pose, Rank,
-    Room, Team, TeamPhase, TeamProps,
+    Activity, Bubble, BubbleSay, Counters, Cue, Employee, Incident, Light, Mark, PendingCall, Pose,
+    Rank, Room, Team, TeamPhase, TeamProps, TimelineKind, Tokens, call_hash,
 };
 use crate::discover::Product;
 use crate::parse::{
@@ -119,6 +120,7 @@ impl Employee {
             ducked: None,
             spawn_logged: false,
             too_long: None,
+            record: Arc::default(),
         }
     }
 
@@ -208,6 +210,10 @@ impl Team {
             pizza_at_wake: 0,
             seen_vendors: HashSet::new(),
             seen_skills: HashSet::new(),
+            sources: Vec::new(),
+            seq: 0,
+            turns: 0,
+            tokens: None,
         }
     }
 
@@ -277,6 +283,8 @@ impl Team {
             return;
         };
         self.employees[i].last_event = ts;
+        // 상태를 바꾸기 전에 본다: 같은 제목·PR·중복 Spawn 은 턴마다 다시 쓰여 기록하면 타임라인이 같은 줄로 찬다
+        let fresh = self.recordable(ev);
         match &ev.kind {
             EventKind::SessionMeta {
                 cwd,
@@ -573,6 +581,130 @@ impl Team {
             }
             EventKind::Reset => {}
         }
+        if fresh {
+            self.record(i, ev, ts);
+        }
+    }
+
+    fn recordable(&self, ev: &Event) -> bool {
+        match &ev.kind {
+            EventKind::TitleChanged { title } => *title != self.title,
+            EventKind::PrLinked { number, .. } => {
+                self.props.pr.as_ref().map(|p| p.0) != Some(*number)
+            }
+            // 재출근이 아닌 두 번째 Spawn (meta.json 선발견, Codex 의 started 와 spawn_end)
+            EventKind::SubagentSpawn { child_id, .. } => !self
+                .employees
+                .iter()
+                .any(|e| &e.id == child_id && e.spawn_logged && !rehires(e, ev.ts)),
+            _ => true,
+        }
+    }
+
+    /// 팝업(3.7) 재료를 쌓는다. 이벤트 순서만 보므로 재구성과 실행 중 적용이 같은 값을 낸다
+    fn record(&mut self, i: usize, ev: &Event, ts: DateTime<Utc>) {
+        match &ev.kind {
+            EventKind::UserMessage { .. } if self.employees[i].is_boss() => self.turns += 1,
+            EventKind::TokenUsage {
+                input_total,
+                cache_read,
+                output,
+                ..
+            } => {
+                let t = self.tokens.get_or_insert(Tokens::default());
+                t.input = t
+                    .input
+                    .saturating_add(input_total.saturating_sub(*cache_read));
+                t.output = t.output.saturating_add(*output);
+            }
+            EventKind::SubagentSpawn {
+                child_id, prompt, ..
+            } if !prompt.is_empty() => {
+                if let Some(c) = self.employees.iter_mut().find(|e| &e.id == child_id)
+                    && c.record.prompt.is_none()
+                {
+                    Arc::make_mut(&mut c.record).prompt = Some(prompt.clone());
+                }
+            }
+            _ => {}
+        }
+        let Some(kind) = TimelineKind::of(&ev.kind) else {
+            return;
+        };
+        let source = self.source(&ev.raw_ref.path);
+        let seq = self.seq;
+        self.seq += 1;
+        let raw = &ev.raw_ref;
+        let (call, outcome, test) = match &ev.kind {
+            EventKind::ToolCall { call_id, .. } => (call_hash(call_id), None, None),
+            EventKind::ToolResult {
+                call_id,
+                outcome,
+                outcome_confidence,
+                test_result,
+                ..
+            } => (
+                call_hash(call_id),
+                Some((*outcome, *outcome_confidence)),
+                *test_result,
+            ),
+            _ => (0, None, None),
+        };
+        let mut mark = Mark {
+            source,
+            generation: raw.generation,
+            byte_offset: raw.byte_offset,
+            line_no: raw.line_no,
+            ts,
+            seq,
+            kind,
+            nth: 0,
+            call,
+            outcome,
+            test,
+        };
+        let is_boss = self.employees[i].is_boss();
+        let r = Arc::make_mut(&mut self.employees[i].record);
+        let same = r
+            .timeline
+            .iter()
+            .rev()
+            .take_while(|m| m.same_line(&mark))
+            .filter(|m| m.kind == kind)
+            .count();
+        mark.nth = u8::try_from(same).unwrap_or(u8::MAX);
+        r.timeline.push(mark);
+        match &ev.kind {
+            EventKind::UserMessage { text } if r.first_message.is_none() && is_boss => {
+                r.first_message = Some(text.clone());
+            }
+            EventKind::ToolCall { tool, summary, .. } => {
+                let path = summary.path.as_deref();
+                match tool {
+                    ToolKind::FileRead => r.files_read.push_new(path),
+                    ToolKind::FileWrite | ToolKind::FileEdit => r.files_edited.push_new(path),
+                    _ => {}
+                }
+                // 명령으로 한 읽기(`cat`)도 실행한 명령이다
+                let cmd = summary
+                    .command_norm
+                    .as_deref()
+                    .map(|c| sentence::cut(c, COMMAND_CHARS));
+                r.commands.push_new(cmd.as_deref());
+            }
+            _ => {}
+        }
+    }
+
+    fn source(&mut self, path: &Path) -> u32 {
+        let i = match self.sources.iter().position(|p| p == path) {
+            Some(i) => i,
+            None => {
+                self.sources.push(path.to_path_buf());
+                self.sources.len() - 1
+            }
+        };
+        u32::try_from(i).unwrap_or(u32::MAX)
     }
 
     fn sync_work(&mut self) {
@@ -1262,6 +1394,9 @@ pub fn merge(files: Vec<Vec<Event>>) -> Vec<Event> {
     keyed.into_iter().map(|(.., ev)| ev).collect()
 }
 
+/// 직원 상세의 명령 목록 한 줄. 원문 전체는 heredoc 스크립트처럼 길 수 있다
+const COMMAND_CHARS: usize = 200;
+
 /// 퇴근한 직원은 그보다 뒤 ts 의 이벤트로만 돌아온다. 늦게 읽힌 옛 줄은 확인된 종료를 풀지 않는다 (4.7.1)
 fn rehires(e: &Employee, ts: Option<DateTime<Utc>>) -> bool {
     e.retired_at.is_some_and(|r| ts.is_some_and(|t| t > r))
@@ -1488,7 +1623,7 @@ fn window_from_model(model: Option<&str>, input_total: u64) -> u64 {
 
 /// "지금 하는 일" 문장 (3.5 표). 경과 시간은 `{elapsed}` 자리만 두고 프론트가 채운다 (4.8).
 /// 경로·명령·패턴은 백틱으로 감싼다. 명령은 파서가 이미 40자로 잘랐다
-mod sentence {
+pub(crate) mod sentence {
     use super::{
         Confidence, Employee, PendingCall, REPEAT_EDIT_WINDOW, REPEAT_EDITS, Rank, TestResult,
         ToolKind, is_review,
@@ -1541,7 +1676,7 @@ mod sentence {
     }
 
     /// 입력이 없을 때 쓰는 도구 이름
-    fn label(tool: &ToolKind) -> String {
+    pub fn label(tool: &ToolKind) -> String {
         match tool {
             ToolKind::FileRead => "열람",
             ToolKind::FileSearch => "검색",
@@ -1570,7 +1705,7 @@ mod sentence {
     }
 
     /// 반려·결과 미확인·완료 문장의 대상: 명령, 경로, 패턴 순. 없으면 도구 이름
-    fn subject(call: &PendingCall) -> String {
+    pub fn subject(call: &PendingCall) -> String {
         let s = &call.summary;
         s.command
             .as_deref()

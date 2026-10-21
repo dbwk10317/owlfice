@@ -1,14 +1,18 @@
 //! 팀을 사무실로 묶고 변경 번호를 붙인다 (PLAN 4.7.9, 4.3)
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::{Arc, LazyLock};
 
 use chrono::{DateTime, FixedOffset, Utc};
 
 use super::names::{NameBook, NamesSave};
 use super::work::WorkType;
-use super::{Cue, Team, TeamPhase};
+use super::{Cue, Record, Team, TeamPhase};
 use crate::discover::{Host, Vendor};
 use crate::parse::Event;
+
+/// 비교용 복제본이 기록 자리에 두는 빈 기록
+static NO_RECORD: LazyLock<Arc<Record>> = LazyLock::new(Arc::default);
 
 /// 개발실 6 + 임시 책상 4 (4.9 floorplan)
 const SEATS: u8 = 10;
@@ -185,13 +189,21 @@ impl OfficeWorld {
         let Some(team) = self.teams.get_mut(key) else {
             return;
         };
-        let before = team.clone();
+        let mut before = team.clone();
+        // 기록(Arc)을 함께 쥐면 team.apply 의 make_mut 가 타임라인 전체를 이벤트마다 복사한다.
+        // 기록이 바뀌면 Team.seq 도 바뀌어서 비교에서 빠져도 놓치는 변화가 없다
+        for e in &mut before.employees {
+            e.record = NO_RECORD.clone();
+        }
         let mut cues = Vec::new();
         for ev in events {
             if let Some(t) = ev.ts {
                 team.tick(t, local, &mut cues);
             }
             team.apply(ev, &mut cues);
+        }
+        for (b, e) in before.employees.iter_mut().zip(&team.employees) {
+            b.record = e.record.clone();
         }
         self.settle(key, &before, now, !cues.is_empty());
         for c in cues {
@@ -566,6 +578,7 @@ mod tests {
             parent_agent: None,
             kind: crate::parse::EventKind::TokenUsage {
                 input_total,
+                cache_read: 0,
                 output: 0,
                 context_window: Some(1000),
             },

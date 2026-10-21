@@ -380,6 +380,7 @@ fn spawn_sub(s: &mut Sim, secs: i64, model: &str, effort: Option<&str>) {
 fn sub_token_usage_keeps_the_plant() {
     let usage = |input_total, window| EventKind::TokenUsage {
         input_total,
+        cache_read: 0,
         output: 0,
         context_window: Some(window),
     };

@@ -32,6 +32,7 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
     lastSay: null,
     hiredAt: iso(13, 0),
     retiredAt: null,
+    departedAt: null,
     seat: null,
     parent: null,
     depth: 1,

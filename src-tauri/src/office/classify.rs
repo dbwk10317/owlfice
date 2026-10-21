@@ -28,6 +28,8 @@ const WAIT_USER_AFTER: Duration = Duration::seconds(3);
 const LONG_RUN: Duration = Duration::seconds(120);
 const CALL_GIVE_UP: Duration = Duration::minutes(30);
 const SUB_DONE_AFTER: Duration = Duration::seconds(60);
+/// 서브 종료 뒤 탕비실에 머무는 시간 (4.7.2 목표값)
+const DEPART_AFTER: Duration = Duration::minutes(10);
 const DOZE_AFTER: Duration = Duration::minutes(3);
 const OFF_AFTER: Duration = Duration::minutes(30);
 const INCIDENT_CLEAR: Duration = Duration::seconds(120);
@@ -95,6 +97,7 @@ impl Employee {
             last_say: None,
             hired_at: at,
             retired_at: None,
+            departed_at: None,
             seat: None,
             pending: Vec::new(),
             background: Vec::new(),
@@ -471,6 +474,7 @@ impl Team {
                             // 앞선 ts 의 중복 Spawn(meta.json 선발견, Codex 중복 started)은 재출근이 아니다
                             if rehires(e, ev.ts) {
                                 e.retired_at = None;
+                                e.departed_at = None;
                                 e.spawn_logged = false;
                                 // 옛 텍스트 응답이 남으면 다음 tick 이 60초 규칙으로 다시 퇴근시킨다 (4.7.2)
                                 e.last_was_text = false;
@@ -863,6 +867,24 @@ impl Team {
                 self.give_up_all(i, at, cues);
             }
         }
+        // 서브 퇴근은 팀 단계와 무관하다. 위에서 막 종료로 본 서브도 문턱이 지났으면 같은 틱에 나간다 (4.7.2).
+        // 졸음 시각이 직원 활동 시각의 최댓값이라, 팀 단계보다 앞에 두면 한 틱으로 따라잡을 때만 퇴근 시각이 끼어든다
+        for e in &mut self.employees {
+            let Some(r) = e
+                .retired_at
+                .filter(|&r| e.departed_at.is_none() && now - r > DEPART_AFTER)
+            else {
+                continue;
+            };
+            let at = r + DEPART_AFTER;
+            e.departed_at = Some(at);
+            // 종료가 추정이면 퇴근도 추정이다
+            let c = e.activity.confidence;
+            e.set_activity(Activity::new(sentence::departed(c), Room::Door, at, c));
+            cues.push(Cue::Depart {
+                agent: e.id.clone(),
+            });
+        }
         // 퇴근 문턱을 넘고도 프로세스가 살아 졸음에 남았다 (S58). 넘는 틱에 팀이 바뀌어 스냅샷이 나간다
         self.idle_alive =
             self.phase == TeamPhase::Dozing && quiet > OFF_AFTER && self.alive_in_registry;
@@ -929,6 +951,7 @@ impl Team {
                     return None;
                 }
                 e.retired_at = None;
+                e.departed_at = None;
                 cues.push(Cue::Rehire {
                     agent: e.id.clone(),
                 });
@@ -1708,7 +1731,9 @@ const TEAM_FOLLOWS: &[(TeamPhase, TeamPhase)] = &[
 /// 이미 정한 출력(활동·퇴장·팀 단계)에서 읽은 2.4 상태 단어. 상태 기계의 판정을 다시 하지 않는다
 fn state_word(phase: TeamPhase, e: &Employee) -> &'static str {
     let a = &e.activity;
-    if e.retired_at.is_some() {
+    if e.departed_at.is_some() {
+        word::OFF
+    } else if e.retired_at.is_some() {
         word::SUB_DONE
     } else if phase == TeamPhase::Off {
         word::OFF
@@ -2343,6 +2368,12 @@ pub(crate) mod sentence {
         match c {
             Confidence::Confirmed => "탕비실에서 쉬는 중".to_string(),
             Confidence::Inferred => "탕비실에서 게임 중인 듯".to_string(),
+        }
+    }
+    pub fn departed(c: Confidence) -> String {
+        match c {
+            Confidence::Confirmed => "퇴근함".to_string(),
+            Confidence::Inferred => "퇴근한 듯".to_string(),
         }
     }
 }

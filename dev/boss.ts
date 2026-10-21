@@ -35,6 +35,7 @@ function boss(room: Room, pose: Pose): EmployeeDto {
     lastSay: null,
     hiredAt: since,
     retiredAt: null,
+    departedAt: null,
     seat: null,
     parent: null,
     depth: 1,

@@ -2817,6 +2817,65 @@ mod tests {
         );
     }
 
+    /// 서브 종료 10분 뒤(논리 시계) 퇴근해 자리가 비고, 서브 파일의 새 줄로 재출근한다 (4.7.2, S60)
+    #[test]
+    fn sub_departs_ten_minutes_after_done_and_rehires_on_a_new_line() {
+        let e = env();
+        let root = e.dir("projects");
+        let p1 = root.join("p1");
+        copy_dir(&fixture("claude/async-subagent"), &p1);
+        let main = p1.join(format!("{ASYNC}.jsonl"));
+        let sub = p1
+            .join(ASYNC)
+            .join("subagents")
+            .join(format!("agent-{ASYNC_SUB}.jsonl"));
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        let state = |e: &Env| {
+            let team = e.team(ASYNC);
+            let s = team.employees.iter().find(|x| x.id == ASYNC_SUB).unwrap();
+            (s.retired_at, s.departed_at, s.seat)
+        };
+        e.at(t0() + secs(300));
+        h.tick();
+        assert!(state(&e).2.is_some(), "일하는 서브는 자리가 있다");
+        // 메인 파일에 그 서브의 완료 알림
+        let done = t0() + secs(310);
+        let note = format!(
+            "<task-notification>
+<task-id>{ASYNC_SUB}</task-id>
+<status>completed</status>
+<summary>Agent completed</summary>
+<usage>total_tokens: 1</usage>
+</task-notification>"
+        );
+        append(&main, &[user_line(ASYNC, done, &note)]);
+        e.at(done);
+        h.tick();
+        assert_eq!(state(&e), (Some(done), None, None));
+        let gone = done + Duration::minutes(10);
+        e.at(gone);
+        h.tick();
+        assert_eq!(state(&e).1, None, "문턱 시각까지는 탕비실에 있다");
+        e.at(gone + secs(1));
+        h.tick();
+        assert_eq!(state(&e), (Some(done), Some(gone), None));
+        let back = gone + secs(2);
+        append(
+            &sub,
+            &[rec(
+                ASYNC,
+                Some(ASYNC_SUB),
+                back,
+                "assistant",
+                serde_json::json!([{"type": "text", "text": "다시 확인"}]),
+            )],
+        );
+        e.at(back);
+        h.tick();
+        let (retired, departed, _) = state(&e);
+        assert_eq!((retired, departed), (None, None));
+    }
+
     #[test]
     fn spawned_sub_file_is_read_without_waiting_for_scan() {
         let e = env();

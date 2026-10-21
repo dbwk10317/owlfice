@@ -44,6 +44,7 @@ function emp(
     lastSay: null,
     hiredAt: since,
     retiredAt: null,
+    departedAt: null,
     seat: rank === "Bujang" ? null : 0,
     parent: null,
     depth: 1,

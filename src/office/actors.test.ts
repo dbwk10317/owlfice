@@ -86,6 +86,7 @@ function emp(
     lastSay: null,
     hiredAt: SINCE,
     retiredAt: null,
+    departedAt: null,
     seat: null,
     parent: null,
     depth: 1,

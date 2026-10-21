@@ -276,6 +276,8 @@ pub struct Employee {
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     pub retired_at: Option<DateTime<Utc>>,
+    /// 서브 퇴근 시각 (`retired_at` + 10분, 4.7.2). 재출근하면 `retired_at` 과 함께 지운다
+    pub departed_at: Option<DateTime<Utc>>,
     /// 개발실·임시 책상 자리 번호. world 가 사무실 단위로 준다 (4.7.9)
     pub seat: Option<u8>,
     /// 결과 안 온 호출 전부. 대표는 마지막
@@ -398,6 +400,10 @@ pub enum Cue {
         agent: String,
     },
     Retire {
+        agent: String,
+    },
+    /// 서브 퇴근. 문으로 걸어 나간다
+    Depart {
         agent: String,
     },
     Stamp {

@@ -636,6 +636,77 @@ fn retired_sub_rehires_only_for_later_events() {
     assert!(s.cues.contains(&Cue::Rehire { agent: SUB.into() }));
 }
 
+fn done_sub(s: &mut Sim, secs: i64) {
+    s.on(
+        MAIN,
+        secs,
+        EventKind::SubagentDone {
+            child_id: SUB.into(),
+        },
+    );
+}
+
+fn departs(cues: &[Cue]) -> usize {
+    cues.iter()
+        .filter(|c| matches!(c, Cue::Depart { agent } if agent == SUB))
+        .count()
+}
+
+/// 종료 10분 뒤 문턱 시각으로 한 번만 퇴근한다 (4.7.2)
+#[test]
+fn retired_sub_departs_ten_minutes_later_once() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    done_sub(&mut s, 10);
+    s.cues.clear();
+    s.tick(600);
+    assert_eq!(s.sub().departed_at, None);
+    s.tick(700);
+    assert_eq!(s.sub().departed_at, Some(at(610)));
+    assert_eq!(s.sub().retired_at, Some(at(10)));
+    let a = &s.sub().activity;
+    assert_eq!(a.since, at(610));
+    is(s.sub(), Room::Door, "퇴근함", Confirmed);
+    assert_eq!(departs(&s.cues), 1);
+    // 퇴근 cue 가 상태 변화를 덮어 미대응(scenario_gap)이 나가지 않는다
+    assert!(s.cues.iter().all(Cue::shown), "{:?}", s.cues);
+    s.tick(800);
+    assert_eq!(s.sub().departed_at, Some(at(610)));
+    assert_eq!(departs(&s.cues), 1);
+}
+
+#[test]
+fn departed_sub_rehires_only_for_later_events() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    done_sub(&mut s, 10);
+    s.tick(700);
+    s.cues.clear();
+    // 늦게 읽힌 옛 줄과 앞선 ts 의 중복 Spawn 은 퇴근을 풀지 않는다
+    s.on(SUB, 8, text("늦은 줄"));
+    spawn_sub(&mut s, 3, "claude-haiku-4-5", None);
+    assert_eq!(s.sub().retired_at, Some(at(10)));
+    assert_eq!(s.sub().departed_at, Some(at(610)));
+    is(s.sub(), Room::Door, "퇴근함", Confirmed);
+    assert!(!s.cues.iter().any(|c| matches!(c, Cue::Rehire { .. })));
+    s.on(SUB, 701, EventKind::Thinking);
+    assert_eq!(s.sub().retired_at, None);
+    assert_eq!(s.sub().departed_at, None);
+    assert!(s.cues.contains(&Cue::Rehire { agent: SUB.into() }));
+}
+
+/// 60초 규칙으로 짐작한 종료는 퇴근도 짐작이다
+#[test]
+fn inferred_retire_departs_as_inferred() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    s.on(SUB, 5, text("끝")).tick(70);
+    assert_eq!(s.sub().retired_at, Some(at(65)));
+    s.tick(700);
+    assert_eq!(s.sub().departed_at, Some(at(665)));
+    is(s.sub(), Room::Door, "퇴근한 듯", Inferred);
+}
+
 /// 부모 Spawn 으로 돌아온 서브는 재출근 전의 텍스트 응답으로 다시 퇴근하지 않는다
 #[test]
 fn sub_rehired_by_spawn_is_not_retired_by_its_old_text() {

@@ -202,6 +202,8 @@ pub struct EmployeeDto {
     pub hired_at: DateTime<Utc>,
     /// 있으면 퇴장한(또는 퇴장으로 짐작한) 직원
     pub retired_at: Option<DateTime<Utc>>,
+    /// 있으면 퇴근한 서브 (퇴근 묶음, 근태판 퇴근 칸)
+    pub departed_at: Option<DateTime<Utc>>,
     pub seat: Option<u8>,
     /// 상사 agent_id. 깊이 2 이상 카드의 "상사" 줄
     pub parent: Option<String>,
@@ -658,6 +660,7 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
         last_say: e.last_say.clone(),
         hired_at: e.hired_at,
         retired_at: e.retired_at,
+        departed_at: e.departed_at,
         seat: e.seat,
         parent: e.parent.clone(),
         depth: e.depth,

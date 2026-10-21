@@ -441,6 +441,8 @@ impl Team {
                             if rehires(e, ev.ts) {
                                 e.retired_at = None;
                                 e.spawn_logged = false;
+                                // 옛 텍스트 응답이 남으면 다음 tick 이 60초 규칙으로 다시 퇴근시킨다 (4.7.2)
+                                e.last_was_text = false;
                                 cues.push(Cue::Rehire {
                                     agent: e.id.clone(),
                                 });

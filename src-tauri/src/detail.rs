@@ -54,6 +54,9 @@ struct Want {
     mark: Mark,
     /// 그 줄의 칸 중 몇 번째
     line_idx: u32,
+    /// 결과 칸이면 같은 call 의 호출 칸과 가장 가까운 앞선 결과 칸(Started 등). Codex 파서는 앞 줄의 상태가 있어야
+    /// 결과 이벤트를 내서, 앞 페이지에 있는 그 줄들을 먼저 같은 파서에 읽혀야 한다
+    pair: Vec<Mark>,
 }
 
 /// 탐색기로 열 것
@@ -161,6 +164,24 @@ fn want(t: &Team, key: &TeamKey, e: &Employee, i: usize) -> Want {
         vendor: key.vendor,
         mark: *m,
         line_idx: u32::try_from(i - line_start(tl, i)).unwrap_or(u32::MAX),
+        pair: if m.kind == TimelineKind::ToolResult {
+            // 같은 파일·세대의 같은 call 에서 호출 하나와 가장 가까운 앞선 결과 하나까지만. 페이지 밖 읽기가
+            // 2초 상한을 잡아먹지 않게 한다
+            let near = |kind| {
+                tl[..i].iter().rev().find(|p| {
+                    p.kind == kind
+                        && p.call == m.call
+                        && (p.source, p.generation) == (m.source, m.generation)
+                })
+            };
+            [near(TimelineKind::ToolCall), near(TimelineKind::ToolResult)]
+                .into_iter()
+                .flatten()
+                .copied()
+                .collect()
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -267,14 +288,16 @@ pub fn session_detail(
         let w = lock(world);
         let (k, t) = find_team(&w, &office, team_id)?;
         let n = limit.unwrap_or(RECENT).clamp(1, RECENT_MAX) as usize;
-        // 직원마다 끝에서 n 칸이면 합쳐서 최신 n 개를 고르기에 모자라지 않다. 키는 재구성과 같은 (ts, seq)
+        // 직원마다 끝에서 n 칸이면 합쳐서 최신 n 개를 고르기에 모자라지 않다. 기록은 적용 순서로 쌓이니
+        // 키도 적용 순서(seq)여야 자르는 기준과 같다. 칸의 ts 는 그 줄 자신의 ts 라 파일 안에서 거꾸로 갈 수 있다
+        // seq 는 적용 순서라 실시간과 재구성에서 다를 수 있다. 직원 타임라인도 같은 적용 순서라 둘이 어긋나지 않게 이것을 쓴다
         let mut tail: Vec<(Mark, usize, usize)> = Vec::new();
         for (ei, e) in t.employees.iter().enumerate() {
             let tl = &e.record.timeline;
             let from = tl.len().saturating_sub(n);
             tail.extend((from..tl.len()).map(|i| (tl[i], ei, i)));
         }
-        tail.sort_by_key(|(m, _, _)| std::cmp::Reverse((m.ts, m.seq)));
+        tail.sort_by_key(|(m, _, _)| std::cmp::Reverse(m.seq));
         let wants: Vec<Want> = tail
             .into_iter()
             .take(n)
@@ -457,24 +480,30 @@ fn explorer_arg(path: &str, select: bool) -> String {
     }
 }
 
+/// 결과 파일 경로. 그 자리의 줄이 같은 기록(시각, 호출 ID)일 때만 줄에 적힌 경로를 따른다.
+/// 파일을 여는 일이라 화면보다 엄격하게 timestamp 없는 줄은 받지 않는다 (find_event 는 받는다)
+fn sidecar_path(w: &Want) -> Result<PathBuf, DetailError> {
+    let mut file = Lines::open(&w.path, w.vendor).ok_or(DetailError::OpenFailed)?;
+    let line = file
+        .at(&w.path, &w.mark, true)
+        .ok_or(DetailError::OpenFailed)?;
+    let rec = line
+        .rec
+        .as_ref()
+        .filter(|r| raw_ts_matches(r, w.mark.ts))
+        .ok_or(DetailError::CursorInvalid)?;
+    let text = raw_result(rec, w.mark.call, w.vendor)
+        .ok_or(DetailError::CursorInvalid)?
+        .text;
+    let dir = session_dir(&w.path).ok_or(DetailError::NotFound)?;
+    sidecar(Some(rec), &text, &dir).ok_or(DetailError::NotFound)
+}
+
 fn launch(plan: Launch, deadline: Instant) -> Result<(), DetailError> {
     let (path, select) = match plan {
         Launch::Select(p) => (p, true),
         Launch::Folder(p) => (p, false),
-        Launch::Sidecar(w) => {
-            let mut file = Lines::open(&w.path, w.vendor).ok_or(DetailError::OpenFailed)?;
-            let line = file.at(&w, true).ok_or(DetailError::OpenFailed)?;
-            let rec = line.rec.as_ref();
-            let text = rec
-                .and_then(|r| raw_result(r, w.mark.call, w.vendor))
-                .map(|r| r.text)
-                .unwrap_or_default();
-            let dir = session_dir(&w.path).ok_or(DetailError::NotFound)?;
-            (
-                sidecar(rec, &text, &dir).ok_or(DetailError::NotFound)?,
-                true,
-            )
-        }
+        Launch::Sidecar(w) => (sidecar_path(&w)?, true),
     };
     // 따옴표는 인자 경계를 깬다. Windows 경로에는 없지만 WSL 경로에는 있을 수 있다
     let s = path
@@ -540,26 +569,31 @@ fn needs_raw(kind: TimelineKind) -> bool {
 
 /// 칸들의 DTO. 입력 순서 그대로. 줄마다 DTO 를 바로 만들고 원문은 버린다
 fn read_events(wants: &[Want], deadline: Instant) -> Result<Vec<EventDto>, DetailError> {
-    // 파일 → 시작 바이트 → 그 줄의 칸 번호들
-    let mut files: BTreeMap<(&Path, Vendor), BTreeMap<u64, Vec<usize>>> = BTreeMap::new();
+    // 파일 → 시작 바이트 → (그 줄의 칸, 그 줄의 칸 번호들).
+    // 칸 번호가 빈 줄은 결과의 짝 줄이라 파서 문맥으로만 읽는다. 바이트 순이라 결과 줄보다 먼저 읽힌다
+    type ByOffset<'a> = BTreeMap<u64, (&'a Mark, Vec<usize>)>;
+    let mut files: BTreeMap<(&Path, Vendor), ByOffset> = BTreeMap::new();
     for (i, w) in wants.iter().enumerate() {
-        files
-            .entry((&w.path, w.vendor))
-            .or_default()
+        let lines = files.entry((&w.path, w.vendor)).or_default();
+        lines
             .entry(w.mark.byte_offset)
-            .or_default()
+            .or_insert((&w.mark, Vec::new()))
+            .1
             .push(i);
+        for p in &w.pair {
+            lines.entry(p.byte_offset).or_insert((p, Vec::new()));
+        }
     }
     let mut out: Vec<Option<EventDto>> = vec![None; wants.len()];
     for ((path, vendor), lines) in files {
         // 못 열면 칸마다 "못 읽음"이 된다
         let mut file = Lines::open(path, vendor);
-        for idxs in lines.into_values() {
+        for (mark, idxs) in lines.into_values() {
             if Instant::now() > deadline {
                 return Err(DetailError::Timeout);
             }
             let raw = idxs.iter().any(|&i| needs_raw(wants[i].mark.kind));
-            let line = file.as_mut().and_then(|f| f.at(&wants[idxs[0]], raw));
+            let line = file.as_mut().and_then(|f| f.at(path, mark, raw));
             for i in idxs {
                 out[i] = Some(event_dto(&wants[i], line.as_ref()));
             }
@@ -578,8 +612,7 @@ impl Lines {
 
     /// 그 칸의 줄. 미대응 재료는 처음 읽을 때 이미 셌으니 버린다.
     /// 원문 JSON 은 `raw` 일 때만 파싱한다 (큰 줄을 필요 없이 두 번 파싱하지 않으려고)
-    fn at(&mut self, w: &Want, raw: bool) -> Option<Line> {
-        let m = &w.mark;
+    fn at(&mut self, path: &Path, m: &Mark, raw: bool) -> Option<Line> {
         let mut buf = Vec::new();
         self.reader.seek(SeekFrom::Start(m.byte_offset)).ok()?;
         (&mut self.reader)
@@ -593,7 +626,7 @@ impl Lines {
             buf.pop();
         }
         let at = RawRef {
-            path: w.path.clone(),
+            path: path.to_path_buf(),
             generation: m.generation,
             byte_offset: m.byte_offset,
             line_no: m.line_no,
@@ -630,8 +663,21 @@ fn event_dto(w: &Want, line: Option<&Line>) -> EventDto {
         line_idx: w.line_idx,
         sidecar: None,
     };
-    let Some((line, ev)) = line.and_then(|l| find_event(m, &l.events).map(|e| (l, &e.kind))) else {
-        d.summary = UNREADABLE.to_string();
+    let found = line.and_then(|l| find_event(m, &l.events).map(|e| (l, &e.kind)));
+    let Some((line, ev)) = found else {
+        // 결과 칸은 요약이 Mark 에서, 본문·call_id 가 원문에서 오니 파서 이벤트 없이도 채운다. Codex 백그라운드
+        // 완료·write_stdin 중단·Claude TaskStop 결과는 다른 줄의 파서 상태가 있어야 이벤트가 나서 페이지가
+        // 갈리면 못 찾는다. 파일이 바뀐 자리에 다른 줄이 있을 수 있으니 원문 timestamp 가 있고 칸 ts 와 같을 때만
+        // 받는다 (find_event 보다 엄격하다: 이벤트 없이 메모리 요약만 나가는 길이라 확인할 근거가 없으면 막는다)
+        match line {
+            Some(l)
+                if m.kind == TimelineKind::ToolResult
+                    && l.rec.as_ref().is_some_and(|r| raw_ts_matches(r, m.ts)) =>
+            {
+                fill_result(&mut d, w, m, None, l.rec.as_ref());
+            }
+            _ => d.summary = UNREADABLE.to_string(),
+        }
         return d;
     };
     let rec = line.rec.as_ref();
@@ -652,34 +698,44 @@ fn event_dto(w: &Want, line: Option<&Line>) -> EventDto {
                 d.input = Some(clip(&raw.input, BODY_CLIP));
             }
         }
-        TimelineKind::ToolResult => {
-            d.summary = result_summary(m);
-            if let EventKind::ToolResult {
-                call_id, preview, ..
-            } = ev
-            {
-                d.call_id = Some(call_id.clone());
-                if !preview.is_empty() {
-                    d.body = Some(clip(preview, BODY_CLIP));
-                }
-            }
-            // 결과 본문은 파서 미리보기(앞 200자)가 아니라 원문에서 앞뒤를 자른다
-            if let Some(raw) = rec.and_then(|r| raw_result(r, m.call, w.vendor)) {
-                if w.vendor == Vendor::Claude {
-                    d.sidecar = session_dir(&w.path)
-                        .and_then(|dir| sidecar(rec, &raw.text, &dir))
-                        .map(|p| p.display().to_string());
-                }
-                d.call_id = Some(raw.id);
-                d.body = Some(clip(&raw.text, BODY_CLIP));
-            }
-        }
+        TimelineKind::ToolResult => fill_result(&mut d, w, m, Some(ev), rec),
         _ => fill_other(&mut d, ev),
     }
     if d.summary.is_empty() {
         d.summary = MISSING.to_string();
     }
     d
+}
+
+fn raw_ts_matches(rec: &Value, ts: chrono::DateTime<chrono::Utc>) -> bool {
+    rec.get("timestamp")
+        .and_then(Value::as_str)
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .is_some_and(|t| t == ts)
+}
+
+/// 결과 칸 채우기. `ev` 가 없으면(파서가 이 줄만으론 이벤트를 못 냄) 요약과 원문에서 오는 것만 채운다
+fn fill_result(d: &mut EventDto, w: &Want, m: &Mark, ev: Option<&EventKind>, rec: Option<&Value>) {
+    d.summary = result_summary(m);
+    if let Some(EventKind::ToolResult {
+        call_id, preview, ..
+    }) = ev
+    {
+        d.call_id = Some(call_id.clone());
+        if !preview.is_empty() {
+            d.body = Some(clip(preview, BODY_CLIP));
+        }
+    }
+    // 결과 본문은 파서 미리보기(앞 200자)가 아니라 원문에서 앞뒤를 자른다
+    if let Some(raw) = rec.and_then(|r| raw_result(r, m.call, w.vendor)) {
+        if w.vendor == Vendor::Claude {
+            d.sidecar = session_dir(&w.path)
+                .and_then(|dir| sidecar(rec, &raw.text, &dir))
+                .map(|p| p.display().to_string());
+        }
+        d.call_id = Some(raw.id);
+        d.body = Some(clip(&raw.text, BODY_CLIP));
+    }
 }
 
 fn call_id_of(k: &EventKind) -> Option<&str> {

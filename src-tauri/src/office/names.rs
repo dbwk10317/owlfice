@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::discover::{Host, HostKind};
 
@@ -106,6 +108,58 @@ pub struct NameBook {
     entries: BTreeMap<String, NameEntry>,
     /// 메모리에만 배정하고 아직 저장하지 않은 이름이 있다
     dirty: bool,
+    /// 마지막으로 꺼낸 스냅샷 번호
+    seq: u64,
+    gate: Arc<SaveGate>,
+}
+
+/// 호스트 스레드마다 잠금 밖에서 따로 쓰므로 쓰기 순서를 여기서 맞춘다 (names.json·rooms.json 이 같이 쓴다)
+#[derive(Default)]
+struct SaveGate {
+    /// 파일에 마지막으로 쓴 스냅샷 번호. 쓰는 동안 쥔다: 둘이 같은 임시 파일에 쓰지 않게
+    written: Mutex<u64>,
+    /// 쓰기가 실패했다. 다음 `unsaved` 가 새 변경 없이도 다시 꺼낸다
+    retry: AtomicBool,
+    /// 쓰기가 연속으로 실패하는 중이다. 처음 한 번만 알리려고 파일마다 하나만 둔다
+    failing: AtomicBool,
+}
+
+impl SaveGate {
+    /// 연속 실패 중 처음 실패만 돌려준다. 호출하는 스레드가 여럿이어도 한 번이고, 성공하면 풀린다
+    fn first_failure(&self, r: io::Result<()>) -> Option<io::Error> {
+        match r {
+            Ok(()) => {
+                self.failing.store(false, Ordering::Relaxed);
+                None
+            }
+            Err(e) => (!self.failing.swap(true, Ordering::Relaxed)).then_some(e),
+        }
+    }
+
+    /// 더 새 스냅샷이 이미 쓰였으면 쓰지 않는다. 늦게 온 옛 스냅샷이 새 내용을 지우지 않게
+    fn write(
+        &self,
+        seq: u64,
+        writable: bool,
+        path: &Path,
+        data: &impl Serialize,
+    ) -> io::Result<()> {
+        if !writable {
+            return Err(unwritable(path));
+        }
+        let mut written = self.written.lock().unwrap_or_else(|e| e.into_inner());
+        if *written >= seq {
+            return Ok(());
+        }
+        save_json(path, data).inspect_err(|_| self.retry.store(true, Ordering::Relaxed))?;
+        *written = seq;
+        Ok(())
+    }
+
+    /// 지난 쓰기가 실패했으면 true 를 한 번 돌려준다
+    fn take_retry(&self) -> bool {
+        self.retry.swap(false, Ordering::Relaxed)
+    }
 }
 
 /// 잠금 밖에서 쓸 names.json 내용. world 잠금 안에서 파일을 쓰지 않으려고 꺼내 둔다
@@ -113,15 +167,20 @@ pub struct NamesSave {
     path: PathBuf,
     writable: bool,
     entries: BTreeMap<String, NameEntry>,
+    seq: u64,
+    gate: Arc<SaveGate>,
 }
 
 impl NamesSave {
     pub fn write(self) -> io::Result<()> {
-        if self.writable {
-            save_json(&self.path, &self.entries)
-        } else {
-            Err(unwritable(&self.path))
-        }
+        self.gate
+            .write(self.seq, self.writable, &self.path, &self.entries)
+    }
+
+    /// 쓰고, 연속 실패 중 처음 실패만 돌려준다. 부르는 쪽은 그때만 한 줄 남긴다
+    pub fn write_report(self) -> Option<io::Error> {
+        let gate = self.gate.clone();
+        gate.first_failure(self.write())
     }
 }
 
@@ -134,6 +193,8 @@ impl NameBook {
             writable,
             entries,
             dirty: false,
+            seq: 0,
+            gate: Arc::default(),
         }
     }
 
@@ -182,12 +243,19 @@ impl NameBook {
         name
     }
 
-    /// 아직 저장하지 않은 이름이 있으면 쓸 내용을 꺼낸다
+    /// 아직 저장하지 않은 이름이 있거나 지난 쓰기가 실패했으면 쓸 내용을 꺼낸다
     pub fn unsaved(&mut self) -> Option<NamesSave> {
-        std::mem::take(&mut self.dirty).then(|| NamesSave {
+        let retry = self.gate.take_retry();
+        if !std::mem::take(&mut self.dirty) && !retry {
+            return None;
+        }
+        self.seq += 1;
+        Some(NamesSave {
             path: self.path.clone(),
             writable: self.writable,
             entries: self.entries.clone(),
+            seq: self.seq,
+            gate: self.gate.clone(),
         })
     }
 }
@@ -225,15 +293,20 @@ pub struct RoomsSave {
     path: PathBuf,
     writable: bool,
     data: RoomsFile,
+    seq: u64,
+    gate: Arc<SaveGate>,
 }
 
 impl RoomsSave {
     pub fn write(self) -> io::Result<()> {
-        if self.writable {
-            save_json(&self.path, &self.data)
-        } else {
-            Err(unwritable(&self.path))
-        }
+        self.gate
+            .write(self.seq, self.writable, &self.path, &self.data)
+    }
+
+    /// `NamesSave::write_report` 와 같다
+    pub fn write_report(self) -> Option<io::Error> {
+        let gate = self.gate.clone();
+        gate.first_failure(self.write())
     }
 }
 
@@ -246,6 +319,9 @@ pub struct RoomBook {
     /// 파일에 마지막으로 쓴(또는 읽은) 방별 last_seen. 메모리 값이 이보다 하루 넘게 앞서면 다시 쓴다.
     file_seen: BTreeMap<String, String>,
     data: RoomsFile,
+    /// 마지막으로 꺼낸 스냅샷 번호
+    seq: u64,
+    gate: Arc<SaveGate>,
 }
 
 impl RoomBook {
@@ -258,6 +334,8 @@ impl RoomBook {
             dirty: false,
             file_seen: BTreeMap::new(),
             data,
+            seq: 0,
+            gate: Arc::default(),
         };
         book.mark_file_seen();
         book
@@ -272,16 +350,21 @@ impl RoomBook {
             .collect();
     }
 
-    /// 아직 저장하지 않은 것이 있으면 쓸 내용을 꺼낸다. 꺼낸 시점을 파일에 쓴 것으로 본다
+    /// 아직 저장하지 않은 것이 있거나 지난 쓰기가 실패했으면 쓸 내용을 꺼낸다.
+    /// 꺼낸 시점을 파일에 쓴 것으로 본다: 쓰기가 실패하면 retry 로 같은 내용을 다시 꺼내 맞춘다
     pub fn unsaved(&mut self) -> Option<RoomsSave> {
-        if !std::mem::take(&mut self.dirty) {
+        let retry = self.gate.take_retry();
+        if !std::mem::take(&mut self.dirty) && !retry {
             return None;
         }
         self.mark_file_seen();
+        self.seq += 1;
         Some(RoomsSave {
             path: self.path.clone(),
             writable: self.writable,
             data: self.data.clone(),
+            seq: self.seq,
+            gate: self.gate.clone(),
         })
     }
 
@@ -493,6 +576,120 @@ mod tests {
         assert!(saved.is_err());
         let used = HashSet::from([name.clone()]);
         assert_eq!(book.assign("x", &used, t(2)).0, name);
+    }
+
+    fn saved_ids(dir: &Path) -> Vec<String> {
+        let bytes = std::fs::read(dir.join("names.json")).unwrap();
+        let saved: BTreeMap<String, NameEntry> = serde_json::from_slice(&bytes).unwrap();
+        saved.into_keys().collect()
+    }
+
+    #[test]
+    fn older_snapshot_written_last_does_not_drop_newer_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = NameBook::load(dir.path());
+        book.assign_unsaved("a", &HashSet::new(), t(1));
+        let old = book.unsaved().unwrap();
+        book.assign_unsaved("b", &HashSet::new(), t(1));
+        let new = book.unsaved().unwrap();
+        new.write().unwrap();
+        old.write().unwrap();
+        assert_eq!(saved_ids(dir.path()), ["a", "b"]);
+    }
+
+    #[test]
+    fn failed_write_is_tried_again_without_new_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = NameBook::load(dir.path());
+        book.assign_unsaved("a", &HashSet::new(), t(1));
+        // 임시 파일 자리에 폴더가 있으면 쓰기가 실패한다
+        let blocker = dir.path().join("names.json.tmp");
+        std::fs::create_dir(&blocker).unwrap();
+        assert!(book.unsaved().unwrap().write().is_err());
+        std::fs::remove_dir(&blocker).unwrap();
+        book.unsaved().expect("다시 저장할 것").write().unwrap();
+        assert_eq!(saved_ids(dir.path()), ["a"]);
+        assert!(book.unsaved().is_none(), "성공한 뒤에는 더 쓰지 않는다");
+    }
+
+    #[test]
+    fn concurrent_saves_leave_valid_json_with_every_name() {
+        // world 잠금 안에서 꺼내고 잠금 밖에서 쓰는 호스트 스레드 둘
+        let dir = tempfile::tempdir().unwrap();
+        let book = Arc::new(Mutex::new(NameBook::load(dir.path())));
+        let threads: Vec<_> = (0..2)
+            .map(|n| {
+                let book = book.clone();
+                std::thread::spawn(move || {
+                    for i in 0..100 {
+                        let save = {
+                            let mut b = book.lock().unwrap();
+                            b.assign_unsaved(&format!("t{n}-{i:03}"), &HashSet::new(), t(1));
+                            b.unsaved()
+                        };
+                        save.unwrap().write().unwrap();
+                    }
+                })
+            })
+            .collect();
+        for th in threads {
+            th.join().unwrap();
+        }
+        assert_eq!(saved_ids(dir.path()).len(), 200);
+    }
+
+    fn saved_rooms(dir: &Path) -> BTreeMap<String, u32> {
+        let bytes = std::fs::read(dir.join("rooms.json")).unwrap();
+        let saved: RoomsFile = serde_json::from_slice(&bytes).unwrap();
+        saved
+            .rooms
+            .into_iter()
+            .map(|(k, r)| (k, r.number))
+            .collect()
+    }
+
+    #[test]
+    fn older_rooms_snapshot_written_last_keeps_newer_numbers() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = RoomBook::load(dir.path());
+        book.room_of_unsaved("a", &win(), t(1));
+        let old = book.unsaved().unwrap();
+        book.room_of_unsaved("b", &win(), t(1));
+        let new = book.unsaved().unwrap();
+        new.write().unwrap();
+        old.write().unwrap();
+        let ids: Vec<_> = saved_rooms(dir.path()).into_keys().collect();
+        assert_eq!(ids, ["a", "b"]);
+    }
+
+    #[test]
+    fn failed_rooms_write_is_tried_again_without_new_rooms() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = RoomBook::load(dir.path());
+        book.room_of_unsaved("a", &win(), t(1));
+        let blocker = dir.path().join("rooms.json.tmp");
+        std::fs::create_dir(&blocker).unwrap();
+        assert!(book.unsaved().unwrap().write().is_err());
+        std::fs::remove_dir(&blocker).unwrap();
+        book.unsaved().expect("다시 저장할 것").write().unwrap();
+        assert_eq!(saved_rooms(dir.path()).len(), 1);
+        assert!(book.unsaved().is_none(), "성공한 뒤에는 더 쓰지 않는다");
+    }
+
+    #[test]
+    fn repeated_write_failure_is_reported_once_until_it_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut book = RoomBook::load(dir.path());
+        book.room_of_unsaved("a", &win(), t(1));
+        let blocker = dir.path().join("rooms.json.tmp");
+        std::fs::create_dir(&blocker).unwrap();
+        assert!(book.unsaved().unwrap().write_report().is_some());
+        assert!(book.unsaved().unwrap().write_report().is_none());
+        std::fs::remove_dir(&blocker).unwrap();
+        assert!(book.unsaved().unwrap().write_report().is_none());
+        std::fs::create_dir(&blocker).unwrap();
+        book.room_of_unsaved("b", &win(), t(1));
+        assert!(book.unsaved().unwrap().write_report().is_some());
     }
 
     #[test]

@@ -40,6 +40,11 @@ pub trait Parser {
         raw_ref: &RawRef,
         unhandled: &mut Vec<Unhandled>,
     ) -> Vec<Event>;
+
+    /// 다 읽은 뒤에도 이 파일로 팀을 만들지 않는다 (Codex 자식·내부 rollout, 4.6.2)
+    fn side(&self) -> bool {
+        false
+    }
 }
 
 /// 원본 레코드를 보는 파서만 아는 미대응 재료 (4.11). 원문 값은 담지 않는다.

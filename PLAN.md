@@ -695,7 +695,8 @@ owlfice/
 │       │   ├── rank.rs          ← 모델명 → 직급
 │       │   ├── names.rs         ← 한글 이름·방 번호 부여·저장
 │       │   └── stats.rs         ← 실적, 명령별 평균 소요, 무재해, 장애 판정
-│       ├── diag.rs              ← 운영 로그, 미대응 동작 로그 (unhandled.jsonl)
+│       ├── diag.rs              ← 미대응 동작 로그 (unhandled.jsonl)
+│       ├── oplog.rs             ← 운영 로그 (owlfice-YYYY-MM-DD.log)
 │       └── ipc.rs               ← 프론트와 주고받는 DTO, 이벤트 이름
 ├── src/                         ← 프론트 (Vite + TS)
 │   ├── main.ts
@@ -793,10 +794,10 @@ Antigravity 폴더의 구조 (확인됨, 앱과 CLI가 같다):
 - Gemini CLI의 옛 `<gemini>\tmp\<사용자>\chats\` 는 서비스 종료로 보지 않는다.
 
 **세션 등록부** (확인됨): `<home>\sessions\<pid>.json`. 살아 있는 Claude 프로세스마다 하나. 필드: `pid, sessionId, cwd, entrypoint, kind, name, nameSource, nameSince, status, statusUpdatedAt, startedAt, procStart, updatedAt, version, hostSessionId, pidDomain, peerProtocol, peerFeatures, messagingSocketPath, bridgeSessionId?` (Desktop 2.1.3xx 6건 확인. 모르는 키는 무시한다). 같은 폴더의 `<pid>.<hash>.key` 는 `CLAUDE_CODE_CHILD_SESSION=1` 로 뜬 숨은 자식 세션의 표식이라 jsonl도 등록부 행도 없다. `.json` 만 집는다 (타 프로젝트 관찰, 이 PC에 `.key` 6건 확인). `kind: "background"`·`state: "blocked"` 이고 `pid` 가 없는 행이 남을 수 있다 (미확인). 파서는 `pid` 없는 행에서 실패하지 않는다. 쓰임:
-1. 활성 판정. 등록부에 있고 pid가 살아 있으면 퇴근이 아니다 (2.4). pid는 재사용되므로 프로세스 생성 시각이 `startedAt`(ms)보다 5초 넘게 늦으면 다른 프로세스로 본다 (`procStart` 는 `ps -o lstart` 꼴이라 Windows에서 쓰이는지 미확인. 생성 시각은 `GetProcessTimes`, 6부 T02).
-2. 제목. `name`이 사용자가 붙인 이름.
-3. A/B동 보조.
-`status` 는 `idle`·`busy` 를 확인했다. 허가·질문·sandbox·MCP 입력 프롬프트가 떠 있으면 `waiting` + `waitingFor` 가 된다는 2차 자료가 있다 (CC 2.1.212+, 타 프로젝트 fixture. 이 PC 미확인, 6부). 확인되면 Claude 허가 대기는 침묵 추정(4.7.2) 대신 이 값으로 Confirmed가 된다. `shell` 은 `!` 셸 모드라 busy로 본다. `updatedAt` 은 상태가 바뀔 때만 갱신된다 (확인됨). WSL 안의 Claude도 같은 등록부를 쓰므로 UNC로 읽을 수 있지만 Linux pid의 생존은 Windows에서 확인할 수 없다. 그래서 등록부 파일이 있으면 살아 있다고 보고, 비정상 종료로 남은 파일은 세션 파일의 마지막 기록 시각으로 퇴근 규칙(2.4)이 가린다 (6부). `updatedAt` 나이로 생존을 판단하지 않는다. 오래 쉬는 세션이 죽은 것으로 보인다.
+1. 활성 판정. 등록부에 있고 pid가 살아 있으면 퇴근이 아니다 (2.4). pid는 재사용되므로 프로세스 생성 시각이 `startedAt`(ms)보다 5초 넘게 늦으면 다른 프로세스로 본다 (`procStart` 는 `ps -o lstart` 꼴이라 Windows에서 쓰이는지 미확인. 생성 시각은 `GetProcessTimes`, 6부 T02). 지금 코드는 pid 생존만 보고 재사용은 가리지 않는다 (T47).
+2. 제목. `name`이 사용자가 붙인 이름 (지금 코드는 안 쓴다, T47).
+3. A/B동 보조 (지금 코드는 안 쓴다, T47).
+`status` 는 `idle`·`busy` 를 확인했다. 허가·질문·sandbox·MCP 입력 프롬프트가 떠 있으면 `waiting` + `waitingFor` 가 된다는 2차 자료가 있다 (CC 2.1.212+, 타 프로젝트 fixture. 이 PC 미확인, 6부). 확인되면 Claude 허가 대기는 침묵 추정(4.7.2) 대신 이 값으로 Confirmed가 된다. `shell` 은 `!` 셸 모드라 busy로 본다. `updatedAt` 은 상태가 바뀔 때만 갱신된다 (확인됨). WSL 안의 Claude도 같은 등록부를 쓰므로 UNC로 읽을 수 있지만 Linux pid의 생존은 Windows에서 확인할 수 없다. 그래서 등록부 파일이 있으면 살아 있다고 보고, 비정상 종료로 남은 파일은 세션 파일의 마지막 기록 시각으로 퇴근 규칙(2.4)이 가린다 (6부). 지금 코드는 WSL 등록부를 읽지 않아 WSL Claude 팀은 등록부 없이 퇴근 규칙만 따른다 (T48). `updatedAt` 나이로 생존을 판단하지 않는다. 오래 쉬는 세션이 죽은 것으로 보인다.
 
 Codex·Antigravity는 등록부가 없어 세션 파일의 길이와 마지막 기록 시각만 쓴다. Codex 앱은 파일을 연 채 써서 mtime이 첫 기록 시각에 머문다 (확인됨). mtime을 활동 신호로 쓰지 않는다.
 
@@ -1062,7 +1063,7 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
   - 자식은 같은 날짜 폴더의 별도 rollout 파일이다. 자식 `session_meta.payload` 에 `parent_thread_id`(= `forked_from_id`), `thread_source: "subagent"`, `agent_path: "/root/<이름>"`, `agent_nickname`, `subagent_history_start_ordinal` 이 있다. `source` 는 루트에선 문자열(`vscode`·`cli`·`exec`), 자식에선 객체(`{subagent: {thread_spawn: {parent_thread_id, depth, agent_path, agent_nickname}}}`)다 (확인됨). 구버전(0.146 이하)은 `source: {subagent: "review"}` + 최상위 `parent_thread_id` 다 (미확인). `source` 는 `Value` 로 받고 모양이 달라도 파일 전체를 버리지 않는다. 자식 파일 앞부분에는 부모 이력이 복제돼 있다. **`ordinal` 이 `subagent_history_start_ordinal` 보다 작은 줄은 읽지 않는다.** 읽으면 부모의 입력·턴이 자식에 한 번 더 들어간다. **단, 파일 첫 줄의 자기 `session_meta` 는 `ordinal: 0` 이라 이 조건에 걸린다** (확인됨, 자식 2건 모두). 첫 `session_meta` 는 ordinal 검사 전에 자기 것으로 채택하고, 복제 구간 안의 둘째 `session_meta`(부모 것)는 버린다.
   - 부모 쪽: `spawn_agent` 결과는 `{task_name}` 뿐이다. 자식 thread id·모델·effort는 `item_completed` 의 `SubAgentActivity {id, kind: "started", agent_thread_id, agent_path, model, reasoning_effort}` 에 있다. **`id` 가 `spawn_agent` 호출의 `call_id` 와 같다** (확인됨, 5/5). 위치(직후)가 아니라 id로 잇는다. **여기서 SubagentSpawn을 낸다.** `kind: "completed"` 로 SubagentDone (한 자식에 여러 번 온다, 확인됨 5건 spawn에 10건. 상태 기계가 거른다), `"interacted"` 는 추가 지시다. `wait_agent` 결과(`{message, timed_out}`)에는 대상 정보가 없어 쓰지 않는다.
   - `spawn_agent`·`followup_task` 의 `message` 와 자식이 받은 지시는 암호화돼 있다. SubagentSpawn의 `prompt` 는 비운다.
-  - 자식 파일의 활동(파일 읽기·수정 연출)은 T33에서 붙인다. T08은 Spawn·Done까지.
+  - 자식 파일의 활동(파일 읽기·수정 연출)은 T33에서 붙인다. T08은 Spawn·Done까지. 그전까지 자식 rollout 은 팀을 만들지 않는다 (`Parser::side`, 내부 rollout 과 같은 길).
 - `/compact` (확인됨): 사용자 입력 없는 `task_started`(`turn_attribution` 없음) → 최상위 `compacted` (`replacement_history`, `window_id` 등. 요약은 암호화돼 있다) → `item_completed` 의 `ContextCompaction` → `task_complete`. ContextCompaction을 내고 토큰 수는 비운다. 압축 뒤 사용량은 다음 `token_count` 의 `last_token_usage` 로 안다.
 - 할 일 도구는 이 버전에 없다 (모델이 todo 파일로 대신했다, 확인됨).
 
@@ -1294,7 +1295,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 - `floor * 100 + nn`, nn은 01~99.
 - 처음 본 팀에 `hash(session_id) % 99 + 1` 부터 시작해 그 층에서 비어 있는 첫 번호를 주고 `%APPDATA%\Owlfice\rooms.json` 에 저장한다. 해시만으로는 수백 세션이 99칸에서 거의 전부 충돌하고 "+1 순환"은 탐색 순서에 따라 바뀌어 번호가 흔들린다.
-- 퇴근 7일이 지난 팀의 번호는 회수한다.
+- 퇴근 7일이 지난 팀의 번호는 회수한다. 지금 코드는 `last_seen` 을 앱이 팀을 처음 볼 때만 갱신한다 (`ipc.rs` ponytail).
 - 한 층에 99팀 초과는 1차 범위 밖. 초과하면 로그를 남기고 번호를 재사용한다.
 
 #### 4.7.9 사무실 합성 (`world.rs`)
@@ -1381,11 +1382,11 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 
 한 호스트의 Hot 틱이 200ms를 연속 5회 넘기면 그 호스트만 400ms로 늦추고 로그에 남긴다. 연속 5회 200ms 이하면 되돌린다. WSL이면 그 사무실에 "통신 지연" 구름(S46)을 띄운다. 다른 호스트는 영향 없다.
 
-### 4.11 로그와 진단 (`diag.rs`)
+### 4.11 로그와 진단 (`diag.rs`, 운영 로그는 `oplog.rs`)
 
 두 종류를 남긴다. 둘 다 로컬 파일이고 어디로도 보내지 않는다.
 
-**운영 로그** `%APPDATA%\Owlfice\logs\owlfice.log`. 일별 회전, 7일 보관. 기록: 탐색 결과, 등록부 읽기 실패, 틱 초과, 파일 리셋·교체 감지, 64MB 줄 폐기, 이름·방 번호 저장 실패.
+**운영 로그** `%APPDATA%\Owlfice\logs\owlfice-YYYY-MM-DD.log` (현지 날짜마다 새 파일, 오늘 포함 7개 보관, 하루 10MB 넘으면 그날은 그만 쓴다). 기록: 탐색 결과, 등록부 읽기 실패, 틱 초과(4.10 느린 모드 전환 때만), 파일 리셋·교체 감지, 64MB 줄 폐기, 이름·방 번호 저장 실패. 주기마다 되풀이될 수 있는 실패는 한 번만 남긴다. 세션 내용은 쓰지 않는다.
 
 **미대응 동작 로그** `%APPDATA%\Owlfice\logs\unhandled.jsonl`. 앱이 보긴 했지만 연출로 바꾸지 못하고 조용히 넘긴 것을 모아 둔다. 다음 버전에서 이 파일을 읽어 새 시나리오를 만드는 재료다. 회전 없이 누적하고, 10MB를 넘으면 가장 오래된 것부터 지운다.
 
@@ -1416,7 +1417,7 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 - `owlfice-replay --speed 10 --shift-to-now fixtures/...`: fixture를 임시 폴더에 속도 조절해 append한다. `--shift-to-now` 는 fixture의 모든 timestamp를 "지금"에 맞춰 평행이동한다. 60초 출근 판정과 시간 전이를 재현하려면 필수다. 3.10의 시나리오 재현 도구다. 추정 상태(응답 대기, 결재 대기, 서브 종료)까지 replay로 재현한다. 실제 세션으로만 재현하도록 요구하지 않는다.
 - Rust 단위 테스트: `TailReader` (잘린 줄, 8MB 상한 뒤 backlog 이어 읽기, 길이 감소, remainder 구간까지 줄어든 축소, 다른 파일로 교체, 같은 길이 덮어쓰기(mtime 변경 → Reset), remainder 구간 덮어쓰기(캐시 비교), 길이 증가 시 4KB 해시 검증, 64MB 줄 폐기, generation 증가), `classify_command` 표 전체 + 따옴표 안 구분자 + 복합 명령 우선순위 + `compound` 판정 + `command_key`/`command_norm`, `rank` 토큰 매칭(4.7.4의 여덟 예, `gpt-5` 연속 토큰 포함), `TailReader` 2단계 commit (commit 전 폐기 → 다음 읽기가 같은 구간), 짝 없는 ToolResult 무시(Err 포함), `classify_command` 의 개행·단독 `&`·분석 불가 구문 → Mixed/Unknown, `names`·`rooms`·층 번호 결정성과 영속, `incident_check` (Rejected·Unknown 제외, command_norm 기준), `pending` 역순 결과·Started·Unknown 처리, Mixed 명령이 성공해도 트럭이 안 감.
 - Rust 통합 테스트: replay로 fixture를 재생하며 `Employee.room`·`sentence`·`confidence` 스냅샷 비교. 시계 검증: 논리 시계(4.3)를 주입한 상태에서 같은 fixture를 (a) 한 번에 전체 읽기, (b) `--speed 1`, (c) `--speed 50` 으로 넣고 같은 논리 시점에서 비교하면 상태가 같아야 한다. 벽시계로는 성립하지 않는다. 서브 파일의 user 레코드가 사장님 방문을 일으키지 않는다. `TaskStop` 실패 뒤 작업표가 남고 완료 알림이 정상 처리된다. 서브 파일 Reset 뒤 팀 전체가 다시 만들어지고 휴지통·무재해·EMA가 중복 집계되지 않는다. `Started → 완료 알림 → Ok` 경로가 정상 완료로 이어진다. 서브의 TokenUsage가 팀 화분을 바꾸지 않는다. 규모 변경 뒤 좌석이 겹치지 않고 선택 사무실이 4.7.9대로 매핑된다. **순서 불변**: 한 팀의 여러 파일(메인 + 서브)에서 나온 이벤트 열을 ts 병합 규칙(4.3)이 허용하는 범위 안에서 결정적 난수(고정 seed LCG)로 40가지 순서로 섞어 적용해도 최종 Team 상태가 같다. 역순 결과·서브 완료 선행·meta.json 선발견을 한 번에 잡는다.
-- 코퍼스 drift 테스트: 환경변수 `OWLFICE_CORPUS_DIR` 가 있을 때만 돈다 (없으면 skip). 그 폴더의 `.claude`·`.codex` 세션 전부를 두 파서로 파싱해 (a) 패닉·파싱 실패 0, (b) 미대응 로그 `record_type`·`system_subtype` 집계를 출력하고 알려진 목록 밖이 있으면 실패한다. 실제 데이터는 저장소 밖에 둔다 (8절). 개발 PC에서 `OWLFICE_CORPUS_DIR=%USERPROFILE%` 로 돌리면 포맷 변화를 가장 먼저 잡는다.
+- 코퍼스 drift 테스트 (`src-tauri/tests/corpus_drift.rs`, 명령은 docs/BUILD.md): 환경변수 `OWLFICE_CORPUS_DIR` 가 있을 때만 돈다 (없으면 skip). 그 폴더의 `.claude`·`.codex` 세션 전부를 두 파서로 파싱해 (a) 패닉·읽기 실패·JSON 객체 아닌 줄 0, (b) 미대응 로그 `record_type`·`system_subtype` 집계를 출력하고 하나라도 있으면 실패한다. 가리킨 폴더에 세션 파일이 없어도 실패. 실제 데이터는 저장소 밖에 둔다 (8절). 개발 PC에서 `OWLFICE_CORPUS_DIR=%USERPROFILE%` 로 돌리면 포맷 변화를 가장 먼저 잡는다.
 - 프론트: `anim-queue` 의 건너뛰기 규칙, `seq`·`office_id` 버림 규칙(A→B→A, 중간 변경 없음에서 A가 다시 그려진다), 문장 시간 표기. 그 외 UI는 수동.
 - Scan 테스트: 임시 폴더에 새 세션 파일을 만들면 3.5초 안에 Team이 생기고, 전체 읽기로 만든 상태가 같은 파일을 append로 재생한 상태와 같다. 첫 레코드가 60초 이내면 출근 cue, 아니면 cue 없음. 파일을 지우면 Team이 사라진다.
 - 미대응 로그 테스트: 모르는 도구·레코드·명령이 든 fixture를 재생하면 `unhandled.jsonl` 에 4.11 표의 kind가 집계되고, 프롬프트·파일 내용이 들어가지 않는다.
@@ -1486,7 +1487,11 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 | T34 | 효과음 (기본 꺼짐) | 하 | T30 | 설정 토글 |
 | T35 | 최종 아트 교체, 야근 모드 팔레트 | 중 | T19 | 디자이너 승인 |
 | T36 | NSIS 설치 파일 재검증 (깨끗한 VM, 전체 앱) | 중 | T01 T30 | 설치 → 실행 → 규모 선택 → 로딩 → 사무실까지 |
-| T37 | S01~S61 체크리스트 전체 통과 | 하 | T01~T30, T34~T36, T38 필수. T31~T33은 조건이 성립했을 때만 (T13 결과, Gemini·Codex 포맷 확인) | 체크리스트 문서에 날짜·확인자·재현 방법(replay/실제/창 크기). 조건부 티켓이 빠졌으면 그 시나리오는 "해당 없음"으로 표기 |
+| T45 | `oplog.rs` 운영 로그 (4.11). 코드에서 "운영 로그" ponytail 로 stderr 한 줄을 남긴 자리를 옮긴다 | 하 | T12 T38 | 4.11 기록 항목이 파일에 남는다 (임시 폴더 테스트). 날짜가 바뀌면 새 파일, 7일 지난 파일은 지운다. 쓰기 실패가 앱을 멈추지 않는다 |
+| T46 | 코퍼스 drift 테스트 (4.12) | 하 | T07 T08 T38 | `OWLFICE_CORPUS_DIR` 이 없으면 skip, 있으면 4.12 (a)(b). 개발 PC 의 실제 폴더로 한 번 돌려 통과. 실제 내용은 저장소·보고에 옮기지 않는다 (AGENTS 8절) |
+| T47 | 세션 등록부 보강 (4.4.1 쓰임 1~3): pid 재사용 구분(프로세스 생성 시각 vs `startedAt`), `name` 을 제목으로, `entrypoint` 로 A/B동 보조 | 중 | T02 T12 | 생성 시각이 5초 넘게 늦은 pid 는 죽은 세션. 단위 테스트(가짜 등록부·생성 시각)와 개발 PC 에서 살아 있는 세션이 퇴근으로 안 보임 |
+| T48 | WSL 세션 등록부 (4.4.1): WSL 홈의 `sessions/*.json` 을 읽어 생존 표시 | 중 | T03 T12 T47 | 6부 "WSL Claude 생존 판정" 을 먼저 실측하고 그 결과대로. 꺼진 배포판은 건드리지 않는다 (T03 과 같은 검증) |
+| T37 | S01~S61 체크리스트 전체 통과 | 하 | T01~T30, T34~T36, T38, T45~T48 필수. T31~T33은 조건이 성립했을 때만 (T13 결과, Gemini·Codex 포맷 확인) | 체크리스트 문서에 날짜·확인자·재현 방법(replay/실제/창 크기). 조건부 티켓이 빠졌으면 그 시나리오는 "해당 없음"으로 표기 |
 
 ### 5.5 주니어에게 티켓을 줄 때
 
@@ -1510,7 +1515,7 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 | WSL 핸들이 깨우는 경우 | 근무 중인 팀의 핸들만 쥔다 (4.4.2). 근무 중에 사용자가 배포판을 직접 끄면 다음 핸들 접근이 한 번 깨울 수 있고, 꺼진 배포판의 핸들을 쥔 채 앱을 끄면 종료가 깨울 수 있다 (T12 실측) | 근무 중 terminate 뒤 Hot 한 번의 영향, 앱 종료 때 영향을 실측. 줄일 길이 있으면 (예: 그 배포판 Probe 를 짧게) T31 에서 | T12, T31 |
 | 옛 방식 삭제·Probe 일시 실패 | 핸들을 쥔 동안 옛 방식(비 POSIX)으로 지운 메인 파일은 나열에 계속 보여 "두 번 연속 없음"이 오지 않을 수 있다. Probe 가 Site 를 한 번 덜 돌려주면 그 루트의 리더를 버려 다시 생길 때까지 팀이 언다 (둘 다 T12 리뷰 뒤 추정) | 다른 도구로 지운 세션, Probe 실패를 주입해 보기 | T12 |
 | 등록부 pid 재사용·`procStart` | `startedAt` 과 프로세스 생성 시각 비교로 재사용을 거른다 (4.4.1). Windows 생성 시각은 `GetProcessTimes` 라 `windows-sys` 직접 의존이 필요할 수 있다 | T02에서 std로 되는지 먼저 본다. 안 되면 crate 추가는 메인 허락 | T02 |
-| WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T03, T12 |
+| WSL Claude 생존 판정 | `updatedAt` 은 상태가 바뀔 때만 바뀐다 (확인됨). 등록부 파일이 있으면 살아 있다고 본다 (4.4.1). 프로세스가 끝나면 파일이 지워지는지 미확인 | WSL에서 claude를 끈 뒤 등록부 폴더 보기 | T48 |
 | WSL 홈의 `.claude`·`.codex` 가 `/mnt/c` 심링크인 구성 | WSL Site가 Windows Site와 같은 파일을 가리켜 세션이 두 번 잡힐 수 있다 (추정) | 심링크 구성에서 probe로 두 Site의 파일 ID 대조. 겹치면 WSL 쪽을 뺀다 | T12 |
 | 기록 모양의 남은 미확인 | Claude 실행 중 도구를 Esc 로 멈춘 결과의 모양 (지금은 `is_error` 라 Err 로 세진다. 이 PC 0건). Claude 알림 `status` 는 `completed`·`failed`, 압축 `trigger` 는 `auto`·`manual` 만 봤다 (타 프로젝트는 `stopped`·`error` 도 구별한다). Codex 거부는 사용자 거부 문구만 봤다. Codex `originator` 에 `codex_exec`(비대화형)가, `event_msg` 에 `turn_complete` 가 올 수 있다는 관찰이 있다 (타 프로젝트, 미확인) | 자동 압축이 난 세션, `TaskStop` 아닌 방법으로 죽은 백그라운드 작업, 샌드박스가 막은 Codex 명령을 하나씩 보기 | T07, T08 |
 | 컨텍스트 윈도우 | Claude는 compaction `preTokens` 로 학습 (이 PC 표본 967k → 1M). 못 봤으면 설정값 200k + "?" 표시. Codex는 `model_context_window` 확인됨 | 200k 세션과 1M 세션을 하나씩 돌려 화분 곡선 확인 | T11, T23 |

@@ -263,7 +263,9 @@
   "canvas": {
     "temp": "임시 책상", "full": "만석", "returned": "반송", "away": "외근 중", "awayTrip": "{domain} 출장",
     "stackOverflow": "스택오버플로 출장", "safety": "무재해 {min}분 연속", "jokeSign": "커피 리필은 셀프",
-    "roomTooltipTitle": "{room} 최근 사건"
+    "roomTooltipTitle": "{room} 최근 사건",
+    "failTitle": "사무실에 전기가 들어오지 않습니다",
+    "failBody": "사무실 그림을 그릴 준비를 하지 못했어요. 직원 현황판과 사무실 목록은 그대로 볼 수 있습니다. 앱을 다시 켜도 같으면 그래픽 드라이버를 확인해 주세요."
   },
 
   "units": { "sec": "{n}초", "min": "{n}분", "hour": "{n}시간", "hourMin": "{h}시간 {m}분", "elapsed": "{value}째", "now": "방금" }

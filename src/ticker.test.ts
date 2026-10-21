@@ -33,7 +33,19 @@ test("중소기업은 앞에 팀 이름, 사무실이 바뀌면 비운다, 상�
   expect(c.events()[c.events().length - 1]?.text).toBe(`서준 대리, s${TICKER_MAX + 4}`);
 });
 
-test("티커 DOM: 비면 조용한 밤, 있으면 두 번 이어 붙이고 클릭은 직원 id 를 넘긴다", () => {
+test("두 팀에 같은 agentId 가 있어도 사건은 둘 다 남고 teamId 가 맞다", () => {
+  const c = createEventCollector();
+  const same = [act({ sentence: "일", since: iso(14, 1) })];
+  const o = office("o", 1, [
+    team("t1", [emp("boss"), emp("a", { name: "서준", recent: same })]),
+    team("t2", [emp("boss"), emp("a", { name: "서준", recent: same })]),
+  ]);
+  c.ingest(o, false);
+  expect(c.events().map((e) => e.teamId)).toEqual(["t1", "t2"]);
+  expect(c.ingest(o, false)).toBe(false);
+});
+
+test("티커 DOM: 비면 조용한 밤, 있으면 두 번 이어 붙이고 클릭은 팀·직원 id 를 넘긴다", () => {
   const pick = vi.fn();
   const t = createTicker(document, pick);
   expect(t.el.textContent).toContain("조용한 밤입니다");
@@ -44,7 +56,7 @@ test("티커 DOM: 비면 조용한 밤, 있으면 두 번 이어 붙이고 클�
   expect(items).toHaveLength(2);
   expect(t.el.textContent).not.toContain("조용한 밤입니다");
   items[0].click();
-  expect(pick).toHaveBeenCalledWith("a");
+  expect(pick).toHaveBeenCalledWith("t", "a");
   t.setEvents([]);
   expect(t.el.textContent).toContain("조용한 밤입니다");
 });

@@ -5,10 +5,11 @@ import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 �
 import { firstOffice } from "./first-office.ts";
 import { mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
-import { mountSidebar } from "./sidebar-left.ts";
+import { emptyState, mountSidebar } from "./sidebar-left.ts";
 import { mountPanel } from "./sidebar-right.ts";
 import { showLoading, type LoadingSheet } from "./loading.ts";
 import { showScale } from "./scale.ts";
+import phrases from "../design/handoff/phrases.ko.json";
 import { createStore } from "./store.ts";
 import type {
   OfficeDto,
@@ -72,12 +73,18 @@ function mountShell(): void {
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
   });
-  mountOffice(stage, store, { onScale: (n) => header?.setScale(n) })
-    .then((o) => {
+  mountOffice(stage, store, { onScale: (n) => header?.setScale(n) }).then(
+    (o) => {
       office = o;
       o.setRoomLabels(header?.roomLabels() ?? true);
-    })
-    .catch((e) => console.error("사무실 캔버스", e));
+    },
+    (e) => {
+      console.error("사무실 캔버스", e);
+      stage.replaceChildren(
+        emptyState(document, phrases.canvas.failTitle, phrases.canvas.failBody),
+      );
+    },
+  );
 }
 
 async function start(): Promise<void> {

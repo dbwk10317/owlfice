@@ -1,6 +1,7 @@
 //! Claude 세션 등록부 (PLAN 4.4.1)
 
 use std::fs;
+use std::io;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -43,13 +44,41 @@ where
 /// `<home>\sessions\*.json` 을 모두 읽는다. 읽거나 해석할 수 없는 파일은 건너뛴다.
 /// 같은 폴더의 `.key` 파일은 용도를 확인하지 않았고 비밀일 수 있어 열지 않는다 (`.json` 만 연다)
 pub fn read_registry(home: &Path) -> Vec<RegistryEntry> {
-    let Ok(dir) = fs::read_dir(home.join("sessions")) else {
-        return Vec::new();
+    let dir = match fs::read_dir(home.join("sessions")) {
+        Ok(d) => d,
+        // 폴더가 없는 건 정상이다 (등록부를 안 쓰는 설치)
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            // Scan 마다 돌아서 같은 줄은 한 번만 남긴다
+            crate::oplog::log_once(&format!("등록부 폴더 읽기 실패 {}: {e}", home.display()));
+            return Vec::new();
+        }
     };
     dir.filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .filter_map(|p| serde_json::from_slice(&fs::read(p).ok()?).ok())
+        .filter_map(|p| {
+            // 오류 문구에 파일 내용이 섞일 수 있어 파일 이름과 종류만 남긴다
+            let name = p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            let bytes = fs::read(&p)
+                .inspect_err(|e| {
+                    // 목록을 읽은 뒤 세션이 끝나 지워진 건 정상이다
+                    if e.kind() != io::ErrorKind::NotFound {
+                        crate::oplog::log_once(&format!(
+                            "등록부 파일 읽기 실패 {name}: {}",
+                            e.kind()
+                        ));
+                    }
+                })
+                .ok()?;
+            serde_json::from_slice(&bytes)
+                .inspect_err(|_| crate::oplog::log_once(&format!("등록부 파일 해석 실패 {name}")))
+                .ok()
+        })
         .collect()
 }
 

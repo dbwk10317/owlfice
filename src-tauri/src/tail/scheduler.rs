@@ -193,6 +193,10 @@ pub struct HostLoop {
     rebuild_due: BTreeMap<TeamKey, bool>,
     /// 파일이 없어져 퇴장시킨 직원과 그 시각. 재구성이 메인의 Spawn 으로 되살리면 다시 퇴장시킨다
     gone: BTreeMap<TeamKey, BTreeMap<String, DateTime<Utc>>>,
+    /// 다 읽어 보니 팀이 되지 않는 파일 (Codex 자식·내부 rollout). Scan 마다 처음부터 다시 읽지 않는다.
+    /// 나열에서 사라지면 잊는다
+    // ponytail: 자식 rollout 의 활동은 버린다, T33 에서 부모 팀에 붙인다
+    side: BTreeSet<PathBuf>,
     /// Windows 스레드만: 감시할 다른 호스트
     remotes: Remotes,
     /// Windows Claude 만: 등록부에 살아 있는 세션과 그중 jsonl 이 아직 없는 세션 (4.5 신규 세션 발견 1번)
@@ -230,6 +234,7 @@ impl HostLoop {
             last_scan: None,
             rebuild_due: BTreeMap::new(),
             gone: BTreeMap::new(),
+            side: BTreeSet::new(),
             remotes: Arc::new(Mutex::new(Vec::new())),
             alive: HashSet::new(),
             awaited: BTreeSet::new(),
@@ -258,7 +263,7 @@ impl HostLoop {
 
     fn mark_suspect(&self) {
         if set_suspect(&self.world, &self.host.id, &self.heartbeat, true) {
-            eprintln!(
+            crate::oplog!(
                 "{} 의심: Probe 가 켜짐을 확인할 때까지 UNC 를 멈춘다",
                 self.host.id
             );
@@ -319,9 +324,8 @@ impl HostLoop {
         }
         self.lock_world().tick(now, &self.host.id);
         let names = self.lock_world().unsaved_names();
-        if let Some(Err(e)) = names.map(|n| n.write()) {
-            // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-            eprintln!("이름 저장 실패: {e}");
+        if let Some(e) = names.and_then(|n| n.write_report()) {
+            crate::oplog!("이름 저장 실패: {e}");
         }
         if let Err(e) = self
             .diag
@@ -329,7 +333,7 @@ impl HostLoop {
             .unwrap_or_else(|e| e.into_inner())
             .flush_if_due(now)
         {
-            eprintln!("미대응 로그 쓰기 실패: {e}");
+            crate::oplog!("미대응 로그 쓰기 실패: {e}");
         }
     }
 
@@ -339,6 +343,7 @@ impl HostLoop {
         let roots: Vec<&PathBuf> = sites.iter().map(|s| &s.root).collect();
         self.files
             .retain(|p, _| roots.iter().any(|r| p.starts_with(r)));
+        self.side.retain(|p| roots.iter().any(|r| p.starts_with(r)));
         self.sites = sites;
     }
 
@@ -425,8 +430,7 @@ impl HostLoop {
                 }
                 Ok(Some(pending)) => {
                     if pending.dropped_lines > 0 {
-                        // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-                        eprintln!("64MB 넘는 줄 버림 {}", p.display());
+                        crate::oplog!("64MB 넘는 줄 버림 {}", p.display());
                     }
                     t.failed = false;
                     batch.push((p.clone(), pending));
@@ -440,7 +444,7 @@ impl HostLoop {
                     // 로컬 파일 하나의 실패로 팀 전체를 멈추지 않는다. 다음 폴링에 다시 본다
                     if !t.failed {
                         t.failed = true;
-                        eprintln!("읽기 실패 {}: {e}", p.display());
+                        crate::oplog!("읽기 실패 {}: {e}", p.display());
                     }
                 }
             }
@@ -453,7 +457,7 @@ impl HostLoop {
         if !reset.is_empty() {
             // 어느 파일의 Reset 이든 팀 전체를 다시 만든다 (4.3 범위). 다른 파일의 이번 읽기는 재구성이 다시 읽는다
             for p in &reset {
-                eprintln!("Reset {}", p.display());
+                crate::oplog!("Reset {}", p.display());
             }
             if path_ok {
                 self.try_rebuild(key, now, &BTreeSet::new(), &reset, false);
@@ -528,8 +532,7 @@ impl HostLoop {
         now: DateTime<Utc>,
         path_ok: bool,
     ) {
-        // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-        eprintln!("읽기 실패 {}: {e}", p.display());
+        crate::oplog!("읽기 실패 {}: {e}", p.display());
         if path_ok {
             self.try_rebuild(key, now, &BTreeSet::new(), &BTreeSet::new(), false);
             return;
@@ -648,8 +651,7 @@ impl HostLoop {
     ) {
         let quiet = carried || self.rebuild_due.get(key) == Some(&true);
         if let Err(e) = self.rebuild_team(key, now, new, reset, quiet) {
-            // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-            eprintln!("팀 재구성 실패 {}: {e}", key.session);
+            crate::oplog_once!("팀 재구성 실패 {}: {e}", key.session);
             if self.is_wsl() {
                 self.mark_suspect();
             }
@@ -708,12 +710,17 @@ impl HostLoop {
             let (mut t, events, unhandled) = match read {
                 Ok(r) => r,
                 Err(e) if is_subagent(path) && !self.is_wsl() => {
-                    eprintln!("서브 파일 열기 실패, 빼고 재구성 {}: {e}", path.display());
+                    crate::oplog_once!("서브 파일 열기 실패, 빼고 재구성 {}: {e}", path.display());
                     unseen.push(path.clone());
                     continue;
                 }
                 Err(e) => return Err(e),
             };
+            // 이미 팀에 든 파일은 Reset 으로 내용이 바뀌어도 빼지 않는다. 새로 찾은 파일만 가린다
+            if new.contains(path) && t.parser.side() {
+                self.side.insert(path.clone());
+                continue;
+            }
             if let Some(o) = self.files.get(path) {
                 t.missing = o.missing;
             }
@@ -838,7 +845,7 @@ impl HostLoop {
             let listing = match list_site(&site, &mut self.path_ops) {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("세션 폴더 나열 실패 {}: {e}", site.root.display());
+                    crate::oplog_once!("세션 폴더 나열 실패 {}: {e}", site.root.display());
                     if self.is_wsl() {
                         // Probe 직후인데 나열이 안 된다. 배포판이 꺼졌거나 공유가 끊겼다
                         self.mark_suspect();
@@ -851,7 +858,7 @@ impl HostLoop {
             metas.extend(listing.metas);
             project_dirs.extend(listing.projects);
             for (path, session) in listing.files {
-                if !self.files.contains_key(&path) {
+                if !self.files.contains_key(&path) && !self.side.contains(&path) {
                     let key = TeamKey {
                         host: self.host.id.clone(),
                         vendor: site.vendor,
@@ -863,6 +870,9 @@ impl HostLoop {
             }
         }
         self.project_dirs = project_dirs;
+        // 나열에 실패한 Site 의 파일은 "없음"이 아니라 "못 봄"이라 잊지 않는다
+        self.side
+            .retain(|p| seen.contains(p) || !ok_roots.iter().any(|r| p.starts_with(r)));
         if let Some(w) = self.watch.clone() {
             // 팀마다 메인 파일 하나. 서브만 있는 팀은 아무 파일이나
             // 수정 시각도 여기서 함께 모은다: 경로는 이 스레드만 건드려야 의심·Probe 가드가 먹는다
@@ -928,6 +938,7 @@ impl HostLoop {
                 (Some(r), _) => r.verify_path(),
                 (None, Some(stat)) => fs::metadata(&path).map(|m| {
                     if (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)) != stat {
+                        crate::oplog!("파일 교체 감지, 재구성 {}", path.display());
                         rebuild.insert(t.key.clone());
                     }
                 }),
@@ -937,7 +948,7 @@ impl HostLoop {
                 && wsl
             {
                 // 나열에는 보이는데 열리지 않는다. 그 배포판의 경로를 더 건드리지 않는다
-                eprintln!("경로 대조 실패 {}: {e}", path.display());
+                crate::oplog!("경로 대조 실패 {}: {e}", path.display());
                 self.mark_suspect();
                 return;
             }
@@ -1092,7 +1103,7 @@ impl HostLoop {
             if now - hb.last_tick_ms.load(Ordering::Relaxed) > STALL_MS
                 && set_suspect(&self.world, &id, &hb, true)
             {
-                eprintln!("{id} 스레드가 멈췄다. Probe 가 켜짐을 확인할 때까지 의심");
+                crate::oplog!("{id} 스레드가 멈췄다. Probe 가 켜짐을 확인할 때까지 의심");
             }
         }
     }
@@ -1218,8 +1229,7 @@ impl Pace {
         if self.run >= SLOW_AFTER {
             self.slow = over;
             self.run = 0;
-            // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-            eprintln!(
+            crate::oplog!(
                 "{host} 틱 {}ms 로 {}",
                 if over { 400 } else { 200 },
                 if over { "늦춤" } else { "되돌림" }
@@ -1242,9 +1252,6 @@ pub fn spawn(mut host: HostLoop) -> thread::JoinHandle<()> {
             let start = Instant::now();
             host.tick();
             let spent = start.elapsed();
-            if spent > TICK {
-                eprintln!("{} 틱 {}ms", host.host.id, spent.as_millis());
-            }
             thread::sleep(pace.next(&host.host.id, spent));
         }
         // 꺼진 배포판의 핸들은 닫기만 해도 배포판을 다시 켠다 (4.4.2). 의심 중이면 닫지 않고 둔다
@@ -1307,6 +1314,8 @@ fn open(
 }
 
 /// 재구성용으로 끝까지 읽는다. 8MB 상한이 있어 backlog 가 남으면 이어 읽는다 (4.5).
+/// 줄이 안 나온 읽기에서 멈추면 첫 줄이 8MB 넘는 세션을 영영 못 만든다. 파일 끝에 닿을 때까지 읽는다.
+/// 읽기가 나아가지 않으면(stat 이 길이를 부풀려 말하는 경우) 끝낸다.
 /// 읽는 사이에 파일이 다시 쓰여 Reset 이 나면 그 세대 처음부터 다시 모은다. 안 그러면 옛 줄과 새 줄이 둘 다 붙는다
 fn read_all(
     t: &mut Tracked,
@@ -1317,15 +1326,18 @@ fn read_all(
     let Some(reader) = t.reader.as_mut() else {
         return Ok(events);
     };
+    let mut prev_end = None;
     loop {
         let pending = reader.read_new_lines(MAX_READ_BYTES)?;
+        let end = pending.finished(&mut prev_end);
+        if pending.dropped_lines > 0 {
+            crate::oplog!("64MB 넘는 줄 버림 {}", path.display());
+        }
         if pending.reset {
+            crate::oplog!("Reset {}", path.display());
             events.clear();
             unhandled.clear();
             t.parser = make_parser(path, t.key.vendor);
-        } else if pending.lines.is_empty() {
-            reader.commit(pending);
-            return Ok(events);
         }
         let generation = u64::from(pending.generation);
         for line in &pending.lines {
@@ -1338,6 +1350,9 @@ fn read_all(
             events.extend(t.parser.parse_line(&line.bytes, &raw, unhandled));
         }
         reader.commit(pending);
+        if end {
+            return Ok(events);
+        }
     }
 }
 
@@ -2814,5 +2829,95 @@ mod tests {
             p.next("h", fast);
         }
         assert_eq!(p.next("h", fast), StdDuration::from_millis(190));
+    }
+
+    /// Codex rollout 의 첫 줄 session_meta. `extra` 를 payload 에 덧붙인다
+    fn codex_meta(id: &str, extra: serde_json::Value) -> String {
+        let mut p = serde_json::json!({"id": id, "cwd": "C:\\dir1",
+                                       "originator": "Codex Desktop", "source": "vscode"});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        serde_json::json!({"timestamp": "2026-03-02T09:00:00Z", "ordinal": 0,
+                           "type": "session_meta", "payload": p})
+        .to_string()
+    }
+
+    fn rollout(root: &Path, id: &str) -> PathBuf {
+        root.join("2026/03/02")
+            .join(format!("rollout-2026-03-02T09-00-00-{id}.jsonl"))
+    }
+
+    #[test]
+    fn codex_child_and_internal_rollouts_make_no_team_and_are_not_reread() {
+        const PARENT: &str = "11111111-1111-4111-8111-111111111111";
+        const CHILD: &str = "22222222-2222-4222-8222-222222222222";
+        const GUARD: &str = "33333333-3333-4333-8333-333333333333";
+        let parent = codex_meta(PARENT, serde_json::json!({}));
+        let e = env();
+        let root = e.dir("sessions");
+        append(
+            &rollout(&root, CHILD),
+            &[codex_meta(
+                CHILD,
+                serde_json::json!({"parent_thread_id": PARENT, "thread_source": "subagent",
+                    "subagent_history_start_ordinal": 1,
+                    "source": {"subagent": {"thread_spawn": {"parent_thread_id": PARENT, "depth": 1}}}}),
+            )],
+        );
+        append(
+            &rollout(&root, GUARD),
+            &[codex_meta(
+                GUARD,
+                serde_json::json!({"source": {"subagent": {"other": "guardian"}}}),
+            )],
+        );
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Codex, &root)]);
+        let mut now = t0() + secs(300);
+        e.at(now);
+        h.tick();
+        assert!(e.w().teams.is_empty());
+
+        append(&rollout(&root, PARENT), std::slice::from_ref(&parent));
+        now += secs(3);
+        e.at(now);
+        h.tick();
+        let sessions: Vec<String> = e.w().teams.keys().map(|k| k.session.clone()).collect();
+        assert_eq!(sessions, [PARENT]);
+        assert_eq!(h.files.len(), 1);
+
+        // 다음 Scan 의 경로 접근은 부모만 있는 Site 와 같다: 자식·내부 파일을 다시 열지 않는다
+        let c = env();
+        let croot = c.dir("sessions");
+        append(&rollout(&croot, PARENT), &[parent]);
+        let mut ch = c.host(win(), vec![site_of(&win(), Vendor::Codex, &croot)]);
+        c.at(now);
+        ch.tick();
+        let (ops, cops) = (h.path_ops, ch.path_ops);
+        now += secs(3);
+        e.at(now);
+        c.at(now);
+        h.tick();
+        ch.tick();
+        assert_eq!(h.path_ops - ops, ch.path_ops - cops);
+        assert!(e.w().teams.len() == 1 && h.files.len() == 1);
+    }
+
+    #[test]
+    fn new_file_with_first_line_over_8mib_builds_team_with_both_lines() {
+        let e = env();
+        let root = e.dir("projects");
+        let big = "x".repeat(9 * 1024 * 1024);
+        append(
+            &root.join("p1").join(format!("{REJECT}.jsonl")),
+            &[
+                user_line(REJECT, t0(), &big),
+                user_line(REJECT, t0() + secs(1), "둘째 지시"),
+            ],
+        );
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        e.at(t0() + secs(300));
+        h.tick();
+        assert_eq!(e.team(REJECT).turns, 2);
     }
 }

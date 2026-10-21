@@ -399,6 +399,8 @@ export class ActorLayer {
   private nametagName: HTMLElement;
   private nametagText: HTMLElement;
   private lastOffice: OfficeDto | null = null;
+  /** 직원을 눌렀을 때 (직원 상세 팝업). 마운트하는 쪽이 건다 */
+  onPick: ((teamId: string, agentId: string) => void) | null = null;
 
   /** `office` 는 손에 드는 물건(held_*)을 꺼내는 사무실 시트, `overlay` 는 이름표·Zzz·배지를 넣을 DOM 층. */
   constructor(
@@ -465,7 +467,7 @@ export class ActorLayer {
     placed.forEach((p, i) => {
       const key = empKey(p.team.teamId, p.emp.agentId);
       const old = this.actors.get(key);
-      const a = old ?? this.create(p.emp, key, now);
+      const a = old ?? this.create(p.team.teamId, p.emp, key, now);
       shown.add(key);
       a.emp = p.emp;
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
@@ -595,7 +597,7 @@ export class ActorLayer {
     if (this.nametagText.textContent !== text) this.nametagText.textContent = text;
   }
 
-  private create(emp: EmployeeDto, key: string, now: number): Actor {
+  private create(teamId: string, emp: EmployeeDto, key: string, now: number): Actor {
     const id = emp.agentId;
     const root = new Container();
     root.eventMode = "static";
@@ -605,6 +607,7 @@ export class ActorLayer {
     root.on("pointerout", () => {
       if (this.hovered === key) this.hover(null);
     });
+    root.on("pointertap", () => this.onPick?.(teamId, id));
     const layers: Sprite[] = [];
     if (this.owls) {
       const [ax, ay] = this.owls.meta.anchor;

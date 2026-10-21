@@ -12,7 +12,7 @@ import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { ActorLayer, seatProps } from "./actors.ts";
 import { DRIVEN_PROP, PropsLayer } from "./props.ts";
-import type { CueDto, OfficeDto, OfficeListDto } from "../types/ipc.ts";
+import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
 import {
   CANVAS_H,
   CANVAS_W,
@@ -38,6 +38,7 @@ const MINI_W = 120;
 const MINI_H = 74;
 const LIGHT_MS = 1500;
 const RESIZE_DEBOUNCE_MS = 100;
+const DRAG_PX = 4;
 
 /**
  * 배율은 장치 픽셀 기준 정수 (PLAN 3.2). 백킹은 장치 픽셀, CSS 크기는 소수여도 된다.
@@ -106,8 +107,27 @@ export interface Scene {
   toggled: Map<string, Sprite>;
   /** 소품 상태가 바꾸는 평면도 소품 (신호등, 창, 화분, 휴지통, 전광판, 컵라면) */
   driven: Map<string, Sprite>;
+  /** 눌러서 세션 상세를 여는 소품 (사규 액자, 팀장석 책상) */
+  clickable: Map<string, Sprite>;
   /** 칸반 포스트잇·TV 선이 얹히는 벽 컨테이너 */
   wall: Container;
+}
+
+const SESSION_PROP = /^(rules_frame|boss_desk_\d+)$/;
+
+/**
+ * 눌린 소품이 가리키는 팀. 사규 액자는 가장 최근 활동 팀 것(4.7.9), 팀장석은 그 자리(deskSlot)의 팀이다.
+ * 명패는 따로 그리는 소품이 없어 팀장석 책상을 누르게 한다.
+ */
+export function teamOfProp(id: string, office: OfficeDto | null): TeamDto | undefined {
+  const teams = office?.teams ?? [];
+  const desk = /^boss_desk_(\d+)$/.exec(id);
+  if (desk) return teams.find((t) => t.deskSlot === Number(desk[1]));
+  if (id !== "rules_frame") return undefined;
+  // 동점이면 뒤 팀이 이긴다 (백엔드 frame_title 의 max_by_key 와 같다)
+  // ponytail: Date.parse 는 ms 까지만 봐서 그 밑 차이는 동점이 된다, 백엔드와 어긋나는 사례가 나오면 DTO 에 순번을 얹는다
+  const at = (t: TeamDto) => Date.parse(t.lastActivity) || 0;
+  return teams.reduce<TeamDto | undefined>((a, t) => (!a || at(t) >= at(a) ? t : a), undefined);
 }
 
 // 평면도에서 visible:false 이고 직원이 앉으면 보이는 소품 (HANDOFF 6.5)
@@ -145,6 +165,7 @@ export function buildScene(
   );
   const toggled = new Map<string, Sprite>();
   const driven = new Map<string, Sprite>();
+  const clickable = new Map<string, Sprite>();
   // 깔개·벽 소품은 바닥 위에 배열 순서로, 월드는 depth 로 (render_scene 3·4단계)
   placements.forEach((pl, seq) => {
     const key = `${spriteName(pl, theme)}/${pl.state}`;
@@ -162,6 +183,7 @@ export function buildScene(
       return s;
     };
     const s = place(key, tint ? tintedTexture(sheet, key, tint) : undefined);
+    if (SESSION_PROP.test(pl.id)) clickable.set(pl.id, s);
     if (DRIVEN_PROP.test(pl.id)) {
       driven.set(pl.id, s);
       if (pl.visible === false) s.visible = false;
@@ -180,7 +202,7 @@ export function buildScene(
 
   const root = new Container();
   root.addChild(base, win, world, over);
-  return { root, lit: [base, world], world, toggled, driven, wall: base };
+  return { root, lit: [base, world], world, toggled, driven, clickable, wall: base };
 }
 
 /**
@@ -230,6 +252,10 @@ export interface OfficeHandle {
 export interface OfficeOptions {
   /** 정수 배율(장치 픽셀 기준). 처음 한 번 현재 값으로 부르고, 바뀔 때마다 부른다 */
   onScale?(scale: number): void;
+  /** 직원을 눌렀을 때 (직원 상세 팝업). officeId 는 캔버스에 그려진 사무실이다: 전환 중엔 선택과 다를 수 있다 */
+  onEmployee?: (officeId: string, teamId: string, agentId: string) => void;
+  /** 사규 액자·팀장석을 눌렀을 때 (세션 상세 팝업) */
+  onSession?: (officeId: string, teamId: string) => void;
 }
 
 /** `stage` 는 가운데 무대(`.ow-stage`). 캔버스·방 이름표·미니맵을 그 안에 만든다. */
@@ -277,6 +303,7 @@ export async function mountOffice(
   let propsAt = 0;
   let sceneKey = "";
   let officeId = "";
+  actors.onPick = (teamId, agentId) => opts.onEmployee?.(officeId, teamId, agentId);
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
   let fit = canvasScale(CANVAS_W, CANVAS_H, 1);
   let dpr = 1;
@@ -328,6 +355,14 @@ export async function mountOffice(
       // 새 장면을 다 지은 뒤에 옛것을 지운다. 짓다 던져도 화면은 옛 장면이 남는다
       const next = buildScene(assets, kind, theme, incident);
       actors.attach(next.world);
+      for (const [id, sprite] of next.clickable) {
+        sprite.eventMode = "static";
+        sprite.cursor = "pointer";
+        sprite.on("pointertap", () => {
+          const team = teamOfProp(id, shown);
+          if (team && shown) opts.onSession?.(shown.officeId, team.teamId);
+        });
+      }
       props = new PropsLayer(fp, assets.sheet, kind, next);
       scene?.root.destroy({ children: true });
       scene = next;
@@ -422,14 +457,33 @@ export async function mountOffice(
     miniView.style.height = `${(y1 - y0) * ky}px`;
   }
 
-  let drag: { id: number; sx: number; sy: number } | null = null;
+  let drag: { id: number; sx: number; sy: number; x0: number; y0: number; moved: boolean } | null =
+    null;
   wrap.addEventListener("pointerdown", (e) => {
     if (minimap.hidden) return;
-    drag = { id: e.pointerId, sx: e.clientX - pan.x, sy: e.clientY - pan.y };
-    wrap.setPointerCapture(e.pointerId);
+    drag = {
+      id: e.pointerId,
+      sx: e.clientX - pan.x,
+      sy: e.clientY - pan.y,
+      x0: e.clientX,
+      y0: e.clientY,
+      moved: false,
+    };
   });
   wrap.addEventListener("pointermove", (e) => {
-    if (drag?.id === e.pointerId) movePan(e.clientX - drag.sx, e.clientY - drag.sy);
+    if (drag?.id !== e.pointerId) return;
+    // 캡처 전에 밖에서 놓으면 pointerup 을 못 받아 drag 가 남는다
+    if (e.buttons === 0) {
+      drag = null;
+      return;
+    }
+    // 끌기로 확정되기 전에 캡처하면 Pixi 가 pointerup 을 못 받아 직원·소품 클릭이 죽는다
+    if (!drag.moved) {
+      if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < DRAG_PX) return;
+      drag.moved = true;
+      wrap.setPointerCapture(e.pointerId);
+    }
+    movePan(e.clientX - drag.sx, e.clientY - drag.sy);
   });
   const endDrag = (e: PointerEvent) => {
     if (drag?.id === e.pointerId) drag = null;

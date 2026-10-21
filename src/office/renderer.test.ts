@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import type { CueDto, OfficeDto } from "../types/ipc.ts";
-import { canvasScale, cueCollector, panLimits, toCss } from "./renderer.ts";
+import type { CueDto, OfficeDto, TeamDto } from "../types/ipc.ts";
+import { canvasScale, cueCollector, panLimits, teamOfProp, toCss } from "./renderer.ts";
 
 test("배율은 장치 픽셀 기준 정수, CSS 크기는 백킹 / DPR", () => {
   // 2× 는 1040×640 장치 픽셀이 필요하다 (PLAN 3.2)
@@ -84,4 +84,25 @@ test("숨은 동안 see 가 계속 불려도 쌓이지 않고, 돌아온 뒤 숨
   cues.see(x, false);
   cues.see(z, false);
   expect(cues.take(z)).toEqual(x.cues);
+});
+
+test("사규 액자는 가장 최근 활동 팀, 팀장석 책상은 그 자리(deskSlot)의 팀을 가리킨다", () => {
+  const t = (teamId: string, deskSlot: number, lastActivity: string) =>
+    ({ teamId, deskSlot, lastActivity }) as TeamDto;
+  const o = {
+    teams: [
+      t("a", 0, "2026-01-01T14:00:00Z"),
+      t("b", 1, "2026-01-01T14:05:00Z"),
+      t("c", 3, "2026-01-01T14:02:00Z"),
+    ],
+  } as OfficeDto;
+  expect(teamOfProp("rules_frame", o)?.teamId).toBe("b");
+  // 동점이면 뒤 팀 (백엔드 max_by_key)
+  const tie = { teams: [t("x", 0, "2026-01-01T14:00:00Z"), t("y", 1, "2026-01-01T14:00:00Z")] };
+  expect(teamOfProp("rules_frame", tie as OfficeDto)?.teamId).toBe("y");
+  expect(teamOfProp("boss_desk_0", o)?.teamId).toBe("a");
+  expect(teamOfProp("boss_desk_3", o)?.teamId).toBe("c");
+  expect(teamOfProp("boss_desk_2", o)).toBeUndefined(); // 빈 책상
+  expect(teamOfProp("rules_frame", null)).toBeUndefined();
+  expect(teamOfProp("tv", o)).toBeUndefined();
 });

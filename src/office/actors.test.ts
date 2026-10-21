@@ -457,6 +457,23 @@ test("{elapsed} 는 Activity.elapsed 일 때만 채운다", () => {
   expect(overlay.querySelector(".ow-nametag span")!.textContent).toBe("{elapsed} 초 걸렸습니다");
 });
 
+test("직원을 누르면 onPick 에 (teamId, agentId) 를 준다", () => {
+  const { layer } = newLayer();
+  const picked: [string, string][] = [];
+  layer.onPick = (t, a) => picked.push([t, a]);
+  layer.sync(
+    office([team("t", [boss(), emp("a", "Test")]), team("u", [emp("a", "Test")], { deskSlot: 1 })]),
+    "small",
+    NOW,
+  );
+  layer.rootOf("u", "a")!.emit("pointertap", {} as never);
+  layer.rootOf("t", "a")!.emit("pointertap", {} as never);
+  expect(picked).toEqual([
+    ["u", "a"],
+    ["t", "a"],
+  ]);
+});
+
 test("스냅샷으로 다른 자리에 옮겨지면 이름표를 닫는다", () => {
   const { layer, overlay } = newLayer();
   layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);

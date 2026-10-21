@@ -47,7 +47,16 @@ struct Meta {
     cwd: String,
     model: Option<String>,
     product: Product,
+    product_observed: bool,
     branch: Option<String>,
+}
+
+/// entrypoint 값 → 동 (4.4.1). jsonl 과 세션 등록부가 같이 쓴다. 모르는 값은 B동
+pub fn product_of(entrypoint: &str) -> Product {
+    match entrypoint {
+        "claude-desktop" => Product::ClaudeDesktop,
+        _ => Product::ClaudeCli,
+    }
 }
 
 #[derive(Default)]
@@ -119,15 +128,17 @@ impl ClaudeParser {
     ) {
         let Some(cwd) = &ctx.cwd else { return };
         let entry = str_at(rec, "/entrypoint");
-        let product = match entry {
-            Some("claude-desktop") => Product::ClaudeDesktop,
-            Some(_) => Product::ClaudeCli,
-            None => self.meta.as_ref().map_or(Product::ClaudeCli, |m| m.product),
+        let (product, product_observed) = match entry {
+            Some(e) => (product_of(e), true),
+            None => self.meta.as_ref().map_or((Product::ClaudeCli, false), |m| {
+                (m.product, m.product_observed)
+            }),
         };
         let meta = Meta {
             cwd: cwd.clone(),
             model: self.model.clone(),
             product,
+            product_observed,
             branch: str_at(rec, "/gitBranch")
                 .map(str::to_string)
                 .or_else(|| self.meta.as_ref().and_then(|m| m.branch.clone())),
@@ -147,6 +158,7 @@ impl ClaudeParser {
             model: meta.model.clone(),
             title: None,
             product: meta.product,
+            product_observed: meta.product_observed,
             git_branch: meta.branch.clone(),
         }));
         self.meta = Some(meta);
@@ -1087,6 +1099,7 @@ mod tests {
                     model: Some("claude-opus-5-5".into()),
                     title: None,
                     product: Product::ClaudeDesktop,
+                    product_observed: true,
                     git_branch: Some("jwnqs/treksu-lppol-39585740".into()),
                 },
                 EventKind::Thinking,

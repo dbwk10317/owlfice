@@ -190,6 +190,8 @@ impl Team {
             id,
             product,
             product_known: false,
+            log_product: product,
+            registry_product: None,
             title: String::new(),
             log_title: String::new(),
             registry_name: None,
@@ -293,12 +295,17 @@ impl Team {
                 cwd,
                 model,
                 product,
+                product_observed,
                 git_branch,
                 ..
             } => {
                 self.cwd = cwd.clone();
-                self.product = *product;
-                self.product_known = true;
+                // 관측해 정한 동은 뒤의 기본값 meta 가 덮지 않는다
+                if *product_observed || !self.product_known {
+                    self.log_product = *product;
+                    self.product_known |= *product_observed;
+                }
+                self.show_product();
                 self.git_branch = git_branch.clone();
                 if model.is_some() {
                     self.employees[i].model = model.clone();
@@ -595,16 +602,22 @@ impl Team {
         product: Option<Product>,
         cues: &mut Vec<Cue>,
     ) -> bool {
-        let mut changed = false;
-        if let Some(p) = product
-            && !self.product_known
-            && p != self.product
-        {
-            self.product = p;
-            changed = true;
-        }
+        self.registry_product = product;
         self.registry_name = name.map(str::to_string);
-        self.show_title(cues) || changed
+        let moved = self.show_product();
+        self.show_title(cues) || moved
+    }
+
+    /// 제목처럼 동도 값 두 개(jsonl·등록부)에서 여기서만 정한다. 등록부가 사라지면 재구성과 같은 동으로 돌아간다 (4.3).
+    /// 바뀌었으면 true
+    fn show_product(&mut self) -> bool {
+        let p = match self.registry_product {
+            Some(r) if !self.product_known => r,
+            _ => self.log_product,
+        };
+        let moved = p != self.product;
+        self.product = p;
+        moved
     }
 
     /// 같은 제목이 턴마다 다시 쓰인다 (4.6.1). 바뀔 때만 액자를 간다

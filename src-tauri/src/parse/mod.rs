@@ -152,6 +152,8 @@ pub enum EventKind {
         model: Option<String>,
         title: Option<String>,
         product: Product,
+        /// 기록에서 제품 값(Claude entrypoint, Codex originator)을 봤나. false 면 product 는 기본값이라 등록부가 덮을 수 있다 (4.4.1 쓰임 3)
+        product_observed: bool,
         git_branch: Option<String>,
     },
     Reset,

@@ -46,6 +46,7 @@ pub struct CodexParser {
 struct Meta {
     cwd: PathBuf,
     product: Product,
+    product_observed: bool,
     git_branch: Option<String>,
 }
 
@@ -145,7 +146,8 @@ impl CodexParser {
         self.history_start = p
             .get("subagent_history_start_ordinal")
             .and_then(Value::as_u64);
-        let product = match str_at(p, &["originator"]) {
+        let originator = str_at(p, &["originator"]);
+        let product = match originator {
             Some("Codex Desktop") => Product::CodexApp,
             Some("codex-tui") => Product::CodexCli,
             other => {
@@ -160,6 +162,7 @@ impl CodexParser {
         self.meta = Some(Meta {
             cwd: PathBuf::from(str_at(p, &["cwd"]).unwrap_or_default()),
             product,
+            product_observed: originator.is_some(),
             git_branch: str_at(p, &["git", "branch"]).map(str::to_string),
         });
         out.extend(self.meta_event());
@@ -172,6 +175,7 @@ impl CodexParser {
             model: self.model.clone(),
             title: None,
             product: m.product,
+            product_observed: m.product_observed,
             git_branch: m.git_branch.clone(),
         })
     }
@@ -1555,6 +1559,7 @@ mod tests {
                 model: None,
                 title: None,
                 product: Product::CodexApp,
+                product_observed: true,
                 git_branch: None,
             }
         );
@@ -1737,6 +1742,7 @@ mod tests {
                 model: None,
                 title: None,
                 product: Product::CodexCli,
+                product_observed: true,
                 git_branch: Some("feat-x".into()),
             }
         );
@@ -1751,10 +1757,22 @@ mod tests {
             ev[0].kind,
             EventKind::SessionMeta {
                 product: Product::CodexCli,
+                product_observed: true,
                 ..
             }
         ));
         assert!(un.is_empty());
+        // originator 가 없으면 기본값이라 등록부 몫으로 남긴다
+        let bare = rec("session_meta", json!({"id": SID, "cwd": "/w"}));
+        let (ev, _) = feed_events(&mut CodexParser::new(SID), &[bare]);
+        assert!(matches!(
+            ev[0].kind,
+            EventKind::SessionMeta {
+                product: Product::CodexCli,
+                product_observed: false,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -2098,6 +2116,7 @@ mod tests {
             model: model.map(str::to_string),
             title: None,
             product: Product::CodexApp,
+            product_observed: true,
             git_branch: None,
         };
         assert_eq!(

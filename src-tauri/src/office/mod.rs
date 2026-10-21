@@ -414,6 +414,9 @@ pub struct Team {
     pub product: Product,
     /// jsonl 이 동을 정했나. 정하기 전에만 등록부 entrypoint 를 쓴다 (4.4.1 쓰임 3)
     product_known: bool,
+    /// 마지막 SessionMeta 의 동(관측했거나 기본값)과 등록부 entrypoint 의 동. product 는 둘에서 정한다
+    log_product: Product,
+    registry_product: Option<Product>,
     pub title: String,
     /// jsonl 제목 이벤트의 값과 등록부의 사용자 이름. 등록부 이름이 지금 값이라 있으면 이긴다 (4.4.1 쓰임 2)
     log_title: String,

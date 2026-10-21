@@ -1,5 +1,6 @@
 //! Claude 세션 등록부 (PLAN 4.4.1)
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -49,12 +50,11 @@ impl RegistryEntry {
             .filter(|n| !n.is_empty() && self.name_source.as_deref() == Some("user"))
     }
 
-    /// 동 보조 (4.4.1 쓰임 3). 대응은 parse/claude.rs 의 jsonl entrypoint 와 같다
+    /// 동 보조 (4.4.1 쓰임 3)
     pub fn product(&self) -> Option<Product> {
-        self.entrypoint.as_deref().map(|e| match e {
-            "claude-desktop" => Product::ClaudeDesktop,
-            _ => Product::ClaudeCli,
-        })
+        self.entrypoint
+            .as_deref()
+            .map(crate::parse::claude::product_of)
     }
 }
 
@@ -68,60 +68,107 @@ where
     Ok(serde_json::from_value(v).ok())
 }
 
-/// `<home>\sessions\*.json` 을 모두 읽는다. 읽거나 해석할 수 없는 파일은 건너뛴다.
+/// 등록부를 한 번 읽은 결과. 없는 것과 못 본 것을 나눈다 (4.5)
+#[derive(Debug, Default)]
+pub struct RegistryRead {
+    pub entries: Vec<RegistryEntry>,
+    /// 있지만 읽거나 해석하지 못한 파일의 이름 줄기 (`<pid>`). 쓰는 중일 수 있다
+    pub unread: Vec<String>,
+}
+
+/// `<home>\sessions\*.json` 을 모두 읽는다. 폴더를 읽지 못하면(NotFound 아님) None.
 /// 같은 폴더의 `.key` 파일은 용도를 확인하지 않았고 비밀일 수 있어 열지 않는다 (`.json` 만 연다)
-pub fn read_registry(home: &Path) -> Vec<RegistryEntry> {
+pub fn read_registry(home: &Path) -> Option<RegistryRead> {
     let dir = match fs::read_dir(home.join("sessions")) {
         Ok(d) => d,
         // 폴더가 없는 건 정상이다 (등록부를 안 쓰는 설치)
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Some(RegistryRead::default()),
         Err(e) => {
             // Scan 마다 돌아서 같은 줄은 한 번만 남긴다
             crate::oplog::log_once(&format!("등록부 폴더 읽기 실패 {}: {e}", home.display()));
-            return Vec::new();
+            return None;
         }
     };
-    dir.filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .filter_map(|p| {
-            // 오류 문구에 파일 내용이 섞일 수 있어 파일 이름과 종류만 남긴다
-            let name = p
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let bytes = fs::read(&p)
-                .inspect_err(|e| {
-                    // 목록을 읽은 뒤 세션이 끝나 지워진 건 정상이다
-                    if e.kind() != io::ErrorKind::NotFound {
-                        crate::oplog::log_once(&format!(
-                            "등록부 파일 읽기 실패 {name}: {}",
-                            e.kind()
-                        ));
-                    }
-                })
-                .ok()?;
-            serde_json::from_slice(&bytes)
-                .inspect_err(|_| crate::oplog::log_once(&format!("등록부 파일 해석 실패 {name}")))
-                .ok()
-        })
-        .collect()
+    let mut out = RegistryRead::default();
+    for p in dir.filter_map(Result::ok).map(|e| e.path()) {
+        if !p.extension().is_some_and(|x| x == "json") {
+            continue;
+        }
+        // 오류 문구에 파일 내용이 섞일 수 있어 파일 이름과 종류만 남긴다
+        let name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let stem = p
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let bytes = match fs::read(&p) {
+            Ok(b) => b,
+            // 목록을 읽은 뒤 세션이 끝나 지워진 건 정상이다
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                crate::oplog::log_once(&format!("등록부 파일 읽기 실패 {name}: {}", e.kind()));
+                out.unread.push(stem);
+                continue;
+            }
+        };
+        match serde_json::from_slice(&bytes) {
+            Ok(e) => out.entries.push(e),
+            Err(_) => {
+                crate::oplog::log_once(&format!("등록부 파일 해석 실패 {name}"));
+                out.unread.push(stem);
+            }
+        }
+    }
+    Some(out)
 }
 
-/// 등록부 중 그 세션의 프로세스가 살아 있는 것만
-pub fn live_sessions(home: &Path) -> Vec<RegistryEntry> {
-    live_with(home, is_alive, created_ms)
+/// 등록부 중 그 세션의 프로세스가 살아 있는 것만, 세션 id 하나에 한 행.
+/// 읽지 못한 파일은 `prev`(직전 결과)의 같은 pid 행을 대신 쓴다. 폴더를 읽지 못하면 None 이라 부르는 쪽이 이번 반영을 건너뛴다
+pub fn live_sessions(
+    home: &Path,
+    prev: &HashMap<String, RegistryEntry>,
+) -> Option<HashMap<String, RegistryEntry>> {
+    live_with(home, prev, is_alive, created_ms)
 }
 
 fn live_with(
     home: &Path,
+    prev: &HashMap<String, RegistryEntry>,
     alive: impl Fn(u32) -> bool,
     created: impl Fn(u32) -> Option<i64>,
-) -> Vec<RegistryEntry> {
-    let mut v = read_registry(home);
-    v.retain(|e| alive(e.pid) && !reused(e, &created));
-    v
+) -> Option<HashMap<String, RegistryEntry>> {
+    let read = read_registry(home)?;
+    let kept = prev
+        .values()
+        .filter(|e| read.unread.contains(&e.pid.to_string()))
+        .cloned();
+    let mut out: HashMap<String, RegistryEntry> = HashMap::new();
+    for e in read.entries.into_iter().chain(kept) {
+        if !alive(e.pid) || reused(&e, &created) {
+            continue;
+        }
+        // 살아 있는 행 둘이 같은 세션이면 read_dir 순서에 맡기지 않는다
+        match out.get(&e.session_id) {
+            Some(o) if rank(o) >= rank(&e) => {}
+            _ => {
+                out.insert(e.session_id.clone(), e);
+            }
+        }
+    }
+    Some(out)
+}
+
+/// 같은 세션 행 중 고르는 순서: 사용자가 이름을 붙인 쪽, 늦게 시작한 쪽, 큰 pid
+fn rank(e: &RegistryEntry) -> (bool, Option<i64>, u32) {
+    (
+        e.name_source.as_deref() == Some("user"),
+        e.started_at,
+        e.pid,
+    )
 }
 
 /// 죽은 세션의 pid 를 다른 프로세스가 받았나. 생성 시각이나 startedAt 을 모르면 pid 생존만 믿는다
@@ -201,7 +248,11 @@ mod tests {
                 r#"{"pid":6,"sessionId":"s6","updatedAt":"x","status":1,"name":"n6"}"#,
             ),
         ]);
-        let mut got = read_registry(home.path());
+        let read = read_registry(home.path()).unwrap();
+        let mut unread = read.unread;
+        unread.sort();
+        assert_eq!(unread, ["2", "3", "4"]);
+        let mut got = read.entries;
         got.sort_by_key(|e| e.pid);
         assert_eq!(got.len(), 3);
         assert_eq!(got[0].session_id, "s1");
@@ -218,14 +269,15 @@ mod tests {
     #[test]
     fn missing_sessions_dir_gives_empty_list() {
         let home = tempfile::tempdir().unwrap();
-        assert!(read_registry(home.path()).is_empty());
+        assert!(read_registry(home.path()).unwrap().entries.is_empty());
     }
 
     #[test]
     fn key_files_are_not_read() {
         // .key 가 유효한 JSON이어도 결과에 들어오면 안 된다
         let home = home_with(&[("7.abcdef.key", r#"{"pid":7,"sessionId":"secret"}"#)]);
-        assert!(read_registry(home.path()).is_empty());
+        let read = read_registry(home.path()).unwrap();
+        assert!(read.entries.is_empty() && read.unread.is_empty());
     }
 
     #[test]
@@ -244,9 +296,8 @@ mod tests {
             ("a.json", &format!(r#"{{"pid":{me},"sessionId":"live"}}"#)),
             ("b.json", r#"{"pid":4294967294,"sessionId":"dead"}"#),
         ]);
-        let got = live_sessions(home.path());
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].session_id, "live");
+        let got = live_sessions(home.path(), &HashMap::new()).unwrap();
+        assert_eq!(got.keys().collect::<Vec<_>>(), ["live"]);
     }
 
     #[test]
@@ -272,14 +323,64 @@ mod tests {
             4 => Some(99_999),
             _ => None, // 권한 등으로 못 얻음
         };
-        let mut got: Vec<String> = live_with(home.path(), |_| true, created)
-            .into_iter()
-            .map(|e| e.session_id)
+        let mut got: Vec<String> = live_with(home.path(), &HashMap::new(), |_| true, created)
+            .unwrap()
+            .into_keys()
             .collect();
         got.sort();
         assert_eq!(got, ["no-start", "same", "unknown"]);
         // 생성 시각을 못 얻어도 죽은 pid 는 죽은 것이다
-        assert!(live_with(home.path(), |_| false, |_| None).is_empty());
+        assert!(
+            live_with(home.path(), &HashMap::new(), |_| false, |_| None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn unreadable_file_keeps_its_previous_row_and_unreadable_dir_skips() {
+        let home = home_with(&[
+            ("1.json", r#"{"pid":1,"sessionId":"s1"}"#),
+            ("2.json", r#"{"pid":2,"sessionId":"#), // 쓰는 중
+        ]);
+        let prev: HashMap<String, RegistryEntry> = [
+            (r#"{"pid":2,"sessionId":"s2","name":"n"}"#),
+            // 파일이 정말 사라진 행은 따라오지 않는다
+            (r#"{"pid":3,"sessionId":"s3"}"#),
+        ]
+        .iter()
+        .map(|j| serde_json::from_str::<RegistryEntry>(j).unwrap())
+        .map(|e| (e.session_id.clone(), e))
+        .collect();
+        let got = live_with(home.path(), &prev, |_| true, |_| None).unwrap();
+        let mut ids: Vec<&String> = got.keys().collect();
+        ids.sort();
+        assert_eq!(ids, ["s1", "s2"]);
+        assert_eq!(got["s2"].name.as_deref(), Some("n"));
+        // 이어받은 행도 프로세스가 죽었으면 빠진다
+        let got = live_with(home.path(), &prev, |pid| pid != 2, |_| None).unwrap();
+        assert!(!got.contains_key("s2"));
+        // 폴더 자리에 파일: NotFound 가 아닌 폴더 실패는 "못 봄"이다
+        let odd = tempfile::tempdir().unwrap();
+        fs::write(odd.path().join("sessions"), "").unwrap();
+        assert!(read_registry(odd.path()).is_none());
+        assert!(live_with(odd.path(), &prev, |_| true, |_| None).is_none());
+    }
+
+    #[test]
+    fn same_session_twice_prefers_user_name_then_later_start() {
+        let pick = |a: &str, b: &str| {
+            let home = home_with(&[("1.json", a), ("2.json", b)]);
+            let got = live_with(home.path(), &HashMap::new(), |_| true, |_| None).unwrap();
+            assert_eq!(got.len(), 1);
+            got["s"].pid
+        };
+        let user = r#"{"pid":1,"sessionId":"s","nameSource":"user","startedAt":1}"#;
+        let later = r#"{"pid":2,"sessionId":"s","nameSource":"auto","startedAt":9}"#;
+        // 파일 순서를 바꿔도 같다
+        assert_eq!([pick(user, later), pick(later, user)], [1, 1]);
+        let early = r#"{"pid":1,"sessionId":"s","startedAt":1}"#;
+        assert_eq!([pick(early, later), pick(later, early)], [2, 2]);
     }
 
     #[test]

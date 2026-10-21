@@ -177,6 +177,12 @@ const LARGE: OfficeDto = {
         }),
       ),
       emp("L-out", "외근자", "Sawon", "Backend", "Outside", "Sit", "외근 중 (안 보여야 한다)"),
+      // 자리 초과: 개발실 6 + 임시 4 를 채우고 좌석 없는 둘은 마지막 임시 책상 위 "+2" (겹쳐 그리지 않는다)
+      ...[4, 5, 7, 8, 9].map((seat) =>
+        emp(`L-seat${seat}`, "채사원", "Sawon", "Backend", "Dev", "Type", "수정 중", { seat }),
+      ),
+      emp("L-over0", "넘사원", "Sawon", "Qa", "Dev", "Sit", "자리 없음 (안 보여야 한다)"),
+      emp("L-over1", "넘대리", "Daeri", "Qa", "Dev", "Sit", "자리 없음 (안 보여야 한다)"),
     ]),
   ],
 };

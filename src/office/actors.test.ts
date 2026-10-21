@@ -291,19 +291,62 @@ test("결재 대기(Pace)는 부장이 boss_pace 자리에 idle", () => {
   expect(p.look).toEqual({ pose: "idle", dir: "f" });
 });
 
-test("탕비실: 첫째 콘솔 sit, 둘째 안마의자 sleep, 그다음은 서 있고, 넘치면 마지막에 겹친다", () => {
+test("탕비실: 첫째 콘솔 sit, 둘째 안마의자 sleep, 그다음은 서 있고, 넘치면 그리지 않고 마지막 자리 위에 +n", () => {
   const ids = ["a", "b", "c", "d", "e"];
   const o = office([
     team("t", [boss(), ...ids.map((id) => emp(id, "Pantry", "Sit", { retiredAt: SINCE }))]),
   ]);
-  const got = ids.map((id) => at("large", o, id)!);
-  expect(got.map((p) => [p.spot, p.look.pose])).toEqual([
-    ["pantry_console_0", "sit"],
-    ["pantry_massage_0", "sleep"],
-    ["pantry_0", "idle"],
-    ["pantry_1", "idle"],
-    ["pantry_1", "idle"],
+  const crowd = new Map<string, number>();
+  const got = layoutActors(fp, "large", o, crowd).filter((p) => p.emp.agentId !== "boss");
+  expect(got.map((p) => [p.emp.agentId, p.spot, p.look.pose])).toEqual([
+    ["a", "pantry_console_0", "sit"],
+    ["b", "pantry_massage_0", "sleep"],
+    ["c", "pantry_0", "idle"],
+    ["d", "pantry_1", "idle"],
   ]);
+  expect(crowd).toEqual(new Map([["pantry_1", 1]]));
+  // 캔버스: 넘친 직원은 액터가 없고, 마지막 자리 직원 머리에서 (+14, −6) 에 배지 하나
+  const { layer, overlay } = newLayer();
+  layer.sync(o, "large", NOW);
+  expect(layer.rootOf("t", "e")).toBeUndefined();
+  const badge = overlay.querySelectorAll<HTMLElement>(".ow-crowd");
+  expect(badge).toHaveLength(1);
+  expect(badge[0].textContent).toBe("+1");
+  const d = got[3];
+  const head = meta.anchors.idle_f_0.head;
+  expect(badge[0].style.left).toBe(`${d.x + head[0] - meta.anchor[0] + 14}px`);
+  expect(badge[0].style.top).toBe(`${d.y + head[1] - meta.anchor[1] - 6}px`);
+});
+
+test("자리 초과: 서브 12명이면 개발실 6 + 임시 4 만 겹치지 않게 그리고 마지막 임시 책상 위에 +2", () => {
+  const { layer, overlay } = newLayer();
+  // 백엔드는 10명째 뒤 직원에게 좌석을 안 준다
+  const subs = Array.from({ length: 12 }, (_, i) =>
+    emp(`s${i}`, "Dev", "Sit", { seat: i < 10 ? i : null }),
+  );
+  const o = office([team("t", [boss(), ...subs])]);
+  layer.sync(o, "large", NOW);
+  const drawn = subs.filter((s) => layer.rootOf("t", s.agentId)?.visible);
+  expect(drawn).toHaveLength(10);
+  const spots = layoutActors(fp, "large", o)
+    .filter((p) => p.emp.agentId !== "boss")
+    .map((p) => p.spot);
+  expect(new Set(spots).size).toBe(10);
+  const badge = overlay.querySelectorAll<HTMLElement>(".ow-crowd");
+  expect(badge).toHaveLength(1);
+  expect(badge[0].textContent).toBe("+2");
+  const last = at("large", o, "s9")!;
+  expect(last.spot).toBe("temp_3");
+  const head = meta.anchors.sit_f_0.head;
+  expect(badge[0].style.left).toBe(`${last.x + head[0] - meta.anchor[0] + 14}px`);
+  expect(badge[0].style.top).toBe(`${last.y + head[1] - meta.anchor[1] - 6}px`);
+  // 만석 쪽지는 그대로
+  expect(seatProps(fp, "large", o)).toEqual(new Set([...TEMP_DESKS, "note_full"]));
+  // 줄면 숫자가 따라 줄고, 자리가 남으면 배지가 없다
+  layer.sync(office([team("t", [boss(), ...subs.slice(0, 11)])]), "large", NOW);
+  expect(overlay.querySelector(".ow-crowd")!.textContent).toBe("+1");
+  layer.sync(office([team("t", [boss(), ...subs.slice(0, 10)])]), "large", NOW);
+  expect(overlay.querySelectorAll(".ow-crowd")).toHaveLength(0);
 });
 
 test("deskSlot null 팀의 부장은 어디서든 그리지 않는다", () => {
@@ -819,6 +862,57 @@ test("Rehire: 탕비실에 보이던 서브는 있던 자리에서 걷고, 숨�
   );
   expect(posOf(layer, "b")).toEqual(screen(...(fp.stands.pantry_console[0] as [number, number])));
   expect(posOf(layer, "c")).toEqual(screen(...DOOR));
+});
+
+test("Depart: 퇴근한 서브는 출구까지 걸어가 숨고 좌석 소품에서 빠진다, 재출근하면 문에서 들어온다", () => {
+  const { layer } = newLayer();
+  const a = emp("a", "Dev", "Type", { seat: 0 });
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  // 종료: 탕비실 콘솔에서 쉰다
+  const done = {
+    ...a,
+    retiredAt: SINCE,
+    seat: null,
+    activity: { ...a.activity, room: "Pantry" as Room, pose: "Sit" as Pose },
+  };
+  layer.sync(
+    withCues(office([team("t", [boss(), done])]), [cue({ kind: "Retire", agent: "a" })]),
+    "large",
+    NOW,
+  );
+  layer.update(NOW + WALK_MAX_MS);
+  const console0 = stand(fp, "pantry_console");
+  expect(posOf(layer, "a")).toEqual(screen(console0.gx, console0.gy, console0.z));
+  // 퇴근: 백엔드는 문 앞으로 옮기고 departed_at 을 찍는다. 좌석 배정이 남아 있어도 책상을 켜지 않는다
+  const gone = {
+    ...done,
+    departedAt: SINCE,
+    seat: 7,
+    activity: { ...done.activity, room: "Door" as Room },
+  };
+  const o = withCues(office([team("t", [boss(), gone])]), [cue({ kind: "Depart", agent: "a" })]);
+  expect(at("large", o, "a")).toBeUndefined();
+  expect(seatProps(fp, "large", o)).toEqual(new Set());
+  const t1 = NOW + WALK_MAX_MS;
+  layer.sync(o, "large", t1);
+  const root = layer.rootOf("t", "a")!;
+  const out = walkMs(walkPath(fp, console0, stand(fp, "exit")));
+  layer.update(t1 + out - 1);
+  expect(root.visible).toBe(true);
+  layer.update(t1 + out);
+  expect(root.visible).toBe(false);
+  // 숨어도 액터는 남아 재출근 때 문에서 들어온다
+  const back = { ...a, seat: 0 };
+  const t2 = t1 + out;
+  layer.sync(
+    withCues(office([team("t", [boss(), back])]), [cue({ kind: "Rehire", agent: "a" })]),
+    "large",
+    t2,
+  );
+  expect(layer.rootOf("t", "a")).toBe(root);
+  expect(posOf(layer, "a")).toEqual(screen(...DOOR));
+  layer.update(t2 + ENTER_MS);
+  expect(posOf(layer, "a")).toEqual(SEAT0);
 });
 
 test("두 팀에 같은 agent_id 가 있으면 액터가 둘이고 cue 는 team_id 로 그 팀 직원에게만 간다", () => {

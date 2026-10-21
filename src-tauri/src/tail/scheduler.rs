@@ -263,7 +263,7 @@ impl HostLoop {
 
     fn mark_suspect(&self) {
         if set_suspect(&self.world, &self.host.id, &self.heartbeat, true) {
-            eprintln!(
+            crate::oplog!(
                 "{} 의심: Probe 가 켜짐을 확인할 때까지 UNC 를 멈춘다",
                 self.host.id
             );
@@ -325,8 +325,7 @@ impl HostLoop {
         self.lock_world().tick(now, &self.host.id);
         let names = self.lock_world().unsaved_names();
         if let Some(e) = names.and_then(|n| n.write_report()) {
-            // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-            eprintln!("이름 저장 실패: {e}");
+            crate::oplog!("이름 저장 실패: {e}");
         }
         if let Err(e) = self
             .diag
@@ -334,7 +333,7 @@ impl HostLoop {
             .unwrap_or_else(|e| e.into_inner())
             .flush_if_due(now)
         {
-            eprintln!("미대응 로그 쓰기 실패: {e}");
+            crate::oplog!("미대응 로그 쓰기 실패: {e}");
         }
     }
 
@@ -431,8 +430,7 @@ impl HostLoop {
                 }
                 Ok(Some(pending)) => {
                     if pending.dropped_lines > 0 {
-                        // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-                        eprintln!("64MB 넘는 줄 버림 {}", p.display());
+                        crate::oplog!("64MB 넘는 줄 버림 {}", p.display());
                     }
                     t.failed = false;
                     batch.push((p.clone(), pending));
@@ -446,7 +444,7 @@ impl HostLoop {
                     // 로컬 파일 하나의 실패로 팀 전체를 멈추지 않는다. 다음 폴링에 다시 본다
                     if !t.failed {
                         t.failed = true;
-                        eprintln!("읽기 실패 {}: {e}", p.display());
+                        crate::oplog!("읽기 실패 {}: {e}", p.display());
                     }
                 }
             }
@@ -459,7 +457,7 @@ impl HostLoop {
         if !reset.is_empty() {
             // 어느 파일의 Reset 이든 팀 전체를 다시 만든다 (4.3 범위). 다른 파일의 이번 읽기는 재구성이 다시 읽는다
             for p in &reset {
-                eprintln!("Reset {}", p.display());
+                crate::oplog!("Reset {}", p.display());
             }
             if path_ok {
                 self.try_rebuild(key, now, &BTreeSet::new(), &reset, false);
@@ -534,8 +532,7 @@ impl HostLoop {
         now: DateTime<Utc>,
         path_ok: bool,
     ) {
-        // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-        eprintln!("읽기 실패 {}: {e}", p.display());
+        crate::oplog!("읽기 실패 {}: {e}", p.display());
         if path_ok {
             self.try_rebuild(key, now, &BTreeSet::new(), &BTreeSet::new(), false);
             return;
@@ -654,8 +651,7 @@ impl HostLoop {
     ) {
         let quiet = carried || self.rebuild_due.get(key) == Some(&true);
         if let Err(e) = self.rebuild_team(key, now, new, reset, quiet) {
-            // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-            eprintln!("팀 재구성 실패 {}: {e}", key.session);
+            crate::oplog_once!("팀 재구성 실패 {}: {e}", key.session);
             if self.is_wsl() {
                 self.mark_suspect();
             }
@@ -714,7 +710,7 @@ impl HostLoop {
             let (mut t, events, unhandled) = match read {
                 Ok(r) => r,
                 Err(e) if is_subagent(path) && !self.is_wsl() => {
-                    eprintln!("서브 파일 열기 실패, 빼고 재구성 {}: {e}", path.display());
+                    crate::oplog_once!("서브 파일 열기 실패, 빼고 재구성 {}: {e}", path.display());
                     unseen.push(path.clone());
                     continue;
                 }
@@ -849,7 +845,7 @@ impl HostLoop {
             let listing = match list_site(&site, &mut self.path_ops) {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("세션 폴더 나열 실패 {}: {e}", site.root.display());
+                    crate::oplog_once!("세션 폴더 나열 실패 {}: {e}", site.root.display());
                     if self.is_wsl() {
                         // Probe 직후인데 나열이 안 된다. 배포판이 꺼졌거나 공유가 끊겼다
                         self.mark_suspect();
@@ -942,6 +938,7 @@ impl HostLoop {
                 (Some(r), _) => r.verify_path(),
                 (None, Some(stat)) => fs::metadata(&path).map(|m| {
                     if (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)) != stat {
+                        crate::oplog!("파일 교체 감지, 재구성 {}", path.display());
                         rebuild.insert(t.key.clone());
                     }
                 }),
@@ -951,7 +948,7 @@ impl HostLoop {
                 && wsl
             {
                 // 나열에는 보이는데 열리지 않는다. 그 배포판의 경로를 더 건드리지 않는다
-                eprintln!("경로 대조 실패 {}: {e}", path.display());
+                crate::oplog!("경로 대조 실패 {}: {e}", path.display());
                 self.mark_suspect();
                 return;
             }
@@ -1106,7 +1103,7 @@ impl HostLoop {
             if now - hb.last_tick_ms.load(Ordering::Relaxed) > STALL_MS
                 && set_suspect(&self.world, &id, &hb, true)
             {
-                eprintln!("{id} 스레드가 멈췄다. Probe 가 켜짐을 확인할 때까지 의심");
+                crate::oplog!("{id} 스레드가 멈췄다. Probe 가 켜짐을 확인할 때까지 의심");
             }
         }
     }
@@ -1232,8 +1229,7 @@ impl Pace {
         if self.run >= SLOW_AFTER {
             self.slow = over;
             self.run = 0;
-            // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-            eprintln!(
+            crate::oplog!(
                 "{host} 틱 {}ms 로 {}",
                 if over { 400 } else { 200 },
                 if over { "늦춤" } else { "되돌림" }
@@ -1256,9 +1252,6 @@ pub fn spawn(mut host: HostLoop) -> thread::JoinHandle<()> {
             let start = Instant::now();
             host.tick();
             let spent = start.elapsed();
-            if spent > TICK {
-                eprintln!("{} 틱 {}ms", host.host.id, spent.as_millis());
-            }
             thread::sleep(pace.next(&host.host.id, spent));
         }
         // 꺼진 배포판의 핸들은 닫기만 해도 배포판을 다시 켠다 (4.4.2). 의심 중이면 닫지 않고 둔다
@@ -1338,10 +1331,10 @@ fn read_all(
         let pending = reader.read_new_lines(MAX_READ_BYTES)?;
         let end = pending.finished(&mut prev_end);
         if pending.dropped_lines > 0 {
-            // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-            eprintln!("64MB 넘는 줄 버림 {}", path.display());
+            crate::oplog!("64MB 넘는 줄 버림 {}", path.display());
         }
         if pending.reset {
+            crate::oplog!("Reset {}", path.display());
             events.clear();
             unhandled.clear();
             t.parser = make_parser(path, t.key.vendor);

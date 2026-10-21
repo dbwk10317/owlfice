@@ -742,15 +742,14 @@ impl Ipc {
                 }
                 let (number, reused) = b.book.room_of_unsaved(&id, &host, now);
                 if reused {
-                    // ponytail: 운영 로그(4.11) 대신 stderr 한 줄, 운영 로그 티켓에서 올린다
-                    eprintln!("방 번호 재사용: {}층이 99팀을 넘었다", number / 100);
+                    crate::oplog!("방 번호 재사용: {}층이 99팀을 넘었다", number / 100);
                 }
                 b.rooms.insert(id, number);
             }
             b.book.unsaved()
         };
         if let Some(e) = save.and_then(|s| s.write_report()) {
-            eprintln!("방 번호 저장 실패: {e}");
+            crate::oplog!("방 번호 저장 실패: {e}");
         }
     }
 
@@ -915,12 +914,12 @@ pub fn spawn_publisher(app: AppHandle, ipc: Arc<Ipc>) -> thread::JoinHandle<()> 
             if let Some(l) = list
                 && let Err(e) = app.emit("office-list", &l)
             {
-                eprintln!("office-list 발행 실패: {e}");
+                crate::oplog_once!("office-list 발행 실패: {e}");
             }
             if let Some(s) = state
                 && let Err(e) = app.emit("office-state", &s)
             {
-                eprintln!("office-state 발행 실패: {e}");
+                crate::oplog_once!("office-state 발행 실패: {e}");
             }
             thread::sleep(PUBLISH_EVERY.saturating_sub(start.elapsed()));
         }

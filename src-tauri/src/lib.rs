@@ -3,6 +3,7 @@ pub mod diag;
 pub mod discover;
 pub mod ipc;
 pub mod office;
+pub mod oplog;
 pub mod parse;
 pub mod settings;
 pub mod startup;
@@ -35,6 +36,29 @@ fn data_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// 탐색 결과. 호스트·제품·루트 경로만 남긴다
+fn log_sites(sites: &[Site], distros: &[WslDistro]) {
+    if sites.is_empty() && distros.is_empty() {
+        crate::oplog!("탐색: 찾은 세션 폴더 없음");
+    }
+    for d in distros {
+        let running = match d.running {
+            Some(true) => "켜짐",
+            Some(false) => "꺼짐",
+            None => "켜짐 여부 모름",
+        };
+        crate::oplog!("탐색: WSL {} {running}", d.host.id);
+    }
+    for s in sites.iter().chain(distros.iter().flat_map(|d| &d.sites)) {
+        crate::oplog!(
+            "탐색: {} {} {}",
+            s.host.id,
+            s.vendor.label(),
+            s.root.display()
+        );
+    }
+}
+
 /// 기동이 바깥 세계에 하는 일의 실제 구현 (startup::Boot)
 struct AppBoot {
     app: tauri::AppHandle,
@@ -50,7 +74,9 @@ impl Boot for AppBoot {
     }
 
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>) {
-        (discover_all(), discover_wsl())
+        let found = (discover_all(), discover_wsl());
+        log_sites(&found.0, &found.1);
+        found
     }
 
     /// 호스트 스레드를 띄운다. WSL 스레드는 Probe 가 켜진 배포판을 보고 띄운다 (4.4.2)
@@ -92,11 +118,12 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
     let emitter = app.clone();
     let startup = Arc::new(Startup::new(move |p| {
         if let Err(e) = emitter.emit(startup::EVENT, p) {
-            eprintln!("startup-progress 발행 실패: {e}");
+            crate::oplog!("startup-progress 발행 실패: {e}");
         }
     }));
     startup.report(1, StepState::Running, StartupSummary::None, None);
     let dir = data_dir()?;
+    oplog::init(&dir.join("logs"));
     let local = Local::now().offset().fix();
     let settings = Arc::new(SettingsBook::load(&dir));
     if settings.corrupt {

@@ -25,6 +25,7 @@ import roomShipping from "../design/handoff/icons/room-shipping.svg?raw";
 import roomTest from "../design/handoff/icons/room-test.svg?raw";
 import { createEventCollector, createTicker, empKey, rankLabel, teamName } from "./ticker.ts";
 import { durationText, fill, fillElapsed, hhmm } from "./text.ts";
+import { setAvatar } from "./avatar.ts";
 import type {
   Activity,
   CueDto,
@@ -246,6 +247,7 @@ interface CardEntry {
   last: Map<string, string>;
   timers: Map<string, ReturnType<typeof setTimeout>>;
   ref: {
+    avatar: HTMLElement;
     name: HTMLElement;
     rank: HTMLElement;
     reject: HTMLElement;
@@ -280,7 +282,6 @@ function createCard(doc: Document, agentId: string): CardEntry {
   el.type = "button";
   el.dataset.agentId = agentId;
 
-  // ponytail: 아바타는 단색 자리표시, 캔버스 티켓에서 올빼미 스프라이트로 바꾼다
   const avatar = h(doc, "span", "ow-avatar");
   avatar.setAttribute("aria-hidden", "true");
   const name = h(doc, "span", "ow-card__name");
@@ -357,6 +358,7 @@ function createCard(doc: Document, agentId: string): CardEntry {
     last: new Map(),
     timers: new Map(),
     ref: {
+      avatar,
       name,
       rank,
       reject,
@@ -406,8 +408,10 @@ function updateCard(
   off: boolean,
   small: boolean,
   byId: Map<string, EmployeeDto>,
+  building: string,
 ): void {
   const r = c.ref;
+  setAvatar(r.avatar, e, building);
   const act: Activity = e.activity;
   c.el.classList.toggle("is-boss", isBoss);
   c.el.classList.toggle("is-idle", act.room === "Pantry" || off);
@@ -764,7 +768,7 @@ export function mountPanel(
           c.el.classList.toggle("is-compact", compact);
           if (!quiet) fresh.push({ c, e });
         }
-        updateCard(c, e, i === 0, t.phase === "Off", small, byId);
+        updateCard(c, e, i === 0, t.phase === "Off", small, byId, t.building);
         tickCard(c, Date.now());
         liveCards.add(key);
         // 부장은 퇴근 묶음에 넣지 않는다. 서브만 (PLAN 3.5)

@@ -18,8 +18,8 @@ declare global {
 
 const todo = (status: TodoItem["status"], n: number): TodoItem[] =>
   Array.from({ length: n }, () => ({ content: "x", status }));
-const team = (deskSlot: number, plant: number | null): TeamDto => {
-  const t = testTeam(`t${deskSlot}`, []);
+const team = (deskSlot: number, plant: number | null, building: string): TeamDto => {
+  const t = testTeam(`t${deskSlot}`, [], { building });
   return { ...t, deskSlot, props: { ...t.props, plant } };
 };
 const office = (shared: Partial<OfficeDto["shared"]>, teams: TeamDto[]): OfficeDto => {
@@ -64,7 +64,7 @@ const CASES: Case[] = [
         stats: { commits: 1, filesEdited: 2, commands: 3, turns: 4 },
         kanban: [...todo("Pending", 2), ...todo("InProgress", 1), ...todo("Done", 2)],
       },
-      [team(0, 0.7)],
+      [team(0, 0.7, "A")],
     ),
   },
   {
@@ -83,7 +83,7 @@ const CASES: Case[] = [
         stats: { commits: 0, filesEdited: 9, commands: 10, turns: 12345 },
         kanban: [...todo("Pending", 1), ...todo("InProgress", 2), ...todo("Done", 1)],
       },
-      [team(0, 0.5), team(1, 0.9), team(3, 1.5)],
+      [team(0, 0.5, "C"), team(1, 0.9, "C"), team(3, 1.5, "C")],
     ),
   },
 ];

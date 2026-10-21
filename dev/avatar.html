@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>올빼미 아바타 합성 미리보기</title>
+    <style>
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+      #app {
+        display: block;
+        height: auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 22px;
+      }
+      #controls {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin: 16px 0;
+      }
+      #preview {
+        display: grid;
+        grid-template-columns: minmax(580px, 1fr) 340px;
+        gap: 24px;
+      }
+      .avatars {
+        display: grid;
+        grid-template-columns: repeat(10, minmax(50px, 1fr));
+        gap: 8px;
+      }
+      .sample {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 8px !important;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+      .sample[aria-pressed="true"] {
+        outline: 2px solid #d6a028;
+      }
+      .sample small {
+        font-size: 11px;
+      }
+      #panel {
+        height: 600px;
+        position: sticky;
+        top: 16px;
+      }
+      #panel .ow-panel {
+        height: 100%;
+      }
+      #detail {
+        padding: 8px 12px;
+        border: 1px solid #aaa;
+        border-radius: 8px;
+      }
+    </style>
+    <script type="module" src="./avatar.ts"></script>
+  </head>
+  <body>
+    <div id="app" class="ow-app">
+      <h1>올빼미 아바타 · 기존 아틀라스 합성</h1>
+      <p>5종 × 4직급 × 3제품. 담당을 바꾸고 그림을 누르면 실제 카드에 표시됩니다.</p>
+      <div id="controls">
+        <label
+          >담당
+          <select id="role"></select
+        ></label>
+        <button id="detail">선택 직원 상세 · 4배</button>
+        <span id="selected" role="status"></span>
+      </div>
+      <div id="preview">
+        <main id="gallery"></main>
+        <aside id="panel"></aside>
+      </div>
+    </div>
+  </body>
+</html>

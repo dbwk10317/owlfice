@@ -4,6 +4,9 @@ import { mountPanel, type PanelHandle, type PanelOptions, type Viewport } from "
 import { createStore } from "./store.ts";
 import { act, emp, iso, office, team } from "./test-office.ts";
 import type { OfficeDto, OfficeListDto } from "./types/ipc.ts";
+import { setAvatar } from "./avatar.ts";
+
+vi.mock("./avatar.ts", () => ({ setAvatar: vi.fn() }));
 
 // 2026-01-01 14:32:00 (로컬)
 const NOW = new Date(2026, 0, 1, 14, 32, 0);
@@ -71,6 +74,26 @@ function setup(
 }
 
 const nodeCount = (el: Element): number => el.querySelectorAll("*").length + el.childNodes.length;
+
+test("재사용 카드 아바타에 직원의 새 직급·담당과 팀 제조사를 전달한다", () => {
+  const s = setup(office("o", 1, [team("t", [emp("a")], { building: "C" })]));
+  const avatar = s.q<HTMLElement>(".ow-avatar")!;
+  expect(setAvatar).toHaveBeenLastCalledWith(
+    avatar,
+    expect.objectContaining({ agentId: "a", rank: "Daeri" }),
+    "C",
+  );
+  s.push(
+    office("o", 2, [team("t", [emp("a", { rank: "Gwajang", role: "Qa" })], { building: "E" })]),
+  );
+  expect(s.q(".ow-avatar")).toBe(avatar);
+  expect(setAvatar).toHaveBeenLastCalledWith(
+    avatar,
+    expect.objectContaining({ agentId: "a", rank: "Gwajang", role: "Qa" }),
+    "E",
+  );
+  s.panel.destroy();
+});
 
 test("중소기업 현황판 팀 색은 책상 슬롯을 따르고 활동 재정렬에도 유지된다", () => {
   const teams = [

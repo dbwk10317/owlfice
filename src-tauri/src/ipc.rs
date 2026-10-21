@@ -877,6 +877,8 @@ struct Books {
 pub struct Ipc {
     world: Arc<Mutex<OfficeWorld>>,
     books: Mutex<Books>,
+    /// 설정 적용을 한 번에 하나씩 보낸다. 파일 쓰기를 world 잠금 밖에 두면서 파일과 world 의 반영 순서를 지킨다
+    settings_gate: Mutex<()>,
 }
 
 /// 발행기가 마지막으로 보낸 번호
@@ -894,6 +896,7 @@ impl Ipc {
     pub fn new(world: Arc<Mutex<OfficeWorld>>, book: RoomBook) -> Self {
         Self {
             world,
+            settings_gate: Mutex::new(()),
             books: Mutex::new(Books {
                 book,
                 rooms: HashMap::new(),
@@ -1059,8 +1062,8 @@ pub fn apply_settings(
             path.validate()?;
         }
     }
-    // 입력 오류 때는 world도 바꾸지 않는다. 파일과 world의 순서는 동시 요청에서도 같다.
-    let mut world = lock(&ipc.world);
+    // 입력 오류 때는 world도 바꾸지 않는다. 디스크 쓰기는 world 잠금 밖(C4)이고, 동시 요청의 순서는 gate 가 지킨다.
+    let _gate = lock(&ipc.settings_gate);
     let old_paths = dto
         .manual_paths
         .as_ref()
@@ -1073,7 +1076,7 @@ pub fn apply_settings(
         runtime.manual_changed(&old, new);
     }
     if let Some(scale) = dto.scale {
-        world.set_scale(scale);
+        lock(&ipc.world).set_scale(scale);
     }
     saved.map_err(|e| format!("설정을 저장하지 못했습니다: {e}"))
 }
@@ -1134,11 +1137,12 @@ pub async fn get_diagnostics(
     let runtime = runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let data = runtime.diagnostics(StdDuration::from_secs(2));
-        let projects: Vec<_> = ipc
-            .world
-            .try_lock()
-            .map(|world| world.teams.values().map(|team| team.cwd.clone()).collect())
-            .unwrap_or_default();
+        // spawn_blocking 안이라 기다려도 된다. 잠금 경합으로 익명화 정보가 빠지면 안 된다
+        let projects: Vec<_> = lock(&ipc.world)
+            .teams
+            .values()
+            .map(|team| team.cwd.clone())
+            .collect();
         diag::diagnostic_text(&data, runtime.home.as_deref(), &projects)
     })
     .await

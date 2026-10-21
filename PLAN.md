@@ -940,7 +940,7 @@ pub enum EventKind {
     PrLinked { number: u32, url: String },
     TodoChanged { items: Vec<TodoItem> },
     TokenUsage { input_total: u64, output: u64, context_window: Option<u64> },  // input_total = input + cache_creation + cache_read
-    SessionMeta { cwd: PathBuf, model: Option<String>, title: Option<String>, product: Product, git_branch: Option<String> },
+    SessionMeta { cwd: PathBuf, model: Option<String>, title: Option<String>, product: Product, product_observed: bool, git_branch: Option<String> },  // product_observed: entrypoint·originator 를 실제로 봤다. 기본값이면 false 라 등록부 보조가 덮을 수 있다
     Reset,
 }
 

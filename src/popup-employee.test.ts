@@ -186,11 +186,12 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
       event(7, { kind: "ToolResult", tool: null, outcome: "Ok", test: { passed: 12, failed: 0 } }),
       event(8, { kind: "SubagentSpawn", tool: null }),
       event(9, { kind: "PrLinked", tool: null }),
+      event(10, { kind: "ToolResult", tool: null, summary: "반려", outcome: "Rejected" }),
     ],
   });
   await flush();
   const rows = s.qa(".ow-ev");
-  expect(rows).toHaveLength(10);
+  expect(rows).toHaveLength(11);
   const head = (i: number) => rows[i].querySelector<HTMLElement>(".ow-ev__head")!;
   expect(head(0).querySelector(".ow-ev__tool")!.textContent).toBe("Bash");
   expect(head(0).querySelector(".ow-ev__sum .ow-code")!.textContent).toBe("cargo test");
@@ -213,6 +214,7 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
   expect(res(6).classList.contains("is-bad")).toBe(true);
   expect(res(6).textContent).toBe("실패 · 합격 11 / 반려 1");
   expect(res(7).textContent).toBe("성공");
+  expect(res(10).textContent).toBe("반려");
   // 도구가 아닌 사건의 칩은 한글 종류 이름
   const chip = (i: number) => head(i).querySelector(".ow-ev__tool")!.textContent;
   expect([chip(5), chip(8), chip(9)]).toEqual(["지시", "채용", "PR 등록"]);

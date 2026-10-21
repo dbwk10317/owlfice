@@ -51,7 +51,7 @@
 ### 1.3 이 앱이 하지 않는 일
 
 - 에이전트를 조종하지 않는다. 세션 파일을 쓰지 않는다. 읽기 전용이다. 꺼진 WSL 배포판을 깨우지도 않는다.
-- 외부 서버에 연결하지 않고 포트를 열지 않는다. WSL 파일은 `\\wsl.localhost` 루프백 공유로 읽는다. 이것이 유일한 네트워크 사용이다.
+- 수집 자료를 외부 서버로 보내거나 서버 포트를 열지 않는다. WSL 파일은 `\\wsl.localhost` 루프백 공유로 읽는다. 사용자가 PR 링크를 누르면 검증된 HTTPS 주소를 기본 브라우저로 연다.
 - 과거 세션을 재생하지 않는다 (1차 범위 밖).
 - 세 회사(Anthropic, OpenAI, Google) 제품 외의 에이전트는 지원하지 않는다. 1차 범위는 Claude Desktop(Code 탭), Claude Code CLI, Codex 앱이다. Codex CLI는 앱과 레코드가 같아 같은 파서로 지원한다 (확인됨). Google 쪽은 Antigravity CLI(`agy`)를 표본 확인 후 지원한다 (T32). Gemini CLI는 2026-06-18 개인 사용자 서비스가 끝나 지원하지 않는다. Antigravity 앱(IDE)은 CLI와 같은 기록 파일을 쓰는 것이 확인되면 같은 파서로 지원한다. Gemini 채팅 데스크톱 앱은 코딩 에이전트가 아니고 대화 기록 파일이 없어 지원하지 않는다 (4.4.1, 6부).
 
@@ -1023,9 +1023,9 @@ pub struct ToolSummary {          // 문장 생성에 필요한 최소 정보
 | `mcp__<server>__<tool>` | Mcp (거래처). server가 UUID 꼴(`04586901-4c2c-…`)이면 상호는 tool 이름의 첫 토큰(`asset_add_file` → `asset`. 이름에 `search` 등이 든 도구는 앞 행에서 이미 외근이다). Claude Desktop 커넥터는 서버 id가 UUID다 |
 | 그 외 | Other(name). 미지원 도구. pending에 넣어 "뭔가 하는 중"은 보이되 실적에는 세지 않고 미대응 로그에 남긴다. 말풍선은 3.6 |
 
-서브에이전트 (확인됨):
+서브에이전트 (비동기 형식은 확인됨, 동기 결과 형식은 미확인):
 - 호출: `Agent` tool_use, `input: { description, subagent_type, prompt, run_in_background? }`. `model` 은 있을 때만이고 별칭이다 (표본 4건 모두 없었다). `run_in_background` 가 없어도 비동기로 뜰 수 있어 (CLI, 확인됨) 동기·비동기는 결과로 가른다.
-- 결과: `toolUseResult: { isAsync: true, status: "async_launched", agentId: "a0a8…", description, resolvedModel: "claude-opus-5-5", prompt, outputFile }`. **여기서 SubagentSpawn을 낸다.** 직급은 `resolvedModel` 로 정한다. 동기 실행이면 `isAsync` 가 없고 `status: "completed"` 에 `agentId, content, totalDurationMs, totalTokens, totalToolUseCount, usage` 가 온다 (확인됨). 결과가 곧 완료라 Spawn과 Done을 함께 낸다. 이때 자식 파일의 이벤트는 이 Spawn보다 이른 ts를 가지므로 재구성에서는 직원 사전 등록(4.3)이 먼저 처리한다.
+- 결과: `toolUseResult: { isAsync: true, status: "async_launched", agentId: "a0a8…", description, resolvedModel: "claude-opus-5-5", prompt, outputFile }`. **여기서 SubagentSpawn을 낸다.** 직급은 `resolvedModel` 로 정한다. 동기 실행은 `isAsync` 없이 `status: "completed"` 와 `agentId, content, totalDurationMs, totalTokens, totalToolUseCount, usage` 가 오는 모양을 처리한다 (미확인, 합성 fixture 기준. 출처는 `fixtures/README.md`). 결과가 곧 완료라 Spawn과 Done을 함께 낸다. 이때 자식 파일의 이벤트는 이 Spawn보다 이른 ts를 가지므로 재구성에서는 직원 사전 등록(4.3)이 먼저 처리한다.
 - 자식 파일: `<세션>/subagents/agent-<agentId>.jsonl`. 옆에 `agent-<agentId>.meta.json = { agentType, description, toolUseId, spawnDepth, requestShape, requestNonInteractive, model?, effort?, worktreePath?, spawnedWithWorktree?, worktreeBranch?, stoppedByUser? }` (확인됨, Desktop 64건: `model` 은 별칭(`opus`·`sonnet`·`haiku`)이고 `effort` 는 `high`·`medium` 이 60건에 있다. CLI는 `launchedWithDefaults`, 끝나면 `finished: true` 가 더 붙는다). Scan이 meta.json을 먼저 발견하면 그것으로도 SubagentSpawn을 낸다 (`resolvedModel` 을 못 봤으면 별칭으로 직급을 정한다, 4.7.4). 같은 agentId는 한 번만 (상태 기계가 중복을 걸러낸다). `finished`·`stoppedByUser` 는 시각 없는 최종값이라 **상태 전이에 쓰지 않는다** (재구성 때 서브가 첫 활동부터 "끝남"으로 보인다). 완료는 시각 있는 레코드(완료 알림·동기 결과)로만 낸다. Workflow 도구가 띄운 서브는 `<세션>/subagents/workflows/<runId>/agent-*.jsonl` 에 있고 같은 폴더의 `journal.jsonl` 이 완료 원장이다 (미확인, 이 PC 표본 0건. 표본이 생기면 Scan 경로와 SubagentDone 출처에 더한다, 6부).
 - `spawnDepth` 로 중첩을 안다. 1차는 깊이와 무관하게 모두 개발실에 앉힌다. 깊이 2 이상이면 카드 둘째 줄에 "· 상사 ○○"로 부모 이름을 적는다. 깊이 1은 상사가 부장이라 적지 않는다 (3.5).
 - 비동기 서브의 완료는 부모 파일에 완료 알림으로 온다 (`<task-id>` = agentId, `<tool-use-id>` = Agent 호출 id, 태그 `note`·`result`·`usage` 가 더 붙는다, 확인됨). 이것으로 SubagentDone을 낸다. 그 파일에서 띄운 것을 못 본 task-id 라도 `<usage>` 태그가 있으면 서브 완료다 (백그라운드 명령 알림에는 없다. 중첩 서브는 띄운 결과에 `toolUseResult` 가 없어 이걸로만 안다). 같은 에이전트가 여러 번 알릴 수 있어 상태 기계가 중복을 거른다. 알림을 못 봤을 때만 추정한다 (4.7.2).
@@ -1218,7 +1218,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 "큰 파일·연속 읽기" 기준: 범위 없이 전체 읽기이거나 10초 안에 Read가 3회 이상이면 서고로 이동, 아니면 자리에서 휠만 굴린다. 사소한 읽기마다 걸어다니면 산만하다.
 
-컨텍스트 윈도우: Codex는 `task_started.model_context_window` 가 준다. Claude는 레코드에 없고 모델명(`claude-fable-5-1`)에도 윈도우 표기가 없다. 개발 PC에서 본 compaction 레코드의 `preTokens` 는 967,113이라 이 PC는 1M 윈도우를 쓰고 있었다. 200,000을 기본값으로 두면 화분이 20%에서 시든다. 규칙: (1) 세션 안에서 compaction을 한 번이라도 봤으면 `preTokens` 를 200k 또는 1M 중 가까운 쪽으로 올림해 윈도우로 쓴다. (2) 아직 못 봤으면 같은 호스트의 다른 세션에서 학습한 값을 쓴다. (3) 그것도 없으면 모델명으로 정한다: `haiku` 계열과 4.x 이하(`-4-0`, `-4-1`, `claude-3*`)는 200k, 그 밖은 1M (타 프로젝트의 실측 최대값이 opus·fable·sonnet 5 계열 모두 200k를 넘었다, 미확인). 화분 옆에 "?" 를 붙인다. 입력 토큰 합이 윈도우를 넘으면 그 즉시 1M로 올린다 (6부).
+컨텍스트 윈도우: Codex는 `task_started.model_context_window` 가 준다. Claude는 모델명만으로 실제 윈도우를 확정할 수 없어 추정한다. 규칙: (1) 세션 안에서 compaction을 봤으면 `preTokens` 를 200k 또는 1M 중 가까운 쪽으로 올림하되 이미 아는 값보다 줄이지 않는다. (2) 같은 호스트의 다른 세션에서 학습한 값을 쓰는 규칙은 현재 구현되지 않았다. (3) 아직 값이 없으면 모델명으로 추정한다: `haiku`, `-4-0`, `-4-1`, `claude-3` 를 포함하면 200k, 그 밖은 1M. 이 모델별 값은 실제 한도 확인이 아닌 추정 규칙이다. 입력 토큰 합이 추정 윈도우를 넘으면 1M로 올린다 (구현 기준은 `src-tauri/src/office/classify.rs`).
 
 #### 4.7.2 시간 기반 전이 (매 틱 평가)
 
@@ -1512,6 +1512,7 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 | T61 | 개발 비교·연출 페이지의 불완전 DTO 복구 및 타입 검사 | 하 | T23 | 기존 DTO 생성기로 상태를 만들고 DTO 강제 캐스팅 제거. `/dev/props.html` 세 케이스의 다른 픽셀 0, 개발 페이지 실행 오류 없음, 프론트 타입 검사·빌드 녹색 |
 | T62 | 최종 코드·문서·테스트·화면 검수와 확인된 결함 수정 | 중 | T34 T35 | 외부 경로 검증·시작 실패·빈 상태 안내·낮은 창 레이아웃 수정. 단순·중복 테스트만 제거하고 입력 검증·상태 전이·경합 검증 유지. BUILD의 검사와 최소 창 화면 확인 |
 | T63 | 한글 README·실제 UI 합성 스크린샷·설치 파일 링크·MIT LICENSE | 하 | T62 | 기능 소개가 실제 구현과 일치. 스크린샷과 상대 링크가 존재하고 설치 파일 링크가 release의 최종 산출물을 가리킴 |
+| T64 | 문서 계약의 구현·fixture 불일치 정정 | 하 | T63 | 수집 통신과 사용자 PR 링크 열기 구분, 동기 서브 결과의 미확인 출처 표시, 미구현 세션 간 컨텍스트 학습 명시 |
 | T50 | PLAN 정리: 계약을 docs/CONTRACTS.md로 옮기고 참조를 갱신한 뒤 PLAN 을 지운다. 빌드 명령은 BUILD, 그림 규격은 HANDOFF에 유지 (AGENTS 7절) | 중 | T37 | 저장소에 PLAN 절을 가리키는 참조가 없다. 옮긴 계약은 docs/ 에 있다 |
 | T37 | S01~S62 체크리스트 전체 통과 | 하 | T01~T30, T34~T36, T38, T45~T49, T51~T58, T62 필수. T31~T33은 조건이 성립했을 때만 (T13 결과, Gemini·Codex 포맷 확인) | 체크리스트 문서에 날짜·확인자·재현 방법(replay/실제/창 크기). 조건부 티켓이 빠졌으면 그 시나리오는 "해당 없음"으로 표기 |
 

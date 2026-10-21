@@ -85,6 +85,10 @@
   gap: 20px;
   min-height: 0;
 }
+/* 본문이 스크롤해야 한다. 줄어들게 두면 overflow:hidden 인 정보 표는 높이 0 까지 접힌다 (앱에서 봄) */
+.ow-pop__body > * {
+  flex-shrink: 0;
+}
 .ow-pop__body:not(.ow-emp) {
   padding-bottom: 20px;
 }

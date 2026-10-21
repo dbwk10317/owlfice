@@ -40,7 +40,10 @@ export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Pro
   const done = new Promise<ScaleChoice>((resolve) => (finish = resolve));
   // 저장이 실패해도 백엔드는 이번 실행에 반영하므로 그대로 진행한다
   async function choose(scale: Scale): Promise<void> {
-    const dto: SettingsDto = { scale, companyName: input.value.trim() || null };
+    const dto: Pick<SettingsDto, "scale" | "companyName"> = {
+      scale,
+      companyName: input.value.trim() || null,
+    };
     try {
       await invoke("set_settings", { dto });
     } catch (e) {

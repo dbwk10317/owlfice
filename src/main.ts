@@ -5,11 +5,13 @@ import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 �
 import { firstOffice } from "./first-office.ts";
 import { mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
+import { OfficeSound } from "./office/sound.ts";
 import { emptyState, mountSidebar, popupNames } from "./sidebar-left.ts";
 import { mountPanel } from "./sidebar-right.ts";
 import { showLoading, type LoadingSheet } from "./loading.ts";
 import { openEmployeeDetail } from "./popup-employee.ts";
 import { openSessionDetail } from "./popup-session.ts";
+import { openSettings, saveSettings } from "./popup-settings.ts";
 import { showScale } from "./scale.ts";
 import phrases from "../design/handoff/phrases.ko.json";
 import { createStore } from "./store.ts";
@@ -51,7 +53,17 @@ async function loadSheet(): Promise<LoadingSheet | undefined> {
 }
 
 /** 사이드바 · 가운데(머리말 + 무대) · 현황판 (HANDOFF 2.1). 창 너비 구간은 header 가 app.dataset.layout 으로 정한다 */
-function mountShell(companyName: string | undefined): void {
+function mountShell(initialSettings: SettingsDto): void {
+  let settings = initialSettings;
+  const sound = new OfficeSound();
+  sound.setEnabled(settings.sound ?? false);
+  document.addEventListener("pointerdown", () => sound.unlock());
+  document.addEventListener("keydown", () => sound.unlock());
+  const soundGesture = (on: boolean) => {
+    sound.setEnabled(on);
+    if (on) sound.unlock();
+  };
+  const companyName = settings.companyName ?? undefined;
   const el = (tag: string, cls = "") => {
     const e = document.createElement(tag);
     e.className = cls;
@@ -65,8 +77,11 @@ function mountShell(companyName: string | undefined): void {
   const selectionError = el("p", "ow-selection-error");
   selectionError.setAttribute("role", "alert");
   selectionError.hidden = true;
+  const settingsError = el("p", "ow-selection-error");
+  settingsError.setAttribute("role", "alert");
+  settingsError.hidden = true;
   const panelHost = el("div", "ow-panel-host");
-  main.append(headerEl, selectionError, stage);
+  main.append(headerEl, selectionError, settingsError, stage);
   app.append(side, main, panelHost);
   document.body.append(app);
   store.subscribe(() => {
@@ -116,8 +131,25 @@ function mountShell(companyName: string | undefined): void {
       if (officeId) openEmployee(officeId, teamId, agentId, opener);
     },
   });
-  mountSidebar(side, store, requestSelect, {
+  const sidebar = mountSidebar(side, store, requestSelect, {
     companyName,
+    rawDiagnostics: settings.rawDiagnostics ?? false,
+    onSettings: (opener) => {
+      settingsError.hidden = true;
+      openSettings(
+        {
+          invoke,
+          onSettings: applySettings,
+          onSoundGesture: soundGesture,
+          onError(message) {
+            settingsError.textContent = message;
+            settingsError.hidden = false;
+          },
+        },
+        opener,
+      );
+    },
+    onRescan: () => invoke<void>("rescan"),
     onTeam: (officeId, teamId) => {
       panel.showTeam(officeId, teamId);
       if (office) office.highlightTeam(officeId, teamId);
@@ -128,11 +160,18 @@ function mountShell(companyName: string | undefined): void {
   }); // 머리말이 띠를 찾으니 먼저
   header = mountHeader(app, headerEl, store, {
     companyName,
+    sound: settings.sound ?? false,
+    onSound: (on) => {
+      soundGesture(on);
+      return saveSettings({ invoke, onSettings: applySettings }, { sound: on });
+    },
     bandSlot: () => side.querySelector<HTMLElement>(".ow-side-band"),
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
   });
   mountOffice(stage, store, {
+    sound,
+    bossName: settings.bossName,
     onScale: (n) => header?.setScale(n),
     onEmployee: (officeId, teamId, agentId) => {
       panel.highlight(teamId, agentId);
@@ -149,6 +188,7 @@ function mountShell(companyName: string | undefined): void {
       if (pendingTeam) o.highlightTeam(pendingTeam.officeId, pendingTeam.teamId);
       pendingTeam = null;
       o.setRoomLabels(header?.roomLabels() ?? true);
+      o.setBossName(settings.bossName);
     },
     (e) => {
       console.error("사무실 캔버스", e);
@@ -157,22 +197,28 @@ function mountShell(companyName: string | undefined): void {
       );
     },
   );
+  function applySettings(next: SettingsDto): void {
+    settings = next;
+    sound.setEnabled(next.sound ?? false);
+    sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
+    header?.setSettings(next.companyName, next.sound ?? false);
+    office?.setBossName(next.bossName);
+  }
 }
 
 async function start(): Promise<void> {
   // 규모를 아직 안 골랐으면(첫 실행, 손상된 설정) 고를 때까지 진행하지 않는다. 그다음 로딩 화면 (PLAN 3.8)
-  const settings = await invoke<SettingsDto>("get_settings");
+  let settings = await invoke<SettingsDto>("get_settings");
   const root = document.body.appendChild(document.createElement("div"));
   const sheet = await loadSheet();
-  // 회사 이름은 여기서 한 번 정해 로딩·간판·머리말에 넘긴다. 없으면 각자 기본 이름.
-  // 빈 입력은 set_settings 에서 "건드리지 않음"이라 저장된 이름이 남는다. 화면도 그 이름을 쓴다
-  const name = settings.scale
-    ? settings.companyName
-    : ((await showScale(root, invoke, sheet)).companyName ?? settings.companyName);
-  const companyName = name ?? undefined;
+  if (!settings.scale) {
+    await showScale(root, invoke, sheet);
+    settings = await invoke<SettingsDto>("get_settings");
+  }
+  const companyName = settings.companyName ?? undefined;
   await showLoading(root, { invoke, listen }, sheet, companyName);
   root.remove();
-  mountShell(companyName);
+  mountShell(settings);
   // 구독을 먼저 걸어야 스냅샷과 첫 이벤트 사이의 변경을 놓치지 않는다 (PLAN 4.3 시작 순서)
   await Promise.all([
     listen<OfficeListDto>("office-list", (e) => store.applyList(e.payload)),
@@ -180,5 +226,13 @@ async function start(): Promise<void> {
   ]);
   store.applyWorld(await invoke<WorldDto>("get_world_snapshot"));
 }
+
+function sendVisibility(): void {
+  void invoke("set_window_hidden", { hidden: document.hidden }).catch((e) =>
+    console.error("창 표시 상태 전송 실패", e),
+  );
+}
+document.addEventListener("visibilitychange", sendVisibility);
+sendVisibility();
 
 start().catch((e) => console.error("시작 실패", e));

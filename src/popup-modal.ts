@@ -41,7 +41,7 @@ export interface Modal {
 
 let current: Modal | null = null;
 
-const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'button, input:not([type="hidden"]), select, textarea, a[href], [tabindex]';
 
 /** `width` 는 720 이상에서만 쓴다. 그 밑은 tokens.css 의 전체 화면 규칙이 이긴다 */
 export function openModal(
@@ -92,7 +92,7 @@ export function openModal(
     if (e.key !== "Tab") return;
     // 접힌 행처럼 조상이 hidden 인 것도 뺀다
     const items = [...modal.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-      (el) => !el.closest("[hidden]"),
+      (el) => !el.closest("[hidden]") && !el.matches(":disabled") && el.tabIndex >= 0,
     );
     const first = items[0];
     const last = items[items.length - 1];

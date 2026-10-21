@@ -7,10 +7,11 @@ use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use ts_rs::TS;
 
 use crate::detail;
+use crate::diag::{self, Diag};
 use crate::discover::{Host, HostKind, Product, Vendor};
 use crate::office::names::RoomBook;
 use crate::office::work::{Role, WorkType};
@@ -20,7 +21,8 @@ use crate::office::{
     TeamProps, TestVerdict, TimelineKind, Tokens,
 };
 use crate::parse::{Confidence, TodoItem, ToolKind, ToolOutcome};
-use crate::settings::SettingsBook;
+use crate::runtime::Runtime;
+use crate::settings::{ManualPath, SettingsBook};
 
 /// 최대 5회/초 (4.8)
 const PUBLISH_EVERY: StdDuration = StdDuration::from_millis(200);
@@ -41,7 +43,6 @@ pub struct OfficeListDto {
 }
 
 /// `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
-/// 나머지 설정 칸은 T30 이 여기에 더한다
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsDto {
@@ -49,6 +50,13 @@ pub struct SettingsDto {
     pub scale: Option<Scale>,
     /// 저장된 회사 이름. 없으면 null 이고 프론트가 기본 이름을 쓴다. 보낼 때 ""(공백뿐)는 기본으로 되돌린다
     pub company_name: Option<String>,
+    // 자동 탐색에 추가한다. 빈 배열은 저장된 수동 경로를 모두 지운다.
+    pub manual_paths: Option<Vec<ManualPath>>,
+    pub sound: Option<bool>,
+    pub os_notifications: Option<bool>,
+    // 비면 프론트가 기본 호칭을 쓴다. 빈 문자열을 보내면 기본으로 되돌린다.
+    pub boss_name: Option<String>,
+    pub raw_diagnostics: Option<bool>,
 }
 
 /// `get_world_snapshot` 반환. 목록 필드를 그대로 품어 store 가 목록처럼 받는다
@@ -1022,27 +1030,40 @@ pub fn get_world_snapshot(ipc: State<'_, Arc<Ipc>>) -> WorldDto {
 
 /// 저장이 실패해도 이번 실행의 설정은 바뀐다. 에러는 저장 실패를 알린다.
 /// 규모가 바뀌면 world 가 재배치하고(4.7.9) 발행기가 rebuilt 로 낸다
-pub fn apply_settings(ipc: &Ipc, book: &SettingsBook, dto: SettingsDto) -> Result<(), String> {
-    let mut saved = Ok(());
-    if let Some(scale) = dto.scale {
-        // 동시에 두 번 불려도 파일과 실행 중 world 가 같은 값이 되게 world 락 안에서 함께 한다 (락 순서 world → settings)
-        let mut world = lock(&ipc.world);
-        saved = book.set_scale(scale);
-        world.set_scale(scale);
+pub fn apply_settings(
+    ipc: &Ipc,
+    book: &SettingsBook,
+    diag: &Mutex<Diag>,
+    runtime: &Runtime,
+    dto: SettingsDto,
+) -> Result<(), String> {
+    if let Some(paths) = &dto.manual_paths {
+        for path in paths {
+            path.validate()?;
+        }
     }
-    if let Some(name) = dto.company_name {
-        // 앞 칸의 저장이 실패해도 이 칸은 메모리에 반영한다
-        saved = saved.and(book.set_company_name(Some(&name)));
+    // 입력 오류 때는 world도 바꾸지 않는다. 파일과 world의 순서는 동시 요청에서도 같다.
+    let mut world = lock(&ipc.world);
+    let old_paths = dto
+        .manual_paths
+        .as_ref()
+        .map(|_| book.snapshot().manual_paths.unwrap_or_default());
+    let saved = book.update(&dto);
+    if let Some(raw) = dto.raw_diagnostics {
+        lock(diag).set_raw(raw);
+    }
+    if let (Some(old), Some(new)) = (old_paths, &dto.manual_paths) {
+        runtime.manual_changed(&old, new);
+    }
+    if let Some(scale) = dto.scale {
+        world.set_scale(scale);
     }
     saved.map_err(|e| format!("설정을 저장하지 못했습니다: {e}"))
 }
 
 /// `get_settings` 의 몸통. 테스트가 State 없이 부른다
 pub fn settings_dto(book: &SettingsBook) -> SettingsDto {
-    SettingsDto {
-        scale: book.scale(),
-        company_name: book.company_name(),
-    }
+    book.snapshot()
 }
 
 #[tauri::command]
@@ -1054,9 +1075,42 @@ pub fn get_settings(settings: State<'_, Arc<SettingsBook>>) -> SettingsDto {
 pub fn set_settings(
     ipc: State<'_, Arc<Ipc>>,
     settings: State<'_, Arc<SettingsBook>>,
+    diag: State<'_, Arc<Mutex<Diag>>>,
+    runtime: State<'_, Arc<Runtime>>,
     dto: SettingsDto,
 ) -> Result<(), String> {
-    apply_settings(&ipc, &settings, dto)
+    apply_settings(&ipc, &settings, &diag, &runtime, dto)
+}
+
+#[tauri::command]
+pub fn rescan(runtime: State<'_, Arc<Runtime>>) {
+    runtime.request_rescan();
+}
+
+#[tauri::command]
+pub async fn get_diagnostics(
+    ipc: State<'_, Arc<Ipc>>,
+    runtime: State<'_, Arc<Runtime>>,
+) -> Result<String, String> {
+    let ipc = ipc.inner().clone();
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let data = runtime.diagnostics(StdDuration::from_secs(2));
+        let projects: Vec<_> = ipc
+            .world
+            .try_lock()
+            .map(|world| world.teams.values().map(|team| team.cwd.clone()).collect())
+            .unwrap_or_default();
+        diag::diagnostic_text(&data, runtime.home.as_deref(), &projects)
+    })
+    .await
+    .map_err(|e| format!("진단 정보를 모으지 못했습니다: {e}"))
+}
+
+#[tauri::command]
+pub fn open_log_folder(runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
+    detail::open_log_folder(&runtime.log_dir)
+        .map_err(|e| format!("로그 폴더를 열지 못했습니다: {e:?}"))
 }
 
 #[tauri::command]
@@ -1072,9 +1126,19 @@ pub fn select_office(
 pub fn spawn_publisher(app: AppHandle, ipc: Arc<Ipc>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut sent = Sent::default();
+        let mut notifications = crate::notification::PendingNotifications::default();
         loop {
             let start = Instant::now();
-            let (list, state) = ipc.poll(&mut sent, Utc::now());
+            let now = Utc::now();
+            let (list, state) = ipc.poll(&mut sent, now);
+            let enabled = app.state::<Arc<SettingsBook>>().os_notifications();
+            let hidden = app
+                .state::<crate::notification::WindowVisibility>()
+                .hidden();
+            let notices = notifications.poll(&lock(&ipc.world).teams, now, hidden, enabled);
+            for notice in notices {
+                crate::notification::show(&app, &notice);
+            }
             if let Some(l) = list
                 && let Err(e) = app.emit("office-list", &l)
             {

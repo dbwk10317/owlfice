@@ -13,6 +13,7 @@ import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { fill } from "../text.ts";
 import { ActorLayer, seatProps } from "./actors.ts";
+import type { OfficeSound } from "./sound.ts";
 import { DRIVEN_PROP, PropsLayer, ScreenLabel, loadWallFont } from "./props.ts";
 import { LADDER_MS } from "./anim-queue.ts";
 import { CanvasTooltip, propTooltip, roomTooltip } from "./canvas-tooltip.ts";
@@ -275,9 +276,12 @@ const WHITE: Rgb = [255, 255, 255];
 /** 머리말이 부르는 것 */
 export interface OfficeHandle {
   setRoomLabels(on: boolean): void;
+  setBossName(name: string | null): void;
   highlightTeam(officeId: string, teamId: string): void;
 }
 export interface OfficeOptions {
+  sound?: OfficeSound;
+  bossName?: string | null;
   /** 정수 배율(장치 픽셀 기준). 처음 한 번 현재 값으로 부르고, 바뀔 때마다 부른다 */
   onScale?(scale: number): void;
   /** 직원을 눌렀을 때 (직원 상세 팝업). officeId 는 캔버스에 그려진 사무실이다: 전환 중엔 선택과 다를 수 있다 */
@@ -312,6 +316,7 @@ export async function mountOffice(
   // 이름표보다 아래에 깔리게 먼저 만든다
   const screenLabel = new ScreenLabel(actorOverlay);
   const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay);
+  let bossName = opts.bossName || phrases.ranks.boss;
   const minimap = document.createElement("div");
   minimap.className = "ow-minimap";
   minimap.hidden = true;
@@ -350,12 +355,18 @@ export async function mountOffice(
     }
   };
   actors.onBossPick = (teamId, x, y) => {
-    if (!suppressClick)
-      showAt(shown?.teams.find((t) => t.teamId === teamId)?.props.bossVisit ?? "", x, y);
+    const message = shown?.teams.find((t) => t.teamId === teamId)?.props.bossVisit;
+    if (!suppressClick && message) showAt(`${bossName}\n${message}`, x, y);
   };
-  actors.onRing = (now) => props?.ring(now);
+  actors.onRing = (now, cue) => {
+    props?.ring(now);
+    opts.sound?.cue(cue);
+  };
   actors.onDoor = (now) => props?.openDoor(now);
-  actors.onCue = (c, now, o) => props?.cue(c, now, o);
+  actors.onCue = (c, now, o) => {
+    props?.cue(c, now, o);
+    if (c.kind !== "BossVisit") opts.sound?.cue(c);
+  };
   actors.onLadder = (at, now, title) => {
     props?.ladder(at, now);
     props?.deferTitle(title, at + LADDER_MS);
@@ -673,7 +684,11 @@ export async function mountOffice(
   let dirty = true;
   let resumed = false;
   const cues = cueCollector();
+  const soundState = () =>
+    opts.sound?.see(store.state.office, store.state.selectedId, document.hidden);
+  soundState();
   store.subscribe(() => {
+    soundState();
     if (store.state.selectedId !== officeId) actors.highlightTeam(null, Date.now());
     if (store.state.selectedId !== officeId) tooltip.close();
     dirty = true;
@@ -703,6 +718,7 @@ export async function mountOffice(
       }
       props?.tick(now);
       actors.update(now);
+      opts.sound?.keyboard(actors.isTyping(), now);
     },
     undefined,
     UPDATE_PRIORITY.HIGH,
@@ -719,6 +735,7 @@ export async function mountOffice(
     UPDATE_PRIORITY.UTILITY,
   );
   document.addEventListener("visibilitychange", () => {
+    soundState();
     switchFade?.cancel();
     if (document.hidden) app.ticker.stop();
     else {
@@ -731,6 +748,9 @@ export async function mountOffice(
   layout();
   return {
     setRoomLabels: (on) => void (overlay.hidden = !on),
+    setBossName: (name) => {
+      bossName = name || phrases.ranks.boss;
+    },
     highlightTeam: (officeId, teamId) => {
       pendingTeam = { officeId, teamId };
       focusTeam();

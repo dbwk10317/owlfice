@@ -11,8 +11,10 @@ use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use crate::discover::HostKind;
 use crate::discover::Product;
 use crate::parse::{Event, EventKind, ToolKind, ToolOutcome, Unhandled};
+use crate::runtime::Diagnostics;
 
 const FILE_NAME: &str = "unhandled.jsonl";
 const MAX_BYTES: usize = 10 * 1024 * 1024;
@@ -25,6 +27,128 @@ const RAW_COMMAND_CHARS: usize = 80;
 const RAW_RESULT_CHARS: usize = 200;
 /// 결과가 안 오는 호출이 쌓여도 메모리가 자라지 않게 하는 상한
 const MAX_PENDING_TESTS: usize = 4096;
+
+fn hash8(text: &str) -> String {
+    format!("{:016x}", crate::office::names::fnv1a64(text))[..8].to_owned()
+}
+
+/// 원문 로그를 섞지 않고 요청으로 모은 구조 정보만 내보낸다.
+pub fn diagnostic_text(data: &Diagnostics, home: Option<&Path>, projects: &[PathBuf]) -> String {
+    use std::fmt::Write;
+    let roots: Vec<_> = data
+        .candidates
+        .iter()
+        .filter_map(|c| c.root.as_deref())
+        .chain(
+            data.hosts
+                .iter()
+                .flat_map(|h| h.sites.iter().map(|s| s.root.as_path())),
+        )
+        .collect();
+    let project_names: Vec<_> = projects
+        .iter()
+        .filter_map(|p| p.file_name())
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .collect();
+    let path = |path: &Path| {
+        let (prefix, tail) = if let Some(tail) = home.and_then(|h| path.strip_prefix(h).ok()) {
+            ("<home>".to_owned(), tail)
+        } else if let Some(root) = roots
+            .iter()
+            .filter(|r| path.starts_with(r))
+            .max_by_key(|r| r.as_os_str().len())
+        {
+            (
+                format!("<root:{}>", hash8(&root.to_string_lossy())),
+                path.strip_prefix(root).unwrap(),
+            )
+        } else {
+            // 알 수 없는 접두어를 홈으로 추정하면 수동 경로의 사용자명이 남을 수 있다.
+            return format!("<path:{}>", hash8(&path.to_string_lossy()));
+        };
+        let mut out = prefix;
+        let mut project = false;
+        for part in tail.components() {
+            let part = part.as_os_str().to_string_lossy();
+            let known = matches!(
+                part.as_ref(),
+                ".claude" | ".codex" | "projects" | "sessions" | "subagents"
+            );
+            let safe = known && !project && !project_names.contains(&part.to_lowercase());
+            out.push('/');
+            if safe {
+                out.push_str(&part);
+            } else {
+                out.push_str(&hash8(&part));
+                if part.ends_with(".jsonl") {
+                    out.push_str(".jsonl");
+                }
+            }
+            project = part == "projects";
+        }
+        out
+    };
+    let host = |host: &crate::discover::Host| match &host.kind {
+        HostKind::Windows => "windows".to_owned(),
+        HostKind::Wsl { distro } => format!("wsl:{}", hash8(distro)),
+    };
+    let mut out = String::from("Owlfice diagnostics\n");
+    for candidate in &data.candidates {
+        let root = candidate
+            .root
+            .as_deref()
+            .map(path)
+            .unwrap_or_else(|| "<unknown>".into());
+        let _ = writeln!(
+            out,
+            "candidate {} {} {:?} {root}",
+            host(&candidate.host),
+            candidate.vendor.label(),
+            candidate.result
+        );
+    }
+    for snapshot in &data.hosts {
+        let id = host(&snapshot.host);
+        let ticks = &snapshot.ticks;
+        let average = ticks
+            .total_us
+            .checked_div(u128::from(ticks.count))
+            .unwrap_or(0);
+        let _ = writeln!(
+            out,
+            "host {id} suspect={} ticks={} average_us={average} max_us={} last_us={} path_ops={}",
+            snapshot.suspect, ticks.count, ticks.max_us, ticks.last_us, snapshot.path_ops
+        );
+        for site in &snapshot.sites {
+            let _ = writeln!(
+                out,
+                "site {id} {} {}",
+                site.vendor.label(),
+                path(&site.root)
+            );
+        }
+        for file in &snapshot.files {
+            let _ = writeln!(
+                out,
+                "file {id} {} team={} {} offset={} generation={}",
+                file.team.vendor.label(),
+                hash8(&file.team.session),
+                path(&file.path),
+                file.offset,
+                file.generation
+            );
+        }
+    }
+    for id in &data.unavailable {
+        let id = if id == "windows" {
+            id.clone()
+        } else {
+            format!("wsl:{}", hash8(id.strip_prefix("wsl:").unwrap_or(id)))
+        };
+        let _ = writeln!(out, "host {id} unavailable");
+    }
+    out
+}
 
 type Key = (String, String);
 
@@ -122,6 +246,16 @@ fn product_name(p: Product) -> &'static str {
 impl Diag {
     pub fn open(dir: &Path, raw: bool) -> Self {
         Self::open_with_limit(dir, raw, MAX_BYTES)
+    }
+
+    /// 끈 뒤 다음 flush가 예전에 모은 원문을 다시 쓰지 않도록 메모리에서도 지운다.
+    pub fn set_raw(&mut self, raw: bool) {
+        self.raw = raw;
+        if !raw {
+            for entry in self.entries.values_mut() {
+                self.dirty |= entry.fields.remove("raw").is_some();
+            }
+        }
     }
 
     fn open_with_limit(dir: &Path, raw: bool, max_bytes: usize) -> Self {
@@ -528,6 +662,94 @@ mod tests {
 
     const SECRET: &str = "SECRET_PROMPT_7f3a";
 
+    #[test]
+    fn copied_diagnostics_hide_home_projects_and_unknown_manual_prefixes() {
+        use crate::discover::{
+            Candidate, CandidateResult, Host, ReadMode, Site, Vendor, windows_host,
+        };
+        use crate::runtime::{FileDiagnostic, HostDiagnostic, TickStats};
+        let home = PathBuf::from(r"C:\Users\private-user");
+        let root = home.join(".claude/projects");
+        let manual = PathBuf::from(r"D:\secret-prefix\private-project\records");
+        let remote = Host {
+            id: "wsl:private-distro".into(),
+            kind: HostKind::Wsl {
+                distro: "private-distro".into(),
+            },
+            label: "private-distro".into(),
+        };
+        let site = Site {
+            host: windows_host(),
+            vendor: Vendor::Claude,
+            root: root.clone(),
+            read_mode: ReadMode::Append,
+        };
+        let data = Diagnostics {
+            candidates: vec![
+                Candidate {
+                    host: windows_host(),
+                    vendor: Vendor::Claude,
+                    root: Some(root.clone()),
+                    result: CandidateResult::Found,
+                },
+                Candidate {
+                    host: windows_host(),
+                    vendor: Vendor::Codex,
+                    root: Some(manual.clone()),
+                    result: CandidateResult::Found,
+                },
+                Candidate {
+                    host: remote,
+                    vendor: Vendor::Claude,
+                    root: Some(PathBuf::from(
+                        r"\\wsl$\private-distro\home\private-user\.claude\projects",
+                    )),
+                    result: CandidateResult::Offline,
+                },
+            ],
+            hosts: vec![HostDiagnostic {
+                host: windows_host(),
+                sites: vec![site],
+                files: vec![FileDiagnostic {
+                    team: crate::office::world::TeamKey {
+                        host: "windows".into(),
+                        vendor: Vendor::Claude,
+                        session: "secret-session".into(),
+                    },
+                    path: root.join("private-project/secret-session.jsonl"),
+                    offset: 1234,
+                    generation: 2,
+                }],
+                ticks: TickStats {
+                    count: 2,
+                    total_us: 60,
+                    last_us: 40,
+                    max_us: 40,
+                },
+                path_ops: 3,
+                suspect: false,
+            }],
+            unavailable: vec!["wsl:private-distro".into()],
+        };
+        let text = diagnostic_text(&data, Some(&home), &[PathBuf::from("D:/private-project")]);
+        for private in [
+            "private-user",
+            "private-project",
+            "secret-prefix",
+            "private-distro",
+            "secret-session",
+        ] {
+            assert!(!text.contains(private), "{text}");
+        }
+        assert!(text.contains("<home>/.claude/projects"));
+        assert!(text.contains(&hash8("private-project")));
+        assert!(text.contains("<root:"));
+        assert!(text.contains("offset=1234 generation=2"));
+        assert!(text.contains("ticks=2 average_us=30 max_us=40 last_us=40"));
+        assert!(text.contains("Offline"));
+        assert!(text.contains("unavailable"));
+    }
+
     fn t(sec: i64) -> DateTime<Utc> {
         Utc.timestamp_opt(1_800_000_000 + sec, 0).unwrap()
     }
@@ -692,6 +914,56 @@ mod tests {
         d2.flush().unwrap();
         let v: Value = serde_json::from_str(read(dir2.path()).trim()).unwrap();
         assert_eq!(v["raw"].as_str().unwrap().chars().count(), 80);
+    }
+
+    /// 끄기만 해도 다음 정기 저장에서 원문이 사라지고 집계는 이어진다.
+    #[test]
+    fn runtime_raw_toggle_removes_raw_and_keeps_counts_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = Diag::open(dir.path(), false);
+        d.set_raw(true);
+        run_all(&mut d);
+        d.flush().unwrap();
+        let before = read(dir.path());
+        assert!(before.contains(SECRET));
+        let mut expected: Vec<Value> = before
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        for entry in &mut expected {
+            entry.as_object_mut().unwrap().remove("raw");
+        }
+        let count: u64 = expected
+            .iter()
+            .map(|entry| entry["count"].as_u64().unwrap())
+            .sum();
+        d.set_raw(false);
+        d.flush_if_due(t(61)).unwrap();
+        let after = read(dir.path());
+        let actual: Vec<Value> = after
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(actual, expected);
+        run_all(&mut d);
+        d.flush().unwrap();
+        drop(d);
+
+        // 켠 상태로 다시 열어도 디스크에서 원문이 되살아나지 않아야 한다.
+        let mut reopened = Diag::open(dir.path(), true);
+        reopened.flush().unwrap();
+        let after = read(dir.path());
+        assert!(!after.contains(SECRET));
+        assert!(!after.contains("\"raw\""));
+        let actual_count: u64 = after
+            .lines()
+            .map(|line| {
+                serde_json::from_str::<Value>(line).unwrap()["count"]
+                    .as_u64()
+                    .unwrap()
+            })
+            .sum();
+        assert_eq!(actual_count, count * 2);
     }
 
     #[test]

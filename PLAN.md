@@ -1330,8 +1330,10 @@ Tauri 커맨드 (프론트 → 백엔드):
 | `get_employee_detail` | `office_id, team_id, agent_id` | `EmployeeDetailDto` (받은 지시, 읽은·수정한 파일, 실행한 명령. 메모리만) |
 | `get_session_detail` | `office_id, team_id, limit = 20 (최대 100)` | `SessionDetailDto`. 원본을 못 읽으면 최근 사건만 비우고 `recent_error` |
 | `open_path` | `OpenTarget` (원본 폴더·작업 폴더·원본 줄·사이드카) | 백엔드가 아는 대상만 탐색기로 연다. 프론트가 경로를 넘기지 않는다 (보안) |
-| `rescan` | 없음 | 즉시 Scan 1회 |
-| `get_settings` / `set_settings` | | 규모, 회사 이름(`company_name`. 비면 기본 Owlfice), 수동 경로, 소리, 사장님 이름, 원문 진단. 필드마다 따로 넣을 수 있다 (없는 필드는 그대로) |
+| `get_settings` / `set_settings` | | 규모, 회사 이름(`company_name`. 비면 기본 Owlfice), 수동 경로, 소리, OS 알림, 사장님 이름, 원문 진단. 필드마다 따로 넣을 수 있다 (없는 필드는 그대로) |
+| `rescan` | 없음 | 최신 수동 경로로 다음 Probe를 앞당긴다. 수동 경로는 자동 탐색에 더하는 Claude `projects`·Codex `sessions` 루트 자체이며, Windows 절대 경로 또는 WSL UNC 경로만 받는다. 소등 WSL 접근 금지는 그대로다 |
+| `get_diagnostics` / `open_log_folder` | 없음 | 4.11의 비식별 진단 문자열 / 앱의 미대응 로그 폴더 열기 |
+| `set_window_hidden` | `hidden: bool` | 3.6 OS 알림에 쓸 `document.hidden` 전달 |
 
 이벤트 (백엔드 → 프론트):
 

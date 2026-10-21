@@ -30,19 +30,25 @@ pub fn claude_home(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
     under_profile(env, "CLAUDE_CONFIG_DIR", ".claude")
 }
 
-/// 루트 폴더가 실제로 있는 Claude·Codex Site만 낸다. Antigravity는 파서가 생기는 T32에서 더한다
-pub fn find_sites(env: &dyn Fn(&str) -> Option<String>) -> Vec<Site> {
-    let candidates = [
+pub(super) fn candidate_roots(env: &dyn Fn(&str) -> Option<String>) -> Vec<(Vendor, PathBuf)> {
+    [
         (Vendor::Claude, claude_home(env).map(|h| h.join("projects"))),
         (
             Vendor::Codex,
             under_profile(env, "CODEX_HOME", ".codex").map(|c| c.join("sessions")),
         ),
-    ];
-    candidates
+    ]
+    .into_iter()
+    .filter_map(|(vendor, root)| Some((vendor, root?)))
+    .collect()
+}
+
+/// 루트 폴더가 실제로 있는 Claude·Codex Site만 낸다. Antigravity는 파서가 생기는 T32에서 더한다
+pub fn find_sites(env: &dyn Fn(&str) -> Option<String>) -> Vec<Site> {
+    candidate_roots(env)
         .into_iter()
-        .filter_map(|(vendor, root)| Some((vendor, root?)))
-        .filter(|(_, root)| root.is_dir())
+        // WSL 환경변수 경로는 켜짐을 확인하는 통합 scan에서만 다룬다.
+        .filter(|(_, root)| super::wsl_path(root).is_none() && root.is_dir())
         .map(|(vendor, root)| Site {
             host: windows_host(),
             vendor,

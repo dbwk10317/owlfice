@@ -27,7 +27,7 @@
 
 winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연다. PowerShell 실행 정책이 `npm.ps1` 을 막으면 `npm.cmd` 로 부른다.
 
-명령은 저장소 루트에서 돌린다.
+명령은 저장소 루트에서 돌린다. 환경변수가 붙은 명령은 셸마다 적었다. Git Bash 의 `X=값 명령` 과 PowerShell 의 `powershell -Command { ... }` 는 그 명령에만 적용되고 셸에 남지 않는다. PowerShell 에서 `$env:X=` 를 바로 치면 그 창이 닫힐 때까지 남는다 (APPDATA 는 특히 다른 앱에 영향을 준다).
 
 | 일 | 명령 |
 |---|---|
@@ -35,12 +35,12 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | Rust 테스트 | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | Rust 포맷 검사 | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
 | Rust 린트 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
-| 실제 세션으로 포맷 변화 확인 (PLAN 4.12 코퍼스 drift. 홈의 `.claude`·`.codex` 를 읽기만 한다) | `OWLFICE_CORPUS_DIR=$USERPROFILE cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture` (PowerShell은 `$env:OWLFICE_CORPUS_DIR=$env:USERPROFILE` 를 먼저) |
+| 실제 세션으로 포맷 변화 확인 (PLAN 4.12 코퍼스 drift. 홈의 `.claude`·`.codex` 를 읽기만 한다) | Git Bash: `OWLFICE_CORPUS_DIR=$USERPROFILE cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture`. PowerShell: `powershell -NoProfile -Command { $env:OWLFICE_CORPUS_DIR=$env:USERPROFILE; cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture }` |
 | 이벤트 열 JSON 확인 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- events fixtures/claude/reject` |
 | 미대응 로그 요약 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- unhandled [경로]` |
 | fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 10 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |
-| 앱에서 fixture 재생해 보기 (실제 세션 폴더를 건드리지 않는다) | 빈 임시 폴더 T 에 `T/claude/projects` 를 먼저 만들고 `APPDATA=T/appdata CLAUDE_CONFIG_DIR=T/claude CODEX_HOME=T/codex npm run tauri dev` 를 띄운 뒤 다른 셸에서 `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 4 --shift-to-now fixtures/claude/async-subagent T/claude/projects/replay`. 화면을 스크립트로 보려면 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 을 더해 CDP 로 붙는다 |
-| 프론트 IPC 타입 다시 만들기 (`ipc.rs` 를 고친 뒤. 낡으면 Rust 테스트가 실패한다) | `OWLFICE_WRITE_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml ts_bindings` (PowerShell은 `$env:OWLFICE_WRITE_TYPES=1` 를 먼저) |
+| 앱에서 fixture 재생해 보기 (실제 세션 폴더를 건드리지 않는다) | 빈 임시 폴더 T 에 `T/claude/projects` 를 먼저 만들고 앱을 띄운다. Git Bash: `APPDATA=T/appdata CLAUDE_CONFIG_DIR=T/claude CODEX_HOME=T/codex npm run tauri dev`. PowerShell: `powershell -NoProfile -Command { $env:APPDATA='T\appdata'; $env:CLAUDE_CONFIG_DIR='T\claude'; $env:CODEX_HOME='T\codex'; npm run tauri dev }`. 다른 셸에서 `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 4 --shift-to-now fixtures/claude/async-subagent T/claude/projects/replay`. 화면을 스크립트로 보려면 같은 자리에 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 을 더해 CDP 로 붙는다. 배포 CSP 까지 보려면 `tauri dev` 대신 `npm run tauri build -- --no-bundle` 로 만든 `owlfice.exe` 를 같은 환경변수로 띄운다 (`tauri dev` 는 CSP 를 걸지 않는다) |
+| 프론트 IPC 타입 다시 만들기 (`ipc.rs` 를 고친 뒤. 낡으면 Rust 테스트가 실패한다) | Git Bash: `OWLFICE_WRITE_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml ts_bindings`. PowerShell: `powershell -NoProfile -Command { $env:OWLFICE_WRITE_TYPES=1; cargo test --manifest-path src-tauri/Cargo.toml ts_bindings }` |
 | 프론트 포맷·린트·타입 검사 | `npm run check` (포맷만 고치기 `npm run fmt`) |
 | 프론트 테스트 | `npm test` (DOM 이 필요한 테스트 파일은 첫 줄에 `// @vitest-environment jsdom`) |
 | 프론트 빌드 | `npm run build` (린트·타입 검사 후 빌드) |

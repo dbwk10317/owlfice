@@ -173,7 +173,9 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
   expect(res(1).textContent).toBe("실패");
   expect(res(2).classList.contains("is-ok")).toBe(true);
   expect(res(2).textContent).toBe("성공추정");
-  expect(res(3).textContent).toBe("진행 중 · 61초");
+  // 이력이라 경과 시간은 붙이지 않는다
+  expect(res(3).classList.contains("is-run")).toBe(true);
+  expect(res(3).textContent).toBe("백그라운드 시작");
   expect(res(4).textContent).toBe("결과 확인 불가");
   expect(res(0).textContent).toBe(""); // 호출 칸은 결과색이 없다
   expect(head(1).querySelector(".ow-ev__tool")!.textContent).toBe("ToolResult");

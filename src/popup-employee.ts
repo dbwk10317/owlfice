@@ -279,12 +279,10 @@ export function openEmployeeDetail(
       case "Rejected":
         set("is-bad", D.fail);
         break;
-      case "Started": {
-        const at = Date.parse(e.ts);
-        const sec = Number.isNaN(at) ? 0 : Math.max(0, Math.floor((now() - at) / 1000));
-        set("is-run", fill(D.running, { sec }));
+      case "Started":
+        // 타임라인은 Started 와 뒤의 Ok/Err 를 따로 남기는 이력이라 경과 시간을 붙이면 끝난 일도 진행 중으로 읽힌다
+        set("is-run", D.started);
         break;
-      }
       case "Unknown":
         set("is-dim", D.unknown);
         break;

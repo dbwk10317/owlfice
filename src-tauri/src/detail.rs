@@ -830,7 +830,7 @@ fn fill_other(d: &mut EventDto, ev: &EventKind) {
                 _ => "분갈이 (컨텍스트 압축)".to_string(),
             };
         }
-        EventKind::TitleChanged { title } => d.summary = format!("사규 액자 교체: {}", cut(title)),
+        EventKind::TitleChanged { title } => d.summary = format!("세션 제목 변경: {}", cut(title)),
         EventKind::PrLinked { number, url } => {
             d.summary = format!("PR #{number} 연결");
             d.body = body(url);

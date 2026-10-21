@@ -3,6 +3,8 @@ name = "owlfice"
 version = "0.1.0"
 description = "AI 에이전트 세션을 픽셀아트 사무실로 보여주는 앱"
 edition = "2024"
+# 검증한 툴체인. 더 낮은 버전은 확인하지 않았다
+rust-version = "1.99"
 publish = false
 default-run = "owlfice"
 

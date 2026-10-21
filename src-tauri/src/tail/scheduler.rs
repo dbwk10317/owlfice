@@ -179,6 +179,16 @@ impl Tracked {
     }
 }
 
+/// 미뤄 둔 재구성의 이유. 성공할 때까지 합쳐 들고 가고, 어느 길의 재구성이든 이것을 합쳐 쓴다. 잃으면 성공했을 때 rebuilt 표시(4.3 조용한 재구성)나
+/// Reset 파일의 세대 올림이 빠져, 팝업의 옛 커서가 같은 바이트 자리의 새 줄에 붙는다
+#[derive(Debug, Default)]
+struct Due {
+    /// 조용히 다시 만들 이유(새 팀·Reset)가 있었다
+    quiet: bool,
+    /// Reset 을 본 파일
+    reset: BTreeSet<PathBuf>,
+}
+
 pub struct HostLoop {
     pub host: Host,
     pub sites: Vec<Site>,
@@ -188,9 +198,8 @@ pub struct HostLoop {
     pub heartbeat: Arc<Heartbeat>,
     diag: Arc<Mutex<Diag>>,
     last_scan: Option<DateTime<Utc>>,
-    /// 다시 만들어야 하는데 아직 못 만든 팀. 경로 접근이 되는 다음 Scan 에서 만든다. 그동안 기존 리더는 계속 읽는다.
-    /// 값은 조용히 다시 만들 이유(새 팀·Reset)다. 미뤄지는 동안 잃으면 성공했을 때 rebuilt 표시가 빠진다 (4.3 조용한 재구성)
-    rebuild_due: BTreeMap<TeamKey, bool>,
+    /// 다시 만들어야 하는데 아직 못 만든 팀. 경로 접근이 되는 다음 Scan 에서 만든다. 그동안 기존 리더는 계속 읽는다
+    rebuild_due: BTreeMap<TeamKey, Due>,
     /// 파일이 없어져 퇴장시킨 직원과 그 시각. 재구성이 메인의 Spawn 으로 되살리면 다시 퇴장시킨다
     gone: BTreeMap<TeamKey, BTreeMap<String, DateTime<Utc>>>,
     /// 다 읽어 보니 팀이 되지 않는 파일 (Codex 자식·내부 rollout). Scan 마다 처음부터 다시 읽지 않는다.
@@ -303,12 +312,12 @@ impl HostLoop {
         if scan {
             self.scan(now);
             self.last_scan = Some(now);
-            for (key, quiet) in std::mem::take(&mut self.rebuild_due) {
+            let due: Vec<TeamKey> = self.rebuild_due.keys().cloned().collect();
+            for key in due {
                 if self.suspect() {
-                    self.rebuild_due.insert(key, quiet);
-                    continue;
+                    break;
                 }
-                self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new(), quiet);
+                self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new());
             }
             // 나열이 막혀 일찍 끝나도 알린다. 안 알리면 로딩 화면이 이 호스트를 끝없이 기다린다
             if let Some(w) = self.watch.take() {
@@ -438,7 +447,7 @@ impl HostLoop {
                 Ok(None) => t.failed = false,
                 Err(e) => {
                     if wsl {
-                        self.on_wsl_error(key, p, &e, now, path_ok);
+                        self.on_wsl_error(key, p, &e, now, path_ok, &reset);
                         return;
                     }
                     // 로컬 파일 하나의 실패로 팀 전체를 멈추지 않는다. 다음 폴링에 다시 본다
@@ -450,8 +459,11 @@ impl HostLoop {
             }
         }
         // 멈췄던 I/O 의 결과는 버리고 commit 하지 않는다. 재개한 첫 틱이 같은 구간을 다시 읽는다 (4.5 감시자).
-        // 파서에 넣기 전에 본다. 넣고 버리면 파서가 같은 줄을 두 번 본다
+        // 파서에 넣기 전에 본다. 넣고 버리면 파서가 같은 줄을 두 번 본다. 이미 본 Reset 은 재구성에 싣는다
         if self.suspect() {
+            if !reset.is_empty() {
+                self.defer_rebuild(key, true, &reset);
+            }
             return;
         }
         if !reset.is_empty() {
@@ -460,7 +472,7 @@ impl HostLoop {
                 crate::oplog!("Reset {}", p.display());
             }
             if path_ok {
-                self.try_rebuild(key, now, &BTreeSet::new(), &reset, false);
+                self.try_rebuild(key, now, &BTreeSet::new(), &reset);
                 return;
             }
             for p in &reset {
@@ -468,7 +480,7 @@ impl HostLoop {
                     t.stale = true;
                 }
             }
-            self.defer_rebuild(key, true);
+            self.defer_rebuild(key, true, &reset);
         }
         if batch.is_empty() {
             return;
@@ -523,7 +535,8 @@ impl HostLoop {
     }
 
     /// WSL 핸들 에러. Probe 직후 틱이면 배포판이 켜져 있으니 배포판 재시작으로 죽은 핸들로 보고 경로로 다시 연다.
-    /// 아니면 꺼졌거나 공유가 끊긴 것이라 의심으로 두고, Probe 가 켜짐을 본 뒤 다시 만든다 (4.4.2)
+    /// 아니면 꺼졌거나 공유가 끊긴 것이라 의심으로 두고, Probe 가 켜짐을 본 뒤 다시 만든다 (4.4.2).
+    /// `reset` 은 같은 폴링에서 앞 파일들이 본 Reset 이다
     fn on_wsl_error(
         &mut self,
         key: &TeamKey,
@@ -531,14 +544,15 @@ impl HostLoop {
         e: &io::Error,
         now: DateTime<Utc>,
         path_ok: bool,
+        reset: &BTreeSet<PathBuf>,
     ) {
         crate::oplog!("읽기 실패 {}: {e}", p.display());
         if path_ok {
-            self.try_rebuild(key, now, &BTreeSet::new(), &BTreeSet::new(), false);
+            self.try_rebuild(key, now, &BTreeSet::new(), reset);
             return;
         }
         self.mark_suspect();
-        self.defer_rebuild(key, false);
+        self.defer_rebuild(key, false, reset);
     }
 
     /// Probe 직후 틱에 근무 중이 아닌 WSL 팀의 핸들을 닫는다 (4.4.2). 열어 둔 핸들은 배포판이 스스로 꺼지지 못하게 하고,
@@ -561,7 +575,20 @@ impl HostLoop {
             paths.sort_by_key(|p| (is_subagent(p), p.clone()));
             // 닫기 전에 남은 줄을 다 읽는다. 닫을 때의 길이를 기준으로 다시 열지 정한다
             self.poll_team(&key, &paths, now, true);
+            // 방금 읽은 줄로 다시 일하기 시작했으면 쥔다. 닫으면 다음 Probe 까지 못 읽는다
+            let working = self
+                .lock_world()
+                .teams
+                .get(&key)
+                .is_none_or(|t| t.phase == TeamPhase::Working);
+            if working {
+                continue;
+            }
             for p in &paths {
+                // poll_team 이 의심을 켰으면 경로를 더 건드리지 않는다 (4.4.2)
+                if self.suspect() {
+                    return;
+                }
                 self.path_ops += 1;
                 let Ok(m) = fs::metadata(p) else {
                     continue;
@@ -569,7 +596,8 @@ impl HostLoop {
                 let Some(t) = self.files.get_mut(p) else {
                     continue;
                 };
-                if t.stale {
+                // 덜 읽은 채(8MB 상한, 읽은 뒤 붙은 줄) 닫으면 길이가 다시 바뀔 때까지 남은 줄을 못 읽는다. 다음 틱에 이어 읽게 둔다
+                if t.stale || !t.reader.as_ref().is_some_and(|r| r.caught_up(m.len())) {
                     continue;
                 }
                 t.generation = t.generation();
@@ -614,7 +642,7 @@ impl HostLoop {
             }
         }
         if !new.is_empty() {
-            self.try_rebuild(key, now, &new, &BTreeSet::new(), false);
+            self.try_rebuild(key, now, &new, &BTreeSet::new());
         }
     }
 
@@ -634,30 +662,31 @@ impl HostLoop {
         }
     }
 
-    /// 조용히 다시 만들 이유는 한 번 생기면 성공할 때까지 합쳐 들고 간다. 뒤 호출이 덮어 지우지 않는다
-    fn defer_rebuild(&mut self, key: &TeamKey, quiet: bool) {
-        *self.rebuild_due.entry(key.clone()).or_insert(false) |= quiet;
+    fn defer_rebuild(&mut self, key: &TeamKey, quiet: bool, reset: &BTreeSet<PathBuf>) {
+        let due = self.rebuild_due.entry(key.clone()).or_default();
+        due.quiet |= quiet;
+        due.reset.extend(reset.iter().cloned());
     }
 
-    /// 실패하면 기존 상태를 그대로 두고 다음 Scan 에 다시 한다.
-    /// `carried` 는 Scan 이 미뤄 둔 목록에서 꺼내 들고 온 조용한 재구성 이유다
+    /// 실패하면 기존 상태를 그대로 두고 다음 Scan 에 다시 한다
     fn try_rebuild(
         &mut self,
         key: &TeamKey,
         now: DateTime<Utc>,
         new: &BTreeSet<PathBuf>,
         reset: &BTreeSet<PathBuf>,
-        carried: bool,
     ) {
-        let quiet = carried || self.rebuild_due.get(key) == Some(&true);
-        if let Err(e) = self.rebuild_team(key, now, new, reset, quiet) {
+        let due = self.rebuild_due.remove(key).unwrap_or_default();
+        let quiet = due.quiet;
+        let reset: BTreeSet<PathBuf> = due.reset.into_iter().chain(reset.iter().cloned()).collect();
+        if let Err(e) = self.rebuild_team(key, now, new, &reset, quiet) {
             crate::oplog_once!("팀 재구성 실패 {}: {e}", key.session);
             if self.is_wsl() {
                 self.mark_suspect();
             }
             // 새 팀이면 파일이 아직 등록 전이라 다음 Scan 이 새 파일로 다시 찾는다
             if self.files.values().any(|t| &t.key == key) {
-                self.defer_rebuild(key, quiet || !reset.is_empty());
+                self.defer_rebuild(key, quiet || !reset.is_empty(), &reset);
             }
         }
     }
@@ -759,6 +788,7 @@ impl HostLoop {
         );
         team.alive_in_registry = self.alive.contains_key(&key.session);
         if let Some(r) = self.alive.get(&key.session) {
+            // 재구성은 조용하다 (4.3). 제목이 바뀌어도 액자 연출은 내지 않는다
             team.set_registry(r.user_name(), r.product(), &mut Vec::new());
         }
         let product = team.product;
@@ -894,7 +924,8 @@ impl HostLoop {
         let mut gone_teams = BTreeSet::new();
         let mut gone_subs = Vec::new();
         let mut meta_gone = Vec::new();
-        let mut rebuild = BTreeSet::new();
+        // 다시 만들 팀과 그 팀에서 Reset 으로 볼 파일
+        let mut rebuild: BTreeMap<TeamKey, BTreeSet<PathBuf>> = BTreeMap::new();
         let mut verify = Vec::new();
         for (path, t) in &mut self.files {
             if !ok_roots.iter().any(|r| path.starts_with(r)) {
@@ -914,7 +945,7 @@ impl HostLoop {
             if is_subagent(path) {
                 let has = metas.contains(&path.with_extension("meta.json"));
                 if has && !t.has_meta {
-                    rebuild.insert(t.key.clone());
+                    rebuild.entry(t.key.clone()).or_default();
                 } else if !has && t.has_meta {
                     meta_gone.push(path.clone());
                 }
@@ -942,7 +973,11 @@ impl HostLoop {
                 (None, Some(stat)) => fs::metadata(&path).map(|m| {
                     if (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)) != stat {
                         crate::oplog!("파일 교체 감지, 재구성 {}", path.display());
-                        rebuild.insert(t.key.clone());
+                        let reset = rebuild.entry(t.key.clone()).or_default();
+                        // 줄었으면 Reset 이다 (4.5 (a)). 세대를 올려야 옛 커서가 새 내용에 붙지 않는다
+                        if m.len() < stat.0 {
+                            reset.insert(path.clone());
+                        }
                     }
                 }),
                 (None, None) => Ok(()),
@@ -987,16 +1022,16 @@ impl HostLoop {
             if self.suspect() {
                 return;
             }
-            rebuild.remove(key);
+            let reset = rebuild.remove(key).unwrap_or_default();
             for p in new {
                 self.revive(key, p);
             }
-            self.try_rebuild(key, now, new, &BTreeSet::new(), false);
+            self.try_rebuild(key, now, new, &reset);
             if let Some(w) = &self.watch {
                 w.read(new.len());
             }
         }
-        for key in rebuild {
+        for (key, reset) in rebuild {
             if self.suspect() {
                 return;
             }
@@ -1010,7 +1045,7 @@ impl HostLoop {
             for p in &back {
                 self.revive(&key, p);
             }
-            self.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new(), false);
+            self.try_rebuild(&key, now, &BTreeSet::new(), &reset);
         }
         if !self.is_wsl() {
             let tracked: HashSet<&str> = self
@@ -1064,13 +1099,15 @@ impl HostLoop {
         if home.is_some() {
             self.path_ops += 1;
         }
-        self.alive = home
-            .map(|h| registry::live_sessions(&h))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|e| safe_id(&e.session_id))
-            .map(|e| (e.session_id.clone(), e))
-            .collect();
+        let live = match home {
+            Some(h) => match registry::live_sessions(&h, &self.alive) {
+                Some(l) => l,
+                // 폴더를 못 읽은 건 "없음"이 아니라 "못 봄"이다. 지우면 제목·생존이 깜박인다 (4.5)
+                None => return,
+            },
+            None => HashMap::new(),
+        };
+        self.alive = live.into_iter().filter(|(id, _)| safe_id(id)).collect();
         let mut w = self.world.lock().unwrap_or_else(|e| e.into_inner());
         let mut ours = Vec::new();
         for (k, t) in w.teams.iter_mut() {
@@ -2413,6 +2450,147 @@ mod tests {
         assert!(h.files[&file].reader.is_some(), "근무 중이면 핸들을 쥔다");
     }
 
+    /// 근무 중으로 만든 WSL 팀이 다음 틱에 졸고, Probe 직전 폴링이 막 끝난 상태를 만든다.
+    /// 그 뒤 Probe 직후 틱의 Warm 폴링(2초)은 건너뛰어 close_idle 의 읽기만 남는다
+    fn dozing_wsl_team(e: &Env) -> (HostLoop, PathBuf, [Site; 1], DateTime<Utc>) {
+        let root = e.dir("wsl/projects");
+        let file = root.join("p1").join(format!("{REJECT}.jsonl"));
+        copy_dir(&fixture("claude/reject"), &root.join("p1"));
+        let sites = [site_of(&wsl(), Vendor::Claude, &root)];
+        let mut h = e.host(wsl(), Vec::new());
+        probe_now(&h, &sites);
+        e.at(t0() + secs(150));
+        h.tick();
+        assert_eq!(e.team(REJECT).phase, TeamPhase::Working);
+        let now = t0() + Duration::minutes(20);
+        e.at(now);
+        h.tick();
+        assert_eq!(e.team(REJECT).phase, TeamPhase::Dozing);
+        assert!(
+            h.files[&file].reader.is_some(),
+            "Probe 밖에서는 닫지 않는다"
+        );
+        (h, file, sites, now)
+    }
+
+    /// 졸음 팀에 8MB 넘는 backlog 가 있으면 닫기 전 읽기 한 번으로 다 못 읽는다. 덜 읽은 채 닫지 않는다
+    #[test]
+    fn idle_wsl_team_with_backlog_over_8mib_reads_every_line_before_closing() {
+        let e = env();
+        let (mut h, file, sites, now) = dozing_wsl_team(&e);
+        let big = "x".repeat(9 * 1024 * 1024);
+        append(
+            &file,
+            &[
+                user_line(REJECT, t0() + secs(151), &big),
+                user_line(REJECT, t0() + secs(152), "밀린 끝"),
+            ],
+        );
+        probe_now(&h, &sites);
+        e.at(now + secs(1));
+        h.tick();
+        // 남은 줄은 다음 틱이 읽고, 다 읽은 뒤의 Probe 가 닫는다
+        e.at(now + secs(3));
+        h.tick();
+        probe_now(&h, &sites);
+        e.at(now + secs(30));
+        h.tick();
+        assert_eq!(e.team(REJECT).props.boss_visit.as_deref(), Some("밀린 끝"));
+        assert!(
+            h.files[&file].reader.is_none(),
+            "다 읽은 졸음 팀은 결국 닫는다"
+        );
+    }
+
+    /// 닫기 전 마지막 읽기로 근무 중이 된 팀은 핸들을 쥔다. 닫으면 다음 Probe(30초)까지 못 읽는다
+    #[test]
+    fn idle_wsl_team_woken_by_last_read_keeps_handles() {
+        let e = env();
+        let (mut h, file, sites, now) = dozing_wsl_team(&e);
+        append(&file, &[user_line(REJECT, now, "막 깨움")]);
+        probe_now(&h, &sites);
+        e.at(now + secs(1));
+        h.tick();
+        let team = e.team(REJECT);
+        assert_eq!(team.props.boss_visit.as_deref(), Some("막 깨움"));
+        assert_eq!(team.phase, TeamPhase::Working);
+        assert!(h.files[&file].reader.is_some());
+    }
+
+    /// 닫아 둔 동안 파일이 줄었으면 Reset 이라 세대를 올려 다시 만든다 (4.5 규칙 (a))
+    #[test]
+    fn closed_file_that_shrank_rebuilds_with_new_generation() {
+        let e = env();
+        let (mut h, file, sites, now) = dozing_wsl_team(&e);
+        probe_now(&h, &sites);
+        e.at(now + secs(1));
+        h.tick();
+        assert!(h.files[&file].reader.is_none());
+        fs::write(
+            &file,
+            user_line(REJECT, t0() + secs(145), "줄어듦")
+                + "
+",
+        )
+        .unwrap();
+        probe_now(&h, &sites);
+        e.at(now + secs(30));
+        h.tick();
+        assert_eq!(e.team(REJECT).props.boss_visit.as_deref(), Some("줄어듦"));
+        assert_eq!(h.files[&file].generation(), 1);
+    }
+
+    /// 메인의 Reset 을 본 뒤 서브 핸들 에러로 빠져도 Reset 을 잃지 않는다. 다시 만들 때 메인 세대가 오른다
+    #[test]
+    fn reset_seen_before_handle_error_still_bumps_generation_on_rebuild() {
+        let e = env();
+        let root = e.dir("wsl/projects");
+        let p1 = root.join("p1");
+        copy_dir(&fixture("claude/sync-subagent"), &p1);
+        let main = p1.join(format!("{SYNC}.jsonl"));
+        let sub = p1
+            .join(SYNC)
+            .join("subagents")
+            .join(format!("agent-{SYNC_SUB}.jsonl"));
+        let now = t0() + secs(300);
+        append(&main, &[user_line(SYNC, now - secs(1), "일하는 중")]);
+        let sites = [site_of(&wsl(), Vendor::Claude, &root)];
+        let mut h = e.host(wsl(), Vec::new());
+        probe_now(&h, &sites);
+        e.at(now);
+        h.tick();
+        assert!(h.files[&sub].reader.is_some());
+        // 메인은 짧게 다시 쓰이고, 서브는 늘었는데 다른 프로세스가 잠가 핸들 읽기가 실패한다
+        fs::write(
+            &main,
+            user_line(SYNC, now + secs(1), "새 내용")
+                + "
+",
+        )
+        .unwrap();
+        append(
+            &sub,
+            &[rec(
+                SYNC,
+                Some(SYNC_SUB),
+                now + secs(1),
+                "user",
+                serde_json::json!("잠김"),
+            )],
+        );
+        let lock = fs::File::open(&sub).unwrap();
+        lock.lock().unwrap();
+        e.at(now + secs(2));
+        h.tick();
+        assert!(h.heartbeat.suspect.load(Ordering::Relaxed));
+        drop(lock);
+        probe_now(&h, &sites);
+        e.at(now + secs(30));
+        h.tick();
+        assert_eq!(e.team(SYNC).props.boss_visit.as_deref(), Some("새 내용"));
+        assert_eq!(h.files[&main].generation(), 1);
+    }
+
     #[test]
     fn wsl_listing_failure_stops_further_path_access() {
         let e = env();
@@ -2592,6 +2770,40 @@ mod tests {
         assert_ne!(e.team(REJECT).title, "mine");
         assert!(
             e.w()
+                .outbox
+                .iter()
+                .any(|(_, _, c)| matches!(c, Cue::FrameSwap { .. }))
+        );
+    }
+
+    #[test]
+    fn broken_registry_file_keeps_name_and_life_for_that_scan() {
+        let e = env();
+        let home = e.dir("claude");
+        let root = home.join("projects");
+        copy_dir(&fixture("claude/reject"), &root.join("p1"));
+        let pid = std::process::id();
+        let reg = home.join("sessions").join(format!("{pid}.json"));
+        fs::create_dir_all(reg.parent().unwrap()).unwrap();
+        fs::write(
+            &reg,
+            format!(r#"{{"pid":{pid},"sessionId":"{REJECT}","name":"mine","nameSource":"user"}}"#),
+        )
+        .unwrap();
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        let now = t0() + Duration::hours(1);
+        e.at(now);
+        h.tick();
+        assert_eq!(e.team(REJECT).title, "mine");
+        e.w().outbox.clear();
+        // 쓰는 중이라 반쯤 잘린 파일
+        fs::write(&reg, format!(r#"{{"pid":{pid},"sessionId":"#)).unwrap();
+        e.at(now + secs(3));
+        h.tick();
+        assert_eq!(e.team(REJECT).title, "mine");
+        assert!(e.team(REJECT).alive_in_registry);
+        assert!(
+            !e.w()
                 .outbox
                 .iter()
                 .any(|(_, _, c)| matches!(c, Cue::FrameSwap { .. }))
@@ -2810,14 +3022,14 @@ mod tests {
         let key = e.key(REJECT);
         append(&file, &[user_line(REJECT, t0() + secs(140), "재시작 뒤")]);
         let err = io::Error::from_raw_os_error(87);
-        h.on_wsl_error(&key, &file, &err, now + secs(1), true);
+        h.on_wsl_error(&key, &file, &err, now + secs(1), true, &BTreeSet::new());
         assert!(!h.heartbeat.suspect.load(Ordering::Relaxed));
         assert_eq!(
             e.team(REJECT).props.boss_visit.as_deref(),
             Some("재시작 뒤")
         );
         // Probe 밖이면 의심으로 둔다
-        h.on_wsl_error(&key, &file, &err, now + secs(2), false);
+        h.on_wsl_error(&key, &file, &err, now + secs(2), false, &BTreeSet::new());
         assert!(h.heartbeat.suspect.load(Ordering::Relaxed));
     }
 
@@ -2845,7 +3057,7 @@ mod tests {
         .unwrap();
         e.at(now + secs(1));
         h.tick();
-        assert_eq!(h.rebuild_due.get(&e.key(REJECT)), Some(&true));
+        assert!(h.rebuild_due[&e.key(REJECT)].quiet);
         e.w().rebuilt.clear();
         probe_now(&h, &sites);
         e.at(now + secs(2));
@@ -2854,6 +3066,16 @@ mod tests {
         assert!(
             !e.w().rebuilt.is_empty(),
             "미뤄졌어도 Reset 이었음을 잃는다"
+        );
+        // 새 내용은 새 세대로 기록돼야 옛 커서가 같은 바이트 자리의 새 줄에 붙지 않는다
+        assert_eq!(h.files[&file].generation(), 1);
+        let team = e.team(REJECT);
+        assert!(
+            team.employees[0]
+                .record
+                .timeline
+                .iter()
+                .all(|m| m.generation == 1)
         );
     }
 

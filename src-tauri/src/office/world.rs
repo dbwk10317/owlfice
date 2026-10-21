@@ -74,12 +74,13 @@ pub struct OfficeWorld {
 }
 
 /// 목록(office-list)에 보이는 값. 이것이 바뀌면 list_seq 를 올린다
-type ListView = (TeamPhase, String, usize, bool, WorkType);
+type ListView = (TeamPhase, String, Product, usize, bool, WorkType);
 
 fn list_view(t: &Team) -> ListView {
     (
         t.phase,
         t.title.clone(),
+        t.product,
         t.employees.len(),
         t.incident.is_some(),
         t.work_type,
@@ -216,12 +217,12 @@ impl OfficeWorld {
         let Some(team) = self.teams.get_mut(key) else {
             return;
         };
-        let title = team.title.clone();
+        let before = list_view(team);
         let mut cues = Vec::new();
         if !team.set_registry(name, product, &mut cues) {
             return;
         }
-        let list_changed = team.title != title;
+        let list_changed = list_view(team) != before;
         self.bump(key, list_changed);
         for c in cues {
             self.cue(key, c);
@@ -615,6 +616,18 @@ mod tests {
         assert!(w.outbox.is_empty());
         assert_eq!(w.teams[&a].props.plant, Some(0.75));
         assert!(s0 < s1 && s1 < seq(&w));
+    }
+
+    /// 등록부가 동만 바꿔도 목록(동 표시)이 다시 나간다
+    #[test]
+    fn registry_building_only_change_bumps_list_seq() {
+        let mut w = world(Scale::Large);
+        let a = key(Vendor::Claude, "a");
+        w.put_team(a.clone(), team("a", 0, 0), t0(), true);
+        let list = w.list_seq;
+        w.set_registry(&a, None, Some(Product::ClaudeCli));
+        assert_eq!(w.teams[&a].product, Product::ClaudeCli);
+        assert!(w.list_seq > list);
     }
 
     /// 중소기업에서 팀이 나가면 남은 팀의 사무실 상태도 바뀐다

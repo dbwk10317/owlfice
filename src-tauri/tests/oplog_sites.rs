@@ -15,7 +15,7 @@ fn 등록부_읽기_실패는_로그_파일에_한_번만_남고_내용은_없�
     std::fs::write(sessions.join("1.json"), "SECRET-BODY{not json").unwrap();
     let home = tmp.path().join("home");
     for _ in 0..3 {
-        assert!(read_registry(&home).is_empty());
+        assert!(read_registry(&home).unwrap().entries.is_empty());
     }
 
     let file = std::fs::read_dir(&logs).unwrap().next().unwrap().unwrap();

@@ -59,10 +59,18 @@ impl Pending {
     /// 읽은 끝이 파일 길이에 닿았거나, Reset 이 아닌데 직전보다 나아가지 못했으면 멈춘다
     /// (WSL 9P 처럼 stat 길이보다 적게 읽히면 같은 읽기가 되풀이된다). `prev_end` 는 부르는 쪽이 들고 다닌다
     pub fn finished(&self, prev_end: &mut Option<u64>) -> bool {
-        let end = self.offset + self.remainder.len() as u64;
-        let stalled = !self.reset && prev_end.is_some_and(|p| end <= p);
-        *prev_end = Some(end);
-        end >= self.len || stalled
+        let stalled = prev_end.is_some_and(|p| self.stalled_after(p));
+        *prev_end = Some(self.end());
+        self.end() >= self.len || stalled
+    }
+
+    /// Reset 이 아닌데 읽은 끝이 `prev_end` 보다 나아가지 못했나
+    fn stalled_after(&self, prev_end: u64) -> bool {
+        !self.reset && self.end() <= prev_end
+    }
+
+    fn end(&self) -> u64 {
+        self.offset + self.remainder.len() as u64
     }
 }
 
@@ -86,6 +94,8 @@ pub struct TailReader {
     tail_hash: u64,
     /// 파일 세대. Reset마다 +1. (`gen` 은 2024 edition 예약어라 이 이름을 쓴다)
     generation: u32,
+    /// 마지막 commit 이 읽은 끝을 앞으로 옮기지 못했다
+    stalled: bool,
 }
 
 fn hash_bytes(b: &[u8]) -> u64 {
@@ -133,6 +143,7 @@ impl TailReader {
             last_mtime,
             tail_hash: hash_bytes(&[]),
             generation: 0,
+            stalled: false,
         })
     }
 
@@ -151,6 +162,14 @@ impl TailReader {
     /// commit 한 위치 뒤에 개행 없이 남아 읽지 못한 바이트 수. 버리는 중인 줄은 세지 않는다
     pub fn unread_len(&self) -> usize {
         self.remainder.len()
+    }
+
+    /// 지금 더 읽을 것이 없나. `len` 은 부르는 쪽이 방금 경로로 본 길이다. 마지막 읽기 뒤 길이가 바뀌었으면 거짓이다.
+    /// 마지막 읽기가 본 파일 끝까지 소비했으면 참이다 (개행 없는 마지막 조각은 읽어 둔 것으로 센다).
+    /// 덜 읽었어도 그 읽기가 나아가지 못했으면 참이다. WSL 9P 처럼 stat 길이가 읽히는 바이트보다 크면 끝까지 갈 수 없다
+    pub fn caught_up(&self, len: u64) -> bool {
+        // ponytail: 나아가지 못한 읽기 한 번이면 다 읽음으로 본다(9P 짧은 읽기가 일시적이면 덜 읽은 채 닫는다), 실측에서 일시적 짧은 읽기가 보이면 연속 몇 번으로 올린다
+        len == self.last_len && (self.consumed() >= self.last_len || self.stalled)
     }
 
     fn consumed(&self) -> u64 {
@@ -300,6 +319,7 @@ impl TailReader {
         {
             self.file = f;
         }
+        self.stalled = p.stalled_after(self.consumed());
         self.generation = p.generation;
         self.offset = p.offset;
         self.remainder = p.remainder;
@@ -564,6 +584,30 @@ b
         assert!(!p.finished(&mut prev), "Reset 은 나아가지 못한 것이 아니다");
         p.len = 4;
         assert!(p.finished(&mut None), "파일 끝에 닿으면 멈춘다");
+    }
+
+    #[test]
+    fn caught_up_when_inflated_length_cannot_be_read() {
+        // finished_stops_when_read_does_not_advance 처럼 Pending 의 len 을 부풀려 stat 이 길이를 크게 말하는 경우를 만든다
+        let (_d, _p, mut r) = setup(
+            b"a
+b
+",
+        );
+        let mut p = r.read_new_lines(MAX_READ_BYTES).unwrap();
+        p.len += 100;
+        r.commit(p);
+        assert!(
+            !r.caught_up(r.last_len),
+            "나아간 읽기 뒤 남은 길이는 덜 읽은 것이다"
+        );
+        let mut p = r.read_new_lines(MAX_READ_BYTES).unwrap();
+        p.len += 100;
+        r.commit(p);
+        assert!(
+            r.caught_up(r.last_len),
+            "더 나아가지 못했으면 더 읽을 것이 없다"
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 �
 import { firstOffice } from "./first-office.ts";
 import { mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
-import { emptyState, mountSidebar } from "./sidebar-left.ts";
+import { emptyState, mountSidebar, popupNames } from "./sidebar-left.ts";
 import { mountPanel } from "./sidebar-right.ts";
 import { showLoading, type LoadingSheet } from "./loading.ts";
 import { openEmployeeDetail } from "./popup-employee.ts";
@@ -13,7 +13,6 @@ import { openSessionDetail } from "./popup-session.ts";
 import { showScale } from "./scale.ts";
 import phrases from "../design/handoff/phrases.ko.json";
 import { createStore } from "./store.ts";
-import { teamName } from "./ticker.ts";
 import type {
   EmployeeDto,
   OfficeDto,
@@ -74,15 +73,6 @@ function mountShell(): void {
     store.state.office?.teams
       .find((t) => t.teamId === teamId)
       ?.employees.find((e) => e.agentId === agentId);
-  const selectedName = (): string => {
-    const o = store.state.list?.offices.find((x) => x.officeId === store.state.selectedId);
-    return o ? o.label : "";
-  };
-  // 사이드바처럼 팀 이름으로 (중소기업은 사무실 label 이 층 이름이다)
-  const teamLabel = (teamId: string): string => {
-    const t = store.state.office?.teams.find((x) => x.teamId === teamId);
-    return t ? teamName(t) : selectedName();
-  };
   const openEmployee = (
     officeId: string,
     teamId: string,
@@ -91,7 +81,12 @@ function mountShell(): void {
   ): void =>
     openEmployeeDetail(
       { invoke, live },
-      { officeId, teamId, agentId, officeName: selectedName() },
+      {
+        officeId,
+        teamId,
+        agentId,
+        officeName: popupNames(store.state.list, officeId, teamId).officeName,
+      },
       opener,
     );
 
@@ -118,7 +113,10 @@ function mountShell(): void {
       openEmployee(officeId, teamId, agentId);
     },
     onSession: (officeId, teamId) =>
-      openSessionDetail({ invoke, live }, { officeId, teamId, name: teamLabel(teamId) }),
+      openSessionDetail(
+        { invoke, live },
+        { officeId, teamId, name: popupNames(store.state.list, officeId, teamId).teamLabel },
+      ),
   }).then(
     (o) => {
       office = o;

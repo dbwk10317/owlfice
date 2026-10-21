@@ -39,6 +39,12 @@
 .sc__building {
   margin-bottom: -12px;
 }
+/* 기본 창 720 높이에서 건물 2배(300)까지 넣으면 넘쳐 스크롤이 생긴다. 건물은 로딩 화면이 다시 보여 준다 */
+@media (max-height: 799px) {
+  .sc__building {
+    display: none;
+  }
+}
 .sc__head {
   display: flex;
   flex-direction: column;

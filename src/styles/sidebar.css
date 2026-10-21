@@ -13,6 +13,15 @@
 .ow-sidebar {
   min-height: 0;
 }
+.ow-brand__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* 토스트가 떠 있는 동안 목록을 그만큼 내려 첫 행을 가리지 않는다 (시안은 토스트가 흐름 안에 있다) */
+.ow-side-host.has-toast[data-mode="full"] .ow-sidebar__list {
+  padding-top: 42px;
+}
 .ow-sidebar__list {
   flex: 1;
   min-height: 0;

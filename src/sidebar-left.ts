@@ -8,6 +8,7 @@ import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
 import evictedSvg from "../design/handoff/icons/evicted.svg?raw";
 import infoSvg from "../design/handoff/icons/info.svg?raw";
 import emptySvg from "../design/handoff/icons/empty-building.svg?raw";
+import logoUrl from "../design/assets/logo.png";
 import type {
   Border,
   Dot,
@@ -536,8 +537,20 @@ export function mountSidebar(
 
   const aside = mk(doc, "aside", "ow-sidebar");
   aside.setAttribute("aria-label", phrases.header.officeSelect);
+  // ponytail: 간판은 설정 팝업을 여는 버튼이다 (HANDOFF 4.1), 설정 팝업(T30)이 생기면 button 으로 바꾼다
+  const brand = mk(doc, "div", "ow-brand");
+  const logo = doc.createElement("img");
+  logo.className = "ow-brand__logo ow-px";
+  logo.src = logoUrl;
+  logo.alt = "";
+  const brandSub = mk(doc, "span", "ow-brand__sub", phrases.app.brandSub);
+  const brandText = mk(doc, "span", "ow-brand__text");
+  brandText.append(mk(doc, "b", "ow-brand__name", phrases.app.brand), brandSub);
+  brand.append(logo, brandText);
   const listEl = mk(doc, "div", "ow-sidebar__list");
-  aside.append(listEl);
+  // ponytail: 바닥의 "지금 다시 찾기" 버튼은 재탐색 커맨드가 없어 뺐다, IPC 가 생기면 붙인다
+  const footer = mk(doc, "div", "ow-sidebar__footer", phrases.sidebar.autoCheck);
+  aside.append(brand, listEl, footer);
   // 레일·드롭다운 모드에선 aside 가 숨으므로 토스트 칸은 aside 밖에 둔다
   const toastSlot = mk(doc, "div", "ow-toast-slot");
   toastSlot.setAttribute("role", "status");
@@ -905,8 +918,10 @@ export function mountSidebar(
     showing = true;
     const el = toastEl(doc, m);
     toastSlot.append(el);
+    root.classList.add("has-toast");
     toastTimer = setTimeout(() => {
       el.remove();
+      root.classList.remove("has-toast");
       showing = false;
       pump();
     }, TOAST_MS);
@@ -935,6 +950,8 @@ export function mountSidebar(
       lastList = list;
     }
     root.dataset.scale = list.scale === "Large" ? "large" : "small";
+    brandSub.textContent =
+      list.scale === "Large" ? phrases.app.brandSub : phrases.app.brandSubSmall;
     const plan: Plan =
       list.offices.length === 0
         ? { items: [{ t: "empty", key: "empty" }], selectables: [] }

@@ -34,8 +34,9 @@ pub struct CodexParser {
     model: Option<String>,
     /// 결과를 기다리는 호출. 호출 순서대로
     pending: Vec<Pending>,
-    /// 백그라운드로 남은 exec_command 의 session_id → 원래 호출의 call_id
-    background: HashMap<String, String>,
+    /// 묶음이 끝나기 전 중복 item 이 다른 호출에 붙지 않도록 종료한 세션도 남긴다.
+    background: HashMap<String, BackgroundSession>,
+    background_calls: HashMap<String, BackgroundCall>,
     /// 이벤트를 내지 않는 호출(`sleep`, `send_message`). 뒤따르는 출력도 버린다
     ignored: HashSet<String>,
     /// 실행 중인 exec 를 기다리는 `wait` 의 call_id → 그 exec 의 call_id. 이벤트 없이 결과만 원래 exec 로 넘긴다
@@ -60,6 +61,16 @@ struct Pending {
     wait: Wait,
 }
 
+struct BackgroundSession {
+    call_id: String,
+    done: bool,
+}
+
+struct BackgroundCall {
+    remaining: usize,
+    outcome: ToolOutcome,
+}
+
 enum Wait {
     Exec(ExecWait),
     /// `ask` 면 `{accepted: true}` 를 받은 뒤에도 질문 답을 기다린다
@@ -76,12 +87,12 @@ struct ExecWait {
     async_unknown: bool,
     /// Test 로 분류된 호출. 결과 본문에서 도장 숫자를 뽑는다
     test: bool,
-    /// `write_stdin` 으로 `\u0003` 을 보낸 백그라운드 session_id
-    stop_session: Option<String>,
+    /// 중단 실패 때 원래 결과로 닫기 위해 해당 세션의 item 을 보관한다.
+    stop_sessions: Vec<(String, Option<Value>)>,
     /// `Script running with cell ID` 로 돌아온 cell. 결과는 이 cell 의 `wait` 가 받는다
     cell: Option<String>,
-    /// 중단을 기다리는 동안 온 그 세션의 item. 중단이 실패하면 이것으로 닫는다
-    held: Option<Value>,
+    /// exec 출력보다 먼저 끝난 명령을 뒤늦게 백그라운드로 등록하지 않는다.
+    commands: HashSet<String>,
     items: u32,
     completed: u32,
     failed: u32,
@@ -110,6 +121,7 @@ impl CodexParser {
             model: None,
             pending: Vec::new(),
             background: HashMap::new(),
+            background_calls: HashMap::new(),
             ignored: HashSet::new(),
             cell_waits: HashMap::new(),
             silent: false,
@@ -341,14 +353,17 @@ impl CodexParser {
                 plan: false,
             });
         }
-        let stop_session = scan
+        let stop_sessions = scan
             .stdin
             .iter()
-            .find(|(s, chars)| {
+            .filter(|(s, chars)| {
                 chars.as_deref() == Some("\u{3}")
-                    && s.as_ref().is_some_and(|s| self.background.contains_key(s))
+                    && s.as_ref()
+                        .is_some_and(|s| self.background.get(s).is_some_and(|b| !b.done))
             })
-            .and_then(|(s, _)| s.clone());
+            .filter_map(|(s, _)| s.clone())
+            .map(|s| (s, None))
+            .collect();
         self.pending.push(Pending {
             call_id,
             tool: "exec".into(),
@@ -356,7 +371,7 @@ impl CodexParser {
                 tools: scan.tools,
                 async_unknown,
                 test,
-                stop_session,
+                stop_sessions,
                 ..ExecWait::default()
             }),
         });
@@ -413,23 +428,26 @@ impl CodexParser {
             })
             .collect();
         // 이미 백그라운드인 세션의 폴링 응답은 새 작업이 아니다. 원래 호출의 짝을 덮어쓰면 안 된다
-        let started = objs
+        let started: HashSet<String> = objs
             .iter()
-            .find(|m| m.contains_key("session_id"))
             .filter(|m| !m.contains_key("exit_code"))
-            .and_then(|m| m.get("session_id"))
-            .and_then(id_string)
-            .filter(|s| w.calls(|t| t == "exec_command") && !self.background.contains_key(s));
+            .filter_map(|m| m.get("session_id").and_then(id_string))
+            .filter(|s| {
+                w.calls(|t| t == "exec_command")
+                    && !self.background.contains_key(s)
+                    && !w.commands.contains(s)
+            })
+            .collect();
         // 거부 문구는 item 없이 `Script failed` 로 끝난 호출에서만 본다. 성공한 호출이 text() 로 찍은 값에도 있을 수 있다
         let rejected = w.items == 0
             && first.starts_with("Script failed")
             && texts.iter().any(|t| t.contains(REJECTED));
-        let mut outcome = if rejected {
+        let mut outcome = if !started.is_empty() {
+            ToolOutcome::Started
+        } else if rejected {
             ToolOutcome::Rejected
         } else if w.failed > 0 {
             ToolOutcome::Err
-        } else if started.is_some() {
-            ToolOutcome::Started
         } else if w.items > 0 && w.completed == w.items {
             ToolOutcome::Ok
         } else if first.starts_with("Script failed") {
@@ -440,10 +458,31 @@ impl CodexParser {
         if outcome == ToolOutcome::Ok && w.async_unknown {
             outcome = ToolOutcome::Unknown;
         }
-        if outcome == ToolOutcome::Started
-            && let Some(s) = started
-        {
-            self.background.insert(s, p.call_id.clone());
+        if outcome == ToolOutcome::Started {
+            self.background_calls.insert(
+                p.call_id.clone(),
+                BackgroundCall {
+                    remaining: started.len(),
+                    outcome: if rejected {
+                        ToolOutcome::Rejected
+                    } else if w.failed > 0 || first.starts_with("Script failed") {
+                        ToolOutcome::Err
+                    } else if w.async_unknown || w.completed < w.items {
+                        ToolOutcome::Unknown
+                    } else {
+                        ToolOutcome::Ok
+                    },
+                },
+            );
+            for s in started {
+                self.background.insert(
+                    s,
+                    BackgroundSession {
+                        call_id: p.call_id.clone(),
+                        done: false,
+                    },
+                );
+            }
         }
         let rest = texts.get(1..).unwrap_or_default().join(
             "
@@ -474,15 +513,16 @@ impl CodexParser {
             });
         }
         // TaskStop 과 같게: 중단이 실패하지 않았을 때만 작업표를 뗀다
-        if let Some(s) = w.stop_session
-            && self.background.contains_key(&s)
-        {
+        for (s, held) in w.stop_sessions {
+            if !self.background.get(&s).is_some_and(|b| !b.done) {
+                continue;
+            }
             if matches!(outcome, ToolOutcome::Err | ToolOutcome::Rejected) {
-                if let Some(item) = w.held {
+                if let Some(item) = held {
                     self.background_item(&s, &item, out, un);
                 }
-            } else if let Some(bg) = self.background.remove(&s) {
-                out.push(result(bg, ToolOutcome::Unknown, String::new()));
+            } else {
+                self.finish_background(&s, ToolOutcome::Unknown, out);
             }
         }
     }
@@ -692,15 +732,21 @@ impl CodexParser {
         let ty = str_at(item, &["type"]).unwrap_or_default();
         if ty == "CommandExecution"
             && let Some(pid) = item.get("process_id").and_then(id_string)
-            && self.background.contains_key(&pid)
+            && let Some(background) = self.background.get(&pid)
         {
+            if background.done {
+                return;
+            }
             // 중단 요청 중이면 그 결과(TaskStop 규칙)로 정리한다. 중단이 실패할 때를 위해 보관한다
             let stopping = self.pending.iter_mut().find_map(|p| match &mut p.wait {
-                Wait::Exec(w) if w.stop_session.as_deref() == Some(&pid) => Some(w),
+                Wait::Exec(w) => w
+                    .stop_sessions
+                    .iter_mut()
+                    .find_map(|(id, held)| (id == &pid).then_some(held)),
                 _ => None,
             });
             match stopping {
-                Some(w) => w.held = Some(item.clone()),
+                Some(held) => *held = Some(item.clone()),
                 None => self.background_item(&pid, item, out, un),
             }
             return;
@@ -722,6 +768,11 @@ impl CodexParser {
                 })
             })
         {
+            if ty == "CommandExecution"
+                && let Some(pid) = item.get("process_id").and_then(id_string)
+            {
+                w.commands.insert(pid);
+            }
             w.items += 1;
             w.completed += u32::from(completed);
             w.failed += u32::from(failed);
@@ -737,7 +788,6 @@ impl CodexParser {
         un: &mut Vec<Unhandled>,
     ) {
         let (completed, failed) = item_state(item);
-        let call_id = self.background.remove(pid).unwrap_or_default();
         let outcome = if failed {
             ToolOutcome::Err
         } else if completed {
@@ -745,13 +795,39 @@ impl CodexParser {
         } else {
             ToolOutcome::Unknown
         };
-        out.push(result(call_id, outcome, String::new()));
+        self.finish_background(pid, outcome, out);
         if outcome == ToolOutcome::Unknown {
             un.push(Unhandled::OutcomeUnknown {
                 tool: "exec".into(),
                 result_keys: keys(item),
             });
         }
+    }
+
+    fn finish_background(&mut self, pid: &str, outcome: ToolOutcome, out: &mut Vec<EventKind>) {
+        let Some(session) = self.background.get_mut(pid).filter(|s| !s.done) else {
+            return;
+        };
+        session.done = true;
+        let call_id = session.call_id.clone();
+        let call = self
+            .background_calls
+            .get_mut(&call_id)
+            .expect("백그라운드 호출");
+        call.remaining -= 1;
+        call.outcome = match (call.outcome, outcome) {
+            (ToolOutcome::Err, _) | (_, ToolOutcome::Err) => ToolOutcome::Err,
+            (ToolOutcome::Rejected, _) | (_, ToolOutcome::Rejected) => ToolOutcome::Rejected,
+            (ToolOutcome::Unknown, _) | (_, ToolOutcome::Unknown) => ToolOutcome::Unknown,
+            _ => ToolOutcome::Ok,
+        };
+        if call.remaining > 0 {
+            return;
+        }
+        let outcome = call.outcome;
+        self.background_calls.remove(&call_id);
+        self.background.retain(|_, s| s.call_id != call_id);
+        out.push(result(call_id, outcome, String::new()));
     }
 
     fn agent_ids(&self) -> (String, String, Option<String>) {
@@ -2034,6 +2110,249 @@ mod tests {
                 ("c2".into(), ToolOutcome::Ok),
             ]
         );
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    #[test]
+    fn background_group_waits_for_every_command_and_preserves_unrelated_test() {
+        for pids in [["111", "222"], ["222", "111"]] {
+            for exits in [[0, 0], [0, 1], [1, 0]] {
+                let mut parser = CodexParser::new(SID);
+                let (mut events, un) = feed_events(
+                    &mut parser,
+                    &[
+                        meta(),
+                        exec(
+                            "bg",
+                            "text(await tools.exec_command({cmd:\"npm run dev\"})); text(await tools.exec_command({cmd:\"npm run dev\"}));",
+                        ),
+                        exec_out(
+                            "bg",
+                            &[
+                                "Script completed\n",
+                                r#"{"session_id":111}"#,
+                                r#"{"session_id":222}"#,
+                            ],
+                        ),
+                        cmd_item("completed", Some(exits[0]), pids[0]),
+                    ],
+                );
+                assert!(un.is_empty(), "{un:?}");
+                let kinds: Vec<_> = events.iter().map(|e| e.kind.clone()).collect();
+                assert_eq!(outcome_of(&kinds, "bg"), [ToolOutcome::Started]);
+                let local = chrono::FixedOffset::east_opt(0).unwrap();
+                let team =
+                    crate::office::classify::replay(SID, Product::CodexApp, &[], &events, local);
+                assert_eq!(team.employees[0].background.len(), 1);
+
+                let (tail, un) = feed_events(
+                    &mut parser,
+                    &[
+                        exec(
+                            "healthy",
+                            "text(await tools.exec_command({cmd:\"cargo test\"}))",
+                        ),
+                        // 이미 닫힌 세션의 중복 item 도 새 호출의 결과가 아니다.
+                        cmd_item("completed", Some(exits[0]), pids[0]),
+                        cmd_item("completed", Some(exits[1]), pids[1]),
+                        cmd_item("completed", Some(0), "333"),
+                        exec_out(
+                            "healthy",
+                            &["Script completed\n", "test result: ok. 1 passed; 0 failed"],
+                        ),
+                    ],
+                );
+                assert!(un.is_empty(), "{un:?}");
+                events.extend(tail);
+                let kinds: Vec<_> = events.iter().map(|e| e.kind.clone()).collect();
+                let failed = exits.contains(&1);
+                assert_eq!(
+                    outcome_of(&kinds, "bg"),
+                    [
+                        ToolOutcome::Started,
+                        if failed {
+                            ToolOutcome::Err
+                        } else {
+                            ToolOutcome::Ok
+                        }
+                    ]
+                );
+                assert_eq!(outcome_of(&kinds, "healthy"), [ToolOutcome::Ok]);
+                let team =
+                    crate::office::classify::replay(SID, Product::CodexApp, &[], &events, local);
+                assert!(team.employees[0].background.is_empty());
+                assert_eq!(team.props.test, Some(crate::office::TestVerdict::Pass));
+                assert_eq!(team.employees[0].counters.errors, u32::from(failed));
+            }
+        }
+    }
+
+    #[test]
+    fn background_group_skips_finished_output_and_keeps_earlier_failure() {
+        for exit in [0, 1] {
+            for first_output in [
+                r#"{"session_id":111,"exit_code":0}"#,
+                r#"{"session_id":111}"#,
+            ] {
+                let (k, un) = feed(&[
+                    exec(
+                        "bg",
+                        "text(await tools.exec_command({cmd:\"x\"})); text(await tools.exec_command({cmd:\"y\"}));",
+                    ),
+                    cmd_item("completed", Some(exit), "111"),
+                    exec_out(
+                        "bg",
+                        &["Script completed\n", first_output, r#"{"session_id":222}"#],
+                    ),
+                    cmd_item("completed", Some(0), "222"),
+                ]);
+                assert_eq!(
+                    outcome_of(&k, "bg"),
+                    [
+                        ToolOutcome::Started,
+                        if exit == 0 {
+                            ToolOutcome::Ok
+                        } else {
+                            ToolOutcome::Err
+                        }
+                    ]
+                );
+                assert!(un.is_empty(), "{un:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn background_group_poll_and_stop_leave_other_command_running() {
+        for exit in [0, 1] {
+            let mut parser = CodexParser::new(SID);
+            let (events, un) = feed_events(
+                &mut parser,
+                &[
+                    exec(
+                        "bg",
+                        "text(await tools.exec_command({cmd:\"x\"})); text(await tools.exec_command({cmd:\"y\"}));",
+                    ),
+                    exec_out(
+                        "bg",
+                        &[
+                            "Script completed\n",
+                            r#"{"session_id":111}"#,
+                            r#"{"session_id":222}"#,
+                        ],
+                    ),
+                    exec("poll", "text(await tools.write_stdin({session_id:222}))"),
+                    exec_out("poll", &["Script completed\n", r#"{"session_id":222}"#]),
+                    exec(
+                        "stop",
+                        r#"text(await tools.write_stdin({session_id:111,chars:"\u0003"}))"#,
+                    ),
+                    cmd_item("failed", Some(130), "111"),
+                    exec_out("stop", &["Script completed\n"]),
+                ],
+            );
+            assert!(un.is_empty(), "{un:?}");
+            let kinds: Vec<_> = events.into_iter().map(|e| e.kind).collect();
+            assert_eq!(outcome_of(&kinds, "bg"), [ToolOutcome::Started]);
+            let (events, un) =
+                feed_events(&mut parser, &[cmd_item("completed", Some(exit), "222")]);
+            assert!(un.is_empty(), "{un:?}");
+            let kinds: Vec<_> = events.into_iter().map(|e| e.kind).collect();
+            assert_eq!(
+                outcome_of(&kinds, "bg"),
+                [if exit == 0 {
+                    ToolOutcome::Unknown
+                } else {
+                    ToolOutcome::Err
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn background_group_can_stop_several_sessions_together() {
+        for stop_failed in [false, true] {
+            let mut parser = CodexParser::new(SID);
+            let (events, un) = feed_events(
+                &mut parser,
+                &[
+                    exec(
+                        "bg",
+                        "text(await tools.exec_command({cmd:\"x\"})); text(await tools.exec_command({cmd:\"y\"})); text(await tools.exec_command({cmd:\"z\"}));",
+                    ),
+                    exec_out(
+                        "bg",
+                        &[
+                            "Script completed\n",
+                            r#"{"session_id":111}"#,
+                            r#"{"session_id":222}"#,
+                            r#"{"session_id":333}"#,
+                        ],
+                    ),
+                    exec(
+                        "stop",
+                        r#"text(await tools.write_stdin({session_id:111,chars:"\u0003"})); text(await tools.write_stdin({session_id:222,chars:"\u0003"}));"#,
+                    ),
+                    cmd_item("failed", Some(130), "111"),
+                    cmd_item("failed", Some(130), "222"),
+                    exec_out(
+                        "stop",
+                        &[if stop_failed {
+                            "Script failed\n"
+                        } else {
+                            "Script completed\n"
+                        }],
+                    ),
+                ],
+            );
+            assert!(un.is_empty(), "{un:?}");
+            let kinds: Vec<_> = events.into_iter().map(|e| e.kind).collect();
+            assert_eq!(outcome_of(&kinds, "bg"), [ToolOutcome::Started]);
+            let (events, un) = feed_events(&mut parser, &[cmd_item("completed", Some(0), "333")]);
+            assert!(un.is_empty(), "{un:?}");
+            let kinds: Vec<_> = events.into_iter().map(|e| e.kind).collect();
+            assert_eq!(
+                outcome_of(&kinds, "bg"),
+                [if stop_failed {
+                    ToolOutcome::Err
+                } else {
+                    ToolOutcome::Unknown
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn background_group_from_cell_wait_releases_process_ids_when_done() {
+        let (k, un) = feed(&[
+            exec(
+                "bg",
+                "text(await tools.exec_command({cmd:\"x\"})); text(await tools.exec_command({cmd:\"y\"}));",
+            ),
+            exec_out("bg", &["Script running with cell ID 7\n"]),
+            func("wait", "wait", json!({"cell_id":"7"})),
+            rec(
+                "response_item",
+                json!({"type":"function_call_output", "call_id":"wait", "output":[
+                    {"type":"input_text","text":"Script completed\n"},
+                    {"type":"input_text","text":r#"{"session_id":111}"#},
+                    {"type":"input_text","text":r#"{"session_id":222}"#}
+                ]}),
+            ),
+            cmd_item("failed", Some(1), "111"),
+            cmd_item("completed", Some(0), "222"),
+            exec(
+                "healthy",
+                "text(await tools.exec_command({cmd:\"cargo test\"}))",
+            ),
+            cmd_item("completed", Some(0), "111"),
+            exec_out("healthy", &["Script completed\n"]),
+        ]);
+        assert_eq!(
+            outcome_of(&k, "bg"),
+            [ToolOutcome::Started, ToolOutcome::Err]
+        );
+        assert_eq!(outcome_of(&k, "healthy"), [ToolOutcome::Ok]);
         assert!(un.is_empty(), "{un:?}");
     }
 

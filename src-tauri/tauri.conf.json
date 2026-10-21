@@ -40,6 +40,11 @@
     "icon": [
       "icons/icon.ico"
     ],
+    "resources": {
+      "../LICENSE": "licenses/LICENSE-MIT.txt",
+      "../design/fonts/LICENSE-IBM-Plex.txt": "licenses/LICENSE-IBM-Plex.txt",
+      "../design/fonts/LICENSE-Galmuri.txt": "licenses/LICENSE-Galmuri.txt"
+    },
     "windows": {
       "nsis": {
         "languages": [

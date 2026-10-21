@@ -449,6 +449,222 @@ fn codex_escalated_call_waits_at_the_door_after_35s() {
 }
 
 #[test]
+fn state_alignment_escalated_call_survives_parallel_calls() {
+    let mut s = Sim {
+        team: Team::new(MAIN, Product::CodexApp, t0()),
+        cues: Vec::new(),
+    };
+    s.on(
+        MAIN,
+        0,
+        call(
+            "a",
+            ToolKind::Shell,
+            ToolSummary {
+                escalated: true,
+                ..cmd("npm install")
+            },
+        ),
+    )
+    .on(MAIN, 5, call("b", ToolKind::Shell, cmd("cargo build")))
+    .tick(40);
+    is(
+        s.boss(),
+        Room::Door,
+        "`npm install` 결재판 들고 문 앞 대기 중인 듯",
+        Inferred,
+    );
+    assert_eq!(s.boss().activity.since, at(35));
+    assert!(s.team.asking(s.boss(), at(40)));
+    assert!(s.team.needs_boss(s.boss(), at(40)));
+    s.on(MAIN, 41, text("호출이 진행 중입니다"));
+    is(
+        s.boss(),
+        Room::Door,
+        "`npm install` 결재판 들고 문 앞 대기 중인 듯",
+        Inferred,
+    );
+    assert_eq!(s.boss().activity.since, at(35));
+    s.on(MAIN, 45, result("a", ToolOutcome::Ok));
+    is(
+        s.boss(),
+        Room::Build,
+        "`cargo build` 실행 중 · {elapsed}째",
+        Confirmed,
+    );
+    assert_eq!(s.boss().activity.since, at(5));
+    assert!(!s.team.asking(s.boss(), at(45)));
+    assert!(!s.team.needs_boss(s.boss(), at(45)));
+    for (id, secs, command) in [("c", 46, "npm install"), ("d", 50, "npm update")] {
+        s.on(
+            MAIN,
+            secs,
+            call(
+                id,
+                ToolKind::Shell,
+                ToolSummary {
+                    escalated: true,
+                    ..cmd(command)
+                },
+            ),
+        );
+    }
+    s.tick(90);
+    is(
+        s.boss(),
+        Room::Door,
+        "`npm install` 결재판 들고 문 앞 대기 중인 듯",
+        Inferred,
+    );
+    assert_eq!(s.boss().activity.since, at(81));
+}
+
+#[test]
+fn state_alignment_interim_report_does_not_wait_for_user() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("a", ToolKind::Shell, cmd("cargo build")))
+        .on(MAIN, 1, text("호출이 진행 중입니다"))
+        .tick(10);
+    assert_ne!(s.boss().activity.pose, Pose::Pace);
+    assert!(!s.team.needs_boss(s.boss(), at(10)));
+    assert_eq!(s.boss().waiting_user_since, None);
+    s.on(MAIN, 20, result("a", ToolOutcome::Ok))
+        .on(MAIN, 21, text("확인 부탁드립니다"))
+        .tick(30);
+    assert_eq!(s.boss().activity.pose, Pose::Pace);
+    assert!(s.team.needs_boss(s.boss(), at(30)));
+    assert_eq!(s.boss().waiting_user_since, Some(at(21)));
+}
+
+#[test]
+fn state_alignment_dozing_and_off_clear_waiting_user() {
+    for (secs, phase) in [(4 * 60, TeamPhase::Dozing), (31 * 60, TeamPhase::Off)] {
+        let mut s = Sim::new();
+        if phase == TeamPhase::Off {
+            // 백그라운드 작업이 졸음을 막아 근무에서 바로 퇴근한다.
+            s.on(MAIN, 0, call("bg", ToolKind::Shell, cmd("npm run dev")))
+                .on(MAIN, 0, result("bg", ToolOutcome::Started));
+        }
+        s.on(MAIN, 0, text("확인 부탁드립니다")).tick(secs);
+        assert_eq!(s.team.phase, phase);
+        assert!(!s.team.needs_boss(s.boss(), at(secs)));
+        assert_eq!(s.boss().waiting_user_since, None);
+    }
+}
+
+#[test]
+fn response_timeout_sleeps_at_own_desk_while_coworker_works() {
+    for (waiting, working, room) in [(MAIN, SUB, Room::TeamLead), (SUB, MAIN, Room::Dev)] {
+        let events = [
+            ev(MAIN, 0, child_spawn(SUB)),
+            ev(
+                working,
+                0,
+                call("work", ToolKind::Build, cmd("cargo build")),
+            ),
+            ev(waiting, 0, call("read", ToolKind::FileRead, file("a.rs"))),
+            ev(waiting, 0, result("read", ToolOutcome::Ok)),
+        ];
+        let mut s = Sim {
+            team: replayed(MAIN, &events, at(600)),
+            cues: Vec::new(),
+        };
+        let e = emp(&s.team, waiting);
+        assert_eq!(e.activity.pose, Pose::Duck);
+        assert!(s.team.awaiting(e, at(600)));
+        s.tick(601);
+        let e = emp(&s.team, waiting);
+        is(e, room, "졸고 있는 듯", Inferred);
+        assert_eq!(e.activity.pose, Pose::Sleep);
+        assert_eq!(e.activity.since, at(600));
+        assert_eq!(e.quiet_since, None);
+        assert!(!s.team.needs_boss(e, at(601)));
+        assert!(!s.team.awaiting(e, at(601)));
+        assert_eq!(s.team.phase, TeamPhase::Working);
+        s.tick(900);
+        for other in [
+            replayed(MAIN, &events, at(900)),
+            stepwise(MAIN, &events, at(900)),
+        ] {
+            assert_eq!(final_state(&s.team), final_state(&other));
+            assert_eq!(emp(&other, waiting).activity.pose, Pose::Sleep);
+            assert_eq!(emp(&other, waiting).bubble, emp(&s.team, waiting).bubble);
+        }
+        s.on(
+            waiting,
+            901,
+            call("wake", ToolKind::Shell, cmd("cargo check")),
+        );
+        assert_eq!(emp(&s.team, waiting).activity.room, Room::Build);
+        assert_ne!(emp(&s.team, waiting).activity.pose, Pose::Sleep);
+        assert_eq!(emp(&s.team, waiting).activity.since, at(901));
+        assert_eq!(s.team.phase, TeamPhase::Working);
+    }
+}
+
+#[test]
+fn response_timeout_team_dozes_at_last_employees_deadline() {
+    let events = [
+        ev(MAIN, 0, child_spawn(SUB)),
+        ev(MAIN, 0, call("main", ToolKind::FileRead, file("a.rs"))),
+        ev(MAIN, 0, result("main", ToolOutcome::Ok)),
+        ev(SUB, 10, call("sub", ToolKind::FileRead, file("b.rs"))),
+        ev(SUB, 10, result("sub", ToolOutcome::Ok)),
+    ];
+    let mut s = Sim {
+        team: replayed(MAIN, &events, at(600)),
+        cues: Vec::new(),
+    };
+    assert_eq!(s.boss().activity.pose, Pose::Duck);
+    s.tick(601);
+    is(s.boss(), Room::TeamLead, "졸고 있는 듯", Inferred);
+    assert_eq!(s.boss().activity.since, at(600));
+    assert_eq!(s.team.phase, TeamPhase::Working);
+    s.tick(610);
+    assert_eq!(s.sub().activity.pose, Pose::Duck);
+    assert_eq!(s.team.phase, TeamPhase::Working);
+    s.tick(611);
+    assert_eq!(s.team.phase, TeamPhase::Dozing);
+    is(s.boss(), Room::Pantry, "졸음", Confirmed);
+    is(s.sub(), Room::Dev, "졸고 있는 듯", Inferred);
+    for e in &s.team.employees {
+        assert_eq!(e.activity.pose, Pose::Sleep);
+        assert_eq!(e.activity.since, at(610));
+        assert_eq!(e.quiet_since, None);
+        assert!(!s.team.needs_boss(e, at(611)));
+    }
+    s.tick(900);
+    for other in [
+        replayed(MAIN, &events, at(900)),
+        stepwise(MAIN, &events, at(900)),
+    ] {
+        assert_eq!(final_state(&s.team), final_state(&other));
+        assert!(
+            other
+                .employees
+                .iter()
+                .all(|e| e.activity.pose == Pose::Sleep)
+        );
+    }
+    s.on(
+        MAIN,
+        901,
+        EventKind::UserMessage {
+            text: "계속".into(),
+        },
+    )
+    .tick(904);
+    assert_eq!(s.team.phase, TeamPhase::Working);
+    assert_eq!(s.boss().activity.room, Room::TeamLead);
+    assert_eq!(s.boss().activity.pose, Pose::Think);
+    assert_eq!(s.boss().activity.since, at(901));
+    s.on(SUB, 905, call("wake", ToolKind::FileEdit, file("b.rs")));
+    assert_eq!(s.sub().activity.room, Room::Dev);
+    assert_ne!(s.sub().activity.pose, Pose::Sleep);
+    assert_eq!(s.sub().activity.since, at(905));
+}
+
+#[test]
 fn night_and_pizza() {
     let kst = FixedOffset::east_opt(9 * 3600).unwrap();
     let mut team = Team::new(MAIN, Product::ClaudeCli, t0());

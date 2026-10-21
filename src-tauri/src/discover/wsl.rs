@@ -4,9 +4,13 @@
 //! 그래서 UNC 루트는 `roots` 주입 함수로만 얻고, 켜졌다고 확인된 배포판에만 부른다.
 
 use std::fs;
+use std::io::Read;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, WIN32_ERROR};
 use windows_sys::Win32::System::Registry::{
@@ -238,10 +242,10 @@ pub(super) fn discover_with_candidates() -> (Vec<WslDistro>, Vec<Candidate>) {
     let mut candidates = Vec::new();
     let distros = find_distros_reporting(
         &read_lxss(),
-        &|| run_wsl(&["-l", "--running", "-q"]).map(|b| parse_running(&b)),
+        &|| run_wsl(&["-l", "--running", "-q"], RUNNING_LIMIT).map(|b| parse_running(&b)),
         &unc_roots,
         &|name| {
-            run_wsl(&["-d", name, "--", "printenv"])
+            run_wsl(&["-d", name, "--", "printenv"], PRINTENV_LIMIT)
                 .map(|b| String::from_utf8_lossy(&b).into_owned())
         },
         &mut candidates,
@@ -260,20 +264,68 @@ fn unc_roots(name: &str) -> Vec<PathBuf> {
     ]
 }
 
-// ponytail: wsl.exe 가 멈추면 호출 스레드도 멈춘다, T12 호스트별 스레드에서 감시자가 필요해지면 타임아웃을 단다
-fn run_wsl(args: &[&str]) -> Option<Vec<u8>> {
+const RUNNING_LIMIT: Duration = Duration::from_secs(10);
+const PRINTENV_LIMIT: Duration = Duration::from_secs(20);
+const POLL: Duration = Duration::from_millis(20);
+
+fn run_wsl(args: &[&str], limit: Duration) -> Option<Vec<u8>> {
     // 현재 폴더나 PATH 앞쪽의 다른 wsl.exe 를 집지 않도록 System32 를 직접 가리킨다
     let exe = PathBuf::from(std::env::var_os("SystemRoot")?).join(r"System32\wsl.exe");
-    let out = Command::new(exe)
+    run_bounded(&exe, args, limit)
+}
+
+/// 성공 종료한 프로세스의 stdout. 실패·상한 초과는 None
+// wsl.exe 가 멈추면 이 함수를 부르는 기동 스레드와 Probe 스레드가 같이 멈추므로 상한을 둔다
+fn run_bounded(exe: &Path, args: &[&str], limit: Duration) -> Option<Vec<u8>> {
+    let mut child = Command::new(exe)
         .args(args)
         // WSL_UTF8=1 이면 -l 출력이 UTF-8 로 바뀐다
         .env_remove("WSL_UTF8")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         // 창 없는 앱에서 콘솔 창이 깜빡이지 않게
         .creation_flags(CREATE_NO_WINDOW)
-        .output()
+        .spawn()
         .ok()?;
-    out.status.success().then_some(out.stdout)
+    let deadline = Instant::now() + limit;
+    // 파이프가 차서 자식이 멈추지 않도록 종료를 기다리는 동안 따로 읽는다
+    let mut stdout = child.stdout.take()?;
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = tx.send(stdout.read_to_end(&mut buf).map(|_| buf));
+    });
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break Some(s),
+            Ok(None) if Instant::now() < deadline => thread::sleep(POLL),
+            Ok(None) => break None,
+            Err(_) => {
+                let _ = child.kill();
+                return None;
+            }
+        }
+    };
+    // 자식이 끝나도 손자 프로세스가 파이프를 쥐고 있으면 EOF 가 늦으므로 남은 시간만 기다린다
+    let done = status.and_then(|s| {
+        let out = rx
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .ok()?;
+        Some((s, out))
+    });
+    let Some((status, out)) = done else {
+        let _ = child.kill();
+        let name = exe.file_name().unwrap_or_default().to_string_lossy();
+        crate::oplog_once!(
+            "{name} {} 응답 없음 ({}초), 건너뜀",
+            args.join(" "),
+            limit.as_secs()
+        );
+        return None;
+    };
+    let out = out.ok()?;
+    status.success().then_some(out)
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -614,5 +666,61 @@ mod tests {
             &|_| Some("CODEX_HOME=/../escape\n".into()),
         );
         assert!(got[0].sites.is_empty());
+    }
+
+    fn system32(exe: &str) -> PathBuf {
+        PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("System32")
+            .join(exe)
+    }
+
+    #[test]
+    fn bounded_run_returns_stdout_only_on_success() {
+        let cmd = system32("cmd.exe");
+        let limit = Duration::from_secs(10);
+        assert_eq!(
+            run_bounded(&cmd, &["/c", "echo", "hi"], limit).as_deref(),
+            Some(&b"hi\r\n"[..])
+        );
+        assert_eq!(run_bounded(&cmd, &["/c", "exit", "1"], limit), None);
+    }
+
+    #[test]
+    fn bounded_run_gives_up_at_limit() {
+        let started = Instant::now();
+        let got = run_bounded(
+            &system32("PING.EXE"),
+            &["-n", "30", "127.0.0.1"],
+            Duration::from_secs(1),
+        );
+        let took = started.elapsed();
+        assert_eq!(got, None);
+        assert!(took >= Duration::from_secs(1), "{took:?}");
+        assert!(took < Duration::from_secs(3), "{took:?}");
+    }
+
+    #[test]
+    fn bounded_run_reads_output_larger_than_pipe_buffer() {
+        let got = run_bounded(
+            &system32("cmd.exe"),
+            &[
+                "/c",
+                "for",
+                "/l",
+                "%i",
+                "in",
+                "(1,1,20000)",
+                "do",
+                "@echo",
+                "0123456789abcdef",
+            ],
+            Duration::from_secs(30),
+        )
+        .expect("파이프가 차도 끝까지 읽는다");
+        assert_eq!(got.len(), 20000 * 18);
+        assert!(
+            got.chunks(18)
+                .all(|line| line == &b"0123456789abcdef\r\n"[..])
+        );
     }
 }

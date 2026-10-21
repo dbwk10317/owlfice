@@ -34,6 +34,8 @@ export interface SidebarOptions {
   getWidth?: () => number;
   /** 행의 상세 버튼 (세션 상세를 연다). opener 는 닫을 때 초점이 돌아갈 버튼 */
   onDetail?: (officeId: string, teamId: string, name: string, opener: HTMLElement) => void;
+  /** 간판의 회사 이름. 없으면 기본 이름 */
+  companyName?: string;
 }
 
 type SidebarMode = "full" | "rail" | "select";
@@ -545,7 +547,7 @@ export function mountSidebar(
   logo.alt = "";
   const brandSub = mk(doc, "span", "ow-brand__sub", phrases.app.brandSub);
   const brandText = mk(doc, "span", "ow-brand__text");
-  brandText.append(mk(doc, "b", "ow-brand__name", phrases.app.brand), brandSub);
+  brandText.append(mk(doc, "b", "ow-brand__name", opts.companyName ?? phrases.app.brand), brandSub);
   brand.append(logo, brandText);
   const listEl = mk(doc, "div", "ow-sidebar__list");
   // ponytail: 바닥의 "지금 다시 찾기" 버튼은 재탐색 커맨드가 없어 뺐다, IPC 가 생기면 붙인다

@@ -83,7 +83,7 @@ function isNote(s: StartupSummary): boolean {
   return s.kind === "WslOff" || s.kind === "WslFail" || s.kind === "SettingsBroken";
 }
 
-function doneText(step: number, s: StartupSummary): string {
+function doneText(step: number, s: StartupSummary, company: string): string {
   const tpl = L.steps[step - 1].done;
   switch (s.kind) {
     case "Candidates":
@@ -95,7 +95,8 @@ function doneText(step: number, s: StartupSummary): string {
     case "Hired":
       return fill(tpl, { n: s.n, b: s.bujang, g: s.gwajang, d: s.daeri, s: s.sawon });
     default:
-      return tpl;
+      // 1단계 "사명: {company}". 다른 단계 틀에는 이 칸이 없다
+      return fill(tpl, { company });
   }
 }
 
@@ -204,8 +205,17 @@ function buildBuilding(sheet: LoadingSheet | undefined): Building {
   };
 }
 
-/** 화면을 그리고 7단계가 끝나(또는 건너뛰어) 메인으로 넘어갈 때 풀린다. sheet 가 없으면 건물 없이 글만 */
-export function showLoading(root: HTMLElement, io: LoadingIo, sheet?: LoadingSheet): Promise<void> {
+/**
+ * 화면을 그리고 7단계가 끝나(또는 건너뛰어) 메인으로 넘어갈 때 풀린다. sheet 가 없으면 건물 없이 글만.
+ * companyName 은 1단계 완료 줄의 사명. 없으면 기본 이름
+ */
+export function showLoading(
+  root: HTMLElement,
+  io: LoadingIo,
+  sheet?: LoadingSheet,
+  companyName?: string,
+): Promise<void> {
+  const company = companyName ?? phrases.app.brand;
   const random = io.random ?? Math.random;
   const start = Date.now();
   const rows: Row[] = L.steps.map((s) => ({
@@ -276,7 +286,8 @@ export function showLoading(root: HTMLElement, io: LoadingIo, sheet?: LoadingShe
         const s = r.summary ?? { kind: "None" as const };
         const failed = r.state === "error";
         // 세션 폴더를 하나도 못 찾은 3단계는 임대 문구 대신 3.9 의 말을 쓴다
-        const text = s.kind === "NoFolders" ? phrases.empty.noFoldersTitle : doneText(step, s);
+        const text =
+          s.kind === "NoFolders" ? phrases.empty.noFoldersTitle : doneText(step, s, company);
         paint(
           stepEls[i],
           `${r.state}|${text}`,

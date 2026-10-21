@@ -1,5 +1,5 @@
 //! 설정 파일 `settings.json` (PLAN 4.8 `get_settings`/`set_settings`).
-//! 지금은 규모만 안다. 모르는 칸(T30 이후의 설정, 새 버전이 쓴 칸)은 읽은 대로 두고 다시 쓴다.
+//! 지금은 규모와 회사 이름만 안다. 모르는 칸(T30 이후의 설정, 새 버전이 쓴 칸)은 읽은 대로 두고 다시 쓴다.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -32,6 +32,15 @@ fn lock(m: &Mutex<Inner>) -> MutexGuard<'_, Inner> {
 
 fn scale_of(g: &Inner) -> Option<Scale> {
     serde_json::from_value(g.map.get("scale")?.clone()).ok()
+}
+
+/// 회사 이름 상한 (PLAN 3.8 0단계). 글자(char) 수로 센다
+const COMPANY_MAX: usize = 20;
+
+/// 앞뒤 공백을 떼고 상한까지 자른다. 비면 None (기본 이름)
+fn company_of(s: &str) -> Option<String> {
+    let s: String = s.trim().chars().take(COMPANY_MAX).collect();
+    (!s.is_empty()).then_some(s)
 }
 
 impl SettingsBook {
@@ -84,6 +93,25 @@ impl SettingsBook {
         let bytes = serde_json::to_vec_pretty(&g.map)?;
         write_atomic(&g.path, &bytes)
     }
+
+    /// 저장된 회사 이름. 없으면 None 이고 기본 이름은 프론트가 정한다. 손으로 고친 파일도 같은 규칙으로 읽는다
+    pub fn company_name(&self) -> Option<String> {
+        company_of(lock(&self.inner).map.get("company_name")?.as_str()?)
+    }
+
+    /// None 이나 공백뿐이면 키를 지운다(기본 이름). 메모리·저장 실패는 set_scale 과 같다
+    pub fn set_company_name(&self, name: Option<&str>) -> io::Result<()> {
+        let mut g = lock(&self.inner);
+        match name.and_then(company_of) {
+            Some(n) => g.map.insert("company_name".into(), n.into()),
+            None => g.map.remove("company_name"),
+        };
+        if !g.writable {
+            return Err(unwritable(&g.path));
+        }
+        let bytes = serde_json::to_vec_pretty(&g.map)?;
+        write_atomic(&g.path, &bytes)
+    }
 }
 
 #[cfg(test)]
@@ -118,6 +146,53 @@ mod tests {
         assert_eq!(v["scale"], "Small");
         assert_eq!(v["sound"]["on"], true);
         assert_eq!(v["future"][1], 2);
+    }
+
+    /// 이름은 다듬어 저장되고 다시 열어도 같다. 다른 칸은 그대로 남는다
+    #[test]
+    fn saves_and_restores_company_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("settings.json"),
+            r#"{"scale":"Small","future":1}"#,
+        )
+        .unwrap();
+        let b = SettingsBook::load(dir.path());
+        assert_eq!(b.company_name(), None);
+        b.set_company_name(Some("  야근상사 ")).unwrap();
+        let again = SettingsBook::load(dir.path());
+        assert_eq!(again.company_name().as_deref(), Some("야근상사"));
+        assert_eq!(again.scale(), Some(Scale::Small));
+        assert_eq!(read(dir.path())["future"], 1);
+    }
+
+    /// 빈 문자열·공백뿐·None 은 키를 지워 기본 이름으로 돌아간다. 다른 칸은 그대로
+    #[test]
+    fn empty_company_name_removes_key() {
+        for empty in [Some(""), Some("   "), None] {
+            let dir = tempfile::tempdir().unwrap();
+            let b = SettingsBook::load(dir.path());
+            b.set_scale(Scale::Large).unwrap();
+            b.set_company_name(Some("야근상사")).unwrap();
+            b.set_company_name(empty).unwrap();
+            assert_eq!(b.company_name(), None, "{empty:?}");
+            let v = read(dir.path());
+            assert!(v.get("company_name").is_none(), "{empty:?}");
+            assert_eq!(v["scale"], "Large", "{empty:?}");
+        }
+    }
+
+    /// 20자 넘는 이름은 글자 수로 20자에서 잘라 저장한다
+    #[test]
+    fn long_company_name_is_cut_to_20_chars() {
+        let dir = tempfile::tempdir().unwrap();
+        let b = SettingsBook::load(dir.path());
+        b.set_company_name(Some(&"가".repeat(21))).unwrap();
+        assert_eq!(read(dir.path())["company_name"], "가".repeat(20));
+        assert_eq!(
+            SettingsBook::load(dir.path()).company_name(),
+            Some("가".repeat(20))
+        );
     }
 
     #[test]

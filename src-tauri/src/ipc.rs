@@ -47,6 +47,8 @@ pub struct OfficeListDto {
 pub struct SettingsDto {
     /// 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
     pub scale: Option<Scale>,
+    /// 저장된 회사 이름. 없으면 null 이고 프론트가 기본 이름을 쓴다. 보낼 때 ""(공백뿐)는 기본으로 되돌린다
+    pub company_name: Option<String>,
 }
 
 /// `get_world_snapshot` 반환. 목록 필드를 그대로 품어 store 가 목록처럼 받는다
@@ -948,22 +950,31 @@ pub fn get_world_snapshot(ipc: State<'_, Arc<Ipc>>) -> WorldDto {
 /// 저장이 실패해도 이번 실행의 설정은 바뀐다. 에러는 저장 실패를 알린다.
 /// 규모가 바뀌면 world 가 재배치하고(4.7.9) 발행기가 rebuilt 로 낸다
 pub fn apply_settings(ipc: &Ipc, book: &SettingsBook, dto: SettingsDto) -> Result<(), String> {
-    let Some(scale) = dto.scale else {
-        return Ok(());
-    };
-    // 동시에 두 번 불려도 파일과 실행 중 world 가 같은 값이 되게 world 락 안에서 함께 한다 (락 순서 world → settings)
-    let mut world = lock(&ipc.world);
-    let saved = book.set_scale(scale);
-    world.set_scale(scale);
-    drop(world);
+    let mut saved = Ok(());
+    if let Some(scale) = dto.scale {
+        // 동시에 두 번 불려도 파일과 실행 중 world 가 같은 값이 되게 world 락 안에서 함께 한다 (락 순서 world → settings)
+        let mut world = lock(&ipc.world);
+        saved = book.set_scale(scale);
+        world.set_scale(scale);
+    }
+    if let Some(name) = dto.company_name {
+        // 앞 칸의 저장이 실패해도 이 칸은 메모리에 반영한다
+        saved = saved.and(book.set_company_name(Some(&name)));
+    }
     saved.map_err(|e| format!("설정을 저장하지 못했습니다: {e}"))
+}
+
+/// `get_settings` 의 몸통. 테스트가 State 없이 부른다
+pub fn settings_dto(book: &SettingsBook) -> SettingsDto {
+    SettingsDto {
+        scale: book.scale(),
+        company_name: book.company_name(),
+    }
 }
 
 #[tauri::command]
 pub fn get_settings(settings: State<'_, Arc<SettingsBook>>) -> SettingsDto {
-    SettingsDto {
-        scale: settings.scale(),
-    }
+    settings_dto(&settings)
 }
 
 #[tauri::command]

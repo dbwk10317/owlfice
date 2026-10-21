@@ -62,6 +62,29 @@
   font-size: 14px;
   color: var(--ow-ink-2);
 }
+.sc__company {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ow-ink-2);
+}
+.sc__company input {
+  width: 220px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--ow-line);
+  background: var(--ow-bg);
+  font: inherit;
+  color: var(--ow-ink);
+}
+.sc__company input::placeholder {
+  color: var(--ow-ink-3);
+}
+.sc__company input:focus-visible {
+  outline: none;
+  border-color: var(--ow-ink);
+}
 .sc__opts {
   display: flex;
   flex-wrap: wrap;

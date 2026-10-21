@@ -30,21 +30,23 @@ function el(tag: string, cls: string, text?: string): HTMLElement {
   return e;
 }
 
-/** 화면을 그리고 고른 규모로 풀린다. sheet 가 없으면 그림 없이 글만 */
-export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Promise<Scale> {
+export type ScaleChoice = { scale: Scale; companyName: string | null };
+
+/** 화면을 그리고 고른 규모와 입력한 회사 이름(비면 null)으로 풀린다. sheet 가 없으면 그림 없이 글만 */
+export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Promise<ScaleChoice> {
   const t = phrases.onboarding;
   const { app } = phrases;
-  let finish!: (scale: Scale) => void;
-  const done = new Promise<Scale>((resolve) => (finish = resolve));
+  let finish!: (choice: ScaleChoice) => void;
+  const done = new Promise<ScaleChoice>((resolve) => (finish = resolve));
   // 저장이 실패해도 백엔드는 이번 실행에 반영하므로 그대로 진행한다
   async function choose(scale: Scale): Promise<void> {
-    const dto: SettingsDto = { scale };
+    const dto: SettingsDto = { scale, companyName: input.value.trim() || null };
     try {
       await invoke("set_settings", { dto });
     } catch (e) {
       console.error("set_settings", e);
     }
-    finish(scale);
+    finish({ scale, companyName: dto.companyName });
   }
   const page = el("main", "sc");
 
@@ -57,6 +59,15 @@ export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Pro
   const title = el("h1", "", t.title);
   title.id = "sc-title";
   head.append(title, el("p", "", t.body));
+
+  // 폼이 아니라 Enter 는 아무것도 하지 않는다. 규모를 골라야 끝난다
+  const company = el("label", "sc__company", t.companyLabel);
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 20;
+  input.placeholder = app.brand;
+  input.autocomplete = "organization";
+  company.append(input);
 
   const group = el("div", "sc__opts");
   group.setAttribute("role", "group");
@@ -82,8 +93,15 @@ export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Pro
 
   const building = sprite(sheet, "building/base", 2);
   building?.classList.add("sc__building");
-  page.append(brand, ...(building ? [building] : []), head, group, el("p", "sc__foot", t.footnote));
+  page.append(
+    brand,
+    ...(building ? [building] : []),
+    head,
+    company,
+    group,
+    el("p", "sc__foot", t.footnote),
+  );
   root.replaceChildren(page);
-  buttons[0].focus();
+  input.focus();
   return done;
 }

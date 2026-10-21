@@ -67,7 +67,7 @@ test("처음엔 7단계가 순서대로 빈 원과 기본 문구로 보이고, �
     ev(5, "Running"),
   );
   const t = m.text();
-  expect(t[0]).toBe(L.steps[0].done);
+  expect(t[0]).toBe("법인 등기 완료 (사명: Owlfice)");
   expect(t[1]).toBe("후보지 2곳 확인 (Windows, WSL Rocky-9)");
   expect(t[2]).toBe("Windows Claude · WSL Rocky-9 Codex 임대 계약 완료");
   expect(t[3]).toBe("불 켜진 팀 4곳");

@@ -536,6 +536,7 @@ fn set_settings_scale_rebuilds_and_failed_save_still_applies() {
     let book = SettingsBook::load(dir.path());
     let small = SettingsDto {
         scale: Some(Scale::Small),
+        ..SettingsDto::default()
     };
     // 빈 칸은 건드리지 않는다
     apply_settings(&e.ipc, &book, SettingsDto::default()).unwrap();
@@ -554,10 +555,45 @@ fn set_settings_scale_rebuilds_and_failed_save_still_applies() {
     let broken = SettingsBook::load(&file);
     let large = SettingsDto {
         scale: Some(Scale::Large),
+        ..SettingsDto::default()
     };
     assert!(apply_settings(&e.ipc, &broken, large).is_err());
     assert_eq!(broken.scale(), Some(Scale::Large));
     assert!(e.ipc.poll(&mut sent, now).0.unwrap().scale == Scale::Large);
+}
+
+/// 규모 없이 이름만 보내도 저장되고 규모는 그대로다. "" 는 기본 이름으로 되돌린다
+#[test]
+fn set_settings_company_name_alone() {
+    let e = env(Scale::Large);
+    let now = t0();
+    let mut sent = Sent::default();
+    e.ipc.poll(&mut sent, now);
+    let dir = tempfile::tempdir().unwrap();
+    let book = SettingsBook::load(dir.path());
+    book.set_scale(Scale::Small).unwrap();
+    let name = |n: &str| SettingsDto {
+        company_name: Some(n.into()),
+        ..SettingsDto::default()
+    };
+
+    apply_settings(&e.ipc, &book, name("야근상사")).unwrap();
+    let want = SettingsDto {
+        scale: Some(Scale::Small),
+        company_name: Some("야근상사".into()),
+    };
+    assert_eq!(settings_dto(&SettingsBook::load(dir.path())), want);
+    // 규모를 건드리지 않았으니 재배치도 없다
+    assert!(e.ipc.poll(&mut sent, now).0.is_none());
+
+    // 빈 칸(null)은 이름을 건드리지 않는다
+    apply_settings(&e.ipc, &book, SettingsDto::default()).unwrap();
+    assert_eq!(settings_dto(&book), want);
+
+    apply_settings(&e.ipc, &book, name("")).unwrap();
+    let dto = settings_dto(&SettingsBook::load(dir.path()));
+    assert_eq!(dto.company_name, None);
+    assert_eq!(dto.scale, Some(Scale::Small));
 }
 
 /// 중소기업 사무실의 연출에는 어느 팀 것인지 실린다

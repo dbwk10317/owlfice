@@ -335,7 +335,11 @@ export type SettingsDto = {
 /**
  * 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
  */
-scale: Scale | null, };
+scale: Scale | null, 
+/**
+ * 저장된 회사 이름. 없으면 null 이고 프론트가 기본 이름을 쓴다. 보낼 때 ""(공백뿐)는 기본으로 되돌린다
+ */
+companyName: string | null, };
 
 export type StepState = "Running" | "Done" | "Warn" | "Error";
 

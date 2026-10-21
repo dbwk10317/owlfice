@@ -49,7 +49,7 @@ async function loadSheet(): Promise<LoadingSheet | undefined> {
 }
 
 /** 사이드바 · 가운데(머리말 + 무대) · 현황판 (HANDOFF 2.1). 창 너비 구간은 header 가 app.dataset.layout 으로 정한다 */
-function mountShell(): void {
+function mountShell(companyName: string | undefined): void {
   const el = (tag: string, cls = "") => {
     const e = document.createElement(tag);
     e.className = cls;
@@ -98,10 +98,12 @@ function mountShell(): void {
     },
   });
   mountSidebar(side, store, requestSelect, {
+    companyName,
     onDetail: (officeId, teamId, name, opener) =>
       openSessionDetail({ invoke, live }, { officeId, teamId, name }, opener),
   }); // 머리말이 띠를 찾으니 먼저
   header = mountHeader(app, headerEl, store, {
+    companyName,
     bandSlot: () => side.querySelector<HTMLElement>(".ow-side-band"),
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
@@ -136,10 +138,15 @@ async function start(): Promise<void> {
   const settings = await invoke<SettingsDto>("get_settings");
   const root = document.body.appendChild(document.createElement("div"));
   const sheet = await loadSheet();
-  if (!settings.scale) await showScale(root, invoke, sheet);
-  await showLoading(root, { invoke, listen }, sheet);
+  // 회사 이름은 여기서 한 번 정해 로딩·간판·머리말에 넘긴다. 없으면 각자 기본 이름.
+  // 빈 입력은 set_settings 에서 "건드리지 않음"이라 저장된 이름이 남는다. 화면도 그 이름을 쓴다
+  const name = settings.scale
+    ? settings.companyName
+    : ((await showScale(root, invoke, sheet)).companyName ?? settings.companyName);
+  const companyName = name ?? undefined;
+  await showLoading(root, { invoke, listen }, sheet, companyName);
   root.remove();
-  mountShell();
+  mountShell(companyName);
   // 구독을 먼저 걸어야 스냅샷과 첫 이벤트 사이의 변경을 놓치지 않는다 (PLAN 4.3 시작 순서)
   await Promise.all([
     listen<OfficeListDto>("office-list", (e) => store.applyList(e.payload)),

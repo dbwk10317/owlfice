@@ -169,6 +169,19 @@ test("빈 목록이면 안내 문구를 보인다", () => {
   s.dispose();
 });
 
+test("간판은 넘겨받은 회사 이름, 없으면 기본 이름이다", () => {
+  const store = createStore<OfficeListDto, OfficeDto>();
+  const name = (opts: SidebarOptions) => {
+    const root = document.createElement("div");
+    const dispose = mountSidebar(root, store, () => {}, { getWidth: () => 1200, ...opts });
+    const text = byClass(root, "ow-brand__name")[0].textContent;
+    dispose();
+    return text;
+  };
+  expect(name({ companyName: "야근상사" })).toBe("야근상사");
+  expect(name({})).toBe("Owlfice");
+});
+
 test("행을 누르면 store 선택과 select_office 를 부른다", () => {
   const s = setup(list([office("101"), office("102")]));
   byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0].click();

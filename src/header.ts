@@ -34,6 +34,8 @@ export interface HeaderOptions {
   bandSlot?(): HTMLElement | null;
   togglePanel(): void;
   setRoomLabels(on: boolean): void;
+  /** 사무실을 안 골랐을 때 제목 "{company} 본사" 의 이름. 없으면 기본 이름 */
+  companyName?: string;
 }
 export interface HeaderHandle {
   roomLabels(): boolean;
@@ -75,6 +77,7 @@ export function mountHeader(
 ): HeaderHandle {
   const doc = header.ownerDocument;
   header.classList.add("ow-header");
+  const hq = fill(H.hq, { company: opts.companyName ?? phrases.app.brand });
 
   const square = mk(doc, "span", "ow-header__square");
   const title = mk(doc, "h1", "ow-header__title");
@@ -132,7 +135,7 @@ export function mountHeader(
       subText = fill(phrases.sidebar.floorMeta, { teams: live.length, people });
     }
     square.style.setProperty("--ow-square", accent);
-    setText(title, sel?.label ?? H.hq);
+    setText(title, sel?.label ?? hq);
     setText(sub, subText);
     sub.hidden = !subText;
     const sessionTitle = large ? (office?.teams[0]?.title ?? sel?.teams[0]?.title ?? "") : "";

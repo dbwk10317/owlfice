@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { createStore } from "./store.ts";
-import { mountSidebar } from "./sidebar-left.ts";
+import { emptyState, mountSidebar } from "./sidebar-left.ts";
 import type {
   Border,
   Dot,
@@ -382,4 +382,12 @@ test("dispose 하면 붙인 요소와 상태를 거둔다", () => {
   s.dispose();
   expect(s.root.children.length).toBe(0);
   expect(s.root.classList.contains("ow-side-host")).toBe(false);
+});
+
+test("빈 상태: 아이콘과 제목·본문이 보인다", () => {
+  const el = emptyState(document, "제목", "본문");
+  expect(el.className).toBe("ow-empty");
+  expect(el.querySelector("svg")).not.toBeNull();
+  expect(el.querySelector("b")!.textContent).toBe("제목");
+  expect(el.textContent).toContain("본문");
 });

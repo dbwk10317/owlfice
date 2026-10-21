@@ -1,5 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import { canvasScale, panLimits, toCss } from "./renderer.ts";
+import type { CueDto, OfficeDto } from "../types/ipc.ts";
+import { canvasScale, cueCollector, panLimits, toCss } from "./renderer.ts";
 
 test("배율은 장치 픽셀 기준 정수, CSS 크기는 백킹 / DPR", () => {
   // 2× 는 1040×640 장치 픽셀이 필요하다 (PLAN 3.2)
@@ -52,4 +53,20 @@ test("DOM 오버레이 좌표 = 1× 좌표 × scale / dpr", () => {
   expect(toCss(260, 180, 2, 1)).toEqual({ left: 520, top: 360 });
   expect(toCss(260, 180, 3, 1.5)).toEqual({ left: 520, top: 360 });
   expect(toCss(100, 50, 1, 1.25)).toEqual({ left: 80, top: 40 });
+});
+
+test("틱 사이에 온 DTO 들의 cue 를 모아 넘기고, sync 에 넘긴 DTO 의 cue 는 다시 넘기지 않는다", () => {
+  const dto = (n: number) =>
+    ({ cues: [{ teamId: "t", kind: "Enter", agent: `a${n}` }] as CueDto[] }) as OfficeDto;
+  const [a, b, c, d] = [dto(1), dto(2), dto(3), dto(4)];
+  const cues = cueCollector();
+  cues.see(a);
+  cues.see(b);
+  cues.see(b);
+  cues.see(c);
+  // c 는 sync 가 직접 본다
+  expect(cues.take(c)).toEqual([...a.cues, ...b.cues]);
+  expect(cues.take(c)).toEqual([]);
+  cues.see(d);
+  expect(cues.take(d)).toEqual([]);
 });

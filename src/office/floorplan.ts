@@ -92,7 +92,7 @@ export function themeOf(building: string | undefined): Theme {
   return "claude";
 }
 
-function roomAt(fp: Floorplan, i: number, j: number): string | undefined {
+export function roomAt(fp: Floorplan, i: number, j: number): string | undefined {
   for (const [key, r] of Object.entries(fp.rooms)) {
     const [a, b, c, d] = r.rect;
     if (a <= i && i < c && b <= j && j < d) return key;

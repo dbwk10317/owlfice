@@ -9,7 +9,7 @@ import {
 } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { ActorLayer, seatProps } from "./actors.ts";
-import type { OfficeDto, OfficeListDto } from "../types/ipc.ts";
+import type { CueDto, OfficeDto, OfficeListDto } from "../types/ipc.ts";
 import {
   CANVAS_H,
   CANVAS_W,
@@ -168,6 +168,29 @@ export function buildScene(
   return { root, lit: [base, world], world, toggled };
 }
 
+/**
+ * 틱 사이에 office-state 가 둘 이상 오면 sync 는 마지막 DTO 만 본다. 앞 DTO 의 cue 를 모아 두었다가 다음 sync 에 넘긴다.
+ * 이미 sync 에 넘긴 DTO 의 cue 는 다시 넘기지 않는다.
+ */
+export function cueCollector() {
+  let earlier: CueDto[] = [];
+  let latest: OfficeDto | null = null;
+  let handled: OfficeDto | null = null;
+  return {
+    see(o: OfficeDto | null): void {
+      if (!o || o === latest) return;
+      if (latest && latest !== handled) earlier.push(...latest.cues);
+      latest = o;
+    },
+    take(o: OfficeDto | null): CueDto[] {
+      const out = earlier;
+      earlier = [];
+      if (o) handled = o;
+      return out;
+    },
+  };
+}
+
 /** store 에서 렌더러가 읽는 부분만. */
 interface OfficeStore {
   state: { list: OfficeListDto | null; selectedId: string | null; office: OfficeDto | null };
@@ -286,7 +309,12 @@ export async function mountOffice(
       buildLabels(kind);
     }
     officeId = office?.officeId ?? "";
-    const placed = actors.sync(office, kind, Date.now());
+    // 사무실을 바꾼 첫 스냅샷, 숨은 창에서 돌아온 스냅샷은 걷지 않고 제자리 (cue 도 버린다)
+    const placed = actors.sync(office, kind, Date.now(), {
+      instant: switched || resumed,
+      earlier: cues.take(office),
+    });
+    resumed = false;
     const props = seatProps(fp, kind, placed);
     for (const [id, s] of scene?.toggled ?? []) s.visible = props.has(id);
     // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
@@ -398,8 +426,11 @@ export async function mountOffice(
   // ---------- 렌더 루프 ----------
   // 스냅샷은 표시만 해 두고 틱에서 한 번 적용한다. 숨은 창에선 틱이 멈춰 마지막 것만 보일 때 적용된다 (PLAN 4.9)
   let dirty = true;
+  let resumed = false;
+  const cues = cueCollector();
   store.subscribe(() => {
     dirty = true;
+    cues.see(store.state.office);
   });
   app.ticker.maxFPS = 60;
   app.ticker.add(
@@ -432,7 +463,11 @@ export async function mountOffice(
   );
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) app.ticker.stop();
-    else app.ticker.start();
+    else {
+      resumed = true;
+      dirty = true;
+      app.ticker.start();
+    }
   });
   measure();
   layout();

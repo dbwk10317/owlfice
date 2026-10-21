@@ -27,6 +27,7 @@ import {
   type OwlMeta,
   type Owls,
 } from "./actors.ts";
+import { CLAP_MS, ENTER_MS, WALK_MAX_MS } from "./anim-queue.ts";
 import { gridToScreen, parseFloorplan, type Kind } from "./floorplan.ts";
 import { toCss } from "./renderer.ts";
 
@@ -345,13 +346,15 @@ test("같은 agent_id 는 액터를 다시 쓰고, 목록에서 빠지면 지운
   layer.sync(o1, "large", NOW);
   const root = layer.rootOf("a")!;
   expect(world.children).toContain(root);
-  // 방이 바뀌어도 같은 컨테이너, 위치만 옮긴다
+  // 방이 바뀌어도 같은 컨테이너, 걸어서 옮긴다
   layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
   expect(layer.rootOf("a")).toBe(root);
+  layer.update(NOW + WALK_MAX_MS);
   expect(root.position.x).toBe(screen(...(fp.stands.test[0] as [number, number])).x);
-  // 외근은 숨기기만 한다
-  layer.sync(office([team("t", [boss(), emp("a", "Outside")])]), "large", NOW);
+  // 외근은 출구까지 걸어가 숨는다
+  layer.sync(office([team("t", [boss(), emp("a", "Outside")])]), "large", NOW + WALK_MAX_MS);
   expect(layer.rootOf("a")).toBe(root);
+  layer.update(NOW + 2 * WALK_MAX_MS);
   expect(root.visible).toBe(false);
   layer.sync(office([team("t", [boss()])]), "large", NOW);
   expect(layer.rootOf("a")).toBeUndefined();
@@ -375,12 +378,13 @@ test("세 겹을 같은 자리에, 수습은 담당 겹을 숨기고 depth 는 z
   expect(root.zIndex).toBe(8900 * 10000 + n + 1);
 });
 
-test("옮겨 가는 방향과 상관없이 뒤집지 않는다 (같은 스냅샷은 같은 모습)", () => {
+test("도착하면 걸어온 방향과 상관없이 뒤집지 않는다 (같은 스냅샷은 같은 모습)", () => {
   const { layer } = newLayer();
-  // 테스트실(x≈350) → 서고(x≈212): 왼쪽으로 옮겨도 그대로
+  // 테스트실(x≈350) → 서고(x≈212): 왼쪽으로 걸었어도 도착하면 그대로
   layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
   const root = layer.rootOf("a")!;
   layer.sync(office([team("t", [boss(), emp("a", "Archive")])]), "large", NOW);
+  layer.update(NOW + WALK_MAX_MS);
   expect(root.scale.x).toBe(1);
 });
 
@@ -620,4 +624,146 @@ test("풀에 없는 키는 그리지 않고 경고는 한 번", () => {
   expect(bubbleText("a", "Daeri", bub(bad))).toBeNull();
   expect(spy).toHaveBeenCalledTimes(1);
   spy.mockRestore();
+});
+
+// ---------- 연출 큐 연결 ----------
+
+const cue = (c: Record<string, unknown>) => ({ teamId: "t", ...c }) as OfficeDto["cues"][number];
+const withCues = (o: OfficeDto, cues: OfficeDto["cues"], rebuilt = false): OfficeDto => ({
+  ...o,
+  cues,
+  rebuilt,
+});
+const posOf = (layer: ActorLayer, id: string) => {
+  const r = layer.rootOf(id)!;
+  return { x: r.position.x, y: r.position.y };
+};
+const DOOR = fp.stands.door[0] as [number, number];
+const SEAT0 = screen(2.75, 6.25);
+
+test("Enter cue 면 문에서 좌석까지 4초 걷고, cue 없이 처음 보는 직원은 제자리", () => {
+  const { layer } = newLayer();
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  const o = office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 }), emp("b", "Test")])]);
+  layer.sync(withCues(o, [cue({ kind: "Enter", agent: "a" })]), "large", NOW);
+  expect(posOf(layer, "a")).toEqual(screen(...DOOR));
+  expect(posOf(layer, "b")).toEqual(screen(...(fp.stands.test[0] as [number, number])));
+  layer.update(NOW + ENTER_MS - 200);
+  expect(posOf(layer, "a")).not.toEqual(SEAT0);
+  layer.update(NOW + ENTER_MS);
+  expect(posOf(layer, "a")).toEqual(SEAT0);
+});
+
+// 프레임마다 다른 텍스처라 어떤 자세를 그렸는지 이름으로 본다
+const labeled: Owls = {
+  textures: Object.fromEntries(
+    Object.keys(owlsJson.frames).map((k) => [k, new Texture({ label: k })]),
+  ) as Record<string, Texture>,
+  meta,
+};
+const bodyOf = (layer: ActorLayer, id: string) =>
+  (layer.rootOf(id)!.children[0] as Sprite).texture.label;
+
+test("같은 스냅샷으로 다시 불려도(목록만 바뀜) cue 를 또 재생하지 않는다", () => {
+  const { layer } = newLayer({ owls: labeled });
+  const sp = speciesOf("boss", meta.employeeSpecies);
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  const o = withCues(office([team("t", [boss()])]), [cue({ kind: "Clap", agent: "boss" })]);
+  layer.sync(o, "large", NOW);
+  expect(bodyOf(layer, "boss")).toBe(`body/${sp}/clap_f_0`);
+  layer.update(NOW + CLAP_MS);
+  expect(bodyOf(layer, "boss")).toBe(`body/${sp}/sit_f_0`);
+  layer.sync(o, "large", NOW + CLAP_MS);
+  expect(bodyOf(layer, "boss")).toBe(`body/${sp}/sit_f_0`);
+});
+
+test("rebuilt·instant 는 큐를 비우고 바로 제자리, rebuilt 의 출근 cue 는 재생한다", () => {
+  const { layer } = newLayer();
+  layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
+  // 걷는 중에 재구성이 오면 바로 서고
+  layer.sync(office([team("t", [boss(), emp("a", "Archive")])]), "large", NOW);
+  layer.sync(
+    withCues(office([team("t", [boss(), emp("a", "Archive")])]), [], true),
+    "large",
+    NOW + 10,
+  );
+  expect(posOf(layer, "a")).toEqual(screen(...(fp.stands.library[0] as [number, number])));
+  // 사무실 전환 첫 스냅샷: 자리가 바뀌어도, cue 가 있어도 걷지 않는다
+  const o = office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 })])]);
+  layer.sync(withCues(o, [cue({ kind: "Rehire", agent: "a" })]), "large", NOW + 20, {
+    instant: true,
+  });
+  expect(posOf(layer, "a")).toEqual(SEAT0);
+  // 방금 시작된 세션의 조용한 재구성: 출근만 연출한다 (PLAN 4.3)
+  const o2 = office([
+    team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 }), emp("c", "Dev", "Type", { seat: 1 })]),
+  ]);
+  layer.sync(withCues(o2, [cue({ kind: "Enter", agent: "c" })], true), "large", NOW + 30);
+  expect(posOf(layer, "c")).toEqual(screen(...DOOR));
+  expect(posOf(layer, "a")).toEqual(SEAT0);
+});
+
+test("Retire: 스냅샷이 숨기면 출구로 걸어가 사라지고, 탕비실이면 탕비실로 걷는다", () => {
+  const { layer } = newLayer();
+  const a = emp("a", "Dev", "Type", { seat: 0 });
+  const b = emp("b", "Dev", "Type", { seat: 1 });
+  layer.sync(office([team("t", [boss(), a, b])]), "large", NOW);
+  const gone = { ...a, activity: { ...a.activity, room: "Outside" as Room } };
+  const rest = { ...b, activity: { ...b.activity, room: "Pantry" as Room, pose: "Sit" as Pose } };
+  layer.sync(
+    withCues(office([team("t", [boss(), gone, rest])]), [
+      cue({ kind: "Retire", agent: "a" }),
+      cue({ kind: "Retire", agent: "b" }),
+    ]),
+    "large",
+    NOW,
+  );
+  expect(layer.rootOf("a")!.visible).toBe(true);
+  layer.update(NOW + WALK_MAX_MS);
+  expect(layer.rootOf("a")!.visible).toBe(false);
+  expect(layer.rootOf("b")!.visible).toBe(true);
+  expect(posOf(layer, "b")).toEqual(screen(...(fp.stands.pantry_console[0] as [number, number])));
+});
+
+test("걷는 동안 walk 8fps, 왼쪽이면 scale.x −1", () => {
+  const { layer } = newLayer({ owls: labeled });
+  layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
+  // 테스트실 → 서고: 통로에서 서고 entry 로 가는 구간은 왼쪽 위
+  layer.sync(office([team("t", [boss(), emp("a", "Archive")])]), "large", NOW);
+  layer.update(NOW + 500);
+  const sp = speciesOf("a", meta.employeeSpecies);
+  expect(bodyOf(layer, "a")).toMatch(new RegExp(`^body/${sp}/walk_b_[0-3]$`));
+  expect(layer.rootOf("a")!.scale.x).toBe(-1);
+});
+
+test("Rehire: 탕비실에 보이던 서브는 있던 자리에서 걷고, 숨어 있던 직원만 문에서 들어온다", () => {
+  const { layer } = newLayer();
+  const b = emp("b", "Pantry", "Sit");
+  const c = emp("c", "Dev", "Type", { seat: 1 });
+  layer.sync(office([team("t", [boss(), b, c])]), "large", NOW);
+  const gone = { ...c, activity: { ...c.activity, room: "Outside" as Room } };
+  layer.sync(office([team("t", [boss(), b, gone])]), "large", NOW);
+  layer.update(NOW + WALK_MAX_MS);
+  expect(layer.rootOf("c")!.visible).toBe(false);
+  const back = {
+    ...b,
+    activity: { ...b.activity, room: "Dev" as Room, pose: "Type" as Pose },
+    seat: 0,
+  };
+  const o = office([team("t", [boss(), back, c])]);
+  layer.sync(
+    withCues(o, [cue({ kind: "Rehire", agent: "b" }), cue({ kind: "Rehire", agent: "c" })]),
+    "large",
+    NOW + WALK_MAX_MS,
+  );
+  expect(posOf(layer, "b")).toEqual(screen(...(fp.stands.pantry_console[0] as [number, number])));
+  expect(posOf(layer, "c")).toEqual(screen(...DOOR));
+});
+
+test("두 sync 사이에 지나간 DTO 의 cue(earlier)도 재생한다", () => {
+  const { layer } = newLayer();
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  const o = office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 })])]);
+  layer.sync(o, "large", NOW, { earlier: [cue({ kind: "Enter", agent: "a" })] });
+  expect(posOf(layer, "a")).toEqual(screen(...DOOR));
 });

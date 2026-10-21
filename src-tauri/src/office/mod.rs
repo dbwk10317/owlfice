@@ -18,7 +18,7 @@ use ts_rs::TS;
 
 use crate::discover::Product;
 use crate::parse::{
-    Confidence, EventKind, TestResult, TodoItem, ToolKind, ToolOutcome, ToolSummary,
+    Confidence, EventKind, TestResult, TodoItem, ToolKind, ToolOutcome, ToolSummary, Unhandled,
 };
 use work::{Role, Touched, WorkTally, WorkType};
 
@@ -412,6 +412,18 @@ pub enum Cue {
         agent: String,
         on: bool,
     },
+    /// 프론트에 안 가는 미대응 기록 (4.11). 재구성이 cue 를 버릴 때 함께 버려져 다시 세지 않게 같은 길로 낸다.
+    /// world 가 outbox 대신 따로 모으고 "cue 가 있었나" 에도 넣지 않는다
+    #[serde(skip)]
+    #[ts(skip)]
+    Unhandled(Unhandled),
+}
+
+impl Cue {
+    /// 프론트 연출인가 (미대응 기록이 아닌가)
+    pub fn shown(&self) -> bool {
+        !matches!(self, Cue::Unhandled(_))
+    }
 }
 
 /// 세션 하나 (4.7). 사무실 합성·좌석은 world 몫이다

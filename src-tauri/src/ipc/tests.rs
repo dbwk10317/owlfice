@@ -453,6 +453,22 @@ fn publisher_emits_on_change_and_drains_cues() {
     lock(&e.world).cue(&a, Cue::Enter { agent: "x".into() });
     let state = e.ipc.poll(&mut sent, now).1.unwrap();
     assert_eq!((state.state_seq, state.cues.len()), (seq, 1));
+
+    // 미대응 기록(4.11)은 office-state 에 실리지 않는다
+    lock(&e.world).cue(
+        &a,
+        Cue::Unhandled(crate::parse::Unhandled::StateConflict {
+            winner: "허가 대기",
+            masked: "보고",
+        }),
+    );
+    lock(&e.world).cue(&a, Cue::Enter { agent: "y".into() });
+    let state = e.ipc.poll(&mut sent, now).1.unwrap();
+    let json = serde_json::to_string(&state).unwrap();
+    assert!(
+        state.cues.len() == 1 && !json.contains("허가 대기"),
+        "{json}"
+    );
 }
 
 /// 서브가 보여 다시 넣은 팀(조용하지 않은 재구성)은 rebuilt 로 나가지 않고 연출도 버리지 않는다.

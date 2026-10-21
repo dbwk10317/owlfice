@@ -176,7 +176,7 @@ impl Diag {
         self.last_flush.get_or_insert(now);
     }
 
-    /// 파서가 낸 미대응 재료
+    /// 파서·상태 기계가 낸 미대응 재료
     pub fn observe_unhandled(&mut self, product: Product, u: &Unhandled, now: DateTime<Utc>) {
         let p = product_name(product);
         let (kind, key, fields) = match u {
@@ -208,6 +208,21 @@ impl Diag {
                 "product_value",
                 format!("{p}:{value}"),
                 json!({"product": p, "value": value}),
+            ),
+            Unhandled::StateConflict { winner, masked } => (
+                "state_conflict",
+                format!("{p}:{winner}>{masked}"),
+                json!({"product": p, "winner": winner, "masked": masked}),
+            ),
+            Unhandled::ScenarioGap {
+                team,
+                from,
+                to,
+                via,
+            } => (
+                "scenario_gap",
+                format!("{}{from}>{to}@{via}", if *team { "team:" } else { "" }),
+                json!({"from": from, "to": to, "via": via}),
             ),
         };
         self.bump(kind, key, now, fields, None);

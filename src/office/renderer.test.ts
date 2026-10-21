@@ -60,13 +60,28 @@ test("틱 사이에 온 DTO 들의 cue 를 모아 넘기고, sync 에 넘긴 DTO
     ({ cues: [{ teamId: "t", kind: "Enter", agent: `a${n}` }] as CueDto[] }) as OfficeDto;
   const [a, b, c, d] = [dto(1), dto(2), dto(3), dto(4)];
   const cues = cueCollector();
-  cues.see(a);
-  cues.see(b);
-  cues.see(b);
-  cues.see(c);
+  cues.see(a, false);
+  cues.see(b, false);
+  cues.see(b, false);
+  cues.see(c, false);
   // c 는 sync 가 직접 본다
   expect(cues.take(c)).toEqual([...a.cues, ...b.cues]);
   expect(cues.take(c)).toEqual([]);
-  cues.see(d);
+  cues.see(d, false);
   expect(cues.take(d)).toEqual([]);
+});
+
+test("숨은 동안 see 가 계속 불려도 쌓이지 않고, 돌아온 뒤 숨기 전 DTO 의 cue 가 끼어들지 않는다", () => {
+  const dto = (n: number) =>
+    ({ cues: [{ teamId: "t", kind: "Enter", agent: `a${n}` }] as CueDto[] }) as OfficeDto;
+  const [p, x, z] = [dto(1), dto(2), dto(3)];
+  const hiddenDtos = [dto(11), dto(12), dto(13)];
+  const cues = cueCollector();
+  cues.see(p, false);
+  for (const q of hiddenDtos) cues.see(q, true);
+  // 돌아온 첫 sync 는 cue 를 버리니 take 는 비어야 한다
+  expect(cues.take(hiddenDtos[2])).toEqual([]);
+  cues.see(x, false);
+  cues.see(z, false);
+  expect(cues.take(z)).toEqual(x.cues);
 });

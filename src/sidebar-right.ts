@@ -1,4 +1,4 @@
-// 오른쪽 직원 현황판 (PLAN 3.5, 4.9, HANDOFF 4.5). 카드는 agent_id 키로 재사용한다.
+// 오른쪽 직원 현황판 (PLAN 3.5, 4.9, HANDOFF 4.5). 카드는 (team_id, agent_id) 키로 재사용한다.
 import "../design/handoff/tokens.css";
 import "./styles/panel.css";
 import phrases from "../design/handoff/phrases.ko.json";
@@ -22,7 +22,7 @@ import roomPantry from "../design/handoff/icons/room-pantry.svg?raw";
 import roomReview from "../design/handoff/icons/room-review.svg?raw";
 import roomShipping from "../design/handoff/icons/room-shipping.svg?raw";
 import roomTest from "../design/handoff/icons/room-test.svg?raw";
-import { createEventCollector, createTicker, rankLabel, teamName } from "./ticker.ts";
+import { createEventCollector, createTicker, empKey, rankLabel, teamName } from "./ticker.ts";
 import { durationText, fill, fillElapsed, hhmm } from "./text.ts";
 import type {
   Activity,
@@ -600,15 +600,15 @@ export function mountPanel(
 
   function applyCue(cue: CueDto): void {
     if (cue.kind !== "Shake" && cue.kind !== "Reject") return;
-    const c = cards.get(cue.agent);
+    const c = cards.get(empKey(cue.teamId, cue.agent));
     if (!c) return;
     if (cue.kind === "Shake")
       flash(c, "hit", (on) => c.el.classList.toggle("is-hit", on), FLASH_MS);
     else flash(c, "reject", (on) => (c.ref.reject.hidden = !on), FLASH_MS);
   }
 
-  function pick(agentId: string): void {
-    const c = cards.get(agentId);
+  function pick(teamId: string, agentId: string): void {
+    const c = cards.get(empKey(teamId, agentId));
     if (!c) return;
     c.el.scrollIntoView({ block: "nearest" });
     flash(c, "hl", (on) => c.el.classList.toggle("is-highlight", on), HIGHLIGHT_MS);
@@ -663,13 +663,12 @@ export function mountPanel(
     const teams = [...office.teams].sort(
       (a, b) => (Date.parse(b.lastActivity) || 0) - (Date.parse(a.lastActivity) || 0),
     );
-    const all = new Map<string, EmployeeDto>();
-    for (const t of teams) for (const e of t.employees) all.set(e.agentId, e);
+    const total = teams.reduce((n, t) => n + t.employees.length, 0);
 
     const desired: HTMLElement[] = [];
     const liveCards = new Set<string>();
     const liveHeads = new Set<string>();
-    const fresh: EmployeeDto[] = [];
+    const fresh: { c: CardEntry; e: EmployeeDto }[] = [];
 
     for (const t of teams) {
       if (small) {
@@ -681,16 +680,19 @@ export function mountPanel(
         liveHeads.add(t.teamId);
         desired.push(hd.el);
       }
+      // 상사(parent)는 같은 팀 안의 agent_id 다
+      const byId = new Map(t.employees.map((e) => [e.agentId, e]));
       orderEmployees(t).forEach((e, i) => {
-        let c = cards.get(e.agentId);
+        const key = empKey(t.teamId, e.agentId);
+        let c = cards.get(key);
         if (!c) {
-          cards.set(e.agentId, (c = createCard(doc, e.agentId)));
+          cards.set(key, (c = createCard(doc, e.agentId)));
           c.el.classList.toggle("is-compact", compact);
-          if (!quiet) fresh.push(e);
+          if (!quiet) fresh.push({ c, e });
         }
-        updateCard(c, e, i === 0, t.phase === "Off", small, all);
+        updateCard(c, e, i === 0, t.phase === "Off", small, byId);
         tickCard(c, Date.now());
-        liveCards.add(e.agentId);
+        liveCards.add(key);
         desired.push(c.el);
       });
     }
@@ -717,9 +719,7 @@ export function mountPanel(
     if (focused instanceof HTMLElement && list.contains(focused) && doc.activeElement !== focused)
       focused.focus({ preventScroll: true });
 
-    for (const e of fresh) {
-      const c = cards.get(e.agentId);
-      if (!c) continue;
+    for (const { c, e } of fresh) {
       flash(c, "new", (on) => c.el.classList.toggle("is-new", on), NEW_MS);
       toast(fill(phrases.toast.hired, { name: e.name, rank: rankLabel(e.rank) }));
     }
@@ -732,8 +732,8 @@ export function mountPanel(
     }
 
     count.hidden = false;
-    count.textContent = fill(phrases.card.count, { n: all.size });
-    empty.hidden = all.size > 0;
+    count.textContent = fill(phrases.card.count, { n: total });
+    empty.hidden = total > 0;
     if (events.ingest(office, small)) ticker.setEvents(events.events());
   }
 

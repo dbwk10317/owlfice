@@ -275,6 +275,29 @@ test("중소기업은 팀 머리글, 마지막 사건이 최근인 팀이 위", 
   expect(l.root.querySelector(".ow-teamhead")).toBeNull();
 });
 
+test("두 팀(다른 호스트)에 같은 agent id 가 있어도 카드는 따로, cue 는 그 팀 카드에만", () => {
+  const teams = [
+    team("win", [emp("boss", { name: "윈부장" }), emp("a", { name: "윈대리" })], {
+      lastActivity: iso(13, 0),
+    }),
+    team("wsl", [emp("boss", { name: "리부장" }), emp("a", { name: "리대리" })], {
+      lastActivity: iso(14, 0),
+      hostBadge: "WSL",
+    }),
+  ];
+  const s = setup(office("o", 1, teams), "Small");
+  const names = () => s.cards().map((c) => c.querySelector(".ow-card__name")!.textContent);
+  expect(names()).toEqual(["리부장", "리대리", "윈부장", "윈대리"]);
+  s.push(office("o", 2, teams, [{ teamId: "wsl", kind: "Shake", agent: "a" }]));
+  const hit = s.cards().filter((c) => c.classList.contains("is-hit"));
+  expect(hit.map((c) => c.querySelector(".ow-card__name")!.textContent)).toEqual(["리대리"]);
+  // 한 팀이 빠지면 그 팀 카드만 지운다
+  const kept = s.cards()[3];
+  s.push(office("o", 3, [teams[0]]));
+  expect(names()).toEqual(["윈부장", "윈대리"]);
+  expect(s.cards()[1]).toBe(kept);
+});
+
 test("store 가 선택을 바꿔 office 를 비우면 카드를 지운다", () => {
   const s = setup(office("o", 1, [team("t", [emp("boss")])]));
   expect(s.cards()).toHaveLength(1);

@@ -9,6 +9,7 @@ export const TICKER_MAX = 20;
 
 export interface TickerEvent {
   key: string;
+  teamId: string;
   agentId: string;
   at: number;
   time: string;
@@ -22,6 +23,9 @@ const RANK_LABEL: Record<Rank, string> = {
   Sawon: phrases.ranks.sawon,
 };
 export const rankLabel = (r: Rank): string => RANK_LABEL[r];
+
+/** 직원 식별 키. 중소기업 사무실은 여러 호스트의 팀을 담아 agentId 만으로는 겹칠 수 있다 (PLAN 4.7.9) */
+export const empKey = (teamId: string, agentId: string): string => `${teamId}\u0000${agentId}`;
 
 /** "{boss} 부장 팀". 부장은 team.employees[0] */
 export function teamName(team: TeamDto): string {
@@ -55,11 +59,12 @@ export function createEventCollector() {
     for (const team of office.teams) {
       const tn = teamName(team);
       for (const e of team.employees) {
-        alive.add(e.agentId);
-        const prev = seen.get(e.agentId);
+        const who = empKey(team.teamId, e.agentId);
+        alive.add(who);
+        const prev = seen.get(who);
         const keys = new Set<string>();
         for (const a of e.recent) {
-          const key = `${e.agentId}|${a.since}|${a.sentence}`;
+          const key = `${who}|${a.since}|${a.sentence}`;
           keys.add(key);
           const at = Date.parse(a.since);
           if (prev?.has(key) || Number.isNaN(at)) continue;
@@ -72,9 +77,9 @@ export function createEventCollector() {
             rank: RANK_LABEL[e.rank],
             event: a.sentence.split("`").join(""),
           }).trim();
-          added.push({ key, agentId: e.agentId, at, time, text });
+          added.push({ key, teamId: team.teamId, agentId: e.agentId, at, time, text });
         }
-        seen.set(e.agentId, keys);
+        seen.set(who, keys);
       }
     }
     for (const id of seen.keys()) if (!alive.has(id)) seen.delete(id);
@@ -90,7 +95,7 @@ export function createEventCollector() {
 const SPEED_FALLBACK = 40;
 
 /** 티커 DOM. 사건이 바뀔 때만 항목을 다시 만든다 */
-export function createTicker(doc: Document, onPick: (agentId: string) => void) {
+export function createTicker(doc: Document, onPick: (teamId: string, agentId: string) => void) {
   const root = doc.createElement("div");
   root.className = "ow-ticker";
   const label = doc.createElement("span");
@@ -117,7 +122,7 @@ export function createTicker(doc: Document, onPick: (agentId: string) => void) {
     t.className = "ow-mono ow-ticker__time";
     t.textContent = ev.time;
     b.append(t, ` ${ev.text}`);
-    b.addEventListener("click", () => onPick(ev.agentId));
+    b.addEventListener("click", () => onPick(ev.teamId, ev.agentId));
     return b;
   }
 

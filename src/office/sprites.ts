@@ -13,8 +13,16 @@ export interface OfficeAssets {
   floorplan: Floorplan;
 }
 
+// 배포 CSP(default-src 'self')가 Assets 의 blob: 워커와 data: 이미지 지원 감지를 막아 로드가 끝나지 않는다. PNG 만 쓰니 둘 다 끈다
+let assetsReady: Promise<void> | null = null;
+function initAssets(): Promise<void> {
+  assetsReady ??= Assets.init({ skipDetections: true, preferences: { preferWorkers: false } });
+  return assetsReady;
+}
+
 /** 시트·평면도는 Vite publicDir(design/sprites) 라 루트 경로로 읽는다 (HANDOFF 0). */
 export async function loadOfficeAssets(): Promise<OfficeAssets> {
+  await initAssets();
   const [sheet, raw] = await Promise.all([
     Assets.load<Spritesheet>("/office.json"),
     fetch("/floorplan.json").then((r) => {
@@ -27,6 +35,7 @@ export async function loadOfficeAssets(): Promise<OfficeAssets> {
 
 /** 올빼미 시트. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (PLAN 4.9). */
 export async function loadOwls(): Promise<Owls> {
+  await initAssets();
   const sheet = await Assets.load<Spritesheet>("/owls.json");
   const meta = (sheet.data as { owlfice?: OwlMeta }).owlfice;
   if (!meta) throw new Error("owls.json 에 owlfice 메타 없음");

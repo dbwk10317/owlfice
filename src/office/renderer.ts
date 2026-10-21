@@ -7,6 +7,8 @@ import {
   type Sprite,
   type Texture,
 } from "pixi.js";
+// 배포 CSP(default-src 'self')는 eval 을 막는데 Pixi 렌더러는 생성 때 new Function 을 시험하고 던진다. eval 없는 길로 바꿔 둔다
+import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { ActorLayer, seatProps } from "./actors.ts";
 import { DRIVEN_PROP, PropsLayer } from "./props.ts";
@@ -184,13 +186,21 @@ export function buildScene(
 /**
  * 틱 사이에 office-state 가 둘 이상 오면 sync 는 마지막 DTO 만 본다. 앞 DTO 의 cue 를 모아 두었다가 다음 sync 에 넘긴다.
  * 이미 sync 에 넘긴 DTO 의 cue 는 다시 넘기지 않는다.
+ * 창이 숨었을 땐 모은 것을 다 버리고 모으지 않는다. 틱이 멈춰 take 가 없고, 돌아온 첫 sync 는 cue 를 버리니
+ * 숨기 전 DTO 가 그 뒤 sync 에 끼어들면 안 된다 (PLAN 4.9).
  */
 export function cueCollector() {
   let earlier: CueDto[] = [];
   let latest: OfficeDto | null = null;
   let handled: OfficeDto | null = null;
   return {
-    see(o: OfficeDto | null): void {
+    see(o: OfficeDto | null, hidden: boolean): void {
+      if (hidden) {
+        earlier = [];
+        latest = null;
+        handled = null;
+        return;
+      }
       if (!o || o === latest) return;
       if (latest && latest !== handled) earlier.push(...latest.cues);
       latest = o;
@@ -327,12 +337,12 @@ export async function mountOffice(
     }
     officeId = office?.officeId ?? "";
     // 사무실을 바꾼 첫 스냅샷, 숨은 창에서 돌아온 스냅샷은 걷지 않고 제자리 (cue 도 버린다)
-    const placed = actors.sync(office, kind, Date.now(), {
+    actors.sync(office, kind, Date.now(), {
       instant: switched || resumed,
       earlier: cues.take(office),
     });
     resumed = false;
-    const seated = seatProps(fp, kind, placed);
+    const seated = seatProps(fp, kind, office);
     for (const [id, s] of scene?.toggled ?? []) s.visible = seated.has(id);
     shown = office;
     propsAt = Date.now();
@@ -450,7 +460,7 @@ export async function mountOffice(
   const cues = cueCollector();
   store.subscribe(() => {
     dirty = true;
-    cues.see(store.state.office);
+    cues.see(store.state.office, document.hidden);
   });
   app.ticker.maxFPS = 60;
   app.ticker.add(

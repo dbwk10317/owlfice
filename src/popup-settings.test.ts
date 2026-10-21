@@ -56,6 +56,27 @@ test("불러온 설정과 기본값을 표시하고 원문 진단 설명은 항�
   expect(s.invoke).toHaveBeenCalledExactlyOnceWith("get_settings");
 });
 
+test("소리 제스처는 저장을 기다리지 않고 켜기·끄기 클릭에서 전달된다", async () => {
+  let settings = defaults();
+  const gesture = vi.fn();
+  const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === "set_settings") {
+      const dto = args?.dto as Partial<SettingsDto>;
+      expect(gesture).toHaveBeenLastCalledWith(dto.sound);
+      settings = { ...settings, ...dto };
+    }
+    return settings as T;
+  };
+  openSettings({ invoke, onSettings() {}, onSoundGesture: gesture });
+  await settle();
+  expect(gesture).not.toHaveBeenCalled();
+  toggle("소리").click();
+  expect(gesture).toHaveBeenLastCalledWith(true);
+  await settle();
+  toggle("소리").click();
+  expect(gesture).toHaveBeenLastCalledWith(false);
+});
+
 test("변경한 필드만 저장하고 다시 읽은 값으로 UI와 호출자를 갱신한다", async () => {
   const s = setup();
   await settle();

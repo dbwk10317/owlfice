@@ -365,7 +365,7 @@ impl Team {
                 e.last_say = Some(text.chars().take(60).collect());
                 e.quiet_since = None;
                 e.last_was_text = true;
-                if e.is_boss() {
+                if e.is_boss() && e.pending.is_empty() {
                     e.waiting_user_since = Some(ts);
                 }
                 // 리뷰실에서 한 말의 `파일:줄` 이 빨간펜이다. 리뷰 중엔 리뷰실에 남는다 (3.4)
@@ -834,14 +834,14 @@ impl Team {
             .all(|e| e.pending.is_empty() && e.background.is_empty() && !thinking(e, now));
         if quiet > DOZE_AFTER && idle && working {
             self.phase = TeamPhase::Dozing;
+            for e in &mut self.employees {
+                e.waiting_user_since = None;
+            }
             // 마지막 활동 3분 뒤. 응답 대기(러버덕)나 호출 정리가 그보다 늦게 끝났으면 그때
             let at = self
                 .employees
                 .iter()
-                .map(|e| match e.activity.pose {
-                    Pose::Duck => e.activity.since + THINK_GIVE_UP,
-                    _ => e.activity.since,
-                })
+                .map(|e| e.activity.since)
                 .fold(self.last_activity + DOZE_AFTER, DateTime::max);
             self.employees[0].set_activity(Activity {
                 pose: Pose::Sleep,
@@ -864,6 +864,7 @@ impl Team {
             // 끝내 결과가 안 올 호출과 작업표의 뒷정리 (4.7.2)
             let at = self.last_activity + OFF_AFTER;
             for i in 0..self.employees.len() {
+                self.employees[i].waiting_user_since = None;
                 self.give_up_all(i, at, cues);
             }
         }
@@ -906,7 +907,7 @@ impl Team {
 
     /// 허가 대기: 질문했거나 Codex 승인 창으로 짐작한다 (3.3 결재판 아이콘)
     pub fn asking(&self, e: &Employee, now: DateTime<Utc>) -> bool {
-        e.asking.is_some() || escalation_wait(e, now)
+        e.asking.is_some() || escalated_call(e, now).is_some()
     }
 
     /// 사장님 손이 필요한 상태: 허가 대기, 결재 대기, 반려 직후 (4.7.2 끝 문단).
@@ -1187,8 +1188,7 @@ impl Team {
     }
 
     /// 이벤트 자기 연출(`hidden`)이 허가 대기·진행 중 호출에 가려졌다 (2.5 우선순위 1·2번, 4.11 state_conflict).
-    /// 이긴 쪽은 화면의 문 앞과 같은 근거로 정한다. Codex 승인 추정의 문 앞은 refresh 가 아니라 tick 이 그려서
-    /// 방금 쓴 활동의 방으로는 알 수 없다
+    /// 이긴 쪽은 화면의 문 앞과 같은 근거로 정한다
     fn conflict(&self, i: usize, ts: DateTime<Utc>, hidden: &'static str, cues: &mut Vec<Cue>) {
         let winner = if self.asking(&self.employees[i], ts) {
             word::ASKING
@@ -1263,6 +1263,15 @@ impl Team {
             };
             let a = Activity::new(sentence, Room::Door, since, Confidence::Confirmed);
             e.set_activity(a);
+            return true;
+        }
+        if let Some(call) = escalated_call(e, ts) {
+            e.set_activity(Activity::new(
+                sentence::escalated(call),
+                Room::Door,
+                call.started + ESCALATION_WAIT,
+                Confidence::Inferred,
+            ));
             return true;
         }
         if let Some(call) = e.pending.last() {
@@ -1444,11 +1453,11 @@ impl Team {
         if e.retired_at.is_some() || e.asking.is_some() {
             return;
         }
-        if let Some(call) = e.pending.last().cloned() {
+        if !e.pending.is_empty() {
             // Codex 승인 창은 레코드가 없어 무결과 시간으로 짐작한다. 결과가 오면 refresh 가 푼다
-            if escalation_wait(e, now) {
+            if let Some(call) = escalated_call(e, now) {
                 e.set_activity(Activity::new(
-                    sentence::escalated(&call),
+                    sentence::escalated(call),
                     Room::Door,
                     call.started + ESCALATION_WAIT,
                     Confidence::Inferred,
@@ -1555,8 +1564,16 @@ impl Team {
                 if quiet <= THINK_GIVE_UP {
                     return;
                 }
-                // 응답이 끊긴 것으로 보고 졸음 규칙에 맡긴다. 러버덕은 틱 간격과 무관하게 남는다
                 e.quiet_since = None;
+                e.set_activity(Activity {
+                    pose: Pose::Sleep,
+                    ..Activity::new(
+                        sentence::SLEEP,
+                        room,
+                        t + THINK_GIVE_UP,
+                        Confidence::Inferred,
+                    )
+                });
             }
         }
         // 완료 기록을 못 본 서브: 마지막이 텍스트 응답이고 60초 무변경 (4.7.2)
@@ -1801,17 +1818,18 @@ fn lights(tool: &ToolKind, s: &ToolSummary) -> bool {
 /// `Team::needs_boss` 의 몸. 팀 상태를 보지 않아 직원 말풍선도 이것을 쓴다
 fn needs_boss(e: &Employee, now: DateTime<Utc>) -> bool {
     e.asking.is_some()
-        || escalation_wait(e, now)
+        || escalated_call(e, now).is_some()
         || e.waiting_user_since
             .is_some_and(|t| now - t >= WAIT_USER_AFTER)
         || e.rejected_at.is_some_and(|t| now - t < REJECT_HOLD)
 }
 
-/// Codex 승인 창 추정 (4.7.2): 대표 호출이 escalated 이고 결과 없이 35초
-fn escalation_wait(e: &Employee, now: DateTime<Utc>) -> bool {
+/// Codex 승인 창 추정 (4.7.2): 결과 없이 35초 지난 escalated 호출 중 가장 오래된 것
+fn escalated_call(e: &Employee, now: DateTime<Utc>) -> Option<&PendingCall> {
     e.pending
-        .last()
-        .is_some_and(|c| c.summary.escalated && now - c.started >= ESCALATION_WAIT)
+        .iter()
+        .filter(|c| c.summary.escalated && now - c.started >= ESCALATION_WAIT)
+        .min_by_key(|c| c.started)
 }
 
 /// 활성 2시간을 넘기면 1상자, 그 뒤 60분마다 1상자 (4.7.2, S42)
@@ -2043,6 +2061,7 @@ pub(crate) mod sentence {
     pub const INCIDENT_OVER: &str = "장애 해제";
     pub const THINK: &str = "턱 괴고 고민 중인 듯 ({elapsed})";
     pub const DUCK: &str = "러버덕과 상담 중인 듯 ({elapsed})";
+    pub const SLEEP: &str = "졸고 있는 듯";
     pub const WAITING_USER: &str = "요구사항 대기 중인 듯 · 사장님 자리 비움 {elapsed}";
     pub const DOZING: &str = "졸음";
     pub const REPOT: &str = "분갈이 중 (서류 정리)";

@@ -1224,7 +1224,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 | 조건 | 전이 | 근거 |
 |---|---|---|
-| (직원) `pending` 비어 있고 `quiet_since` + 2초 지났고 `waiting_user_since` 없음 | 응답 대기: pose=Think, "턱 괴고 고민 중인 듯 (n초)". 2초 안에 다음 tool_use가 오면 자세를 바꾸지 않는다 (도구 사이마다 자세·방이 깜박이지 않게). 10초 넘으면 pose=Duck, "러버덕과 상담 중인 듯". 10분 넘으면 `quiet_since = None` (응답이 끊긴 것으로 보고 졸음 규칙에 맡긴다) | 추정 |
+| (직원) `pending` 비어 있고 `quiet_since` + 2초 지났고 `waiting_user_since` 없음 | 응답 대기: pose=Think, "턱 괴고 고민 중인 듯 (n초)". 2초 안에 다음 tool_use가 오면 자세를 바꾸지 않는다 (도구 사이마다 자세·방이 깜박이지 않게). 10초 넘으면 pose=Duck, "러버덕과 상담 중인 듯". 10분 넘으면 자기 자리에서 pose=Sleep, "졸고 있는 듯", 시작 시각은 대기 시작+10분으로 하고 `quiet_since = None`. 팀 전체 졸음이면 아래 규칙대로 부장은 탕비실로 간다 | 추정 |
 | (부장) `waiting_user_since` + 3초 | 결재 대기: 화면보호기, 서성임, "요구사항 대기 중인 듯". 턴 종료 판단 = "마지막 블록이 tool_use가 아니고 3초 동안 같은 턴의 블록이 더 오지 않음". 레코드에 `stop_reason` 이 있으면 그것을 우선한다 (6부) | 추정 |
 | (Claude 직원) 등록부 `status: waiting` | 허가 대기 (room=출입문, Confirmed). `waitingFor` 를 문장에. 등록부가 `busy`·`idle` 로 돌아오면 해제 (4.4.1, 값 모양은 6부 미확인) | 확인됨 (값이 확인되면) |
 | (Codex 직원) `pending` 중 하나가 `require_escalated` 이고 결과 없이 35초 | 허가 대기 (room=출입문, Inferred. 문 앞 문장은 그 호출로). 결과가 오면 해제. `request_user_input`·`request_permissions` 는 호출 즉시 Confirmed (4.6.2) | 추정 (임계값은 codex 소스 yield 상한) |
@@ -1503,7 +1503,7 @@ WSL UNC 실측 (release, `owlfice-probe bench`, 3회 중 최악 p99. 확인됨):
 | T54 | 서브 퇴근 (백엔드): `departed_at`, 4.7.2 전이(종료 + 10분, 문턱 시각), 재출근 때 해제, cue `depart`, DTO·ts 바인딩, 근태판 재료 | 중 | T11 T26b | `async-subagent` fixture replay 에서 서브 종료 10분 뒤(논리 시계) `departedAt` 이 찍히고 좌석·탕비실 자리가 비며, 그 뒤 그 직원 파일에 새 이벤트가 오면 재출근. 단위 테스트는 논리 시계로 |
 | T55 | 서브 퇴근·자리 초과 (캔버스): `depart` cue 에 문으로 걸어 나가 사라짐(큐 규칙은 anim-queue), 근태판 자석 '퇴근' 칸, 좌석·탕비실 자리가 차면 겹침 대신 `ow-crowd` "+n" (HANDOFF 4.4), `note_full` 유지 | 중 | T54 T22 T23 | replay: 퇴장 연출 뒤 캔버스에서 사라지고 자석이 퇴근 칸. `dev/actors.html` 에 직원 12명 장면: 올빼미가 겹치지 않고 마지막 임시 책상에 "+2". 기본 상태 참조 비교는 다른 픽셀 0 |
 | T56 | 퇴근 서브 카드 묶음 (현황판): `departedAt` 카드는 맨 아래 "퇴근 n" 접힌 묶음, 펼치면 60% 불투명, 카드 클릭 직원 상세 유지, 인원 칩·티커는 그대로 | 하 | T54 T21 | jsdom 테스트: 퇴근 서브 3명이 묶음으로 접히고 토글되며, 재출근하면 묶음에서 나온다 |
-| T57 | 상태 기계 2.5 정합 (코드): Codex 승인 추정은 `pending` 중 하나로, 부장 결재 대기는 `pending` 이 빌 때만, 졸음·퇴근 전이가 `waiting_user_since` 를 지움 (4.7.1 AssistantText, 4.7.2) | 하 | T25b | 단위 테스트(논리 시계) 3개: escalated 호출 뒤 병렬 호출이 와도 35초에 허가 대기, 호출 중 중간 보고는 결재 대기가 아님, 졸음·퇴근 뒤 `needs_boss` 거짓. 기존 테스트 전부 녹색 |
+| T57 | 상태 기계 2.5 정합 (코드): Codex 승인 추정은 `pending` 중 하나로, 부장 결재 대기는 `pending` 이 빌 때만, 졸음·퇴근 전이가 `waiting_user_since` 를 지움. 응답 대기 10분 뒤 자기 자리에서 졸음 (4.7.1 AssistantText, 4.7.2) | 중 | T25b | 논리 시계 테스트: escalated 호출 뒤 병렬 호출이 와도 35초에 허가 대기, 호출 중 중간 보고는 결재 대기가 아님, 졸음·퇴근 뒤 `needs_boss` 거짓. 다른 직원이 일하는 동안에도 응답 대기 10분 뒤 자기 자리에서 졸고 시작 시각은 대기 시작+10분. 작은 틱과 한 번 따라잡기 결과 일치. 기존 테스트 전부 녹색 |
 | T58 | 회사 이름: 설정 `company_name`, `SettingsDto`·ts 바인딩, 규모 선택 화면 입력칸(3.8 0단계), 간판·머리말 "본사"·로딩 "사명" 에 반영 (2.2) | 하 | T14 T15 | 설정 테스트: 이름 저장·복원, 비우면 키 제거, 20자 초과는 자름, 규모 없이 이름만 보내도 저장. 프론트 테스트: 입력 뒤 규모를 고르면 `set_settings` 에 둘 다 실리고 간판이 그 이름 |
 | T59 | 증분 읽기 줄 상한 보강: 개행을 같은 읽기에서 받은 64MB 초과 줄도 폐기 | 하 | T04 | 초과 줄은 한 번 폐기·계수, 다음 줄의 offset·line_no 보존. 정확히 64MB인 줄 유지, commit 전 재독 결과 동일. 기존 테스트 전부 녹색 |
 | T60 | 시작 버퍼의 선택 왕복 뒤 스냅샷 복원 | 하 | T14 | 시작 중 A→B→A 선택이 와도 같은 seq인 A의 초기 스냅샷을 복원. 더 새 상태와 다른 최종 선택은 유지하며 옛 cue는 재생하지 않음. 기존 프론트 테스트 녹색 |

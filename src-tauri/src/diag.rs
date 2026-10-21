@@ -187,16 +187,18 @@ fn parse_entries(bytes: &[u8]) -> impl Iterator<Item = Entry> {
         .into_iter()
 }
 
-/// 같은 (kind, key) 가 여러 줄이면 합친다. raw 를 끄고 열면 예전 raw 도 버린다
-fn load(path: &Path, raw: bool) -> (BTreeMap<Key, Entry>, bool) {
+/// 같은 (kind, key) 가 여러 줄이면 합친다. raw 를 끄고 열면 예전 raw 도 버린다.
+/// 돌려주는 값: (집계, 쓸 수 있는가, 파일에 있던 raw 를 뗐는가)
+fn load(path: &Path, raw: bool) -> (BTreeMap<Key, Entry>, bool, bool) {
     let b = match std::fs::read(path) {
         Ok(b) => b,
-        Err(e) => return (BTreeMap::new(), e.kind() == io::ErrorKind::NotFound),
+        Err(e) => return (BTreeMap::new(), e.kind() == io::ErrorKind::NotFound, false),
     };
     let mut map: BTreeMap<Key, Entry> = BTreeMap::new();
+    let mut stripped = false;
     for mut e in parse_entries(&b) {
         if !raw {
-            e.fields.remove("raw");
+            stripped |= e.fields.remove("raw").is_some();
         }
         match map.entry((e.kind.clone(), e.key.clone())) {
             Occupied(mut o) => {
@@ -217,7 +219,7 @@ fn load(path: &Path, raw: bool) -> (BTreeMap<Key, Entry>, bool) {
             }
         }
     }
-    (map, true)
+    (map, true, stripped)
 }
 
 /// 임시 파일에 쓴 뒤 이름을 바꾼다. 쓰다 끊겨도 기존 파일이 깨지지 않는다
@@ -255,13 +257,24 @@ impl Diag {
             for entry in self.entries.values_mut() {
                 self.dirty |= entry.fields.remove("raw").is_some();
             }
+            // 다음 정기 저장 전에 앱이 꺼져도 파일에 원문이 남지 않게 바로 쓴다
+            if self.dirty {
+                self.purge_now();
+            }
+        }
+    }
+
+    /// 실패해도 dirty 는 그대로라 다음 flush_if_due 가 다시 시도한다
+    fn purge_now(&mut self) {
+        if let Err(e) = self.flush() {
+            crate::oplog_once!("원문 진단 제거 저장 실패 {}: {e}", self.path.display());
         }
     }
 
     fn open_with_limit(dir: &Path, raw: bool, max_bytes: usize) -> Self {
         let path = dir.join(FILE_NAME);
-        let (entries, writable) = load(&path, raw);
-        Self {
+        let (entries, writable, stripped) = load(&path, raw);
+        let mut d = Self {
             path,
             raw,
             max_bytes,
@@ -269,8 +282,13 @@ impl Diag {
             entries,
             test_calls: HashMap::new(),
             last_flush: None,
-            dirty: false,
+            dirty: stripped,
+        };
+        // 껐는데 파일에 원문이 남아 있으면 재시작 때 바로 지운다
+        if stripped {
+            d.purge_now();
         }
+        d
     }
 
     /// 원문 진단이 꺼져 있으면 원문이 어디에도 안 들어가도록 부르는 쪽이 `raw` 를 None 으로 넘긴다
@@ -964,6 +982,47 @@ mod tests {
             })
             .sum();
         assert_eq!(actual_count, count * 2);
+    }
+
+    /// 끄는 즉시 파일에서 원문이 사라지고 집계는 그대로다 (flush_if_due 없이).
+    #[test]
+    fn raw_off_purges_file_immediately() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = Diag::open(dir.path(), false);
+        d.set_raw(true);
+        run_all(&mut d);
+        d.flush().unwrap();
+        let before = read(dir.path());
+        assert!(before.contains(SECRET));
+        let count = |text: &str| -> u64 {
+            text.lines()
+                .map(|l| {
+                    serde_json::from_str::<Value>(l).unwrap()["count"]
+                        .as_u64()
+                        .unwrap()
+                })
+                .sum()
+        };
+        d.set_raw(false);
+        let after = read(dir.path());
+        assert!(!after.contains(SECRET));
+        assert!(!after.contains("\"raw\""));
+        assert_eq!(count(&after), count(&before));
+    }
+
+    /// 원문이 든 파일을 끈 채 열기만 해도 파일에서 원문이 지워진다.
+    #[test]
+    fn open_with_raw_off_purges_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = r#"{"kind":"skill","key":"x","first_seen":"2026-01-01T00:00:00Z","last_seen":"2026-01-02T00:00:00Z","count":4,"raw":"LEAK"}
+"#;
+        std::fs::write(dir.path().join(FILE_NAME), text).unwrap();
+        let _d = Diag::open(dir.path(), false);
+        let out = read(dir.path());
+        assert!(!out.contains("LEAK"));
+        assert!(!out.contains("\"raw\""));
+        let v: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["count"], 4);
     }
 
     #[test]

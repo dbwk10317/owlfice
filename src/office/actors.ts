@@ -20,6 +20,7 @@ import {
   HIDDEN,
   JUMP,
   JUMP_MS,
+  LADDER_MS,
   STAMP_MS,
   Track,
   VISIT_STAY_MS,
@@ -45,6 +46,9 @@ const VISIT_FRONT = 2;
 const SWEAT_AFTER_MS = 120_000;
 const SWEAT_FPS = 4;
 const SWEAT_OFFSET: [number, number] = [6, -2];
+/** 사다리에 오르는 직원이 서는 자리: 사규 액자 위치에서 (gx, gy) 만큼 앞 */
+const FRAME_STAND: [number, number] = [0.8, 1.2];
+const LADDER_LOOK: Look = { pose: "idle", dir: "b" };
 
 export interface OwlMeta {
   anchor: [number, number];
@@ -484,7 +488,9 @@ export class ActorLayer {
   /** 외근 복귀로 문이 열릴 때 (소품 층이 건다) */
   onDoor: ((now: number) => void) | null = null;
   /** 새 cue 마다 (소품 층이 건다). 사무실 전환·조용한 재구성이면 부르지 않는다 */
-  onCue: ((cue: CueDto, now: number) => void) | null = null;
+  onCue: ((cue: CueDto, now: number, office: OfficeDto | null) => void) | null = null;
+  /** 직원이 사다리에 오르기 시작하는 시각 (소품 층이 사다리를 건다). 움직임 줄이기·사무실 전환이면 부르지 않는다 */
+  onLadder: ((startAt: number, now: number) => void) | null = null;
   /** 직원을 눌렀을 때 (직원 상세 팝업). 마운트하는 쪽이 건다 */
   onPick: ((teamId: string, agentId: string) => void) | null = null;
 
@@ -535,15 +541,17 @@ export class ActorLayer {
     const cuesOf = new Map<string, CueDto[]>();
     const visits: CueDto[] = [];
     const stamps: Extract<CueDto, { kind: "Stamp" }>[] = [];
+    const frames: Extract<CueDto, { kind: "FrameSwap" }>[] = [];
     for (const c of fresh && !opts.instant
       ? [...(opts.earlier ?? []), ...(office?.cues ?? [])]
       : []) {
-      if (!instant) this.onCue?.(c, now);
+      if (!instant) this.onCue?.(c, now, office);
       if (c.kind === "Stamp") stamps.push(c);
       if ("agent" in c) {
         const key = empKey(c.teamId, c.agent);
         cuesOf.set(key, [...(cuesOf.get(key) ?? []), c]);
       } else if (c.kind === "BossVisit") visits.push(c);
+      else if (c.kind === "FrameSwap") frames.push(c);
       else playCue(c, undefined, now);
     }
     const placed = office ? layoutActors(this.fp, kind, office) : [];
@@ -639,9 +647,32 @@ export class ActorLayer {
     // 부장 큐가 새 자리로 정해진 뒤에 펄쩍을 얹는다
     if (office && !instant)
       for (const c of visits) if (c.kind === "BossVisit") this.visit(c, office, kind, now);
+    // 제목 변경: 새 자리가 정해진 뒤 한 명이 액자까지 갔다 온다. 움직임 줄이기면 액자 글자(상태)만
+    // 액자는 하나(공유 frame_title)라 한 sync 에 여럿이 와도 마지막 것만 연출한다
+    // ponytail: 직원 큐가 나중에 reset 되면(MAX_STEPS·instant·숨김 복귀) 사다리만 4초 남는다, 거슬리면 사다리를 직원 큐에 묶는다
+    const frame = frames[frames.length - 1];
+    if (frame && !instant && !reducedMotion()) this.frameSwap(frame, placed, kind, now);
     this.update(now);
     this.placeOverlay();
     return placed;
+  }
+
+  /** 제목 변경 (S39): 그 팀에서 제 자리에 앉은 직원 중 제목 해시로 한 명을 골라 액자 앞 사다리로 보낸다 */
+  private frameSwap(
+    c: Extract<CueDto, { kind: "FrameSwap" }>,
+    placed: Placed[],
+    kind: Kind,
+    now: number,
+  ): void {
+    const frame = this.fp.layouts[kind].placements.find((p) => p.id === "rules_frame");
+    const who = placed.filter((p) => p.team.teamId === c.teamId && p.seated);
+    if (!frame || who.length === 0) return;
+    const pick = who[Number(fnv1a64(c.title) % BigInt(who.length))];
+    const to = { gx: frame.gx + FRAME_STAND[0], gy: frame.gy + FRAME_STAND[1], z: 0 };
+    const start = this.actors
+      .get(empKey(c.teamId, pick.emp.agentId))
+      ?.track.errand(to, LADDER_LOOK, LADDER_MS, now);
+    if (start != null) this.onLadder?.(start, now);
   }
 
   update(now: number): void {

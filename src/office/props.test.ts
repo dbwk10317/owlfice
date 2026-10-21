@@ -5,7 +5,15 @@ import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
 import type { Light, OfficeDto, Pose, Room, TeamDto, TodoItem } from "../types/ipc.ts";
 import { parseFloorplan, type Kind } from "./floorplan.ts";
-import { DOOR_OPEN_MS, FIREWORKS_MS, RETURN_MS, STAMP_RESULT_MS, TRUCK_MS } from "./anim-queue.ts";
+import {
+  DOOR_OPEN_MS,
+  FIREWORKS_MS,
+  LADDER_MS,
+  REPOT_MS,
+  RETURN_MS,
+  STAMP_RESULT_MS,
+  TRUCK_MS,
+} from "./anim-queue.ts";
 import {
   kanbanNotes,
   paperCount,
@@ -743,4 +751,138 @@ test("상호 글자: 배율이 바뀌면 left·top·maxWidth 가 따라 바뀐�
       `${18 * k}px`,
     ]);
   }
+});
+
+// ---------- 서브 종료·재출근·분갈이·액자 교체 (T26b) ----------
+
+const BOARD = fp.layouts.large.placements.find((p) => p.id === "attendance")!;
+const BOARD_SLOTS = officeJson.owlfice.props.attendance.slots as unknown as number[][][];
+/** 근태판에 붙은 자석이 어느 칸·줄인지 */
+const magnetsOn = (scene: Built) =>
+  (scene.wall.children as Sprite[])
+    .filter((c) => frameOf(c)?.startsWith("magnet/"))
+    .map((c) => {
+      const col = BOARD_SLOTS.findIndex((lines) =>
+        lines.some(([dx, dy]) => c.x === BOARD.x + dx && c.y === BOARD.y + dy),
+      );
+      return [frameOf(c)!, col] as const;
+    });
+const sub = (room: Room, o: object = {}) => says(room, "일하는 중", { agentId: "s", ...o });
+
+test("서브 종료: 탕비실 콘솔에 앉으면 게임기가 켜지고 자석은 퇴근 칸, 재출근하면 둘 다 돌아온다", () => {
+  const { scene, props } = layer();
+  const lead = says("TeamLead", "일하는 중", { agentId: "boss" });
+  props.update(crew(lead, sub("Dev", { seat: 0 })), NOW);
+  expect(tex(scene, "game_tv")).toBe("game_tv/off");
+  expect(magnetsOn(scene).map(([, col]) => col)).toEqual([0, 0]);
+  props.update(crew(lead, sub("Pantry", { retiredAt: SINCE })), NOW);
+  props.tick(NOW);
+  expect(tex(scene, "game_tv")).toBe("game_tv/game_0");
+  props.tick(NOW + 400);
+  expect(tex(scene, "game_tv")).toBe("game_tv/game_1");
+  expect(magnetsOn(scene).map(([, col]) => col)).toEqual([0, 3]);
+  // 재출근: 다시 개발실, retired_at 이 비면 출근 칸
+  props.update(crew(lead, sub("Dev", { seat: 0 })), NOW + 1000);
+  expect(tex(scene, "game_tv")).toBe("game_tv/off");
+  expect(magnetsOn(scene).map(([, col]) => col)).toEqual([0, 0]);
+});
+
+test("게임기는 콘솔 자리에 앉은 직원만 켠다: 콘솔을 떠나거나 소파에서 조는 직원은 안 켠다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind);
+    props.update(crew(sub("Pantry", { retiredAt: SINCE, agentId: "x" })), NOW);
+    props.tick(NOW);
+    expect(tex(scene, "game_tv")).toBe("game_tv/game_0");
+    props.update(crew(sub("Dev", { seat: 0, agentId: "x" })), NOW);
+    expect(tex(scene, "game_tv")).toBe("game_tv/off");
+    // 졸음 부장은 소파라 게임기를 켜지 않는다
+    const nap = says("Pantry", "졸음", { agentId: "z" });
+    nap.activity.pose = "Sleep";
+    props.update(crew(nap), NOW);
+    expect(tex(scene, "game_tv")).toBe("game_tv/off");
+  }
+});
+
+test("근태판: 외근은 외근 칸, 퇴근한 팀은 모두 퇴근 칸, 중소기업은 팀 색으로 팀을 합친다", () => {
+  const { scene, props } = layer("small");
+  const teamOf = (slot: number, ...e: TeamDto["employees"]) =>
+    ({ ...team(slot, null), phase: "Working", employees: e }) as TeamDto;
+  const off = { ...teamOf(1, sub("Dev")), phase: "Off" } as TeamDto;
+  props.update(
+    office({}, [teamOf(0, sub("Dev"), sub("Outside"), sub("Pantry", { retiredAt: SINCE })), off]),
+    NOW,
+  );
+  expect(magnetsOn(scene)).toEqual([
+    ["magnet/teal", 0],
+    ["magnet/teal", 1],
+    ["magnet/teal", 3],
+    ["magnet/violet", 3],
+  ]);
+  props.update(null, NOW);
+  expect(magnetsOn(scene)).toEqual([]);
+});
+
+test("근태판: 한 칸의 줄 수를 넘으면 뒤 직원은 자석이 없다", () => {
+  const { scene, props } = layer();
+  const many = Array.from({ length: 7 }, () => sub("Dev"));
+  props.update(crew(...many), NOW);
+  expect(magnetsOn(scene)).toHaveLength(BOARD_SLOTS[0].length);
+});
+
+const plantAt = (scene: Built, id = "plant_boss_0") => scene.driven.get(id)!;
+
+test("Repot: 화분이 REPOT_MS 동안 비었다가 s0 으로 나온다. 팀 하나만, 움직임 줄이기면 결과만", () => {
+  const repot = (props: PropsLayer, o: OfficeDto, now: number, teamId = "t0") => {
+    // renderer 순서: cue(새 사무실)가 먼저, update 가 그 뒤
+    props.cue({ teamId, kind: "Repot" }, now, o);
+    props.update(o, now);
+  };
+  stillMotion(false, () => {
+    const { scene, props } = layer("small");
+    props.update(office({}, [team(0, 0.9)]), NOW);
+    // 새로 생긴 팀 1 은 이 스냅샷에서야 처음 보인다
+    repot(props, office({}, [team(0, 0.05), team(1, 0.9)]), NOW + 10);
+    expect(plantAt(scene, "plant_boss_0").visible).toBe(false);
+    expect(plantAt(scene, "plant_boss_1").visible).toBe(true);
+    props.update(office({}, [team(0, 0.05), team(1, 0.9)]), NOW + 500);
+    expect(plantAt(scene, "plant_boss_0").visible).toBe(false);
+    props.tick(NOW + 10 + REPOT_MS - 1);
+    expect(plantAt(scene, "plant_boss_0").visible).toBe(false);
+    props.tick(NOW + 10 + REPOT_MS);
+    expect(plantAt(scene, "plant_boss_0").visible).toBe(true);
+    expect(tex(scene, "plant_boss_0")).toBe("plant/s0");
+    // 사무실을 옮기면 진행 중인 분갈이도 없던 일
+    props.cue({ teamId: "t0", kind: "Repot" }, NOW + 5000, office({}, [team(0, 0.05)]));
+    props.reset();
+    props.tick(NOW + 5001);
+    expect(plantAt(scene, "plant_boss_0").visible).toBe(true);
+  });
+  stillMotion(false, () => {
+    // 대기업은 이번 스냅샷에서 처음 오는 팀의 화분도 찾는다
+    const { scene, props } = layer();
+    repot(props, office({}, [team(0, 0.05)]), NOW);
+    expect(plantAt(scene).visible).toBe(false);
+  });
+  stillMotion(true, () => {
+    const { scene, props } = layer();
+    repot(props, office({}, [team(0, 0.05)]), NOW);
+    expect(plantAt(scene).visible).toBe(true);
+    expect(tex(scene, "plant_boss_0")).toBe("plant/s0");
+  });
+});
+
+test("ladder: 시작 시각 전엔 숨어 있다가 LADDER_MS 동안 사규 액자 아래에 서고 걷힌다", () => {
+  const { scene, props } = layer();
+  const ladder = () => sprites(scene, "ladder/default")[0];
+  props.ladder(NOW + 1000, NOW);
+  expect(ladder().visible).toBe(false);
+  props.tick(NOW + 1000);
+  expect(ladder().visible).toBe(true);
+  const frame = fp.layouts.large.placements.find((p) => p.id === "rules_frame")!;
+  // 액자 바로 아래: 같은 벽, 액자보다 화면 아래
+  expect(ladder().y).toBeGreaterThan(frame.y);
+  props.tick(NOW + 1000 + LADDER_MS - 1);
+  expect(ladder()).toBeDefined();
+  props.tick(NOW + 1000 + LADDER_MS);
+  expect(ladder()).toBeUndefined();
 });

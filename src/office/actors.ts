@@ -277,7 +277,11 @@ export function seatProps(fp: Floorplan, kind: Kind, office: OfficeDto | null): 
       }
     });
   }
-  if (temp) out.add(full ? "note_full" : "note_temp");
+  if (temp) {
+    // 접이식 책상은 7명째부터 4자리가 한꺼번에 펴진다 (PLAN 3.4)
+    for (const x of s.temp) if (x.desk) out.add(x.desk);
+    out.add(full ? "note_full" : "note_temp");
+  }
   return out;
 }
 

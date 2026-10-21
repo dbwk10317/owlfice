@@ -98,6 +98,16 @@ const svgSpan = (doc: Document, svg: string, cls: string): El => {
   s.innerHTML = svg; // 앱에 묶인 정적 아이콘이다
   return s;
 };
+/** 빈 상태 안내(아이콘 + 제목 + 본문). 사이드바 빈 목록과 캔버스 실패 화면이 같이 쓴다 */
+export const emptyState = (doc: Document, title: string, body: string): El => {
+  const el = mk(doc, "div", "ow-empty");
+  el.append(
+    svgSpan(doc, emptySvg, "ow-empty__art"),
+    mk(doc, "b", "", title),
+    mk(doc, "span", "", body),
+  );
+  return el;
+};
 const changed = (last: Record<string, unknown>, key: string, v: unknown): boolean =>
   last[key] === v ? false : ((last[key] = v), true);
 
@@ -711,13 +721,7 @@ export function mountSidebar(
     }
     if (m.t === "empty") {
       if (old) return old;
-      const el = mk(doc, "div", "ow-empty");
-      el.append(
-        svgSpan(doc, emptySvg, "ow-empty__art"),
-        mk(doc, "b", "", P.emptyTitle),
-        mk(doc, "span", "", P.emptyBody),
-      );
-      return { el, last: {} };
+      return { el: emptyState(doc, P.emptyTitle, P.emptyBody), last: {} };
     }
     if (m.t === "group") {
       const g = (old as GroupView | undefined) ?? newGroup(m);

@@ -298,16 +298,18 @@ test("deskSlot null 팀의 부장은 어디서든 그리지 않는다", () => {
     ).toBeUndefined();
 });
 
+const TEMP_DESKS = ["temp_desk_0", "temp_desk_1", "temp_desk_2", "temp_desk_3"];
+
 test("임시·간이 책상은 쓰는 직원이 있을 때만, 좌석 배정이 없으면 만석 쪽지", () => {
   const dev = (id: string, seat: number | null) => emp(id, "Dev", "Sit", { seat });
   const props = (kind: Kind, teams: TeamDto[]) => seatProps(fp, kind, office(teams));
   expect(props("large", [team("t", [boss(), dev("a", 5)])])).toEqual(new Set());
   expect(props("large", [team("t", [boss(), dev("a", 6), dev("b", 8)])])).toEqual(
-    new Set(["temp_desk_0", "temp_desk_2", "note_temp"]),
+    new Set([...TEMP_DESKS, "note_temp"]),
   );
   // 좌석 번호가 없으면 마지막 임시 책상에 겹친다
   expect(props("large", [team("t", [boss(), dev("a", 9), dev("b", null)])])).toEqual(
-    new Set(["temp_desk_3", "note_full"]),
+    new Set([...TEMP_DESKS, "note_full"]),
   );
   // 중소기업 deskSlot 4~5 는 간이 책상
   expect(props("small", [team("t", [boss()], { deskSlot: 5 })])).toEqual(new Set(["spare_desk_1"]));
@@ -318,15 +320,15 @@ test("책상·쪽지는 좌석 배정으로: 임시 자리 직원·간이 책상
   const away = emp("a", "Meeting", "Sit", { seat: 7 });
   expect(at("large", office([team("t", [boss(), away])]), "a")!.spot).not.toMatch(/^temp_/);
   expect(props("large", [team("t", [boss(), away])])).toEqual(
-    new Set(["temp_desk_1", "note_temp"]),
+    new Set([...TEMP_DESKS, "note_temp"]),
   );
   // 외근이라 그리지 않아도 배정은 그대로
   expect(props("large", [team("t", [boss(), emp("a", "Outside", "Sit", { seat: 7 })])])).toEqual(
-    new Set(["temp_desk_1", "note_temp"]),
+    new Set([...TEMP_DESKS, "note_temp"]),
   );
   // 좌석 없는 직원은 다른 방에 있어도 만석
   expect(props("large", [team("t", [boss(), emp("a", "Test", "Sit", { seat: null })])])).toEqual(
-    new Set(["temp_desk_3", "note_full"]),
+    new Set([...TEMP_DESKS, "note_full"]),
   );
   expect(props("small", [team("t", [boss("Meeting")], { deskSlot: 4 })])).toEqual(
     new Set(["spare_desk_0"]),

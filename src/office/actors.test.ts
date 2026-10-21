@@ -32,6 +32,7 @@ import {
   CHEER_MS,
   CLAP_MS,
   ENTER_MS,
+  LADDER_MS,
   STAMP_MS,
   VISIT_STAY_MS,
   WALK_MAX_MS,
@@ -1220,4 +1221,86 @@ test("외근 복귀가 아닌 출근(Enter)·조용한 재구성(instant)·움�
   }
   // 대조: 보통은 문이 열린다
   expect(back((l, o) => l.sync(o, "large", NOW + 3000))).toEqual([1, true]);
+});
+
+// ---------- 서브 종료·액자 교체 (T26b) ----------
+
+// 액자 교체: 제 자리에 앉은 직원 한 명이 액자 앞 사다리에 4초 서 있다 돌아온다
+function frameSwapRun() {
+  const { layer } = newLayer();
+  const a = emp("a", "Dev", "Type", { seat: 0 });
+  const o = () => office([team("t", [boss(), a])]);
+  layer.sync(o(), "large", NOW);
+  const ladders: number[] = [];
+  layer.onLadder = (start) => void ladders.push(start);
+  return { layer, o, ladders };
+}
+const swap = (title = "새 제목") => cue({ kind: "FrameSwap", title });
+const frameAt = () => {
+  const f = fp.layouts.large.placements.find((p) => p.id === "rules_frame")!;
+  return screen(f.gx + 0.8, f.gy + 1.2);
+};
+
+test("FrameSwap: 제 자리 직원 한 명이 액자 앞까지 걸어가 LADDER_MS 서 있다 자리로 돌아온다", () => {
+  const { layer, o, ladders } = frameSwapRun();
+  const home = ["boss", "a"].map((id) => posOf(layer, id));
+  layer.sync(withCues(o(), [swap()]), "large", NOW + 100);
+  const t = NOW + 100;
+  // 사다리 시각 = 걸어서 도착하는 시각
+  expect(ladders).toHaveLength(1);
+  expect(ladders[0]).toBeGreaterThanOrEqual(t + 500);
+  expect(ladders[0]).toBeLessThanOrEqual(t + WALK_MAX_MS);
+  const where = (ms: number) => {
+    layer.update(ms);
+    return ["boss", "a"].map((id) => posOf(layer, id));
+  };
+  const front = where(ladders[0] + 10).filter((p) => p.x === frameAt().x && p.y === frameAt().y);
+  expect(front).toHaveLength(1);
+  expect(where(ladders[0] + LADDER_MS - 10).filter((p) => p.x === frameAt().x)).toHaveLength(1);
+  expect(where(ladders[0] + LADDER_MS + WALK_MAX_MS)).toEqual(home);
+});
+
+test("FrameSwap: instant·움직임 줄이기·앉은 직원이 없으면 가지 않고, 같은 스냅샷을 다시 불러도 한 번이다", () => {
+  const { layer, o, ladders } = frameSwapRun();
+  layer.sync(withCues(o(), [swap()]), "large", NOW + 100, { instant: true });
+  expect(ladders).toHaveLength(0);
+  const cued = withCues(o(), [swap()]);
+  layer.sync(cued, "large", NOW + 200);
+  layer.sync(cued, "large", NOW + 210);
+  expect(ladders).toHaveLength(1);
+  // 탕비실에 가 있는 직원과 퇴장 서브는 제 자리에 있지 않다
+  const away = newLayer();
+  const lazy = emp("a", "Pantry", "Sit", { retiredAt: SINCE });
+  away.layer.sync(withCues(office([team("t", [lazy])]), [swap()]), "large", NOW);
+  const seen: number[] = [];
+  away.layer.onLadder = (s) => void seen.push(s);
+  away.layer.sync(withCues(office([team("t", [lazy])]), [swap("또")]), "large", NOW + 10);
+  expect(seen).toHaveLength(0);
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  try {
+    const still = frameSwapRun();
+    still.layer.sync(withCues(still.o(), [swap()]), "large", NOW + 100);
+    expect(still.ladders).toHaveLength(0);
+    expect(posOf(still.layer, "a")).toEqual(SEAT0);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("FrameSwap: 한 sync 에 여럿 와도 액자는 하나라 마지막 것만 연출한다", () => {
+  const { layer, o, ladders } = frameSwapRun();
+  layer.sync(withCues(o(), [swap("가"), swap("나")]), "large", NOW + 100);
+  expect(ladders).toHaveLength(1);
+});
+
+test("FrameSwap: 가는 사람은 늘 한 명이다", () => {
+  const { layer } = newLayer();
+  const emps = [0, 1, 2, 3].map((i) => emp(`e${i}`, "Dev", "Type", { seat: i }));
+  const o = () => office([team("t", [boss(), ...emps])]);
+  layer.sync(o(), "large", NOW);
+  layer.sync(withCues(o(), [swap("가")]), "large", NOW + 100);
+  layer.update(NOW + 100 + 400);
+  const all = [boss(), ...emps];
+  const moved = all.filter((e) => posOf(layer, e.agentId).x !== at("large", o(), e.agentId)!.x);
+  expect(moved).toHaveLength(1);
 });

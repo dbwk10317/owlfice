@@ -25,6 +25,10 @@ export const FIREWORKS_MS = 500;
 export const CHEER_MS = 1000;
 /** 사장님이 부장 책상 앞에 도착한 뒤 서 있는 시간 */
 export const VISIT_STAY_MS = 5000;
+/** 액자를 바꾸는 직원이 사다리 위에 있는 시간 (HANDOFF 5절 제목 변경) */
+export const LADDER_MS = 4000;
+/** 분갈이 때 화분이 비어 있는 시간. 새 화분(s0)은 그 뒤에 나온다 */
+export const REPOT_MS = 800;
 /** 이보다 많이 쌓이면 중간을 건너뛰고 마지막 상태로 점프 */
 export const MAX_STEPS = 5;
 // 방 사이 거리(약 100~390px, 중앙값 250px)가 0.5~1.5초에 고르게 들어오는 속도.
@@ -232,6 +236,33 @@ export class Track {
     if (this.steps.length > MAX_STEPS) this.reset(this.target, now);
   }
 
+  /**
+   * 자리를 떠나 `to` 에서 look 으로 ms 서 있다 자리로 돌아온다 (액자 교체). 서 있기 시작하는 시각을 돌려준다.
+   * 숨어 있거나 단계가 너무 많이 밀려 있으면 하지 않고 null
+   */
+  errand(to: Pt, look: Look, ms: number, now: number): number | null {
+    this.advance(now);
+    const at = this.target.at;
+    if (!at) return null;
+    this.cut(now);
+    const from = this.end();
+    if (!from) return null;
+    const busyUntil = this.queueEnd(now);
+    const t = this.target;
+    // 앉았던 자리에서 일어서고 다시 앉을 때 책상·칸막이 앞뒤가 뒤집히지 않게 (retarget 과 같다)
+    const head = same(from, t.at) ? t.depth : undefined;
+    const tail = t.sitOn ? t.depth : undefined;
+    this.walk(walkPath(this.ctx.fp, from, to), undefined, now, false, { head });
+    const go = this.steps[this.steps.length - 1];
+    this.push({ kind: "pose", look, ms }, now);
+    this.walk(walkPath(this.ctx.fp, to, at), undefined, now, false, { tail });
+    if (this.steps.length > MAX_STEPS) {
+      this.reset(this.target, now);
+      return null;
+    }
+    return busyUntil + (go.kind === "walk" ? go.ms : 0);
+  }
+
   /** 반려 직후 사장님 손이 필요한 동안(needs_boss)은 유휴 동작을 미룬다 (PLAN 4.7.2) */
   holdIdle(ms: number, now: number): void {
     this.nextIdle = Math.max(this.nextIdle, now + ms);
@@ -276,6 +307,12 @@ export class Track {
       this.t0 = end;
       if (this.steps.length === 0) this.nextIdle = end + idlePeriod(this.ctx.seed);
     }
+  }
+
+  /** 큐가 다 도는 시각. 비어 있으면 지금 */
+  private queueEnd(now: number): number {
+    if (this.steps.length === 0) return now;
+    return this.t0 + this.steps.reduce((t, s) => t + (s.kind === "hide" ? 0 : s.ms), 0);
   }
 
   /** 큐가 다 돌면 설 자리 */
@@ -359,9 +396,8 @@ function along(path: Pt[], f: number): { at: Pt; seg: number } {
 /**
  * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire 는 자리 이동(retarget)이 이미 걷게 했다.
  * 사장님 방문(BossVisit)은 직원 큐가 아니라 ActorLayer 가 액터를 만들어 한다.
- * 도장·트럭·반송·폭죽·작업표는 소품 층(PropsLayer.cue), 도장 때 하이파이브는 ActorLayer 가 한다.
+ * 도장·트럭·반송·폭죽·작업표·분갈이는 소품 층(PropsLayer.cue), 도장 때 하이파이브와 액자 교체(FrameSwap)는 ActorLayer 가 한다.
  * 사이렌(Siren)·흔들림(Shake)은 상태(incident, 카드)가 장면을 다 정하고 캔버스에 순간 연출 그림·소리가 HANDOFF 에 없어 무시한다.
- * ponytail: 액자 교체·분갈이는 아직 없어 무시한다, 해당 티켓이 여기에 넣는다
  */
 export function playCue(cue: CueDto, track: Track | undefined, now: number): void {
   if (cue.kind === "Clap") track?.pose(CLAP, CLAP_MS, now);

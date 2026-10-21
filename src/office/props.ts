@@ -16,6 +16,8 @@ import { meetingCall, seated } from "./actors.ts";
 import {
   DOOR_OPEN_MS,
   FIREWORKS_MS,
+  LADDER_MS,
+  REPOT_MS,
   RETURN_MS,
   RING_MS,
   STAMP_RESULT_MS,
@@ -28,7 +30,7 @@ type PropsTarget = Pick<Scene, "wall" | "world" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
 export const DRIVEN_PROP =
-  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d|rack_\d|terminal|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table)$/;
+  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d|rack_\d|terminal|game_tv|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table)$/;
 
 /** 부장 자세로 정해지는 책상 소품 (HANDOFF 5절): 응답 대기 김, 러버덕 집어 듦, 결재 대기 화면보호기 */
 export interface BossFx {
@@ -106,6 +108,84 @@ function roomFx(office: OfficeDto | null): RoomFx {
   return fx;
 }
 
+export type MagnetColor =
+  | "red"
+  | "blue"
+  | "green"
+  | "yellow"
+  | "gray"
+  | "teal"
+  | "violet"
+  | "coral";
+
+// 대기업은 직원 순번, 중소기업은 팀장석(deskSlot) 번호로 색을 고른다. 팀 순서가 바뀌어도 색이 같다 (HANDOFF 6.6)
+const MAGNET_BY_EMPLOYEE: MagnetColor[] = [
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "gray",
+  "teal",
+  "violet",
+  "coral",
+];
+const MAGNET_BY_TEAM: MagnetColor[] = ["teal", "violet", "coral", "yellow", "blue", "gray"];
+/** 근태판 칸 번호 (props.attendance.columns) */
+const COL_IN = 0;
+const COL_OUT = 1;
+const COL_OFF = 3;
+
+export interface Magnet {
+  col: number;
+  line: number;
+  color: MagnetColor;
+}
+
+/**
+ * 직원마다 자석 하나: 퇴근한 팀·퇴장한 서브는 퇴근, 외근은 외근, 나머지는 출근. 한 칸에 슬롯 수까지만 (넘치면 뒤 직원은 자석이 없다).
+ * 중소기업은 모든 팀을 한 판에 합친다 (labFx 와 같은 규칙).
+ * ponytail: 외출 칸은 DTO 로 가릴 수 있는 상태가 없어 비워 둔다, 외출을 뜻하는 상태가 생기면 채운다
+ */
+export function magnets(office: OfficeDto | null, kind: Kind, slots: number): Magnet[] {
+  const used = [0, 0, 0, 0];
+  const out: Magnet[] = [];
+  for (const team of office?.teams ?? [])
+    team.employees.forEach((emp, i) => {
+      const col =
+        team.phase === "Off" || emp.retiredAt !== null
+          ? COL_OFF
+          : emp.activity.room === "Outside"
+            ? COL_OUT
+            : COL_IN;
+      const line = used[col]++;
+      if (line >= slots) return;
+      const color =
+        kind === "large"
+          ? MAGNET_BY_EMPLOYEE[i % MAGNET_BY_EMPLOYEE.length]
+          : MAGNET_BY_TEAM[Math.min(team.deskSlot ?? MAGNET_BY_TEAM.length - 1, 5)];
+      out.push({ col, line, color });
+    });
+  return out;
+}
+
+/**
+ * 콘솔 게임기를 켜나. 탕비실에 있는 첫 직원이 콘솔 자리를 차지한다 (졸음은 소파, 서성임은 팀장실로 가서 뺀다).
+ * actors.ts layoutActors 가 콘솔에 앉히는 경우와 같다
+ */
+export function gameOn(office: OfficeDto | null, kind: Kind): boolean {
+  return (office?.teams ?? []).some(
+    (t) =>
+      t.phase !== "Off" &&
+      t.employees.some(
+        (e, i) =>
+          e.activity.room === "Pantry" &&
+          e.activity.pose !== "Sleep" &&
+          e.activity.pose !== "Pace" &&
+          !(i === 0 && kind === "small" && t.deskSlot === null),
+      ),
+  );
+}
+
 type BossSeat = Seat & { mug?: string; duck?: string };
 
 const MUG_FPS = 3;
@@ -114,6 +194,7 @@ const RING_FPS = 8;
 const RACK_FPS = 3;
 const FAN_FPS = 10;
 const BEACON_FPS = 6;
+const GAME_FPS = 3;
 const MACHINE_FPS = 6;
 const TRUCK_FPS = 8;
 const FIREWORKS_FPS = 6;
@@ -192,6 +273,8 @@ const CARD_AT = { gx: 19.2, gy: 14.0, z: 9 };
 const MANUAL_AT = { gx: 20.6, gy: 14.0, z: 9 };
 // 미팅실 화면의 밝은 띠 중심과 폭 (meeting_screen 소품 위치 기준 1× px)
 const BAND = { x: 10, y: -5, w: 18 };
+// 사다리는 사규 액자 아래 벽에 기대 놓는다 (액자 위치에서의 격자 차이). 액자 옆 화분(부장 책상)에 가리지 않게 화분 오른쪽
+const LADDER_AT = { dgx: 0.85, dgy: 0.3 };
 // 효과는 다른 소품 위에 그린다
 const FX_DEPTH = 80;
 
@@ -285,6 +368,9 @@ export class PropsLayer {
   private ringUntil = 0;
   private doorUntil = 0;
   private incident = false;
+  private game = false;
+  /** 분갈이 중이라 비워 둔 화분: 끝나는 시각과, 끝나면 보여야 하는지(중소기업은 팀장석이 비면 없다) */
+  private readonly repots = new Map<string, { until: number; on: boolean }>();
   private lab: LabFx = { shell: false, slow: false, test: false, boxes: 0 };
   private readonly effects = new Map<string, Fx>();
 
@@ -332,9 +418,16 @@ export class PropsLayer {
     const f = (fps: number) => (still ? 0 : blink(nowMs, fps));
     for (const id of ["rack_0", "rack_1"])
       this.state(id, this.lab.shell ? `led_${f(RACK_FPS)}` : undefined);
+    this.state("game_tv", this.game ? `game_${f(GAME_FPS)}` : undefined);
     this.state("fan", this.lab.slow ? `spin_${f(FAN_FPS)}` : undefined);
     this.state("test_machine", this.lab.test ? `run_${f(MACHINE_FPS)}` : undefined);
     this.state("beacon", this.incident ? `on_${f(BEACON_FPS)}` : undefined);
+    for (const [id, r] of this.repots) {
+      const sprite = this.target.driven.get(id);
+      const done = nowMs >= r.until;
+      if (done) this.repots.delete(id);
+      if (sprite) sprite.visible = done && r.on;
+    }
     for (const [name, e] of this.effects)
       if (nowMs >= e.until) {
         for (const p of e.parts) p.destroy();
@@ -346,7 +439,7 @@ export class PropsLayer {
    * 한 번 일어나는 소품 연출: 도장·트럭·반송·폭죽, 작업표 (S15 S16 S30 S31 S48, S61).
    * 사무실 전환·조용한 재구성이면 부르지 않는다 (ActorLayer 가 거른다).
    */
-  cue(c: CueDto, now: number): void {
+  cue(c: CueDto, now: number, office: OfficeDto | null = null): void {
     if (c.kind === "Paper") {
       const key = empKey(c.teamId, c.agent);
       if (c.on) this.memory.tickets.add(key);
@@ -356,12 +449,51 @@ export class PropsLayer {
     else if (c.kind === "Truck") this.truck(now);
     else if (c.kind === "Return") this.returned(now);
     else if (c.kind === "Fireworks") this.fireworks(now);
+    else if (c.kind === "Repot") this.repot(c.teamId, now, office);
+  }
+
+  /** 제목이 바뀌면(S39) 직원이 사규 액자로 가는 동안 `at` 에 사다리가 놓여 LADDER_MS 뒤 걷힌다 */
+  ladder(at: number, now: number): void {
+    const frame = this.pl.get("rules_frame");
+    if (!frame) return;
+    const s = this.fxSprite(
+      "ladder/default",
+      frame.gx + LADDER_AT.dgx,
+      frame.gy + LADDER_AT.dgy,
+      0,
+    );
+    s.zIndex = zIndexOf(frame.depth + 0.02, LOOSE_SEQ);
+    this.addFx("ladder", at + LADDER_MS, [s], now, (t) => void (s.visible = t >= at));
+  }
+
+  /**
+   * 분갈이(S38): 새 화분(s0)은 상태가 이미 정했다. 그 전에 REPOT_MS 동안 화분이 비어 있다 나온다.
+   * 움직임 줄이기면 결과만.
+   */
+  private repot(teamId: string, now: number, office: OfficeDto | null): void {
+    if (reducedMotion()) return;
+    // 이 cue 와 함께 온 사무실로 찾는다. update 는 아직 이전 스냅샷을 그리고 있다
+    const teams = office?.teams ?? [];
+    const team = teams.find((t) => t.teamId === teamId);
+    if (!team) return;
+    const slot = this.kind === "large" ? (team === teams[0] ? 0 : null) : team.deskSlot;
+    if (slot === null || slot > 3) return;
+    const id = `plant_boss_${slot}`;
+    // 연달아 오면 앞 분갈이가 숨긴 상태를 "보임"으로 읽지 않게 앞의 값을 이어 쓴다
+    const on = this.repots.get(id)?.on ?? this.target.driven.get(id)?.visible ?? true;
+    this.repots.set(id, { until: now + REPOT_MS, on });
+    this.tick(now);
   }
 
   /** 사무실 전환: 지난 사무실의 작업표·테스트 결과와 진행 중인 효과를 지운다 */
   reset(): void {
     this.memory.tickets.clear();
     this.memory.board = undefined;
+    for (const [id, r] of this.repots) {
+      const sprite = this.target.driven.get(id);
+      if (sprite) sprite.visible = r.on;
+    }
+    this.repots.clear();
     for (const e of this.effects.values()) for (const p of e.parts) p.destroy();
     this.effects.clear();
   }
@@ -483,6 +615,8 @@ export class PropsLayer {
     this.updatePapers(shared?.trash ?? 0);
     this.updatePizza(shared?.pizza ?? 0);
     this.updateTv(office);
+    this.updateMagnets(office);
+    this.game = gameOn(office, this.kind);
     this.lab = labFx(office);
     this.updateBoxes(this.lab.boxes);
     this.state("terminal", this.lab.shell ? "on" : undefined);
@@ -601,7 +735,9 @@ export class PropsLayer {
       const id = `plant_boss_${i}`;
       const team = office?.teams.find((t) => t.deskSlot === i);
       const sprite = this.target.driven.get(id);
-      if (sprite) sprite.visible = !!team;
+      const r = this.repots.get(id);
+      if (r) r.on = !!team;
+      if (sprite) sprite.visible = !!team && !r;
       this.state(id, plantState(team?.props.plant ?? null));
     }
   }
@@ -620,6 +756,24 @@ export class PropsLayer {
           kb.x + slots[slot][0],
           kb.y + slots[slot][1],
         );
+        this.target.wall.addChild(s);
+        return s;
+      }),
+    );
+  }
+
+  private updateMagnets(office: OfficeDto | null): void {
+    const board = this.pl.get("attendance");
+    // 근태판 slots 는 [칸][줄][dx, dy] 라 한 겹 깊다 (PropMeta.slots 는 다른 소품의 [i][dx, dy])
+    const slots = this.meta.attendance?.slots as unknown as number[][][] | undefined;
+    if (!board || !slots) return;
+    const list = magnets(office, this.kind, slots[0].length);
+    if (!this.changed("magnets", JSON.stringify(list))) return;
+    this.replace(
+      "magnets",
+      list.map(({ col, line, color }) => {
+        const [dx, dy] = slots[col][line];
+        const s = placeSprite(this.sheet, `magnet/${color}`, board.x + dx, board.y + dy);
         this.target.wall.addChild(s);
         return s;
       }),

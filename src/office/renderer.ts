@@ -309,7 +309,8 @@ export async function mountOffice(
   actors.onPick = (teamId, agentId) => opts.onEmployee?.(officeId, teamId, agentId);
   actors.onRing = (now) => props?.ring(now);
   actors.onDoor = (now) => props?.openDoor(now);
-  actors.onCue = (c, now) => props?.cue(c, now);
+  actors.onCue = (c, now, o) => props?.cue(c, now, o);
+  actors.onLadder = (at, now) => props?.ladder(at, now);
   let labels: { el: HTMLElement; x: number; y: number }[] = [];
   let fit = canvasScale(CANVAS_W, CANVAS_H, 1);
   let dpr = 1;

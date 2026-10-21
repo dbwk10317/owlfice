@@ -143,6 +143,7 @@ ALLOWED_KEYS = {
     # 앱 내부 도구 결과(JSON 문자열) 안의 키: ccd_pr, Codex exec 출력
     "accepted", "arguments", "metadata", "namespace", "question", "questions", "sandbox_permissions", "user_input_order",
     "auto_archive_on_close", "bound", "chunk_id", "monitor", "original_token_count", "wall_time_seconds",
+    "cell_id", "max_tokens", "yield_time_ms",
 }  # fmt: skip
 ID_KEYS = {
     "uuid", "parentUuid", "logicalParentUuid", "sessionId", "session_id", "requestId", "id", "tool_use_id",
@@ -180,7 +181,7 @@ DROP_KEYS = {
 # Claude 내장 다섯, Codex custom_tool_call 의 exec, Codex exec 안 JS 의 tools.<이름> 넷 (docs/CONTRACTS.md C7), 내부 도구
 TOOL_NAMES = {
     "Agent", "Bash", "Edit", "Read", "Write", "exec", "exec_command", "write_stdin", "apply_patch", "web__run",
-    "mcp__ccd_pr__bind_pr", "mcp__ccd_pr__get_status", "request_user_input_async", "sleep",
+    "mcp__ccd_pr__bind_pr", "mcp__ccd_pr__get_status", "request_user_input_async", "sleep", "wait",
 }  # fmt: skip
 CCD_TOOL_RE = re.compile(
     r"mcp__ccd_[a-z_]+__[a-z_]+"
@@ -261,7 +262,7 @@ STRUCT_RE = re.compile(
     rf"(?P<kv><(?P<ktag>task-id|tool-use-id|output-file|status|subagent_tokens|tool_uses|duration_ms|worktreePath)>"
     rf"(?P<kval>[^<]*)</(?P=ktag)>)"
     rf"|(?P<tag></?(?:{STRUCT_TAGS})>)"
-    rf"|(?P<lit>{'|'.join(re.escape(p) for p in LITERAL_PHRASES)})"
+    rf"|(?P<lit>Script running with cell ID \d+|{'|'.join(re.escape(p) for p in LITERAL_PHRASES)})"
     rf"|(?P<test>{TEST_SUMMARY})"
     rf"|(?P<ids>{EMBEDDED_ID_RE.pattern})"
     rf"|(?P<spath>(?<=saved to: )\S+|(?<=output_file: )\S+)"
@@ -706,6 +707,10 @@ class Anon:
                 datetime.fromisoformat(s).replace(tzinfo=UTC) + self.delta
             ).strftime("%Y-%m-%d")
         if s in LITERALS:
+            return s
+        if (
+            key == "cell_id" and s.isdigit()
+        ):  # exec 결과의 cell ID 와 wait 호출을 잇는 값
             return s
         if key in ENUM_VALUES:
             if s in ENUM_VALUES[key]:

@@ -5,7 +5,8 @@ import { CANVAS_H, CANVAS_W, hexToRgb, type Kind, type Theme } from "../src/offi
 import { PropsLayer } from "../src/office/props.ts";
 import { buildScene, createOfficeApp } from "../src/office/renderer.ts";
 import { loadOfficeAssets } from "../src/office/sprites.ts";
-import type { Light, OfficeDto, TeamDto, TodoItem } from "../src/types/ipc.ts";
+import { office as testOffice, team as testTeam } from "../src/test-office.ts";
+import type { OfficeDto, TeamDto, TodoItem } from "../src/types/ipc.ts";
 
 import { compare, loadRef, show, unpremultiply } from "./ref.ts";
 
@@ -17,10 +18,14 @@ declare global {
 
 const todo = (status: TodoItem["status"], n: number): TodoItem[] =>
   Array.from({ length: n }, () => ({ content: "x", status }));
-const team = (deskSlot: number, plant: number | null): TeamDto =>
-  ({ teamId: `t${deskSlot}`, deskSlot, props: { plant } }) as unknown as TeamDto;
-const office = (shared: Record<string, unknown>, teams: TeamDto[]): OfficeDto =>
-  ({ teams, shared }) as unknown as OfficeDto;
+const team = (deskSlot: number, plant: number | null): TeamDto => {
+  const t = testTeam(`t${deskSlot}`, []);
+  return { ...t, deskSlot, props: { ...t.props, plant } };
+};
+const office = (shared: Partial<OfficeDto["shared"]>, teams: TeamDto[]): OfficeDto => {
+  const o = testOffice("props-reference", 0, teams);
+  return { ...o, shared: { ...o.shared, ...shared } };
+};
 const NOW = (h: number) => new Date(2026, 9, 21, h, 0).getTime();
 const since = (now: number, min: number) => new Date(now - min * 60_000).toISOString();
 
@@ -51,7 +56,7 @@ const CASES: Case[] = [
     now: NOW(18),
     office: office(
       {
-        light: "Green" as Light,
+        light: "Green",
         safeSince: since(NOW(18), 37),
         trash: 13,
         pizza: 2,
@@ -69,7 +74,7 @@ const CASES: Case[] = [
     now: NOW(23),
     office: office(
       {
-        light: "Red" as Light,
+        light: "Red",
         safeSince: since(NOW(23), 1234),
         trash: 20,
         pizza: 8,

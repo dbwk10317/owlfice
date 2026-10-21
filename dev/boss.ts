@@ -1,6 +1,7 @@
 // 개발용 사장님 연출 확인 페이지 (npm run dev 에서 /dev/boss.html). 앱 빌드에 들어가지 않는다.
 // 버튼이 부장 자세와 cue 를 바꿔 방문·응답 대기·러버덕·결재 대기·허가 대기·반려를 보여 준다.
 import { mountOffice } from "../src/office/renderer.ts";
+import { office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type {
   CueDto,
   EmployeeDto,
@@ -51,11 +52,17 @@ function boss(room: Room, pose: Pose): EmployeeDto {
 
 let seq = 1;
 function office(room: Room, pose: Pose, cues: CueDto[] = []): OfficeDto {
+  const t = testTeam("t1", [boss(room, pose)]);
+  const o = testOffice(
+    "dev-boss",
+    seq++,
+    [{ ...t, title: "t1", folder: "app", started: since, lastActivity: since, deskSlot: 0 }],
+    cues,
+  );
   return {
-    stateSeq: seq++,
-    officeId: "dev-boss",
-    rebuilt: false,
+    ...o,
     shared: {
+      ...o.shared,
       incident: false,
       night: false,
       light: "Green",
@@ -63,27 +70,7 @@ function office(room: Room, pose: Pose, cues: CueDto[] = []): OfficeDto {
       trash: 0,
       pizza: 0,
       kanban: [],
-    } as unknown as OfficeDto["shared"],
-    cues,
-    teams: [
-      {
-        teamId: "t1",
-        title: "t1",
-        building: "A",
-        hostBadge: null,
-        delayed: false,
-        folder: "app",
-        started: since,
-        lastActivity: since,
-        phase: "Working",
-        workType: "NewDev",
-        deskSlot: 0,
-        employees: [boss(room, pose)],
-        props: {} as OfficeDto["teams"][number]["props"],
-        incident: null,
-        idleAlive: false,
-      },
-    ],
+    },
   };
 }
 

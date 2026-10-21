@@ -1,6 +1,7 @@
 // 개발용 서브 종료·재출근·분갈이·액자 교체 연출 확인 페이지 (npm run dev 에서 /dev/life.html). 앱 빌드에 들어가지 않는다.
 // 버튼이 직원 방·퇴장 시각·화분 값·제목을 바꿔 S20 S38 S39 S60 을 보여 준다. 걷는 장면은 앞 상태를 먼저 보낸 뒤 다음 상태를 보낸다.
 import { mountOffice } from "../src/office/renderer.ts";
+import { office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type {
   CueDto,
   EmployeeDto,
@@ -66,11 +67,27 @@ const gone = (id: string) => emp(id, "Daeri", "Pantry", "Sit", { retiredAt: iso(
 let seq = 1;
 function office(subs: EmployeeDto[], plant: number, title: string, cues: CueDto[] = []): OfficeDto {
   const since = iso();
+  const t = testTeam(T, [lead(), ...subs]);
+  const o = testOffice(
+    "dev-life",
+    seq++,
+    [
+      {
+        ...t,
+        title,
+        folder: "app",
+        started: since,
+        lastActivity: since,
+        deskSlot: 0,
+        props: { ...t.props, plant },
+      },
+    ],
+    cues,
+  );
   return {
-    stateSeq: seq++,
-    officeId: "dev-life",
-    rebuilt: false,
+    ...o,
     shared: {
+      ...o.shared,
       incident: false,
       night: false,
       light: "Off",
@@ -79,27 +96,7 @@ function office(subs: EmployeeDto[], plant: number, title: string, cues: CueDto[
       pizza: 0,
       frameTitle: title,
       kanban: [],
-    } as unknown as OfficeDto["shared"],
-    cues,
-    teams: [
-      {
-        teamId: T,
-        title,
-        building: "A",
-        hostBadge: null,
-        delayed: false,
-        folder: "app",
-        started: since,
-        lastActivity: since,
-        phase: "Working",
-        workType: "NewDev",
-        deskSlot: 0,
-        employees: [lead(), ...subs],
-        props: { plant } as OfficeDto["teams"][number]["props"],
-        incident: null,
-        idleAlive: false,
-      },
-    ],
+    },
   };
 }
 

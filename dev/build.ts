@@ -2,6 +2,7 @@
 // 버튼이 직원 자세와 cue 를 바꿔 셸·빌드·테스트·도장·쪼그림·땀·커밋·트럭·반송·폭죽·작업표를 보여 준다.
 // 도장·만세처럼 "어디서 어디로" 가는 장면은 앞 상태를 먼저 보여 준 뒤 cue 와 함께 다음 상태를 보낸다.
 import { mountOffice } from "../src/office/renderer.ts";
+import { office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type {
   CueDto,
   EmployeeDto,
@@ -62,11 +63,17 @@ function office(
   test: TestVerdict | null = null,
 ): OfficeDto {
   const since = iso();
+  const t = testTeam(T, [emp("boss", "Bujang", "TeamLead", "Sit"), worker]);
+  const o = testOffice(
+    "dev-build",
+    seq++,
+    [{ ...t, title: T, folder: "app", started: since, lastActivity: since, deskSlot: 0 }],
+    cues,
+  );
   return {
-    stateSeq: seq++,
-    officeId: "dev-build",
-    rebuilt: false,
+    ...o,
     shared: {
+      ...o.shared,
       incident: false,
       night: false,
       light,
@@ -75,27 +82,7 @@ function office(
       pizza: 0,
       kanban: [],
       test,
-    } as unknown as OfficeDto["shared"],
-    cues,
-    teams: [
-      {
-        teamId: T,
-        title: T,
-        building: "A",
-        hostBadge: null,
-        delayed: false,
-        folder: "app",
-        started: since,
-        lastActivity: since,
-        phase: "Working",
-        workType: "NewDev",
-        deskSlot: 0,
-        employees: [emp("boss", "Bujang", "TeamLead", "Sit"), worker],
-        props: {} as OfficeDto["teams"][number]["props"],
-        incident: null,
-        idleAlive: false,
-      },
-    ],
+    },
   };
 }
 

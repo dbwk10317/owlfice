@@ -206,6 +206,14 @@
     "running": "진행 중 · {sec}초", "ok": "성공", "fail": "실패", "failTests": "실패 · 합격 {pass} / 반려 {fail}", "unknown": "결과 확인 불가"
   },
 
+  "detailError": {
+    "not_found": "기록을 찾지 못했어요. 이미 퇴근했거나 정리됐을 수 있습니다.",
+    "cursor_invalid": "기록이 새로 쓰여 처음부터 다시 불러왔어요.",
+    "host_offline": "그 층과 연락이 닿지 않아 기록을 읽지 못했어요.",
+    "timeout": "기록을 읽는 데 오래 걸려요. 잠시 뒤 다시 눌러 주세요.",
+    "open_failed": "탐색기를 열지 못했어요."
+  },
+
   "settings": {
     "title": "설정",
     "company": "회사", "scale": "회사 규모", "scaleHint": "바꾸면 사무실만 다시 배치하고 데이터는 다시 읽지 않아요.", "large": "대기업", "small": "중소기업",

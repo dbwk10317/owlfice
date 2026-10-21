@@ -8,7 +8,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use super::names::{NameBook, NamesSave};
 use super::work::WorkType;
 use super::{Cue, Record, Team, TeamPhase};
-use crate::discover::{Host, Vendor};
+use crate::discover::{Host, Product, Vendor};
 use crate::parse::Event;
 
 /// 비교용 복제본이 기록 자리에 두는 빈 기록
@@ -206,6 +206,23 @@ impl OfficeWorld {
             b.record = e.record.clone();
         }
         self.settle(key, &before, now, !cues.is_empty());
+        for c in cues {
+            self.cue(key, c);
+        }
+    }
+
+    /// 세션 등록부 값을 팀에 넣는다 (4.4.1 쓰임 2·3). 제목이 바뀌면 jsonl 제목처럼 액자를 간다 (S39)
+    pub fn set_registry(&mut self, key: &TeamKey, name: Option<&str>, product: Option<Product>) {
+        let Some(team) = self.teams.get_mut(key) else {
+            return;
+        };
+        let title = team.title.clone();
+        let mut cues = Vec::new();
+        if !team.set_registry(name, product, &mut cues) {
+            return;
+        }
+        let list_changed = team.title != title;
+        self.bump(key, list_changed);
         for c in cues {
             self.cue(key, c);
         }

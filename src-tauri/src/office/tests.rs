@@ -2745,3 +2745,53 @@ fn short_reads_stay_at_the_desk_and_long_ones_go_to_the_archive() {
     s.on(SUB, 51, call("x", ToolKind::FileRead, ranged));
     assert_eq!(s.sub().activity.room, Room::Dev);
 }
+
+fn title(t: &str) -> EventKind {
+    EventKind::TitleChanged { title: t.into() }
+}
+
+fn frames(cues: &[Cue]) -> Vec<String> {
+    cues.iter()
+        .filter_map(|c| match c {
+            Cue::FrameSwap { title } => Some(title.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn registry_user_name_beats_jsonl_title_until_it_leaves() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, title("log"));
+    assert_eq!(s.team.title, "log");
+    assert!(s.team.set_registry(Some("mine"), None, &mut s.cues));
+    assert_eq!(s.team.title, "mine");
+    // jsonl 제목이 바뀌어도 등록부 이름이 지금 값이다
+    s.on(MAIN, 1, title("log2"));
+    assert_eq!(s.team.title, "mine");
+    // 같은 값이 Scan 마다 다시 와도 액자는 그대로
+    assert!(!s.team.set_registry(Some("mine"), None, &mut s.cues));
+    // 등록부에서 사라지면 마지막 jsonl 제목으로
+    assert!(s.team.set_registry(None, None, &mut s.cues));
+    assert_eq!(s.team.title, "log2");
+    assert_eq!(frames(&s.cues), ["log", "mine", "log2"]);
+}
+
+#[test]
+fn registry_entrypoint_only_until_jsonl_decides() {
+    let meta = |product| EventKind::SessionMeta {
+        cwd: PathBuf::from("w"),
+        model: None,
+        title: None,
+        product,
+        git_branch: None,
+    };
+    let mut cues = Vec::new();
+    let mut t = Team::new(MAIN, Product::ClaudeDesktop, t0());
+    assert!(t.set_registry(None, Some(Product::ClaudeCli), &mut cues));
+    assert_eq!(t.product, Product::ClaudeCli);
+    t.apply(&ev(MAIN, 0, meta(Product::ClaudeDesktop)), &mut cues);
+    assert!(!t.set_registry(None, Some(Product::ClaudeCli), &mut cues));
+    assert_eq!(t.product, Product::ClaudeDesktop);
+    assert!(cues.is_empty());
+}

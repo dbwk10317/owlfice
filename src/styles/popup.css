@@ -1,0 +1,426 @@
+/* 팝업 두 종류의 배치 보강 (HANDOFF 4.6). 바탕·상자·바닥 띠의 기본 모양은 design/handoff/tokens.css 의 .ow-backdrop·.ow-modal* */
+
+/* 720 미만의 전체 화면 규칙(tokens.css)이 너비를 이기도록 넓은 화면에서만 */
+@media (min-width: 720px) {
+  .ow-modal {
+    width: var(--ow-modal-w);
+  }
+}
+.ow-modal:focus {
+  outline: none;
+}
+.ow-modal [hidden] {
+  display: none !important;
+}
+
+.ow-pop__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 20px 20px 16px 24px;
+  flex: none;
+}
+.ow-pop__head--emp {
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--ow-line);
+}
+.ow-pop__head--emp .ow-modal__close {
+  align-self: flex-start;
+}
+.ow-pop__headmain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ow-pop__head--emp .ow-pop__headmain {
+  gap: 6px;
+}
+.ow-pop__titlerow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ow-pop__head--emp .ow-pop__titlerow {
+  align-items: baseline;
+  gap: 6px;
+}
+.ow-pop__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  min-width: 0;
+}
+.ow-pop__title--lg {
+  font-size: 22px;
+}
+.ow-pop__rank {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ow-ink-2);
+}
+.ow-pop__sub {
+  margin: 0;
+  color: var(--ow-ink-2);
+}
+.ow-pop__chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ow-pop__meta {
+  font-size: 12px;
+  color: var(--ow-ink-3);
+}
+
+.ow-pop__body {
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+}
+.ow-pop__body:not(.ow-emp) {
+  padding-bottom: 20px;
+}
+.ow-modal__foot {
+  align-items: center;
+}
+.ow-pop__note {
+  margin: 0 auto 0 0;
+  font-size: 12px;
+  color: var(--ow-bad-ink);
+}
+.ow-pop__error {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--ow-ask-ink);
+}
+.ow-pop__h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ow-pop__h2--lg {
+  font-size: 14px;
+}
+.ow-pop__n {
+  font-size: 12px;
+  color: var(--ow-ink-3);
+}
+.ow-pop__block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ow-pop__box {
+  background: var(--ow-panel);
+  border: 1px solid var(--ow-line-soft);
+  border-radius: var(--ow-radius-lg);
+  padding: 10px 12px;
+}
+.ow-pop__instruction {
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.ow-pop__lab {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ow-ink-3);
+}
+.ow-pop__blk {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ow-pop__tlhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ow-line);
+}
+.ow-pop__legend {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ow-ink-3);
+}
+.ow-pop__more {
+  height: 36px;
+  border-radius: var(--ow-radius-lg);
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ow-ink-2b);
+  background: var(--ow-fill-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  width: 100%;
+}
+.ow-pop__more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ow-pop__more .ow-mono {
+  font-size: 11.5px;
+  color: var(--ow-ink-3);
+}
+
+/* 아바타: 올빼미 스프라이트는 캔버스 티켓에서. 지금은 현황판 카드처럼 단색 자리표시 */
+.ow-avatar--sm {
+  width: 20px;
+  height: 22px;
+  border-radius: 5px;
+}
+.ow-avatar--lg {
+  width: 88px;
+  height: 88px;
+  border-radius: 16px;
+}
+
+/* 세션 상세: 정보 표 */
+.ow-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius-xl);
+  overflow: hidden;
+}
+.ow-kv__item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ow-line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ow-kv__item:nth-child(odd) {
+  border-right: 1px solid var(--ow-line-soft);
+}
+.ow-kv__item.is-wide {
+  grid-column: 1 / -1;
+  border-right: 0;
+}
+.ow-kv__item:last-child,
+.ow-kv__item:nth-last-child(2):nth-child(odd) {
+  border-bottom: 0;
+}
+.ow-kv dt {
+  font-size: 11.5px;
+  color: var(--ow-ink-3);
+  font-weight: 500;
+}
+.ow-kv dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ow-kv__mono {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-kv__pr {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 세션 상세: 최근 사건 */
+.ow-tl {
+  display: grid;
+  grid-template-columns: 64px 24px 92px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--ow-line-soft);
+}
+.ow-tl__time {
+  font: 11.5px var(--ow-font-mono);
+  color: var(--ow-ink-3);
+}
+.ow-tl__who {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ow-tl__what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ow-ink-2b);
+}
+
+/* 직원 상세 */
+.ow-emp {
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+}
+.ow-emp__main {
+  flex: 1;
+  min-width: 0;
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.ow-emp__aside {
+  width: 280px;
+  flex: none;
+  border-left: 1px solid var(--ow-line);
+  background: var(--ow-panel);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.ow-emp__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ow-emp__sumhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ow-emp__sumhead .ow-pop__n {
+  margin-left: auto;
+}
+.ow-emp__li {
+  font: 12px var(--ow-font-mono);
+  padding: 3px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-ev {
+  border: 1px solid var(--ow-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ow-ev__head {
+  display: grid;
+  grid-template-columns: 58px 52px minmax(0, 1fr) auto 16px;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.ow-ev__head:hover,
+.ow-ev__head[aria-expanded="true"] {
+  background: var(--ow-panel);
+}
+.ow-ev__t {
+  font: 11.5px var(--ow-font-mono);
+  color: var(--ow-ink-3);
+}
+.ow-ev__tool {
+  font: 500 11px/18px var(--ow-font-mono);
+  color: var(--ow-ink-2b);
+  background: var(--ow-fill);
+  border-radius: var(--ow-radius-xs);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-ev__sum {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-ev__res {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ow-ev__res.is-ok {
+  color: var(--ow-ok-ink);
+}
+.ow-ev__res.is-bad {
+  color: var(--ow-bad-ink);
+}
+.ow-ev__res.is-run {
+  color: var(--ow-ask);
+}
+.ow-ev__res.is-dim {
+  color: var(--ow-ink-3);
+}
+.ow-ev__chev {
+  color: var(--ow-ink-3);
+  transition: transform var(--ow-dur-1) var(--ow-ease);
+}
+.ow-ev__head[aria-expanded="true"] .ow-ev__chev {
+  transform: rotate(90deg);
+}
+.ow-ev__body {
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ow-ev__body pre {
+  margin: 0;
+  font: 11.5px/1.6 var(--ow-font-mono);
+  color: var(--ow-ink-2b);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.ow-emp__cut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ow-ink-3);
+  margin: 6px 0;
+}
+.ow-emp__cut::before,
+.ow-emp__cut::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--ow-ink-4);
+}
+.ow-emp__open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.ow-emp__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ow-emp__linkfile {
+  color: var(--ow-ink-3);
+  text-decoration: none;
+}

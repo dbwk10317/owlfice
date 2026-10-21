@@ -8,10 +8,14 @@ import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
 import { emptyState, mountSidebar } from "./sidebar-left.ts";
 import { mountPanel } from "./sidebar-right.ts";
 import { showLoading, type LoadingSheet } from "./loading.ts";
+import { openEmployeeDetail } from "./popup-employee.ts";
+import { openSessionDetail } from "./popup-session.ts";
 import { showScale } from "./scale.ts";
 import phrases from "../design/handoff/phrases.ko.json";
 import { createStore } from "./store.ts";
+import { teamName } from "./ticker.ts";
 import type {
+  EmployeeDto,
   OfficeDto,
   OfficeListDto,
   SelectResponseDto,
@@ -64,16 +68,58 @@ function mountShell(): void {
 
   let office: OfficeHandle | null = null;
   let header: ReturnType<typeof mountHeader> | null = null;
+
+  // 팝업은 지금 고른 사무실의 직원만 이름을 안다. 다른 사무실의 세션 상세는 직원 이름 대신 id 를 보인다
+  const live = (teamId: string, agentId: string): EmployeeDto | undefined =>
+    store.state.office?.teams
+      .find((t) => t.teamId === teamId)
+      ?.employees.find((e) => e.agentId === agentId);
+  const selectedName = (): string => {
+    const o = store.state.list?.offices.find((x) => x.officeId === store.state.selectedId);
+    return o ? o.label : "";
+  };
+  // 사이드바처럼 팀 이름으로 (중소기업은 사무실 label 이 층 이름이다)
+  const teamLabel = (teamId: string): string => {
+    const t = store.state.office?.teams.find((x) => x.teamId === teamId);
+    return t ? teamName(t) : selectedName();
+  };
+  const openEmployee = (
+    officeId: string,
+    teamId: string,
+    agentId: string,
+    opener?: HTMLElement,
+  ): void =>
+    openEmployeeDetail(
+      { invoke, live },
+      { officeId, teamId, agentId, officeName: selectedName() },
+      opener,
+    );
+
   const panel = mountPanel(panelHost, store, {
     onDrawerChange: (open) => header?.setDrawerOpen(open),
+    onEmployee: (teamId, agentId, opener) => {
+      const officeId = store.state.selectedId;
+      if (officeId) openEmployee(officeId, teamId, agentId, opener);
+    },
   });
-  mountSidebar(side, store, requestSelect); // 머리말이 띠를 찾으니 먼저
+  mountSidebar(side, store, requestSelect, {
+    onDetail: (officeId, teamId, name, opener) =>
+      openSessionDetail({ invoke, live }, { officeId, teamId, name }, opener),
+  }); // 머리말이 띠를 찾으니 먼저
   header = mountHeader(app, headerEl, store, {
     bandSlot: () => side.querySelector<HTMLElement>(".ow-side-band"),
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
   });
-  mountOffice(stage, store, { onScale: (n) => header?.setScale(n) }).then(
+  mountOffice(stage, store, {
+    onScale: (n) => header?.setScale(n),
+    onEmployee: (officeId, teamId, agentId) => {
+      panel.highlight(teamId, agentId);
+      openEmployee(officeId, teamId, agentId);
+    },
+    onSession: (officeId, teamId) =>
+      openSessionDetail({ invoke, live }, { officeId, teamId, name: teamLabel(teamId) }),
+  }).then(
     (o) => {
       office = o;
       o.setRoomLabels(header?.roomLabels() ?? true);

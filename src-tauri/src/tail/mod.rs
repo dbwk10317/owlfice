@@ -39,7 +39,7 @@ pub struct Pending {
     /// true면 `lines` 는 새 세대의 0바이트부터다. 상위는 4.3 재구성 규칙대로 다시 만든다
     pub reset: bool,
     pub lines: Vec<Line>,
-    /// remainder가 64MB를 넘어 버린 줄 수
+    /// 64MB를 넘어 버린 줄 수
     pub dropped_lines: u32,
     generation: u32,
     offset: u64,
@@ -244,6 +244,7 @@ impl TailReader {
         }
 
         let mut lines = Vec::new();
+        let mut dropped_lines = 0;
         let mut pos = 0;
         if skipping {
             match data.iter().position(|&b| b == b'\n') {
@@ -263,17 +264,20 @@ impl TailReader {
                 end
             };
             line_no += 1;
-            lines.push(Line {
-                offset: base + pos as u64,
-                line_no,
-                bytes: data[pos..content_end].to_vec(),
-            });
+            if end - pos > MAX_REMAINDER {
+                dropped_lines += 1;
+            } else {
+                lines.push(Line {
+                    offset: base + pos as u64,
+                    line_no,
+                    bytes: data[pos..content_end].to_vec(),
+                });
+            }
             pos = end + 1;
         }
 
-        let mut dropped_lines = 0;
         let remainder = if data.len() - pos > MAX_REMAINDER {
-            dropped_lines = 1;
+            dropped_lines += 1;
             skipping = true;
             pos = data.len();
             Vec::new()
@@ -528,6 +532,55 @@ mod tests {
         assert!(!p.reset);
         assert_eq!(texts(&p), [b"next"]);
         assert_eq!(p.lines[0].line_no, 3); // first, 버린 줄, next
+    }
+
+    #[test]
+    fn completed_line_over_64mb_is_dropped_at_read_boundary() {
+        let (_d, path, mut r) = setup(b"");
+        append(&path, &vec![b'x'; MAX_REMAINDER]);
+        while r.changed().unwrap() {
+            let p = r.read_new_lines(MAX_READ_BYTES).unwrap();
+            assert!(p.lines.is_empty());
+            assert_eq!(p.dropped_lines, 0);
+            r.commit(p);
+        }
+        assert_eq!(r.unread_len(), MAX_REMAINDER);
+
+        append(&path, b"x\nnext\n");
+        let discarded = r.read_new_lines(MAX_READ_BYTES).unwrap();
+        assert_eq!(discarded.dropped_lines, 1);
+        assert_eq!(texts(&discarded), [b"next"]);
+        let p = r.read_new_lines(MAX_READ_BYTES).unwrap();
+        assert_eq!(p.dropped_lines, 1);
+        assert_eq!(texts(&p), [b"next"]);
+        assert_eq!(
+            (p.lines[0].offset, p.lines[0].line_no),
+            ((MAX_REMAINDER + 2) as u64, 2)
+        );
+        r.commit(p);
+        assert!(!r.changed().unwrap());
+    }
+
+    #[test]
+    fn completed_line_at_64mb_is_kept() {
+        let (_d, path, mut r) = setup(b"");
+        append(&path, &vec![b'x'; MAX_REMAINDER]);
+        while r.changed().unwrap() {
+            let p = r.read_new_lines(MAX_READ_BYTES).unwrap();
+            r.commit(p);
+        }
+
+        append(&path, b"\nnext\n");
+        let p = r.read_new_lines(MAX_READ_BYTES).unwrap();
+        assert_eq!(p.dropped_lines, 0);
+        assert_eq!(p.lines.len(), 2);
+        assert_eq!(p.lines[0].bytes.len(), MAX_REMAINDER);
+        assert_eq!((p.lines[0].offset, p.lines[0].line_no), (0, 1));
+        assert_eq!(p.lines[1].bytes, b"next");
+        assert_eq!(
+            (p.lines[1].offset, p.lines[1].line_no),
+            ((MAX_REMAINDER + 1) as u64, 2)
+        );
     }
 
     #[test]

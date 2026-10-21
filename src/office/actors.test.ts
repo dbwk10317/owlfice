@@ -730,8 +730,40 @@ test("걷는 동안 walk 8fps, 왼쪽이면 scale.x −1", () => {
   layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
   // 테스트실 → 서고: 통로에서 서고 entry 로 가는 구간은 왼쪽 위
   layer.sync(office([team("t", [boss(), emp("a", "Archive")])]), "large", NOW);
-  layer.update(NOW + 900);
+  layer.update(NOW + 500);
   const sp = speciesOf("a", meta.employeeSpecies);
   expect(bodyOf(layer, "a")).toMatch(new RegExp(`^body/${sp}/walk_b_[0-3]$`));
   expect(layer.rootOf("a")!.scale.x).toBe(-1);
+});
+
+test("Rehire: 탕비실에 보이던 서브는 있던 자리에서 걷고, 숨어 있던 직원만 문에서 들어온다", () => {
+  const { layer } = newLayer();
+  const b = emp("b", "Pantry", "Sit");
+  const c = emp("c", "Dev", "Type", { seat: 1 });
+  layer.sync(office([team("t", [boss(), b, c])]), "large", NOW);
+  const gone = { ...c, activity: { ...c.activity, room: "Outside" as Room } };
+  layer.sync(office([team("t", [boss(), b, gone])]), "large", NOW);
+  layer.update(NOW + WALK_MAX_MS);
+  expect(layer.rootOf("c")!.visible).toBe(false);
+  const back = {
+    ...b,
+    activity: { ...b.activity, room: "Dev" as Room, pose: "Type" as Pose },
+    seat: 0,
+  };
+  const o = office([team("t", [boss(), back, c])]);
+  layer.sync(
+    withCues(o, [cue({ kind: "Rehire", agent: "b" }), cue({ kind: "Rehire", agent: "c" })]),
+    "large",
+    NOW + WALK_MAX_MS,
+  );
+  expect(posOf(layer, "b")).toEqual(screen(...(fp.stands.pantry_console[0] as [number, number])));
+  expect(posOf(layer, "c")).toEqual(screen(...DOOR));
+});
+
+test("두 sync 사이에 지나간 DTO 의 cue(earlier)도 재생한다", () => {
+  const { layer } = newLayer();
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  const o = office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0 })])]);
+  layer.sync(o, "large", NOW, { earlier: [cue({ kind: "Enter", agent: "a" })] });
+  expect(posOf(layer, "a")).toEqual(screen(...DOOR));
 });

@@ -2,8 +2,9 @@
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
 import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
+import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
-import { HIDDEN, Track, canWander, isEntering, playCue, type Target } from "./anim-queue.ts";
+import { HIDDEN, Track, canWander, playCue, type Target } from "./anim-queue.ts";
 import { gridToScreen, themeOf, zIndexOf, type Floorplan, type Kind } from "./floorplan.ts";
 import { placeSprite } from "./sprites.ts";
 
@@ -96,7 +97,6 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
 /** 방·자세 → 자리와 sprite 자세. null 은 그리지 않는다 (외근). */
 export function placeRule(room: Room, pose: Pose, boss: boolean): Rule | null {
   if (room === "Outside") return null;
-  // 결재 대기. 서 있는 자리는 boss_pace 첫 자리, 두 자리 왕복은 anim-queue 가 한다
   if (pose === "Pace") return { at: ["boss_pace"], look: IDLE };
   if (room === (boss ? "TeamLead" : "Dev")) return { at: "seat", look: SEAT_LOOK[pose] };
   if (room === "Incident" && boss) return { at: ["incident"], look: { pose: "panic", dir: "f" } };
@@ -129,17 +129,14 @@ export interface Placed {
   emp: EmployeeDto;
   team: TeamDto;
   spot: string;
-  /** 자리가 모자라 마지막 자리에 겹쳤다 */
   overflow: boolean;
   x: number;
   y: number;
-  /** 걷기 경로용 격자 좌표 */
   gx: number;
   gy: number;
   z: number;
   depth: number;
   look: Look;
-  /** 자기 좌석 (유휴 동작 대상) */
   seated: boolean;
 }
 
@@ -351,10 +348,6 @@ interface Actor {
 
 type ToCss = (x: number, y: number) => { left: number; top: number };
 
-function reducedMotion(): boolean {
-  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 function targetOf(p: Placed): Target {
   const { room, pose } = p.emp.activity;
   return {
@@ -363,6 +356,7 @@ function targetOf(p: Placed): Target {
     depth: p.depth,
     wander: canWander(room, pose, p.seated),
     pace: pose === "Pace",
+    sitOn: !p.seated && p.depth !== p.gx + p.gy,
   };
 }
 
@@ -403,19 +397,22 @@ export class ActorLayer {
    * 스냅샷 전체 교체. 같은 agent_id 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. 그린 자리를 돌려준다.
    * 자리가 바뀐 직원은 큐에 걷기를 넣는다. `instant` 면 큐를 비우고 바로 제자리, cue 는 버린다
    * (사무실 전환 첫 스냅샷, 숨은 창에서 돌아옴). 조용한 재구성도 바로 제자리지만 백엔드가 남긴 출근 cue 는 재생한다 (PLAN 4.3).
+   * `earlier` 는 두 sync 사이에 도착해 지나간 DTO 들의 cue 다. `office` 자신의 cue 앞에 이어 재생한다.
    */
   sync(
     office: OfficeDto | null,
     kind: Kind,
     now: number,
-    opts: { instant?: boolean } = {},
+    opts: { instant?: boolean; earlier?: CueDto[] } = {},
   ): Placed[] {
     // 목록만 바뀌어도 같은 스냅샷으로 다시 불린다. 그때 cue 를 또 재생하지 않는다
     const fresh = office !== this.lastOffice;
     this.lastOffice = office;
     const instant = opts.instant || (fresh && !!office?.rebuilt);
     const cuesOf = new Map<string, CueDto[]>();
-    for (const c of fresh && !opts.instant ? (office?.cues ?? []) : [])
+    for (const c of fresh && !opts.instant
+      ? [...(opts.earlier ?? []), ...(office?.cues ?? [])]
+      : [])
       if ("agent" in c) cuesOf.set(c.agent, [...(cuesOf.get(c.agent) ?? []), c]);
       else playCue(c, undefined, now);
     const placed = office ? layoutActors(this.fp, kind, office) : [];
@@ -444,7 +441,10 @@ export class ActorLayer {
       a.spot = p.spot;
       a.seq = seqBase + i;
       const cues = cuesOf.get(a.id) ?? [];
-      const entering = cues.some(isEntering);
+      // 재출근도 문에서 걷지만, 탕비실 등에 보이던 퇴장 서브는 있던 자리에서 걷는다
+      const entering =
+        cues.some((c) => c.kind === "Enter") ||
+        (cues.some((c) => c.kind === "Rehire") && !old?.root.visible);
       const target = targetOf(p);
       // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (PLAN 4.8)
       if (instant || (!old && !entering)) a.track.reset(target, now);

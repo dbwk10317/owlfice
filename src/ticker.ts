@@ -1,5 +1,6 @@
 // 사내 방송 티커 (PLAN 3.5, HANDOFF 4.5). 직원 행적(recent)에서 새로 생긴 줄을 사건으로 모아 시간순으로 흘린다.
 import phrases from "../design/handoff/phrases.ko.json";
+import { reducedMotion } from "./loading.ts";
 import { fill, hhmm } from "./text.ts";
 import type { OfficeDto, Rank, TeamDto } from "./types/ipc.ts";
 
@@ -118,10 +119,6 @@ export function createTicker(doc: Document, onPick: (agentId: string) => void) {
     b.append(t, ` ${ev.text}`);
     b.addEventListener("click", () => onPick(ev.agentId));
     return b;
-  }
-
-  function reducedMotion(): boolean {
-    return doc.defaultView?.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   }
 
   function setEvents(events: readonly TickerEvent[]): void {

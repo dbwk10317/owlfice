@@ -147,7 +147,7 @@ function lineText(text: string): HTMLElement {
   return t;
 }
 
-function reducedMotion(): boolean {
+export function reducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 

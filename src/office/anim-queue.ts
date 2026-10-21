@@ -2,20 +2,21 @@
 // 자리는 스냅샷이 정한다. 큐는 "어떻게 거기 갔는지"만 꾸민다 (PLAN 4.8).
 import type { CueDto, Pose, Room } from "../types/ipc.ts";
 import type { Look } from "./actors.ts";
-import { gridToScreen, type Floorplan } from "./floorplan.ts";
+import { gridToScreen, roomAt, type Floorplan } from "./floorplan.ts";
 
 export const WALK_MIN_MS = 500;
 export const WALK_MAX_MS = 1500;
 export const ENTER_MS = 4000;
 export const CLAP_MS = 1000;
+export const REJECT_HOLD_MS = 4000;
 /** 이보다 많이 쌓이면 중간을 건너뛰고 마지막 상태로 점프 */
 export const MAX_STEPS = 5;
-// 방 사이(200px 넘게)는 1.5초로 잘리고, 자리 주변 한두 타일은 0.5초, boss_pace 왕복(36px)은 그 사이
-const WALK_PX_PER_S = 48;
+// 방 사이 거리(약 100~390px, 중앙값 250px)가 0.5~1.5초에 고르게 들어오는 속도.
+// 자리 주변 한두 타일(13~27px)과 boss_pace 왕복(36px)은 0.5초로 올려 잡는다
+const WALK_PX_PER_S = 260;
 const CLAP: Look = { pose: "clap", dir: "f" };
 const IDLE_LOOK: Look = { pose: "idle", dir: "f" };
 
-/** 격자 좌표와 높이 */
 export interface Pt {
   gx: number;
   gy: number;
@@ -27,23 +28,22 @@ export interface Target {
   at: Pt | null;
   look: Look;
   depth: number;
-  /** 유휴 동작 대상 */
   wander: boolean;
-  /** 결재 대기: boss_pace 두 자리를 오간다 */
   pace: boolean;
+  /** 앉는 가구 자리. 이 자리에서 떠나는 첫 구간·도착하는 끝 구간은 가구 depth 를 지켜 앞뒤가 튀지 않게 한다 */
+  sitOn: boolean;
 }
 
 /** 지금 그릴 모습 */
 export interface Shown {
   at: Pt | null;
   look: Look;
-  /** 왼쪽으로 걷는 중 (scale.x −1) */
   flip: boolean;
   depth: number;
 }
 
 type Step =
-  | { kind: "walk"; path: Pt[]; ms: number; auto: boolean }
+  | { kind: "walk"; path: Pt[]; ms: number; auto: boolean; head?: number; tail?: number }
   | { kind: "pose"; look: Look; ms: number }
   | { kind: "hide" };
 
@@ -60,6 +60,7 @@ export const HIDDEN: Target = {
   depth: 0,
   wander: false,
   pace: false,
+  sitOn: false,
 };
 
 // ---------- 경로 ----------
@@ -72,25 +73,19 @@ function stand(fp: Floorplan, name: string, i = 0): Pt {
   return { gx, gy, z };
 }
 
-/** 격자 점이 든 방. 방 사각형이 격자를 빈틈없이 덮는다 */
-export function roomOf(fp: Floorplan, p: Pt): string {
-  for (const [key, r] of Object.entries(fp.rooms)) {
-    const [a, b, c, d] = r.rect;
-    if (a <= p.gx && p.gx < c && b <= p.gy && p.gy < d) return key;
-  }
-  return "dev";
-}
+const roomIn = (fp: Floorplan, p: Pt) => roomAt(fp, p.gx, p.gy) ?? "dev";
 
 /**
  * floorplan.path 규칙: 현재 위치 → 현재 방 entry → 개발실 통로(dev entry) → 목표 방 entry → 목표.
  * 같은 방이면 직선 하나. A* 없이 직선 구간만 (PLAN 4.9).
  */
 export function walkPath(fp: Floorplan, from: Pt, to: Pt): Pt[] {
-  const a = roomOf(fp, from);
-  const b = roomOf(fp, to);
+  const a = roomIn(fp, from);
+  const b = roomIn(fp, to);
   const pts = [from];
   if (a !== b)
-    for (const k of [a, "dev", b]) {
+    // 한쪽 끝이 개발실이면 통로를 거치지 않고 반대쪽 방 entry 로 바로 간다 (거치면 개발실 끝을 찍고 돌아오는 질주가 된다)
+    for (const k of a === "dev" ? [b] : b === "dev" ? [a] : [a, "dev", b]) {
       const [gx, gy] = fp.rooms[k].entry;
       pts.push({ gx, gy, z: 0 });
     }
@@ -108,15 +103,15 @@ function segLen(a: Pt, b: Pt): number {
   return Math.hypot(q.x - p.x, q.y - p.y);
 }
 
-/** 1× 화면 px 거리 → 걷는 시간, 0.5–1.5초로 자른다 (HANDOFF 7) */
-export function walkMs(path: Pt[]): number {
+// 0.5–1.5초로 자른다 (HANDOFF 7)
+function walkMs(path: Pt[]): number {
   let px = 0;
   for (let i = 1; i < path.length; i++) px += segLen(path[i - 1], path[i]);
   return Math.min(WALK_MAX_MS, Math.max(WALK_MIN_MS, (px / WALK_PX_PER_S) * 1000));
 }
 
-/** 화면 아래로 가면 f, 위로 가면 b, 왼쪽으로 가면 뒤집는다 (HANDOFF 6.4) */
-export function facing(a: Pt, b: Pt): { dir: "f" | "b"; flip: boolean } {
+// 화면 아래로 가면 f, 위로 가면 b, 왼쪽으로 가면 뒤집는다 (HANDOFF 6.4)
+function facing(a: Pt, b: Pt): { dir: "f" | "b"; flip: boolean } {
   const p = screen(a);
   const q = screen(b);
   return { dir: q.y < p.y ? "b" : "f", flip: q.x < p.x };
@@ -141,7 +136,7 @@ function wanderPoint(fp: Floorplan, at: Pt, seed: number, round: number): Pt {
   const k = (seed ^ Math.imul(round + 1, 0x9e3779b1)) >>> 0;
   const tiles = 1 + (k & 1);
   const sign = k & 2 ? 1 : -1;
-  const [x0, , x1] = fp.rooms[roomOf(fp, at)].rect;
+  const [x0, , x1] = fp.rooms[roomIn(fp, at)].rect;
   return { ...at, gx: Math.min(x1 - 0.5, Math.max(x0 + 0.5, at.gx + sign * tiles)) };
 }
 
@@ -149,7 +144,6 @@ function wanderPoint(fp: Floorplan, at: Pt, seed: number, round: number): Pt {
 
 export class Track {
   private steps: Step[] = [];
-  /** 맨 앞 단계가 시작한 시각 */
   private t0 = 0;
   /** 맨 앞 단계가 시작하는 자리. null 이면 숨어 있다 */
   private pos: Pt | null = null;
@@ -178,15 +172,19 @@ export class Track {
     this.cut(now);
     const fp = this.ctx.fp;
     const from = this.end();
-    if (entering && target.at) this.walk(walkPath(fp, stand(fp, "door"), target.at), ENTER_MS, now);
-    else if (from && target.at) this.walk(walkPath(fp, from, target.at), undefined, now);
+    const tail = target.sitOn ? target.depth : undefined;
+    const head = from && prev.sitOn && same(from, prev.at) ? prev.depth : undefined;
+    if (entering && target.at)
+      this.walk(walkPath(fp, stand(fp, "door"), target.at), ENTER_MS, now, false, { tail });
+    else if (from && target.at)
+      this.walk(walkPath(fp, from, target.at), undefined, now, false, { head, tail });
     else if (from) {
       // 외근·퇴장: 출구까지 걸어가 사라진다
-      this.walk(walkPath(fp, from, stand(fp, "exit")), undefined, now);
+      this.walk(walkPath(fp, from, stand(fp, "exit")), undefined, now, false, { head });
       this.push({ kind: "hide" }, now);
     } else if (target.at)
       // 숨어 있다 돌아오면 문에서 들어온다 (웹 복귀)
-      this.walk(walkPath(fp, stand(fp, "door"), target.at), undefined, now);
+      this.walk(walkPath(fp, stand(fp, "door"), target.at), undefined, now, false, { tail });
     if (this.steps.length > MAX_STEPS) this.reset(target, now);
   }
 
@@ -195,6 +193,9 @@ export class Track {
     this.advance(now);
     const at = this.target.at;
     if (!at) return;
+    // 병렬 Spawn 처럼 같은 자세가 줄줄이 와도 하나로 합쳐 MAX_STEPS 를 넘기지 않는다
+    const last = this.steps[this.steps.length - 1];
+    if (last?.kind === "pose" && last.look.pose === look.pose) return;
     this.cut(now);
     // 유휴 동작을 끊었으면 자리로 돌아간 뒤에
     const from = this.end();
@@ -203,9 +204,9 @@ export class Track {
     if (this.steps.length > MAX_STEPS) this.reset(this.target, now);
   }
 
-  /** 테스트용: 쌓인 단계 수 */
-  get length(): number {
-    return this.steps.length;
+  /** 반려 직후 사장님 손이 필요한 동안(needs_boss)은 유휴 동작을 미룬다 (PLAN 4.7.2) */
+  holdIdle(ms: number, now: number): void {
+    this.nextIdle = Math.max(this.nextIdle, now + ms);
   }
 
   update(now: number): Shown {
@@ -214,25 +215,25 @@ export class Track {
     const s = this.steps[0];
     const t = this.target;
     // hide 는 길이가 0 이라 advance 가 이미 걷어 냈다
-    if (!s || s.kind === "hide") {
-      const settled = same(this.pos, t.at);
-      return {
-        at: this.pos,
-        look: settled ? t.look : IDLE_LOOK,
-        flip: false,
-        depth: settled ? t.depth : this.pos ? this.pos.gx + this.pos.gy : 0,
-      };
+    const settled = same(this.pos, t.at);
+    let at = this.pos;
+    let look = settled ? t.look : IDLE_LOOK;
+    let flip = false;
+    let depth = settled ? t.depth : this.pos ? this.pos.gx + this.pos.gy : 0;
+    if (s?.kind === "pose") look = s.look;
+    else if (s?.kind === "walk") {
+      const w = along(s.path, s.ms > 0 ? (now - this.t0) / s.ms : 1);
+      const f = facing(s.path[w.seg], s.path[w.seg + 1] ?? s.path[w.seg]);
+      at = w.at;
+      look = { pose: "walk", dir: f.dir };
+      flip = f.flip;
+      // 유휴 동작은 좌석 depth 를 그대로 써야 칸막이·책상과 앞뒤가 안 뒤집힌다
+      if (s.auto && t.wander) depth = t.depth;
+      else if (w.seg === 0 && s.head !== undefined) depth = s.head;
+      else if (w.seg === s.path.length - 2 && s.tail !== undefined) depth = s.tail;
+      else depth = at.gx + at.gy;
     }
-    if (s.kind === "pose")
-      return {
-        at: this.pos,
-        look: s.look,
-        flip: false,
-        depth: same(this.pos, t.at) ? t.depth : this.pos!.gx + this.pos!.gy,
-      };
-    const { at, seg } = along(s.path, s.ms > 0 ? (now - this.t0) / s.ms : 1);
-    const f = facing(s.path[seg], s.path[seg + 1] ?? s.path[seg]);
-    return { at, look: { pose: "walk", dir: f.dir }, flip: f.flip, depth: at.gx + at.gy };
+    return { at, look, flip, depth };
   }
 
   // 끝난 단계를 걷어 낸다. 다음 단계는 앞 단계가 끝난 시각에 시작해 숨은 창의 긴 틱도 한 번에 따라잡는다
@@ -272,10 +273,16 @@ export class Track {
     this.steps.push(s);
   }
 
-  private walk(path: Pt[], ms: number | undefined, now: number, auto = false): void {
+  private walk(
+    path: Pt[],
+    ms: number | undefined,
+    now: number,
+    auto = false,
+    depths: { head?: number; tail?: number } = {},
+  ): void {
     // 움직임 줄이기: 걷지 않고 즉시 이동 (HANDOFF 7)
     const t = this.ctx.reduced() ? 0 : (ms ?? walkMs(path));
-    this.push({ kind: "walk", path, ms: t, auto }, now);
+    this.push({ kind: "walk", path, ms: t, auto, ...depths }, now);
   }
 
   private idle(now: number): void {
@@ -321,24 +328,11 @@ function along(path: Pt[], f: number): { at: Pt; seg: number } {
 
 // ---------- cue ----------
 
-/** 출근·재출근은 문에서 걸어 들어온다. retarget 의 entering 으로 넘긴다 */
-export function isEntering(cue: CueDto): boolean {
-  return cue.kind === "Enter" || cue.kind === "Rehire";
-}
-
-/** cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). 자리 이동은 retarget 이 이미 넣었다 */
+/**
+ * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire 는 자리 이동(retarget)이 이미 걷게 했다.
+ * ponytail: 도장·트럭·사장님 방문·사이렌 같은 나머지 연출은 아직 없어 무시한다, T24~T26 이 여기에 넣는다
+ */
 export function playCue(cue: CueDto, track: Track | undefined, now: number): void {
-  switch (cue.kind) {
-    case "Clap":
-      track?.pose(CLAP, CLAP_MS, now);
-      return;
-    // 퇴장한 직원이 어디로 가는지는 스냅샷이 정한다: 숨기면 출구로 걸어가 사라지고, 탕비실이면 탕비실로 걷는다
-    case "Enter":
-    case "Rehire":
-    case "Retire":
-      return;
-    // ponytail: 도장·트럭·사장님 방문·사이렌 같은 연출은 아직 없어 무시한다, T24~T26 이 여기에 넣는다
-    default:
-      return;
-  }
+  if (cue.kind === "Clap") track?.pose(CLAP, CLAP_MS, now);
+  else if (cue.kind === "Reject") track?.holdIdle(REJECT_HOLD_MS, now);
 }

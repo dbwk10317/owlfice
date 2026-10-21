@@ -2,6 +2,7 @@
 import "../design/handoff/tokens.css";
 import "./styles/panel.css";
 import phrases from "../design/handoff/phrases.ko.json";
+import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
 import iconApproval from "../design/handoff/icons/approval.svg?raw";
 import iconClose from "../design/handoff/icons/close.svg?raw";
 import iconEdit from "../design/handoff/icons/edit.svg?raw";
@@ -211,6 +212,30 @@ function orderEmployees(team: TeamDto): EmployeeDto[] {
   const at = (e: EmployeeDto) => Date.parse(e.activity.since) || 0;
   rest.sort((a, b) => idle(a) - idle(b) || at(b) - at(a));
   return boss ? [boss, ...rest] : rest;
+}
+
+// ---- 퇴근 서브 묶음 머리글 (사이드바 퇴근 묶음과 같은 DOM) ----
+
+interface GroupEntry {
+  el: HTMLElement;
+  btn: HTMLButtonElement;
+  count: HTMLElement;
+}
+
+function createGroup(doc: Document, onToggle: () => void): GroupEntry {
+  const btn = h(doc, "button", "ow-group");
+  btn.type = "button";
+  const arrow = icon(doc, chevronSvg);
+  arrow.classList.add("ow-group__arrow", "ow-icon--sm");
+  const count = h(doc, "span", "ow-count");
+  btn.append(
+    arrow,
+    h(doc, "b", "", phrases.card.departedGroup),
+    h(doc, "span", "ow-group__sub ow-truncate"),
+    count,
+  );
+  btn.addEventListener("click", onToggle);
+  return { el: h(doc, "div", "ow-group-wrap has-divider", btn), btn, count };
 }
 
 // ---- 카드 ----
@@ -576,6 +601,9 @@ export function mountPanel(
 
   const cards = new Map<string, CardEntry>();
   const heads = new Map<string, HeadEntry>();
+  // 퇴근 서브 묶음 머리글. 접힘 상태는 다시 그려도 유지한다 (기본 접힘)
+  const groups = new Map<string, GroupEntry>();
+  const groupOpen = new Map<string, boolean>();
   const teamColor = new Map<string, number>();
   const events = createEventCollector();
   const toastTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -639,8 +667,11 @@ export function mountPanel(
       c.el.remove();
     }
     for (const hd of heads.values()) hd.el.remove();
+    for (const g of groups.values()) g.el.remove();
     cards.clear();
     heads.clear();
+    groups.clear();
+    groupOpen.clear();
     teamColor.clear();
     events.reset();
     ticker.setEvents([]);
@@ -649,6 +680,11 @@ export function mountPanel(
     count.hidden = true;
     officeName.textContent = "";
     empty.hidden = false; // 고른 사무실이 없을 때도 "출근한 직원이 없습니다" (HANDOFF 4.7 모두 퇴근)
+  }
+
+  function toggleGroup(teamId: string): void {
+    groupOpen.set(teamId, !(groupOpen.get(teamId) ?? false));
+    render();
   }
 
   function render(): void {
@@ -679,6 +715,7 @@ export function mountPanel(
     const desired: HTMLElement[] = [];
     const liveCards = new Set<string>();
     const liveHeads = new Set<string>();
+    const liveGroups = new Set<string>();
     const fresh: { c: CardEntry; e: EmployeeDto }[] = [];
 
     for (const t of teams) {
@@ -693,6 +730,7 @@ export function mountPanel(
       }
       // 상사(parent)는 같은 팀 안의 agent_id 다
       const byId = new Map(t.employees.map((e) => [e.agentId, e]));
+      const departed: HTMLElement[] = [];
       orderEmployees(t).forEach((e, i) => {
         const key = empKey(t.teamId, e.agentId);
         let c = cards.get(key);
@@ -706,8 +744,28 @@ export function mountPanel(
         updateCard(c, e, i === 0, t.phase === "Off", small, byId);
         tickCard(c, Date.now());
         liveCards.add(key);
-        desired.push(c.el);
+        // 부장은 퇴근 묶음에 넣지 않는다. 서브만 (PLAN 3.5)
+        const off = i > 0 && e.departedAt !== null;
+        c.el.classList.toggle("is-departed", off);
+        if (off) departed.push(c.el);
+        else {
+          c.el.hidden = false;
+          desired.push(c.el);
+        }
       });
+      if (departed.length > 0) {
+        let g = groups.get(t.teamId);
+        if (!g) groups.set(t.teamId, (g = createGroup(doc, () => toggleGroup(t.teamId))));
+        const open = groupOpen.get(t.teamId) ?? false;
+        g.btn.setAttribute("aria-expanded", String(open));
+        g.count.textContent = String(departed.length);
+        liveGroups.add(t.teamId);
+        desired.push(g.el);
+        for (const el of departed) {
+          el.hidden = !open;
+          desired.push(el);
+        }
+      }
     }
 
     for (const [id, c] of cards) {
@@ -720,6 +778,12 @@ export function mountPanel(
       if (liveHeads.has(id)) continue;
       hd.el.remove();
       heads.delete(id);
+    }
+    for (const [id, g] of groups) {
+      if (liveGroups.has(id)) continue;
+      g.el.remove();
+      groups.delete(id);
+      groupOpen.delete(id);
     }
     // 퇴근한 팀의 색은 반납한다
     for (const id of teamColor.keys()) if (!liveHeads.has(id)) teamColor.delete(id);

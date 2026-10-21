@@ -155,3 +155,8 @@
     animation: none;
   }
 }
+
+/* 퇴근 묶음 안 카드 (PLAN 3.5) */
+.ow-card.is-departed {
+  opacity: 0.6;
+}

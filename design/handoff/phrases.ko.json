@@ -80,6 +80,7 @@
   "card": {
     "role": "담당 {role}",
     "modelUnknown": "모델 모름",
+    "departedGroup": "퇴근",
     "roleWithBoss": "담당 {role} · 상사 {parent}",
     "estimate": "추정",
     "parallel": "(외 {n}건)",

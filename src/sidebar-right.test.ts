@@ -445,3 +445,47 @@ test("카드를 누르면 (teamId, agentId) 와 그 카드로 직원 상세를 �
   vi.advanceTimersByTime(2000);
   expect(cards[3].classList.contains("is-highlight")).toBe(false);
 });
+
+test("퇴근 서브는 '퇴근 n' 묶음에 접히고, 펼치면 60% 카드, 재출근하면 보통 자리로, 카드 클릭은 직원 상세", () => {
+  const off = iso(14, 30);
+  const o = (seq: number, back = false) =>
+    office("o", seq, [
+      team("t", [
+        emp("boss"),
+        emp("a", { departedAt: off }),
+        emp("b", { departedAt: back ? null : off }),
+        emp("c", { departedAt: off }),
+        emp("p", { activity: act({ room: "Pantry", since: iso(14, 59) }) }),
+      ]),
+    ]);
+  const onEmployee = vi.fn();
+  const s = setup(o(1), "Large", undefined, { onEmployee });
+  const btn = () => s.q<HTMLButtonElement>(".ow-group")!;
+  const card = (id: string) => s.cards().find((c) => c.dataset.agentId === id)!;
+
+  // (a) 탕비실 카드 아래에 "퇴근 3" 머리글, 카드는 접힘
+  expect(s.ids()).toEqual(["boss", "p", "a", "b", "c"]);
+  expect(btn().textContent).toContain("퇴근");
+  expect(btn().querySelector(".ow-count")?.textContent).toBe("3");
+  expect(btn().getAttribute("aria-expanded")).toBe("false");
+  expect(["a", "b", "c"].map((id) => card(id).hidden)).toEqual([true, true, true]);
+  expect(card("p").hidden).toBe(false);
+
+  // (b) 펼침. 60% 클래스. 다시 그려도 안 접힘
+  btn().click();
+  expect(btn().getAttribute("aria-expanded")).toBe("true");
+  expect(["a", "b", "c"].map((id) => card(id).hidden)).toEqual([false, false, false]);
+  expect(card("a").classList.contains("is-departed")).toBe(true);
+  s.push(o(2));
+  expect(card("a").hidden).toBe(false);
+
+  // (d) 카드 클릭은 직원 상세
+  card("a").click();
+  expect(onEmployee).toHaveBeenLastCalledWith("t", "a", card("a"));
+
+  // (c) b 재출근: 묶음에서 나와 보통 자리, 머리글 개수 2
+  s.push(o(3, true));
+  expect(s.ids()).toEqual(["boss", "b", "p", "a", "c"]);
+  expect(card("b").classList.contains("is-departed")).toBe(false);
+  expect(btn().querySelector(".ow-count")?.textContent).toBe("2");
+});

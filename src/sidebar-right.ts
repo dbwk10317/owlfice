@@ -648,7 +648,7 @@ export function mountPanel(
     lastCueKey = "";
     count.hidden = true;
     officeName.textContent = "";
-    empty.hidden = true;
+    empty.hidden = false; // 고른 사무실이 없을 때도 "출근한 직원이 없습니다" (HANDOFF 4.7 모두 퇴근)
   }
 
   function render(): void {

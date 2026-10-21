@@ -1194,7 +1194,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | SessionMeta | Team 생성 또는 갱신. `product` 로 동. 부장 Employee 생성 |
 | UserMessage | **부장(메인 파일)이면** `props.boss_visit = Some(text)`, 부장 activity "요구사항 접수", `waiting_user_since = None`, `quiet_since = ev.ts`. **서브 파일이면** 사장님 방문 없음. 그 직원의 `quiet_since = ev.ts` 와 팝업의 "받은 지시"만 갱신한다. 서브의 지시가 사장님 방문으로 보이면 실제 입력 없이 부장 상태가 바뀐다 |
 | Thinking | `last_say = "…"` 만. 방·자세 변화 없음. `waiting_user_since = None` (턴이 아직 안 끝났다). 연출은 4.7.2의 응답 대기가 맡는다 |
-| AssistantText | pose=Type, sentence "보고서 제출함: …", last_say 갱신. 리뷰 중이면 `파일:줄` 패턴 수를 세어 빨간펜 카운트. `quiet_since = None`. **부장이면** `waiting_user_since = ev.ts` (턴 종료 후보. 3초 안에 같은 턴의 tool_use·thinking이 오면 취소, 4.7.2). 서브면 종료 후보 (60초 규칙) |
+| AssistantText | pose=Type, sentence "보고서 제출함: …", last_say 갱신. 리뷰 중이면 `파일:줄` 패턴 수를 세어 빨간펜 카운트. `quiet_since = None`. **부장이고 `pending` 이 비어 있으면** `waiting_user_since = ev.ts` (턴 종료 후보. 호출이 도는 동안의 중간 보고는 턴 종료가 아니다. 3초 안에 같은 턴의 tool_use·thinking이 오면 취소, 4.7.2). 서브면 종료 후보 (60초 규칙) |
 | ToolCall | `waiting_user_since = None`. `pending.push`, `room_for(tool)` 로 방 결정, 대표 작업(가장 최근) 문장 생성. counters 증가 (Other는 제외). Spawn이면 손뼉 cue만. Ask면 허가 대기(room=출입문, Confirmed) |
 | ToolResult Ok (Confirmed) | `pending` 또는 `background` 에서 call_id 제거 (둘 다 없으면 무시). background에서 끝난 것이면 작업표를 뗀다. 소요 시간을 `stats.avg[command_key]` EMA에 반영. `compound` 가 Single·AndOnly일 때만 Test면 도장, Build면 신호등 초록, GitPush·PrCreate·Release면 출고 cue. Mixed면 신호등·출고 cue 없이 "완료"만 적되, Test에 `test_result` 가 있으면 점선 도장은 찍는다 (4.6.4). 대표 작업 재계산. `quiet_since = ev.ts` |
 | ToolResult Err (Confirmed) | pending·background 제거, counters.errors += 1, props.trash += 1, 무재해 0, `incident_check(command_norm)`. Build면 신호등 빨강. GitPush·PrCreate면 "반송" cue. `quiet_since = ev.ts` |
@@ -1227,12 +1227,12 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 | (직원) `pending` 비어 있고 `quiet_since` + 2초 지났고 `waiting_user_since` 없음 | 응답 대기: pose=Think, "턱 괴고 고민 중인 듯 (n초)". 2초 안에 다음 tool_use가 오면 자세를 바꾸지 않는다 (도구 사이마다 자세·방이 깜박이지 않게). 10초 넘으면 pose=Duck, "러버덕과 상담 중인 듯". 10분 넘으면 `quiet_since = None` (응답이 끊긴 것으로 보고 졸음 규칙에 맡긴다) | 추정 |
 | (부장) `waiting_user_since` + 3초 | 결재 대기: 화면보호기, 서성임, "요구사항 대기 중인 듯". 턴 종료 판단 = "마지막 블록이 tool_use가 아니고 3초 동안 같은 턴의 블록이 더 오지 않음". 레코드에 `stop_reason` 이 있으면 그것을 우선한다 (6부) | 추정 |
 | (Claude 직원) 등록부 `status: waiting` | 허가 대기 (room=출입문, Confirmed). `waitingFor` 를 문장에. 등록부가 `busy`·`idle` 로 돌아오면 해제 (4.4.1, 값 모양은 6부 미확인) | 확인됨 (값이 확인되면) |
-| (Codex 직원) `pending` 의 마지막 호출이 `require_escalated` 이고 결과 없이 35초 | 허가 대기 (room=출입문, Inferred). 결과가 오면 해제. `request_user_input`·`request_permissions` 는 호출 즉시 Confirmed (4.6.2) | 추정 (임계값은 codex 소스 yield 상한) |
-| (팀) `now - last_activity > 3분` 이고 모든 직원의 `pending`·`background` 가 비어 있고 응답 대기 중인 직원이 없음 | phase=Dozing, 부장 room=탕비실 (결재 대기 연출을 대체) | |
+| (Codex 직원) `pending` 중 하나가 `require_escalated` 이고 결과 없이 35초 | 허가 대기 (room=출입문, Inferred. 문 앞 문장은 그 호출로). 결과가 오면 해제. `request_user_input`·`request_permissions` 는 호출 즉시 Confirmed (4.6.2) | 추정 (임계값은 codex 소스 yield 상한) |
+| (팀) `now - last_activity > 3분` 이고 모든 직원의 `pending`·`background` 가 비어 있고 응답 대기 중인 직원이 없음 | phase=Dozing, 부장 room=탕비실 (결재 대기 연출을 대체). `waiting_user_since = None` 이라 `needs_boss` 도 꺼진다 | |
 | (팀) `> 30분` 이고 `!alive_in_registry` | phase=Off. 등록부에 살아 있으면 Dozing 유지, 조명만 어둡게 (S58) | |
 | (직원) `pending` 중 하나의 경과 > `avg[command_key] × 2` | pose=Squat, 선풍기 | |
 | (직원) `pending` 경과 > 120초 | 땀, "장기 실행". 졸음으로 가지 않는다 | |
-| (직원) `pending` 경과 > 30분, 또는 팀이 Off로 바뀜 | 그 호출을 `Unknown` 으로 정리. 결과가 영영 오지 않는 호출(프로세스 종료, 연결 단절)의 뒷정리. 단 사장님 결정을 기다리는 호출(Ask, Codex `escalated`)은 30분으로 포기하지 않는다. 자리를 비운 사장님을 30분 넘게 기다리는 것이 정상이고, 죽은 세션은 팀 Off 가 정리한다 | |
+| (직원) `pending` 경과 > 30분, 또는 팀이 Off로 바뀜 | 그 호출을 `Unknown` 으로 정리. 결과가 영영 오지 않는 호출(프로세스 종료, 연결 단절)의 뒷정리. 단 사장님 결정을 기다리는 호출(Ask, Codex `escalated`)은 30분으로 포기하지 않는다. 자리를 비운 사장님을 30분 넘게 기다리는 것이 정상이고, 죽은 세션은 팀 Off 가 정리한다. 등록부가 없는 벤더(Codex)는 허가 대기 중이어도 30분 무활동이면 팀 Off 가 정리한다 (`state_conflict` 로 센다) | |
 | (직원) `background` 작업 | 시간 제한 없음. 완료 알림(Ok/Err 규칙 적용), `TaskStop` 의 성공 결과(Unknown), 팀 Off(Unknown) 중 먼저 오는 것으로 정리하고 작업표를 뗀다. 작업표에는 경과 시간만 | |
 | (서브) 완료 기록(4.6.1~4.6.3)을 못 본 채 `pending`·`background` 비어 있고, 마지막 레코드가 tool_use 없는 assistant이고, 60초 무변경 | SubagentDone | 추정 |
 | (서브) `retired_at` + 10분 (목표값: 종료 뒤 탕비실에 머무는 시간) | 퇴근: `departed_at` = `retired_at` + 10분 (문턱 시각), 좌석·탕비실 자리 반납, cue `depart`. 캔버스에서 빠지고 카드는 퇴근 묶음(3.5), 근태판 자석은 퇴근 칸. 그 뒤 새 이벤트가 오면 재출근(S60)으로 둘 다 None | 종료가 추정이면 추정 |
@@ -1242,7 +1242,7 @@ pub struct PendingCall { pub call_id: String, pub tool: ToolKind, pub command_ke
 
 상태 간 우선순위는 2.5를 따른다.
 
-**"사장님 손이 필요한 상태"는 한 곳에서 정한다.** 허가 대기(PermissionRequest), 결재 대기(`waiting_user_since`), 반려 직후를 `needs_boss()` 하나로 묶고, 말풍선 풀 선택(3.6)·토스트·장애 판정·탕비실 연출 금지가 모두 이 함수를 쓴다. 같은 집합을 네 곳에 따로 적으면 한 곳이 빠져 "허가 대기 중인데 축하 연출"이 난다 (타 프로젝트에서 실제로 난 버그).
+**"사장님 손이 필요한 상태"는 한 곳에서 정한다.** 허가 대기(PermissionRequest), 결재 대기(`waiting_user_since`), 반려 직후를 `needs_boss()` 하나로 묶고, 말풍선 풀 선택(3.6)·토스트·장애 판정·탕비실 연출 금지가 모두 이 함수를 쓴다. 같은 집합을 네 곳에 따로 적으면 한 곳이 빠져 "허가 대기 중인데 축하 연출"이 난다 (타 프로젝트에서 실제로 난 버그). `needs_boss()` 는 화면 우선순위(2.5)와 따로 정하는 조건 집합이다. 반려 직후 4초에 다른 호출이 진행 중이면 화면은 호출을 보이지만 `needs_boss` 는 참이다.
 
 #### 4.7.3 장애 판정 (`stats.rs`)
 

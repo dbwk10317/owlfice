@@ -19,7 +19,7 @@ pub const MAX_READ_BYTES: usize = 8 * 1024 * 1024;
 /// 개행 없는 미완성 줄을 쥐고 있을 수 있는 상한. 넘으면 그 줄을 버린다
 const MAX_REMAINDER: usize = 64 * 1024 * 1024;
 /// offset 직전 몇 바이트를 해시로 대조하는가
-const TAIL_HASH_BYTES: usize = 4096;
+pub(crate) const TAIL_HASH_BYTES: usize = 4096;
 
 /// (볼륨 일련번호, 파일 인덱스)
 type FileId = (u32, u64);
@@ -98,7 +98,7 @@ pub struct TailReader {
     stalled: bool,
 }
 
-fn hash_bytes(b: &[u8]) -> u64 {
+pub(crate) fn hash_bytes(b: &[u8]) -> u64 {
     // 메모리 안에서만 비교하므로 버전 간 안정성은 필요 없다
     let mut h = DefaultHasher::new();
     h.write(b);
@@ -117,7 +117,7 @@ fn file_id(f: &File) -> Option<FileId> {
     })
 }
 
-fn read_range(mut f: &File, start: u64, n: u64) -> io::Result<Vec<u8>> {
+pub(crate) fn read_range(mut f: &File, start: u64, n: u64) -> io::Result<Vec<u8>> {
     f.seek(SeekFrom::Start(start))?;
     let mut buf = Vec::new();
     f.take(n).read_to_end(&mut buf)?;
@@ -161,6 +161,10 @@ impl TailReader {
 
     pub fn offset(&self) -> u64 {
         self.offset
+    }
+
+    pub(crate) fn file(&self) -> &File {
+        &self.file
     }
 
     /// commit 한 위치 뒤에 개행 없이 남아 읽지 못한 바이트 수. 버리는 중인 줄은 세지 않는다

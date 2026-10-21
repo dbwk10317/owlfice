@@ -11,7 +11,7 @@ use std::time::{Duration as StdDuration, Instant, SystemTime};
 
 use chrono::{DateTime, Duration, Utc};
 
-use super::{MAX_READ_BYTES, Pending, TailReader};
+use super::{MAX_READ_BYTES, Pending, TAIL_HASH_BYTES, TailReader, hash_bytes, read_range};
 use crate::diag::Diag;
 use crate::discover::registry;
 use crate::discover::wsl::WslDistro;
@@ -161,8 +161,8 @@ struct Tracked {
     key: TeamKey,
     /// None 이면 WSL 졸음·퇴근 팀이라 핸들을 닫아 두었다 (docs/CONTRACTS.md C5). 다음 Probe 직후 Scan 에서 바뀌었으면 다시 연다
     reader: Option<TailReader>,
-    /// 핸들을 닫을 때의 (길이, mtime)
-    closed: Option<(u64, SystemTime)>,
+    /// 핸들을 닫을 때의 (길이, mtime, 끝 4KB 해시)
+    closed: Option<(u64, SystemTime, u64)>,
     closed_offset: u64,
     parser: Box<dyn Parser + Send>,
     last_read: DateTime<Utc>,
@@ -714,12 +714,26 @@ impl HostLoop {
                 if t.stale || !t.reader.as_ref().is_some_and(|r| r.caught_up(m.len())) {
                     continue;
                 }
+                // 같은 길이·더 긴 다른 내용으로 교체된 것을 다시 볼 때 가리려고 끝 4KB 를 기억한다 (docs/CONTRACTS.md C9).
+                // 아직 쥔 핸들로 읽어 경로를 새로 건드리지 않는다. 못 읽으면 닫지 않고 다음 Probe 에 다시 본다
+                let w = m.len().min(TAIL_HASH_BYTES as u64);
+                let Some(Ok(tail)) = t
+                    .reader
+                    .as_ref()
+                    .map(|r| read_range(r.file(), m.len() - w, w))
+                else {
+                    continue;
+                };
                 t.generation = t.generation();
                 t.closed_offset = t
                     .reader
                     .as_ref()
                     .map_or(t.closed_offset, TailReader::offset);
-                t.closed = Some((m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)));
+                t.closed = Some((
+                    m.len(),
+                    m.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                    hash_bytes(&tail),
+                ));
                 t.reader = None;
             }
         }
@@ -1088,15 +1102,23 @@ impl HostLoop {
             };
             let r = match (&mut t.reader, t.closed) {
                 (Some(r), _) => r.verify_path(),
-                (None, Some(stat)) => fs::metadata(&path).map(|m| {
-                    if (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)) != stat {
-                        crate::oplog!("파일 교체 감지, 재구성 {}", path.display());
-                        let reset = rebuild.entry(t.key.clone()).or_default();
-                        // 줄었으면 Reset 이다 (docs/CONTRACTS.md C6). 세대를 올려야 옛 커서가 새 내용에 붙지 않는다
-                        if m.len() < stat.0 {
-                            reset.insert(path.clone());
-                        }
+                (None, Some((len, mtime, tail))) => fs::metadata(&path).and_then(|m| {
+                    if (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)) == (len, mtime) {
+                        return Ok(());
                     }
+                    // 줄었거나, 닫을 때의 끝 4KB 가 달라졌으면 다른 내용으로 교체된 것이라 Reset 이다 (docs/CONTRACTS.md C6).
+                    // 세대를 올려야 옛 커서가 새 내용의 같은 바이트 자리에 붙지 않는다 (C9)
+                    let replaced = m.len() < len || {
+                        self.path_ops += 1;
+                        let w = len.min(TAIL_HASH_BYTES as u64);
+                        hash_bytes(&read_range(&fs::File::open(&path)?, len - w, w)?) != tail
+                    };
+                    crate::oplog!("파일 교체 감지, 재구성 {}", path.display());
+                    let reset = rebuild.entry(t.key.clone()).or_default();
+                    if replaced {
+                        reset.insert(path.clone());
+                    }
+                    Ok(())
                 }),
                 (None, None) => Ok(()),
             };
@@ -2986,6 +3008,56 @@ mod tests {
         h.tick();
         assert_eq!(e.team(REJECT).props.boss_visit.as_deref(), Some("줄어듦"));
         assert_eq!(h.files[&file].generation(), 1);
+    }
+
+    /// 닫아 둔 파일을 `len` 바이트짜리 사용자 줄 하나로 바꿔 쓰고 그 글을 돌려준다
+    fn replace_with_len(file: &Path, len: u64, text: &str) -> String {
+        let ts = t0() + secs(145);
+        let pad = len as usize - user_line(REJECT, ts, text).len() - 1;
+        let text = format!("{text}{}", "x".repeat(pad));
+        fs::write(file, user_line(REJECT, ts, &text) + "\n").unwrap();
+        assert_eq!(fs::metadata(file).unwrap().len(), len);
+        text
+    }
+
+    /// 닫아 둔 동안 같은 길이·더 긴 다른 내용으로 교체됐으면 Reset 이라 세대를 올린다 (docs/CONTRACTS.md C6·C9)
+    #[test]
+    fn closed_file_replaced_with_same_or_longer_content_rebuilds_with_new_generation() {
+        for extra in [0, 100] {
+            let e = env();
+            let (mut h, file, sites, now) = dozing_wsl_team(&e);
+            probe_now(&h, &sites);
+            e.at(now + secs(1));
+            h.tick();
+            assert!(h.files[&file].reader.is_none());
+            let len = fs::metadata(&file).unwrap().len();
+            let text = replace_with_len(&file, len + extra, "교체");
+            probe_now(&h, &sites);
+            e.at(now + secs(30));
+            h.tick();
+            assert_eq!(
+                e.team(REJECT).props.boss_visit.as_deref(),
+                Some(text.as_str())
+            );
+            assert_eq!(h.files[&file].generation(), 1, "늘어난 길이 {extra}");
+        }
+    }
+
+    /// 닫아 둔 동안 줄이 덧붙기만 했으면 Reset 이 아니라 세대를 그대로 두고 다시 만든다
+    #[test]
+    fn closed_file_appended_rebuilds_with_same_generation() {
+        let e = env();
+        let (mut h, file, sites, now) = dozing_wsl_team(&e);
+        probe_now(&h, &sites);
+        e.at(now + secs(1));
+        h.tick();
+        assert!(h.files[&file].reader.is_none());
+        append(&file, &[user_line(REJECT, t0() + secs(151), "덧붙임")]);
+        probe_now(&h, &sites);
+        e.at(now + secs(30));
+        h.tick();
+        assert_eq!(e.team(REJECT).props.boss_visit.as_deref(), Some("덧붙임"));
+        assert_eq!(h.files[&file].generation(), 0);
     }
 
     /// 메인의 Reset 을 본 뒤 서브 핸들 에러로 빠져도 Reset 을 잃지 않는다. 다시 만들 때 메인 세대가 오른다

@@ -10,6 +10,7 @@ import {
 // 배포 CSP(default-src 'self')는 eval 을 막는데 Pixi 렌더러는 생성 때 new Function 을 시험하고 던진다. eval 없는 길로 바꿔 둔다
 import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
+import { fill } from "../text.ts";
 import { ActorLayer, seatProps } from "./actors.ts";
 import { DRIVEN_PROP, PropsLayer } from "./props.ts";
 import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
@@ -332,6 +333,20 @@ export async function mountOffice(
     for (const c of scene.lit) c.tint = tint;
   }
 
+  // 값이 같으면 안 건드린다: 스냅샷마다 스크린리더가 다시 읽지 않게
+  function setCanvasAria(office: OfficeDto | null, list: OfficeListDto): void {
+    const el = app.canvas;
+    const label = canvasAria(office, list);
+    // 이름 없는 img 는 "이미지"로만 읽히니 이름이 없으면 역할도 뺀다
+    if (label === null) {
+      el.removeAttribute("role");
+      el.removeAttribute("aria-label");
+      return;
+    }
+    el.setAttribute("role", "img");
+    if (el.getAttribute("aria-label") !== label) el.setAttribute("aria-label", label);
+  }
+
   // ---------- 스냅샷 적용 ----------
   function apply(): void {
     const { list, office, selectedId } = store.state;
@@ -380,6 +395,7 @@ export async function mountOffice(
     const seated = seatProps(fp, kind, office);
     for (const [id, s] of scene?.toggled ?? []) s.visible = seated.has(id);
     shown = office;
+    setCanvasAria(office, list);
     propsAt = Date.now();
     props?.update(office, propsAt);
     // ponytail: dim(30분 조용 + 프로세스 살아 있음, S58)은 DTO 에 판정 필드가 없어 아직 안 켠다. 필드가 생기면 넣는다
@@ -564,4 +580,14 @@ export async function mountOffice(
   return {
     setRoomLabels: (on) => void (overlay.hidden = !on),
   };
+}
+
+/** 캔버스 aria-label (HANDOFF 10절): 그린 사무실의 이름·직원 수·장애. 사무실이 없으면 null */
+export function canvasAria(office: OfficeDto | null, list: OfficeListDto): string | null {
+  if (!office) return null;
+  const name = list.offices.find((o) => o.officeId === office.officeId)?.label;
+  if (!name) return null;
+  const n = office.teams.reduce((sum, t) => sum + t.employees.length, 0);
+  const tpl = office.shared.incident ? phrases.canvas.ariaIncident : phrases.canvas.aria;
+  return fill(tpl, { office: name, n });
 }

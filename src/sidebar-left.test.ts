@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { createStore } from "./store.ts";
-import { emptyState, mountSidebar, type SidebarOptions } from "./sidebar-left.ts";
+import { emptyState, mountSidebar, popupNames, type SidebarOptions } from "./sidebar-left.ts";
 import type {
   Border,
   Dot,
@@ -420,14 +420,39 @@ test("→ 키로도 연다. 중소기업은 팀 행만 열고 층 행에는 버�
   const second = rs[2]; // 서아린 부장 팀
   const main = byClass(second, "ow-row__main")[0];
   main.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-  expect(onDetail).toHaveBeenCalledWith(
-    "vendor/claude",
-    "tb",
-    "서아린 부장 팀",
-    byClass(second, "ow-row__info")[0],
-  );
+  // 복귀 대상은 행 버튼이다: 아이콘이면 Esc 뒤 ↑↓ 로빙이 끊긴다
+  expect(onDetail).toHaveBeenCalledWith("vendor/claude", "tb", "서아린 부장 팀", main);
   byClass(rs[0], "ow-row__main")[0].dispatchEvent(
     new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
   );
   expect(onDetail).toHaveBeenCalledTimes(1);
+});
+
+test("→ 로 연 상세를 닫고 초점이 행 버튼으로 돌아오면 ↓ 가 다음 행으로 간다", () => {
+  let opener: HTMLElement | undefined;
+  const s = setup(list([office("101"), office("102")]), 1200, (_o, _t, _n, el) => {
+    opener = el;
+  });
+  document.body.append(s.root);
+  const rs = rows(s.root);
+  const main = byClass(rs[0], "ow-row__main")[0];
+  main.focus();
+  main.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  opener!.focus(); // popup-modal 이 닫을 때 하는 일
+  expect(opener).toBe(main);
+  opener!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  expect(document.activeElement).toBe(byClass(rs[1], "ow-row__main")[0]);
+});
+
+test("팝업 이름은 클릭이 준 사무실·팀으로 찾는다 (선택과 달라도)", () => {
+  const l = list([
+    office("101"),
+    office("102", { teams: [team("t-102", { bossName: "서아린" })] }),
+  ]);
+  expect(popupNames(l, "102", "t-102")).toEqual({
+    officeName: "B동 102",
+    teamLabel: "서아린 부장 팀",
+  });
+  expect(popupNames(l, "102", "없음").teamLabel).toBe("B동 102");
+  expect(popupNames(l, "없음", "t").officeName).toBe("");
 });

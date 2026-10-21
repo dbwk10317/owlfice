@@ -20,7 +20,7 @@ use tauri::{Emitter, Manager};
 
 use diag::Diag;
 use discover::wsl::WslDistro;
-use discover::{Site, scan, windows_host};
+use discover::{ScanResult, Scanner, Site, windows_host};
 use ipc::Ipc;
 use office::names::{NameBook, RoomBook};
 use office::world::{OfficeWorld, Scale};
@@ -70,6 +70,26 @@ struct AppBoot {
     diag: Arc<Mutex<Diag>>,
     settings: Arc<SettingsBook>,
     runtime: Arc<Runtime>,
+    scanner: Arc<Mutex<Scanner>>,
+}
+
+fn discover_current(
+    scanner: &Mutex<Scanner>,
+    settings: &SettingsBook,
+    runtime: &Runtime,
+) -> ScanResult {
+    loop {
+        let manual = settings.snapshot().manual_paths.unwrap_or_default();
+        let found = scanner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .scan(&manual);
+        if settings.snapshot().manual_paths.unwrap_or_default() != manual {
+            continue;
+        }
+        runtime.discovered(&found, &manual);
+        return found;
+    }
 }
 
 impl Boot for AppBoot {
@@ -78,11 +98,16 @@ impl Boot for AppBoot {
     }
 
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>) {
-        let manual = self.settings.snapshot().manual_paths.unwrap_or_default();
-        let found = scan(&manual);
+        let found = discover_current(&self.scanner, &self.settings, &self.runtime);
         log_sites(&found.sites, &found.distros);
-        self.runtime.discovered(&found, &manual);
         (found.sites, found.distros)
+    }
+
+    fn discovery_pending(&self) -> bool {
+        self.scanner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_pending()
     }
 
     /// 호스트 스레드를 띄운다. WSL 스레드는 Probe 가 켜진 배포판을 보고 띄운다 (docs/CONTRACTS.md C5)
@@ -96,17 +121,16 @@ impl Boot for AppBoot {
         );
         host.watch = Some(watch);
         host.runtime = self.runtime.clone();
-        // 첫 Probe 는 방금 찾은 결과를 쓴다. wsl.exe 를 또 부르면 느린 PC 에서 로딩이 두 배가 된다
+        // Windows로 시작하고 WSL 탐색 완료는 Probe를 깨워 별도로 반영한다.
         let mut first = Some((sites, distros));
         let settings = self.settings.clone();
         let runtime = self.runtime.clone();
+        let scanner = self.scanner.clone();
         let prober = Prober::new(
             &host,
             Box::new(move || {
                 first.take().unwrap_or_else(|| {
-                    let manual = settings.snapshot().manual_paths.unwrap_or_default();
-                    let found = scan(&manual);
-                    runtime.discovered(&found, &manual);
+                    let found = discover_current(&scanner, &settings, &runtime);
                     (found.sites, found.distros)
                 })
             }),
@@ -155,6 +179,8 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
         dir.join("logs"),
         std::env::var_os("USERPROFILE").map(PathBuf::from),
     ));
+    let wake = runtime.clone();
+    let scanner = Arc::new(Mutex::new(Scanner::new(move || wake.request_rescan())));
     let ipc = Arc::new(Ipc::new(world.clone(), RoomBook::load(&dir)));
     startup.report(1, StepState::Done, StartupSummary::None, None);
 
@@ -165,6 +191,7 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
         diag: diag.clone(),
         settings: settings.clone(),
         runtime: runtime.clone(),
+        scanner,
     };
     let progress = startup.clone();
     app.manage(ipc);

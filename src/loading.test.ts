@@ -152,6 +152,19 @@ test("7단계가 안 끝났으면 1.2초가 지나도 기다린다", async () =>
   expect(m.state.resolved).toBe(true);
 });
 
+test("WSL만 탐색 중이면 폴더 없음으로 단정하지 않고 로딩을 마친다", async () => {
+  const history = allDone();
+  history[2] = ev(3, "Done", { kind: "WslPending" });
+  const m = mount(history);
+  await m.flush();
+  expect(m.text()[2]).toBe(L.wslPending);
+  expect(m.rows()[2].className).toBe("ld__step ld__step--done");
+  expect(m.text()[2]).not.toContain("{buildings}");
+  expect(m.text()[2]).not.toContain(phrases.empty.noFoldersTitle);
+  await vi.advanceTimersByTimeAsync(1800);
+  expect(m.state.resolved).toBe(true);
+});
+
 test("아무 키나 클릭으로 건너뛰지만 Tab·Shift 같은 보조 키는 안 된다", async () => {
   const key = (k: string) => document.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
   const m = mount();

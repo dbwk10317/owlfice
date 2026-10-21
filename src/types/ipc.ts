@@ -359,7 +359,7 @@ export type StepState = "Running" | "Done" | "Warn" | "Error";
 /**
  * 문장 틀은 `phrases.ko.json` 의 loading 이 갖고 프론트가 이 재료로 채운다
  */
-export type StartupSummary = { "kind": "None" } | { "kind": "Candidates", n: number, hosts: Array<string>, } | { "kind": "Rented", buildings: Array<string>, } | { "kind": "NoFolders" } | { "kind": "Teams", n: number, } | { "kind": "Hired", n: number, bujang: number, gwajang: number, daeri: number, sawon: number, } | { "kind": "WslOff", floor: number, distro: string, } | { "kind": "WslFail", floor: number, distro: string, } | { "kind": "SettingsBroken" };
+export type StartupSummary = { "kind": "None" } | { "kind": "Candidates", n: number, hosts: Array<string>, } | { "kind": "Rented", buildings: Array<string>, } | { "kind": "NoFolders" } | { "kind": "WslPending" } | { "kind": "Teams", n: number, } | { "kind": "Hired", n: number, bujang: number, gwajang: number, daeri: number, sawon: number, } | { "kind": "WslOff", floor: number, distro: string, } | { "kind": "WslFail", floor: number, distro: string, } | { "kind": "SettingsBroken" };
 
 /**
  * 오래 걸리는 단계의 진짜 원인 (2초 넘으면 화면에 나온다)

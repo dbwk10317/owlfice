@@ -306,6 +306,11 @@ export async function mountOffice(
   let propsAt = 0;
   let sceneKey = "";
   let officeId = "";
+  let switchFade: Animation | undefined;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  reducedMotion.addEventListener("change", () => {
+    if (reducedMotion.matches) switchFade?.cancel();
+  });
   actors.onPick = (teamId, agentId) => opts.onEmployee?.(officeId, teamId, agentId);
   actors.onRing = (now) => props?.ring(now);
   actors.onDoor = (now) => props?.openDoor(now);
@@ -358,7 +363,6 @@ export async function mountOffice(
     const { list, office, selectedId } = store.state;
     if (!list) return;
     // 사무실을 바꾸는 중(선택은 있고 office 는 아직 null)에는 테마가 잠깐 바뀌어 깜빡이지 않게 지금 화면을 둔다
-    // ponytail: 선택 응답이 끝내 안 오면 옛 사무실이 남는다, 사무실 전환 티켓(T28)에서 상한을 정한다
     if (!office && selectedId !== null && scene) return;
     // 규모는 office 에서 읽는다. 설정 전환과 늦은 선택 응답이 겹쳐도 small 평면도에 대기업 팀이 섞이지 않는다
     const kind: Kind = office
@@ -372,6 +376,8 @@ export async function mountOffice(
     const incident = office?.shared.incident ?? false;
     const key = `${kind}|${theme}|${incident}`;
     const switched = !scene || (office?.officeId ?? "") !== officeId;
+    const fade =
+      switched && shown !== null && office !== null && !resumed && !reducedMotion.matches;
     if (key !== sceneKey) {
       // 새 장면을 다 지은 뒤에 옛것을 지운다. 짓다 던져도 화면은 옛 장면이 남는다
       const next = buildScene(assets, kind, theme, incident);
@@ -407,6 +413,14 @@ export async function mountOffice(
     props?.update(office, propsAt);
     setLight(lightOf(office), switched);
     stepLight(0);
+    if (switched) {
+      switchFade?.cancel();
+      if (fade)
+        switchFade = wrap.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: 300,
+          easing: getComputedStyle(wrap).getPropertyValue("--ow-ease").trim() || "ease",
+        });
+    }
   }
 
   function buildLabels(kind: Kind): void {
@@ -537,6 +551,7 @@ export async function mountOffice(
   const cues = cueCollector();
   store.subscribe(() => {
     dirty = true;
+    if (store.state.selectedId !== officeId) switchFade?.cancel();
     cues.see(store.state.office, document.hidden);
   });
   app.ticker.maxFPS = 60;
@@ -576,6 +591,7 @@ export async function mountOffice(
     UPDATE_PRIORITY.UTILITY,
   );
   document.addEventListener("visibilitychange", () => {
+    switchFade?.cancel();
     if (document.hidden) app.ticker.stop();
     else {
       resumed = true;

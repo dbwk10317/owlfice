@@ -10,6 +10,12 @@ body {
 .ow-main {
   min-height: 0;
 }
+.ow-selection-error {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--ow-ink);
+  background: var(--ow-stage);
+}
 .ow-panel-host {
   display: contents;
 }

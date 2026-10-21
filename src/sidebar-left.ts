@@ -23,7 +23,11 @@ const P = phrases.sidebar;
 const T = phrases.toast;
 
 export interface SidebarStore {
-  state: { list: OfficeListDto | null; selectedId: string | null };
+  state: {
+    list: OfficeListDto | null;
+    selectedId: string | null;
+    selectionError?: "recovering" | "restored" | "failed" | null;
+  };
   subscribe(fn: () => void): () => void;
   selectOffice(officeId: string): number;
 }
@@ -568,7 +572,7 @@ export function mountSidebar(
 
   function pick(id: string | null): void {
     root.classList.remove("is-pop");
-    if (!id || id === store.state.selectedId) return;
+    if (!id || (id === store.state.selectedId && store.state.selectionError !== "failed")) return;
     selectOffice(id, store.selectOffice(id));
   }
 

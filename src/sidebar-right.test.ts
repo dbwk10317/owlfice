@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { mountPanel, type PanelHandle, type PanelOptions, type Viewport } from "./sidebar-right.ts";
 import { createStore } from "./store.ts";
 import { act, emp, iso, office, team } from "./test-office.ts";
@@ -71,6 +71,87 @@ function setup(
 }
 
 const nodeCount = (el: Element): number => el.querySelectorAll("*").length + el.childNodes.length;
+
+describe("사무실 카드 전환", () => {
+  const animate = vi.fn<HTMLElement["animate"]>();
+  const cancel = vi.fn();
+  const nextOffice = (id: string, seq = 1) => office(id, seq, [team(id, [emp(id)])]);
+
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, "animate", {
+      configurable: true,
+      value: animate.mockReset().mockReturnValue({ cancel } as unknown as Animation),
+    });
+    cancel.mockReset();
+    vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(HTMLElement.prototype, "animate");
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  test("첫 로드는 생략하고 새 카드를 즉시 배치한 뒤 300ms 페이드한다", () => {
+    const s = setup(nextOffice("A"));
+    expect(animate).not.toHaveBeenCalled();
+    s.store.selectOffice("B");
+    s.push(nextOffice("B"));
+    expect(s.ids()).toEqual(["B"]);
+    expect(animate).toHaveBeenCalledExactlyOnceWith([{ opacity: 0 }, { opacity: 1 }], {
+      duration: 300,
+      easing: "ease",
+    });
+    s.push(nextOffice("B", 2));
+    expect(animate).toHaveBeenCalledTimes(1);
+    s.panel.destroy();
+  });
+
+  test("연속 선택은 이전 페이드를 취소하고 마지막 카드만 남긴다", () => {
+    const s = setup(nextOffice("A"));
+    s.store.selectOffice("B");
+    s.push(nextOffice("B"));
+    s.store.selectOffice("C");
+    expect(cancel).toHaveBeenCalled();
+    s.push(nextOffice("C"));
+    expect(s.ids()).toEqual(["C"]);
+    expect(animate).toHaveBeenCalledTimes(2);
+    s.panel.destroy();
+  });
+
+  test("숨은 동안 받은 선택은 페이드 없이 배치하고 복귀해도 다시 재생하지 않는다", () => {
+    const s = setup(nextOffice("A"));
+    s.store.selectOffice("B");
+    s.push(nextOffice("B"));
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(cancel).toHaveBeenCalled();
+    animate.mockClear();
+    s.store.selectOffice("C");
+    s.push(nextOffice("C"));
+    expect(s.ids()).toEqual(["C"]);
+    vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    s.push(nextOffice("C", 2));
+    expect(animate).not.toHaveBeenCalled();
+    s.panel.destroy();
+  });
+
+  test("움직임 줄이기에서는 새 카드를 즉시 보이고 페이드하지 않는다", () => {
+    const media = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", () => media);
+    const s = setup(nextOffice("A"));
+    s.store.selectOffice("B");
+    s.push(nextOffice("B"));
+    expect(s.ids()).toEqual(["B"]);
+    expect(animate).not.toHaveBeenCalled();
+    s.panel.destroy();
+    expect(media.removeEventListener).toHaveBeenCalledWith("change", expect.any(Function));
+  });
+});
 
 test("같은 agent id 카드는 다시 만들지 않고 바뀐 칸만 고친다", () => {
   const o = (seq: number, sentence: string) =>

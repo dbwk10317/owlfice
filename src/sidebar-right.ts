@@ -608,6 +608,15 @@ export function mountPanel(
   const events = createEventCollector();
   const toastTimers = new Set<ReturnType<typeof setTimeout>>();
   let lastOfficeId: string | null = null;
+  let displayedOfficeId: string | null = null;
+  let switchFade: Animation | undefined;
+  const reducedMotion = doc.defaultView?.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const stopFade = () => switchFade?.cancel();
+  const onMotionChange = () => {
+    if (reducedMotion?.matches) stopFade();
+  };
+  reducedMotion?.addEventListener("change", onMotionChange);
+  doc.addEventListener("visibilitychange", stopFade);
   let lastCueKey = "";
   let compact = false;
   let narrow = false;
@@ -691,9 +700,15 @@ export function mountPanel(
     const { office, list: info, selectedId } = store.state;
     // store 가 버린(선택이 바뀐) 상태는 그리지 않는다
     if (!office || office.officeId !== selectedId) {
+      switchFade?.cancel();
+      if (selectedId === null) displayedOfficeId = null;
       clear();
       return;
     }
+
+    const switched = displayedOfficeId !== office.officeId;
+    const fade = switched && displayedOfficeId !== null && !doc.hidden && !reducedMotion?.matches;
+    displayedOfficeId = office.officeId;
 
     const small = info?.scale === "Small";
     // 처음 그리기와 조용한 재구성(PLAN 4.5)에는 토스트·연출을 내지 않는다
@@ -812,6 +827,15 @@ export function mountPanel(
     count.textContent = fill(phrases.card.count, { n: total });
     empty.hidden = total > 0;
     if (events.ingest(office, small)) ticker.setEvents(events.events());
+    if (switched) {
+      switchFade?.cancel();
+      if (fade)
+        switchFade = list.animate?.([{ opacity: 0 }, { opacity: 1 }], {
+          duration: 300,
+          easing:
+            doc.defaultView?.getComputedStyle(list).getPropertyValue("--ow-ease").trim() || "ease",
+        });
+    }
   }
 
   // ---- 창 크기 ----
@@ -875,6 +899,9 @@ export function mountPanel(
     toggleDrawer: () => setDrawer(!drawerOpen),
     highlight: pick,
     destroy() {
+      switchFade?.cancel();
+      reducedMotion?.removeEventListener("change", onMotionChange);
+      doc.removeEventListener("visibilitychange", stopFade);
       unsubscribe();
       unsubscribeViewport();
       clearInterval(tick);

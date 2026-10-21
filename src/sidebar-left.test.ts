@@ -196,6 +196,27 @@ test("행을 누르면 store 선택과 select_office 를 부른다", () => {
   s.dispose();
 });
 
+test("요청 중 같은 사무실은 다시 부르지 않고 복구 실패 뒤에는 재선택한다", async () => {
+  const s = setup(list([office("101"), office("102")]));
+  const row = byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0];
+  row.click();
+  row.click();
+  expect(s.picked).toHaveLength(1);
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  await s.store.requestSelect(s.picked[0][1], Promise.reject(new Error("선택 실패")), async () => {
+    row.click();
+    expect(s.picked).toHaveLength(1);
+    throw new Error("복구 실패");
+  });
+  log.mockRestore();
+  row.click();
+  expect(s.picked).toHaveLength(2);
+  expect(s.picked[1]).toEqual(["102", s.picked[0][1] + 1]);
+  row.click();
+  expect(s.picked).toHaveLength(2);
+  s.dispose();
+});
+
 test("중소기업: 팀 행을 누르면 그 층 사무실을 고른다", () => {
   const floor = office("fl1", { floor: 1, building: null, label: "1층 Claude 사무실" });
   const s = setup(list([floor], "Small"));

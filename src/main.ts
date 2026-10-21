@@ -26,15 +26,17 @@ const store = createStore<OfficeListDto, OfficeDto>();
 
 // 사이드바 클릭과 첫 사무실 자동 선택이 같은 경로로 부른다
 function requestSelect(officeId: string, requestId: number): void {
-  invoke<SelectResponseDto>("select_office", { officeId, requestId })
-    .then(store.applySelectResponse)
-    .catch((e) => console.error("select_office", e));
+  void store.requestSelect(
+    requestId,
+    invoke<SelectResponseDto>("select_office", { officeId, requestId }),
+    () => invoke<WorldDto>("get_world_snapshot"),
+  );
 }
 
 // ponytail: 첫 사무실을 여기서 고른다, 로딩 화면(T16)이 "첫 사무실 선택"을 맡으면 옮긴다
 store.subscribe(() => {
   const first = firstOffice(store.state.list?.offices ?? []);
-  if (store.state.selectedId !== null || !first) return;
+  if (store.state.selectedId !== null || store.state.selectionError || !first) return;
   requestSelect(first.officeId, store.selectOffice(first.officeId));
 });
 
@@ -60,10 +62,25 @@ function mountShell(companyName: string | undefined): void {
   const main = el("div", "ow-main");
   const headerEl = el("header");
   const stage = el("div", "ow-stage");
+  const selectionError = el("p", "ow-selection-error");
+  selectionError.setAttribute("role", "alert");
+  selectionError.hidden = true;
   const panelHost = el("div", "ow-panel-host");
-  main.append(headerEl, stage);
+  main.append(headerEl, selectionError, stage);
   app.append(side, main, panelHost);
   document.body.append(app);
+  store.subscribe(() => {
+    const error = store.state.selectionError;
+    selectionError.hidden = error === null;
+    selectionError.textContent =
+      error === "recovering"
+        ? "사무실을 전환하지 못했습니다. 현재 사무실을 다시 불러오는 중입니다."
+        : error === "restored"
+          ? "사무실을 전환하지 못해 현재 사무실을 다시 불러왔습니다."
+          : error === "failed"
+            ? "사무실을 다시 불러오지 못했습니다. 사무실 목록에서 다시 선택해 주세요."
+            : "";
+  });
 
   let office: OfficeHandle | null = null;
   let header: ReturnType<typeof mountHeader> | null = null;

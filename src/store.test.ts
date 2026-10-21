@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { createStore, type ListMsg, type StateMsg } from "./store.ts";
 
 type L = ListMsg & { offices: string[] };
@@ -172,4 +172,205 @@ test("다시 불러온 WebView 는 스냅샷의 요청 번호부터 이어 센�
   const s = createStore<L, S>();
   s.applyWorld({ ...list(5, "A"), selectRequest: 7, selected: st("A", 1) });
   expect(s.selectOffice("B")).toBe(8);
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("선택 실패 복구", () => {
+  beforeEach(() => vi.spyOn(console, "error").mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  test("빠른 A→B 선택의 늦은 성공 응답도 최신 B 이벤트를 되돌리지 않는다", async () => {
+    const s = started();
+    const a = deferred<S & { requestId: number }>();
+    const b = deferred<S & { requestId: number }>();
+    const getWorld = vi.fn();
+    const idA = s.selectOffice("A");
+    const pendingA = s.requestSelect(idA, a.promise, getWorld);
+    const idB = s.selectOffice("B");
+    const pendingB = s.requestSelect(idB, b.promise, getWorld);
+    s.applyOfficeState(st("B", 4, "new B"));
+    b.resolve({ ...st("B", 3, "old B"), requestId: idB });
+    a.resolve({ ...st("A", 99, "late A"), requestId: idA });
+    await Promise.all([pendingA, pendingB]);
+    expect(s.state.office?.tag).toBe("new B");
+    expect(getWorld).not.toHaveBeenCalled();
+  });
+
+  test("옛 복구 스냅샷의 실패도 새 선택에 오류를 남기지 않는다", async () => {
+    const s = started();
+    const snapshot = deferred<L & { selected: S | null }>();
+    const reading = deferred<void>();
+    const recovery = s.requestSelect(s.selectOffice("B"), Promise.reject(new Error("실패")), () => {
+      reading.resolve();
+      return snapshot.promise;
+    });
+    await reading.promise;
+    const id = s.selectOffice("C");
+    await s.requestSelect(id, Promise.resolve({ ...st("C", 1, "C"), requestId: id }), vi.fn());
+    snapshot.reject(new Error("옛 복구 실패"));
+    await recovery;
+    expect(s.state.office?.tag).toBe("C");
+    expect(s.state.selectionError).toBeNull();
+  });
+
+  test("최신 선택 실패는 실제 백엔드 선택을 복원하고 다음 요청 번호는 계속 증가한다", async () => {
+    const s = started();
+    const id = s.selectOffice("B");
+    await s.requestSelect(id, Promise.reject(new Error("실패")), async () => ({
+      ...list(6, "A", "B"),
+      selected: st("A", 2, "actual"),
+    }));
+    expect(s.state.selectedId).toBe("A");
+    expect(s.state.office?.tag).toBe("actual");
+    expect(s.state.selectionError).toBe("restored");
+    // 실패한 요청 번호보다 낮아도 복구 뒤 백엔드가 바꾼 선택은 받는다.
+    s.applyList({ ...list(7), selectedId: "B" });
+    expect(s.state.selectedId).toBe("B");
+    expect(s.selectOffice("A")).toBe(id + 1);
+    expect(s.state.selectionError).toBeNull();
+  });
+
+  test("A→B→C에서 C 실패 뒤 늦게 처리된 B까지 기다려 스냅샷을 한 번 읽는다", async () => {
+    const s = started();
+    const b = deferred<S & { requestId: number }>();
+    const getWorld = vi.fn(async () => ({
+      ...list(6),
+      selectedId: "B",
+      selectRequest: 1,
+      selected: st("B", 2, "actual B"),
+    }));
+    const idB = s.selectOffice("B");
+    const pendingB = s.requestSelect(idB, b.promise, getWorld);
+    const idC = s.selectOffice("C");
+    const pendingC = s.requestSelect(idC, Promise.reject(new Error("C 실패")), getWorld);
+    await Promise.resolve();
+    expect(s.state.selectionError).toBe("recovering");
+    expect(getWorld).not.toHaveBeenCalled();
+    b.resolve({ ...st("B", 2), requestId: idB });
+    await Promise.all([pendingB, pendingC]);
+    expect(getWorld).toHaveBeenCalledTimes(1);
+    expect(s.state.selectedId).toBe("B");
+    expect(s.state.office?.tag).toBe("actual B");
+  });
+
+  test("옛 실패는 현재 선택을 건드리거나 재동기화하지 않는다", async () => {
+    const s = started();
+    const a = deferred<S & { requestId: number }>();
+    const getWorld = vi.fn();
+    const idA = s.selectOffice("A");
+    const pendingA = s.requestSelect(idA, a.promise, getWorld);
+    const idB = s.selectOffice("B");
+    await s.requestSelect(idB, Promise.resolve({ ...st("B", 1, "B"), requestId: idB }), getWorld);
+    a.reject(new Error("옛 실패"));
+    await pendingA;
+    expect(getWorld).not.toHaveBeenCalled();
+    expect(s.state.office?.tag).toBe("B");
+    expect(s.state.selectionError).toBeNull();
+  });
+
+  test("복구 스냅샷을 기다리는 동안 새 선택이 오면 옛 스냅샷은 버린다", async () => {
+    const s = started();
+    const snapshot = deferred<L & { selected: S | null }>();
+    const reading = deferred<void>();
+    const idB = s.selectOffice("B");
+    const recovery = s.requestSelect(idB, Promise.reject(new Error("실패")), () => {
+      reading.resolve();
+      return snapshot.promise;
+    });
+    await reading.promise;
+    const idC = s.selectOffice("C");
+    await s.requestSelect(idC, Promise.resolve({ ...st("C", 1, "C"), requestId: idC }), vi.fn());
+    snapshot.resolve({ ...list(99), selected: st("A", 99, "old") });
+    await recovery;
+    expect(s.state.selectedId).toBe("C");
+    expect(s.state.office?.tag).toBe("C");
+    expect(s.state.list?.listSeq).toBe(5);
+    expect(s.state.selectionError).toBeNull();
+  });
+
+  test("기존 요청을 기다리는 중 새 선택이 오면 복구 스냅샷 자체를 요청하지 않는다", async () => {
+    const s = started();
+    const b = deferred<S & { requestId: number }>();
+    const getWorld = vi.fn();
+    const idB = s.selectOffice("B");
+    const pendingB = s.requestSelect(idB, b.promise, getWorld);
+    const pendingC = s.requestSelect(
+      s.selectOffice("C"),
+      Promise.reject(new Error("실패")),
+      getWorld,
+    );
+    await Promise.resolve();
+    const idA = s.selectOffice("A");
+    await s.requestSelect(
+      idA,
+      Promise.resolve({ ...st("A", 2, "new A"), requestId: idA }),
+      getWorld,
+    );
+    b.resolve({ ...st("B", 2), requestId: idB });
+    await Promise.all([pendingB, pendingC]);
+    expect(getWorld).not.toHaveBeenCalled();
+    expect(s.state.office?.tag).toBe("new A");
+  });
+
+  test("복구 대상의 더 새 이벤트와 목록을 오래된 스냅샷으로 되돌리지 않는다", async () => {
+    const s = started();
+    const id = s.selectOffice("C");
+    await s.requestSelect(id, Promise.reject(new Error("실패")), async () => {
+      s.applyList({ ...list(9, "new list"), selectedId: "B" });
+      s.applyOfficeState(st("B", 8, "new B"));
+      s.applyOfficeState(st("B", 7, "older event"));
+      return { ...list(8, "old list"), selectedId: "B", selected: st("B", 6, "old snapshot") };
+    });
+    expect(s.state.list?.offices).toEqual(["new list"]);
+    expect(s.state.selectedId).toBe("B");
+    expect(s.state.office?.tag).toBe("new B");
+    s.applyOfficeState(st("B", 7, "stale"));
+    expect(s.state.office?.tag).toBe("new B");
+  });
+
+  test("스냅샷보다 새 목록이 다른 선택을 가리키면 옛 사무실을 넣지 않고 상태를 기다린다", async () => {
+    const s = started();
+    await s.requestSelect(s.selectOffice("C"), Promise.reject(new Error("실패")), async () => {
+      s.applyList({ ...list(9), selectedId: "B" });
+      return { ...list(8), selected: st("A", 6, "old office") };
+    });
+    expect(s.state.selectedId).toBe("B");
+    expect(s.state.office).toBeNull();
+    s.applyOfficeState(st("B", 7, "new office"));
+    expect(s.state.office?.tag).toBe("new office");
+  });
+
+  test("이미 적용한 stateSeq보다 오래된 복구 상태는 버린다", async () => {
+    const s = started(st("A", 10, "new"));
+    await s.requestSelect(s.selectOffice("B"), Promise.reject(new Error("실패")), async () => ({
+      ...list(6),
+      selected: st("A", 9, "stale"),
+    }));
+    expect(s.state.office).toBeNull();
+    s.applyOfficeState(st("A", 10, "same"));
+    expect(s.state.office?.tag).toBe("same");
+  });
+
+  test("복구도 실패하면 오류를 남기고 재시도하지 않으며 다음 선택을 허용한다", async () => {
+    const s = started();
+    const getWorld = vi.fn(async () => {
+      throw new Error("스냅샷 실패");
+    });
+    await s.requestSelect(s.selectOffice("B"), Promise.reject(new Error("실패")), getWorld);
+    expect(getWorld).toHaveBeenCalledTimes(1);
+    expect(s.state.selectionError).toBe("failed");
+    const id = s.selectOffice("B");
+    await s.requestSelect(id, Promise.resolve({ ...st("B", 3, "retry"), requestId: id }), getWorld);
+    expect(s.state.office?.tag).toBe("retry");
+    expect(s.state.selectionError).toBeNull();
+  });
 });

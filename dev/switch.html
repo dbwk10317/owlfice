@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>사무실 전환 확인 (T28)</title>
+    <script type="module" src="./switch.ts"></script>
+    <style>
+      body {
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+      }
+      .controls {
+        padding: 8px 12px;
+      }
+      .controls button {
+        margin: 4px;
+      }
+      .ow-app {
+        height: calc(100vh - 130px);
+        min-height: 480px;
+      }
+      #status {
+        margin: 4px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="controls" aria-label="전환 검증 조작">
+      <strong>사무실 전환 확인 (T28)</strong>
+      <button id="rapid">A 늦음 → B 빠름</button>
+      <button id="latest-failure">B 지연 → C 실패</button>
+      <button id="recovery-failure">선택·복구 실패</button>
+      <button id="hidden-switch">1초 뒤 전환 (다른 탭으로 이동)</button>
+      <p>
+        일반 전환·실패 후 재선택은 왼쪽 행을 클릭합니다. 움직임 줄이기는 브라우저 설정으로
+        확인합니다. 복구 중 다른 행을 누르면 새 선택을 유지해야 합니다.
+      </p>
+      <p id="status" role="status"></p>
+    </section>
+    <div class="ow-app" id="app">
+      <div id="side"></div>
+      <main class="ow-main">
+        <header id="header"></header>
+        <p class="ow-selection-error" id="error" role="alert" hidden></p>
+        <div class="ow-stage" id="stage"></div>
+      </main>
+      <div class="ow-panel-host" id="panel"></div>
+    </div>
+  </body>
+</html>

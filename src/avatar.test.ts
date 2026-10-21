@@ -1,0 +1,147 @@
+// @vitest-environment jsdom
+import { Rectangle, Texture } from "pixi.js";
+import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
+import raw from "../design/sprites/owls.json";
+import { speciesOf, type OwlMeta, type Owls } from "./office/actors.ts";
+import { loadOwls } from "./office/sprites.ts";
+import { emp } from "./test-office.ts";
+
+vi.mock("./office/sprites.ts", async (orig) => ({
+  ...(await orig<typeof import("./office/sprites.ts")>()),
+  loadOwls: vi.fn(),
+}));
+
+const draws = new Map<HTMLCanvasElement, ReturnType<typeof vi.fn>>();
+const textures = Object.fromEntries(
+  Object.entries(raw.frames).map(([key, { frame }]) => [
+    key,
+    new Texture({
+      frame: new Rectangle(frame.x, frame.y, frame.w, frame.h),
+    }),
+  ]),
+);
+const owls: Owls = { textures, meta: raw.owlfice as unknown as OwlMeta };
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
+const host = () => {
+  const el = document.createElement("span");
+  document.body.append(el);
+  return el;
+};
+const copied = (el: HTMLElement): HTMLCanvasElement =>
+  draws.get(el.firstChild as HTMLCanvasElement)!.mock.calls[0][0] as HTMLCanvasElement;
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.mocked(loadOwls).mockReset().mockResolvedValue(owls);
+  draws.clear();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (
+    this: HTMLCanvasElement,
+  ) {
+    const drawImage = vi.fn();
+    draws.set(this, drawImage);
+    return { drawImage } as unknown as ReturnType<HTMLCanvasElement["getContext"]>;
+  });
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  document.body.replaceChildren();
+});
+
+test("몸·직급·담당을 위 두 줄 잘라 가운데 합성하며 같은 외형은 캐시한다", async () => {
+  const { setAvatar } = await import("./avatar.ts");
+  const a = host();
+  const b = host();
+  const employee = emp("a", { rank: "Gwajang", role: "Qa" });
+  setAvatar(a, employee, "D");
+  setAvatar(b, employee, "D");
+  await settle();
+  const source = copied(a);
+  expect(copied(b)).toBe(source);
+  expect([source.width, source.height]).toEqual([20, 22]);
+  const keys = [
+    `body/${speciesOf("a", owls.meta.employeeSpecies)}/idle_f_0`,
+    "outfit/gwajang-codex/idle_f_0",
+    "role/qa/idle_f_0",
+  ];
+  expect(draws.get(source)!.mock.calls).toEqual(
+    keys.map((key) => {
+      const f = textures[key].frame;
+      return [textures[key].source.resource, f.x, f.y + 2, 16, 22, 2, 0, 16, 22];
+    }),
+  );
+  expect(a.style.getPropertyValue("--ow-avatar-bg")).toBe("var(--ow-codex-tint)");
+  const old = a.firstChild;
+  setAvatar(a, employee, "C");
+  await settle();
+  expect(a.firstChild).toBe(old);
+  expect(loadOwls).toHaveBeenCalledTimes(1);
+});
+
+test("종·직급·제품·담당이 바뀌면 새 그림이며 수습은 담당 겹이 없다", async () => {
+  const { setAvatar } = await import("./avatar.ts");
+  const a = host();
+  const first = emp("a");
+  setAvatar(a, first, "A");
+  await settle();
+  const sources = [copied(a)];
+  const different = ["b", "c", "d", "e", "f"].find(
+    (id) => speciesOf(id, owls.meta.employeeSpecies) !== speciesOf("a", owls.meta.employeeSpecies),
+  )!;
+  for (const [employee, building] of [
+    [emp(different), "A"],
+    [emp(different, { rank: "Bujang" }), "A"],
+    [emp(different, { rank: "Bujang" }), "F"],
+    [emp(different, { rank: "Bujang", role: "Trainee" }), "F"],
+  ] as const) {
+    setAvatar(a, employee, building);
+    await settle();
+    sources.push(copied(a));
+  }
+  expect(new Set(sources).size).toBe(5);
+  expect(draws.get(sources[sources.length - 1])!.mock.calls).toHaveLength(2);
+});
+
+test("로딩 중 직원 교체와 닫힌 팝업에는 옛 그림을 붙이지 않는다", async () => {
+  let resolve!: (value: Owls) => void;
+  vi.mocked(loadOwls).mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const { setAvatar } = await import("./avatar.ts");
+  const a = host();
+  const closed = host();
+  setAvatar(a, emp("old"), "A");
+  setAvatar(a, emp("new", { rank: "Bujang", role: "Writer" }), "E");
+  setAvatar(closed, emp("old"), "A");
+  closed.remove();
+  resolve(owls);
+  await settle();
+  expect(a.children).toHaveLength(1);
+  const source = copied(a);
+  const frame = textures["outfit/bujang-gemini/idle_f_0"].frame;
+  expect(draws.get(source)!.mock.calls[1].slice(1, 3)).toEqual([frame.x, frame.y + 2]);
+  expect(closed.children).toHaveLength(0);
+});
+
+test.each(["load", "canvas", "frame"])(
+  "자원 실패 %s는 자리표시를 남기고 오류 한 번만 기록한다",
+  async (failure) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    if (failure === "load") vi.mocked(loadOwls).mockRejectedValue(new Error("atlas failed"));
+    if (failure === "canvas")
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    if (failure === "frame") vi.mocked(loadOwls).mockResolvedValue({ ...owls, textures: {} });
+    const { setAvatar } = await import("./avatar.ts");
+    const a = host();
+    const b = host();
+    setAvatar(a, emp("a"), "A");
+    setAvatar(b, emp("b"), "B");
+    await settle();
+    expect(a.children).toHaveLength(0);
+    expect(b.children).toHaveLength(0);
+    expect(log).toHaveBeenCalledTimes(1);
+  },
+);

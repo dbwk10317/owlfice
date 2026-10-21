@@ -10,6 +10,7 @@ import type { Invoke } from "./scale.ts";
 import { CTX_CELLS, ROLE_LABEL, ROOM_LABEL, contextMeter, h, setRich } from "./sidebar-right.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { rankLabel } from "./ticker.ts";
+import { setAvatar } from "./avatar.ts";
 import type {
   ClipDto,
   CountDto,
@@ -38,6 +39,7 @@ export interface EmployeeRef {
   agentId: string;
   /** 머리 줄에 쓸 사무실 이름 */
   officeName: string;
+  building?: string;
 }
 
 const enc = new TextEncoder();
@@ -64,8 +66,11 @@ export function openEmployeeDetail(
   const chips = h(doc, "div", "ow-pop__chips");
   const meta = h(doc, "div", "ow-pop__meta");
   const head = h(doc, "header", "ow-pop__head ow-pop__head--emp");
+  const avatar = h(doc, "div", "ow-avatar ow-avatar--lg");
+  avatar.setAttribute("aria-hidden", "true");
+  if (live) setAvatar(avatar, live, ref.building);
   head.append(
-    h(doc, "div", "ow-avatar ow-avatar--lg"),
+    avatar,
     h(doc, "div", "ow-pop__headmain", h(doc, "div", "ow-pop__titlerow", title, rank), chips, meta),
     m.closeBtn,
   );
@@ -171,6 +176,7 @@ export function openEmployeeDetail(
 
   // ----- 그리기 -----
   function build(dto: EmployeeDetailDto): void {
+    setAvatar(avatar, dto, ref.building);
     title.textContent = dto.name;
     rank.textContent = rankLabel(dto.rank);
     fillHead(dto);

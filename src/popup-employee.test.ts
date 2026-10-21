@@ -4,6 +4,9 @@ import phrases from "../design/handoff/phrases.ko.json";
 import { openEmployeeDetail, type EmployeePopupDeps } from "./popup-employee.ts";
 import { emp } from "./test-office.ts";
 import type { EmployeeDetailDto, EventDto } from "./types/ipc.ts";
+import { setAvatar } from "./avatar.ts";
+
+vi.mock("./avatar.ts", () => ({ setAvatar: vi.fn() }));
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -81,13 +84,19 @@ function setup(handlers: Handlers = {}, teamId = "t1") {
   opener.focus();
   openEmployeeDetail(
     deps,
-    { officeId: "o1", teamId, agentId: "a", officeName: "B동 203호" },
+    { officeId: "o1", teamId, agentId: "a", officeName: "B동 203호", building: "D" },
     opener,
   );
   const q = <T extends Element = HTMLElement>(sel: string) => document.querySelector<T>(sel);
   const qa = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
   return { calls, q, qa, opener };
 }
+
+test("실시간 직원이 없어도 상세 아바타는 명시한 팀 제조사와 응답 직원을 쓴다", async () => {
+  const s = setup({}, "not-live");
+  await flush();
+  expect(setAvatar).toHaveBeenLastCalledWith(s.q(".ow-avatar"), detail, "D");
+});
 
 test("(teamId, agentId) 로 요약과 타임라인 첫 50개를 불러 머리·지시·요약을 그린다", async () => {
   const s = setup();

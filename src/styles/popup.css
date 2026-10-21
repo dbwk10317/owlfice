@@ -184,16 +184,20 @@
   color: var(--ow-ink-3);
 }
 
-/* 아바타: 올빼미 스프라이트는 캔버스 티켓에서. 지금은 현황판 카드처럼 단색 자리표시 */
+/* 상세 아바타는 카드와 같은 20×22 그림을 정수 배율로 키운다. */
 .ow-avatar--sm {
   width: 20px;
   height: 22px;
   border-radius: 5px;
 }
 .ow-avatar--lg {
-  width: 88px;
+  width: 80px;
   height: 88px;
   border-radius: 16px;
+}
+.ow-avatar--lg canvas {
+  width: 80px;
+  height: 88px;
 }
 
 /* 세션 상세: 정보 표 */

@@ -104,6 +104,7 @@ function mountShell(companyName: string | undefined): void {
         teamId,
         agentId,
         officeName: popupNames(store.state.list, officeId, teamId).officeName,
+        building: store.state.office?.teams.find((t) => t.teamId === teamId)?.building,
       },
       opener,
     );

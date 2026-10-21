@@ -103,24 +103,31 @@ pub struct Record {
     /// 부장의 첫 사장님 메시지
     pub first_message: Option<String>,
     /// 경로는 파서가 만든 상대 경로
-    pub files_read: Uniq,
-    pub files_edited: Uniq,
-    pub commands: Uniq,
+    pub files_read: Counted,
+    pub files_edited: Counted,
+    pub commands: Counted,
 }
 
-/// 중복 없이 처음 본 순서로 쌓는 목록. 도구 호출마다 쌓으므로 검사는 집합으로 한다
+/// 처음 본 순서로 쌓고 같은 항목은 횟수만 올리는 목록. 도구 호출마다 쌓으므로 찾기는 맵으로 한다
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Uniq {
-    pub items: Vec<String>,
-    seen: HashSet<String>,
+pub struct Counted {
+    /// (항목, 나온 횟수)
+    pub items: Vec<(String, u32)>,
+    /// 항목 → `items` 의 자리
+    at: HashMap<String, usize>,
 }
 
-impl Uniq {
-    pub fn push_new(&mut self, item: Option<&str>) {
-        if let Some(s) = item.filter(|s| !s.is_empty())
-            && self.seen.insert(s.to_string())
-        {
-            self.items.push(s.to_string());
+impl Counted {
+    pub fn add(&mut self, item: Option<&str>) {
+        let Some(s) = item.filter(|s| !s.is_empty()) else {
+            return;
+        };
+        match self.at.get(s) {
+            Some(&i) => self.items[i].1 = self.items[i].1.saturating_add(1),
+            None => {
+                self.at.insert(s.to_string(), self.items.len());
+                self.items.push((s.to_string(), 1));
+            }
         }
     }
 }

@@ -10,9 +10,19 @@ import type { Invoke } from "./scale.ts";
 import { CTX_CELLS, ROLE_LABEL, ROOM_LABEL, contextMeter, h, setRich } from "./sidebar-right.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { rankLabel } from "./ticker.ts";
-import type { ClipDto, CursorDto, EmployeeDetailDto, EventDto, OpenTarget } from "./types/ipc.ts";
+import type {
+  ClipDto,
+  CountDto,
+  CursorDto,
+  EmployeeDetailDto,
+  EventDto,
+  OpenTarget,
+  TimelineKind,
+} from "./types/ipc.ts";
 
 const D = phrases.employeeDetail;
+/** 칩 이름. 도구 이름을 모르는 칸(결과 칸, 원본을 못 읽은 호출 칸)과 도구가 아닌 사건이 쓴다 */
+const KIND: Record<TimelineKind, string> = phrases.timelineKind;
 const PAGE = 50;
 
 export interface EmployeePopupDeps {
@@ -237,7 +247,7 @@ export function openEmployeeDetail(
     const aside = h(doc, "aside", "ow-emp__aside");
     aside.setAttribute("aria-label", D.summary);
     aside.append(h(doc, "h2", "ow-pop__h2 ow-pop__h2--lg", D.summary));
-    const section = (label: string, svg: string, items: string[]) => {
+    const section = (label: string, svg: string, items: (string | CountDto)[]) => {
       aside.append(
         h(
           doc,
@@ -251,9 +261,20 @@ export function openEmployeeDetail(
             h(doc, "h2", "ow-pop__h2", label),
             h(doc, "span", "ow-mono ow-pop__n", String(items.length)),
           ),
-          ...items.map((t) => {
-            const li = h(doc, "div", "ow-emp__li", t);
-            li.title = t;
+          ...items.map((x) => {
+            if (typeof x === "string") {
+              const li = h(doc, "div", "ow-emp__li", x);
+              li.title = x;
+              return li;
+            }
+            const li = h(
+              doc,
+              "div",
+              "ow-emp__li ow-emp__li--count",
+              h(doc, "span", "ow-emp__item", x.item),
+              h(doc, "span", "ow-emp__times", fill(D.times, { n: x.times })),
+            );
+            li.title = x.item;
             return li;
           }),
         ),
@@ -277,7 +298,10 @@ export function openEmployeeDetail(
         break;
       case "Err":
       case "Rejected":
-        set("is-bad", D.fail);
+        set(
+          "is-bad",
+          e.test ? fill(D.failTests, { pass: e.test.passed, fail: e.test.failed }) : D.fail,
+        );
         break;
       case "Started":
         // 타임라인은 Started 와 뒤의 Ok/Err 를 따로 남기는 이력이라 경과 시간을 붙이면 끝난 일도 진행 중으로 읽힌다
@@ -355,8 +379,7 @@ export function openEmployeeDetail(
     chev.classList.add("ow-ev__chev");
     headBtn.append(
       h(doc, "span", "ow-ev__t", hms(e.ts)),
-      // ponytail: 도구가 아닌 사건은 종류 이름(영문)을 칩에 그대로 쓴다, 한글 이름 문구가 정해지면 phrases 로
-      h(doc, "span", "ow-ev__tool", e.tool ?? e.kind),
+      h(doc, "span", "ow-ev__tool", e.tool ?? KIND[e.kind]),
       sum,
       result(e),
       chev,

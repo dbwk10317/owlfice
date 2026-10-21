@@ -16,12 +16,14 @@ use serde_json::Value;
 
 use crate::discover::{HostKind, Vendor};
 use crate::ipc::{
-    ClipDto, CursorDto, DetailError, EmployeeDetailDto, EventDto, HeadcountDto, OpenTarget, PrDto,
-    SessionDetailDto, building, lock, parse_office_id,
+    ClipDto, CountDto, CursorDto, DetailError, EmployeeDetailDto, EventDto, HeadcountDto,
+    OpenTarget, PrDto, SessionDetailDto, TestDto, building, lock, parse_office_id,
 };
 use crate::office::classify::sentence;
 use crate::office::world::{OfficeId, OfficeWorld, TeamKey};
-use crate::office::{Employee, Mark, PendingCall, Rank, Team, TeamPhase, TimelineKind, call_hash};
+use crate::office::{
+    Counted, Employee, Mark, PendingCall, Rank, Team, TeamPhase, TimelineKind, call_hash,
+};
 use crate::parse::claude::content_text;
 use crate::parse::{Event, EventKind, Parser, RawRef, ToolKind, ToolOutcome, ToolSummary};
 use crate::tail::scheduler::{is_subagent, make_parser};
@@ -42,6 +44,8 @@ const BODY_CLIP: usize = 2048;
 /// tail 의 줄 상한과 같다. 이보다 긴 줄은 처음부터 이벤트가 되지 못했다
 const LINE_MAX: u64 = 64 * 1024 * 1024;
 const SUMMARY_CHARS: usize = 60;
+/// PR 주소 길이 상한. 기록에 적힌 값이라 끝없이 긴 인자를 explorer 에 넘기지 않는다
+const URL_MAX: usize = 2048;
 const UNREADABLE: &str = "원본 줄을 다시 읽지 못했습니다";
 const MISSING: &str = "원본 줄에서 이 기록을 찾지 못했습니다";
 
@@ -67,6 +71,8 @@ enum Launch {
     Folder(PathBuf),
     /// 그 칸의 줄을 읽어야 아는 분리된 결과 파일
     Sidecar(Want),
+    /// `safe_url` 을 거친 PR 주소
+    Url(String),
 }
 
 /// 다시 읽은 줄. 원문 JSON 은 도구 호출·결과 칸이 있을 때만 파싱한다
@@ -270,10 +276,21 @@ pub fn employee_detail(
         retired_at: e.retired_at,
         boss_name,
         instruction: r.prompt.clone().or_else(|| r.first_message.clone()),
-        files_read: r.files_read.items.clone(),
-        files_edited: r.files_edited.items.clone(),
-        commands: r.commands.items.clone(),
+        // 읽은 파일 횟수는 실적 요약 화면(HANDOFF 4.6)이 쓰지 않아 이름만 보낸다
+        files_read: r.files_read.items.iter().map(|(s, _)| s.clone()).collect(),
+        files_edited: counts(&r.files_edited),
+        commands: counts(&r.commands),
     })
+}
+
+fn counts(u: &Counted) -> Vec<CountDto> {
+    u.items
+        .iter()
+        .map(|(item, times)| CountDto {
+            item: item.clone(),
+            times: *times,
+        })
+        .collect()
 }
 
 /// 세션 상세 팝업 (3.7, 4.8 `get_session_detail`). 원본 줄을 못 읽어도 메모리 값은 돌려주고 `recent_error` 로 알린다
@@ -408,7 +425,29 @@ fn resolve_open(
             }
             Ok((Launch::Sidecar(want(t, k, e, i)), wsl))
         }
+        OpenTarget::Pr { office_id, team_id } => {
+            let (_, t) = find_team(&w, &parse_office(&office_id)?, &team_id)?;
+            let (_, url) = t.props.pr.as_ref().ok_or(DetailError::NotFound)?;
+            // 파일에 손대지 않으니 호스트가 켜졌는지 볼 일이 없다
+            if !safe_url(url) {
+                return Err(DetailError::OpenFailed);
+            }
+            Ok((Launch::Url(url.clone()), None))
+        }
     }
+}
+
+/// 기록에 적힌 주소라 믿지 않는다: https 만 (다른 스킴은 파일·프로그램을 연다). 출력 가능한 ASCII 만 받아
+/// 공백·제어문자와 보이는 주소를 속이는 유니코드 서식 문자를 막는다 (IDN 은 punycode 로 온다).
+/// 그중에서도 인자 경계를 깨는 따옴표, explorer 가 인자 구분자로 읽는 쉼표, 경로로 읽힐 수 있는 `\` 는 뺀다
+fn safe_url(url: &str) -> bool {
+    url.len() <= URL_MAX
+        && url.strip_prefix("https://").is_some_and(|rest| {
+            !rest.is_empty()
+                && rest
+                    .chars()
+                    .all(|c| c.is_ascii_graphic() && !matches!(c, '"' | ',' | '\\'))
+        })
 }
 
 /// 세션 원본 파일: 부장의 첫 칸이 나온 파일, 없으면 서브 기록이 아닌 첫 파일
@@ -504,6 +543,8 @@ fn launch(plan: Launch, deadline: Instant) -> Result<(), DetailError> {
         Launch::Select(p) => (p, true),
         Launch::Folder(p) => (p, false),
         Launch::Sidecar(w) => (sidecar_path(&w)?, true),
+        // explorer 는 https 주소를 기본 브라우저에 넘긴다. 파일 검사가 없어 기한을 넘길 일도 없다
+        Launch::Url(u) => return explorer(explorer_arg(&u, false)),
     };
     // 따옴표는 인자 경계를 깬다. Windows 경로에는 없지만 WSL 경로에는 있을 수 있다
     let s = path
@@ -524,8 +565,12 @@ fn launch(plan: Launch, deadline: Instant) -> Result<(), DetailError> {
         return Err(DetailError::Timeout);
     }
     // ponytail: 폴더를 열 때 is_dir 검사와 실행 사이에 폴더를 실행 파일로 바꿔치는 틈이 남는다, 폴더만 받는 explorer 인자 형식을 확실히 알게 되면 바꾼다 (`/select,` 는 실행하지 않아 파일 쪽은 안전하다)
+    explorer(explorer_arg(s, select))
+}
+
+fn explorer(arg: String) -> Result<(), DetailError> {
     Command::new("explorer.exe")
-        .raw_arg(explorer_arg(s, select))
+        .raw_arg(arg)
         .spawn()
         .map(drop)
         .map_err(|_| DetailError::OpenFailed)
@@ -662,6 +707,10 @@ fn event_dto(w: &Want, line: Option<&Line>) -> EventDto {
         line_no: m.line_no,
         line_idx: w.line_idx,
         sidecar: None,
+        test: m.test.map(|t| TestDto {
+            passed: t.passed,
+            failed: t.failed,
+        }),
     };
     let found = line.and_then(|l| find_event(m, &l.events).map(|e| (l, &e.kind)));
     let Some((line, ev)) = found else {

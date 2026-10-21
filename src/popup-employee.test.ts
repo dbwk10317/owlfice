@@ -29,6 +29,7 @@ function event(i: number, over: Partial<EventDto> = {}): EventDto {
     lineNo: 200 + i,
     lineIdx: 1,
     sidecar: null,
+    test: null,
     ...over,
   };
 }
@@ -45,8 +46,12 @@ const detail: EmployeeDetailDto = {
   bossName: "김하늘 부장",
   instruction: "tail.rs 의 오프셋 되감기 수정이 맞는지 확인해줘.",
   filesRead: ["src/tail.rs", "Cargo.toml"],
-  filesEdited: ["src/tail_test.rs"],
-  commands: ["cargo test", "cargo fmt", "git diff"],
+  filesEdited: [{ item: "src/tail_test.rs", times: 2 }],
+  commands: [
+    { item: "cargo test", times: 3 },
+    { item: "cargo fmt", times: 1 },
+    { item: "git diff", times: 1 },
+  ],
 };
 
 type Handlers = {
@@ -113,10 +118,17 @@ test("(teamId, agentId) 로 요약과 타임라인 첫 50개를 불러 머리·�
   expect(s.qa(".ow-emp__li").map((e) => e.textContent)).toEqual([
     "src/tail.rs",
     "Cargo.toml",
-    "src/tail_test.rs",
-    "cargo test",
-    "cargo fmt",
-    "git diff",
+    "src/tail_test.rs2회",
+    "cargo test3회",
+    "cargo fmt1회",
+    "git diff1회",
+  ]);
+  // 읽은 파일은 횟수 없이, 수정한 파일·명령은 항목마다 "n회"
+  expect(s.qa(".ow-emp__li .ow-emp__times").map((e) => e.textContent)).toEqual([
+    "2회",
+    "3회",
+    "1회",
+    "1회",
   ]);
   expect(s.qa(".ow-ev")).toHaveLength(3);
   expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("50개 중 3개");
@@ -156,11 +168,20 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
       event(3, { outcome: "Started", ts: new Date(2026, 0, 1, 14, 29, 59).toISOString() }),
       event(4, { kind: "ToolResult", tool: null, outcome: "Unknown" }),
       event(5, { kind: "UserMessage", tool: null, body: { head: long, tail: "", bytes: 4096 } }),
+      event(6, {
+        kind: "ToolResult",
+        tool: null,
+        outcome: "Err",
+        test: { passed: 11, failed: 1 },
+      }),
+      event(7, { kind: "ToolResult", tool: null, outcome: "Ok", test: { passed: 12, failed: 0 } }),
+      event(8, { kind: "SubagentSpawn", tool: null }),
+      event(9, { kind: "PrLinked", tool: null }),
     ],
   });
   await flush();
   const rows = s.qa(".ow-ev");
-  expect(rows).toHaveLength(6);
+  expect(rows).toHaveLength(10);
   const head = (i: number) => rows[i].querySelector<HTMLElement>(".ow-ev__head")!;
   expect(head(0).querySelector(".ow-ev__tool")!.textContent).toBe("Bash");
   expect(head(0).querySelector(".ow-ev__sum .ow-code")!.textContent).toBe("cargo test");
@@ -178,7 +199,14 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
   expect(res(3).textContent).toBe("백그라운드 시작");
   expect(res(4).textContent).toBe("결과 확인 불가");
   expect(res(0).textContent).toBe(""); // 호출 칸은 결과색이 없다
-  expect(head(1).querySelector(".ow-ev__tool")!.textContent).toBe("ToolResult");
+  expect(head(1).querySelector(".ow-ev__tool")!.textContent).toBe("결과");
+  // 테스트 수가 있는 실패는 합격·반려 수까지, 성공은 그대로
+  expect(res(6).classList.contains("is-bad")).toBe(true);
+  expect(res(6).textContent).toBe("실패 · 합격 11 / 반려 1");
+  expect(res(7).textContent).toBe("성공");
+  // 도구가 아닌 사건의 칩은 한글 종류 이름
+  const chip = (i: number) => head(i).querySelector(".ow-ev__tool")!.textContent;
+  expect([chip(5), chip(8), chip(9)]).toEqual(["지시", "채용", "PR 등록"]);
 
   head(0).click();
   expect(head(0).getAttribute("aria-expanded")).toBe("true");

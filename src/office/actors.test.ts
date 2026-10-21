@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { Container, Graphics, Sprite, Texture, type Spritesheet } from "pixi.js";
+import {
+  Container,
+  EventBoundary,
+  FederatedPointerEvent,
+  Graphics,
+  Sprite,
+  Texture,
+  type Spritesheet,
+} from "pixi.js";
 import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
@@ -124,6 +132,7 @@ function team(teamId: string, employees: EmployeeDto[], o: Partial<TeamDto> = {}
 
 function office(teams: TeamDto[]): OfficeDto {
   return {
+    roomRecent: [],
     stateSeq: 1,
     officeId: "s",
     rebuilt: false,
@@ -1126,6 +1135,21 @@ test("장면을 다시 지어 attach 하면 방문 중인 사장님 말풍선이
   overlay.querySelector(".ow-bubble")!.remove();
   layer.attach(new Container());
   expect(overlay.querySelector(".ow-bubble")).not.toBeNull();
+});
+
+test("사장님 클릭은 방문한 팀을 전달하고 직원 클릭으로 전달하지 않는다", () => {
+  const { layer, world } = newLayer();
+  const pick = vi.fn();
+  const bossPick = vi.fn();
+  layer.onPick = pick;
+  layer.onBossPick = bossPick;
+  layer.sync(office(BOSS_IN), "large", NOW);
+  const base = world.children.length;
+  layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+  const visitor = world.children[base];
+  visitor.emit("pointertap", new FederatedPointerEvent(new EventBoundary()));
+  expect(bossPick).toHaveBeenCalledWith("t", visitor.x, visitor.y);
+  expect(pick).not.toHaveBeenCalled();
 });
 
 test("반려 도장은 걷는 동안 숨고 긁기가 시작된 때부터 1초 보인다", () => {

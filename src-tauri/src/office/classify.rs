@@ -93,6 +93,7 @@ impl Employee {
             description: None,
             activity: Activity::new(arrival, room, at, confidence),
             recent: VecDeque::new(),
+            room_recent: VecDeque::new(),
             counters: Counters::default(),
             last_say: None,
             hired_at: at,
@@ -144,6 +145,15 @@ impl Employee {
 
     /// 지금 활동은 그대로 두고 행적에만 넣는다
     fn log_past(&mut self, a: Activity) {
+        let room = a.room;
+        self.room_recent.push_front(a.clone());
+        let mut in_room = 0;
+        self.room_recent.retain(|past| {
+            if past.room == room {
+                in_room += 1;
+            }
+            past.room != room || in_room <= 10
+        });
         self.recent.push_front(a);
         self.recent.truncate(RECENT);
     }
@@ -226,6 +236,7 @@ impl Team {
             sources: Vec::new(),
             seq: 0,
             turns: 0,
+            commits: 0,
             tokens: None,
         }
     }
@@ -1067,6 +1078,9 @@ impl Team {
                     (ToolKind::Build, true) => {
                         self.props.light = Light::Green;
                         self.props.light_at = ts;
+                    }
+                    (ToolKind::GitCommit, true) => {
+                        self.commits = self.commits.saturating_add(1);
                     }
                     (ToolKind::GitPush | ToolKind::PrCreate, true) => cues.push(Cue::Truck),
                     (ToolKind::Release, true) => cues.push(Cue::Fireworks),

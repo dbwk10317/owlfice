@@ -1,7 +1,7 @@
 // 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV·미팅실·리뷰실·장애 상황실·외근 팻말 (HANDOFF 5, 6.5, 6.6, PLAN 3.4, 4.7.9).
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
-import { Graphics, type Sprite, type Spritesheet } from "pixi.js";
-import type { CueDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
+import { BitmapFont, BitmapText, Graphics, type Sprite, type Spritesheet } from "pixi.js";
+import type { CueDto, EmployeeDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
 import {
   gridToScreen,
@@ -135,6 +135,38 @@ const COL_OUT = 1;
 const COL_NAP = 2;
 const COL_OFF = 3;
 
+export function attendanceColumn(team: TeamDto, emp: EmployeeDto): number {
+  if (team.phase === "Off" || emp.departedAt !== null) return COL_OFF;
+  if (emp.retiredAt !== null) return COL_NAP;
+  if (emp.activity.room === "Outside") return COL_OUT;
+  return emp.activity.room === "Pantry" && emp.activity.pose === "Sleep" ? COL_NAP : COL_IN;
+}
+
+let wallFontReady: Promise<void> | undefined;
+let wallFontFailed = false;
+export function loadWallFont(): Promise<void> {
+  wallFontReady ??= document.fonts
+    .load('11px "Galmuri11"')
+    .then(() => {
+      // 자동 BitmapText 글꼴은 큰 크기로 구운 뒤 축소한다. 원래 11px로 구워 픽셀을 보존한다.
+      BitmapFont.install({
+        name: "owlfice-wall",
+        style: { fontFamily: "Galmuri11", fontSize: 11, fill: 0x655b48 },
+        chars: [" "],
+        resolution: 1,
+        padding: 0,
+        skipKerning: true,
+        textureStyle: { scaleMode: "nearest" },
+      });
+    })
+    .catch((e: unknown) => {
+      // 글꼴 하나가 깨져도 사무실과 상세 클릭은 남긴다. 대체 글꼴로 액자 밖에 쓰지 않는다.
+      wallFontFailed = true;
+      console.error("사규 글꼴을 읽지 못해 액자는 원본 그림으로 표시합니다", e);
+    });
+  return wallFontReady;
+}
+
 export interface Magnet {
   col: number;
   line: number;
@@ -150,16 +182,7 @@ export function magnets(office: OfficeDto | null, kind: Kind, slots: number): Ma
   const out: Magnet[] = [];
   for (const team of office?.teams ?? [])
     team.employees.forEach((emp, i) => {
-      const col =
-        team.phase === "Off" || emp.departedAt !== null
-          ? COL_OFF
-          : emp.retiredAt !== null
-            ? COL_NAP
-            : emp.activity.room === "Outside"
-              ? COL_OUT
-              : emp.activity.room === "Pantry" && emp.activity.pose === "Sleep"
-                ? COL_NAP
-                : COL_IN;
+      const col = attendanceColumn(team, emp);
       const line = used[col]++;
       if (line >= slots) return;
       const color =
@@ -368,6 +391,7 @@ export class PropsLayer {
   private readonly repots = new Map<string, { until: number; on: boolean }>();
   private lab: LabFx = { shell: false, slow: false, test: false, boxes: 0 };
   private readonly effects = new Map<string, Fx>();
+  private pendingTitle: { title: string; at: number } | null = null;
 
   constructor(
     private readonly fp: Floorplan,
@@ -397,6 +421,11 @@ export class PropsLayer {
 
   /** 김·화면보호기·벨은 프레임이 바뀌어서 매 프레임 불린다. 상태는 update 가 정한 것을 쓴다 */
   tick(nowMs: number): void {
+    if (this.pendingTitle && (nowMs >= this.pendingTitle.at || reducedMotion())) {
+      const { title } = this.pendingTitle;
+      this.pendingTitle = null;
+      this.drawTitle(title);
+    }
     this.bossSeats.forEach((seat, i) => {
       const fx = this.fx[i];
       if (seat.mug) this.state(seat.mug, fx?.steam ? `steam_${blink(nowMs, MUG_FPS)}` : undefined);
@@ -476,6 +505,7 @@ export class PropsLayer {
 
   /** 사무실 전환: 지난 사무실에서 진행 중인 효과를 지운다 */
   reset(): void {
+    this.pendingTitle = null;
     for (const [id, r] of this.repots) {
       const sprite = this.target.driven.get(id);
       if (sprite) sprite.visible = r.on;
@@ -589,6 +619,12 @@ export class PropsLayer {
   /** office 가 null 이면 평면도 기본 상태 (그림을 더하지 않는다) */
   update(office: OfficeDto | null, nowMs: number): void {
     const shared = office?.shared;
+    const title = shared?.frameTitle ?? "";
+    if (this.pendingTitle?.title !== title) {
+      this.pendingTitle = null;
+      this.drawTitle(title);
+    }
+    this.updateStats(shared?.stats);
     this.state("ci_light", shared ? shared.light.toLowerCase() : undefined);
     this.state("window", windowState(new Date(nowMs).getHours()));
     this.state("trash", shared ? trashState(shared.trash) : undefined);
@@ -616,6 +652,67 @@ export class PropsLayer {
       ),
     );
     this.tick(nowMs);
+  }
+
+  /** 사다리의 실제 끝 시각만 기다린다. 다음 스냅샷이 다른 제목이면 update가 예약을 버린다. */
+  deferTitle(title: string, at: number): void {
+    this.pendingTitle = { title, at };
+  }
+
+  private drawTitle(title: string): void {
+    // ponytail: 종이 폭9px·높이22px이라 온전한 두 글자만 세로로 보인다, 액자 아트가 넓어지면 늘린다.
+    const text = Array.from((wallFontFailed ? "" : title).replace(/\s/g, ""))
+      .slice(0, 2)
+      .join("\n");
+    if (this.drawn.get("title") === text) return;
+    const p = this.pl.get("rules_frame");
+    if (!p || !text) {
+      this.replace("title", []);
+      this.drawn.set("title", text);
+      return;
+    }
+    const paper = new Graphics()
+      .poly([p.x + 1, p.y - 36, p.x + 11, p.y - 32, p.x + 11, p.y - 10, p.x + 1, p.y - 14])
+      .fill(0xfcf8ec);
+    const label = new BitmapText({
+      text,
+      style: { fontFamily: "owlfice-wall", fontSize: 11, lineHeight: 11 },
+    });
+    label.position.set(p.x + 1, p.y - 35);
+    this.target.wall.addChild(paper, label);
+    this.replace("title", [paper, label]);
+    this.drawn.set("title", text);
+  }
+
+  private updateStats(stats: OfficeDto["shared"]["stats"] | undefined): void {
+    const key = stats ? JSON.stringify(stats) : "";
+    if (this.drawn.get("stats") === key) return;
+    const p = this.pl.get("stats_board");
+    if (!p || !stats) {
+      this.replace("stats", []);
+      this.drawn.set("stats", key);
+      return;
+    }
+    const board = new Graphics()
+      .poly([p.x - 1, p.y - 28, p.x - 13, p.y - 22, p.x - 13, p.y - 9, p.x - 1, p.y - 15])
+      .fill(0x284638);
+    const parts: (Graphics | Sprite)[] = [board];
+    // ponytail: 14px 보드에는 항목당 한 자리만 들어간다, 보드를 키우면 두 자리 이상을 표시한다. +는 10 이상이고 전문은 툴팁이다.
+    [stats.commits, stats.filesEdited, stats.commands, stats.turns].forEach((n, i) => {
+      const x = p.x - 12 + (i % 2) * 6;
+      const y = p.y - 21 - (i % 2) * 3 + Math.floor(i / 2) * 7;
+      if (n > 9) {
+        parts.push(
+          new Graphics()
+            .rect(x, y + 2, 3, 1)
+            .rect(x + 1, y + 1, 1, 3)
+            .fill(0xdce6dc),
+        );
+      } else parts.push(placeSprite(this.sheet, `digit/${n}`, x, y));
+    });
+    for (const part of parts) this.target.wall.addChild(part);
+    this.replace("stats", parts);
+    this.drawn.set("stats", key);
   }
 
   /** 평면도 소품의 상태를 바꾼다. undefined 는 평면도 기본 상태 */

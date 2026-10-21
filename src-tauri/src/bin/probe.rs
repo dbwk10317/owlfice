@@ -1,7 +1,7 @@
 //! owlfice-probe: 탐색 결과와 이벤트 열을 JSON으로 낸다 (PLAN 4.12)
 
 use std::fs;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
@@ -113,24 +113,13 @@ fn read_file(path: &Path, out: &mut impl Write) -> io::Result<()> {
     let mut parser = make_parser(path);
     let mut reader = TailReader::open(path)?;
     let file = path.display().to_string();
-    // 마지막으로 읽은 줄의 시작 바이트. 없으면 파일 처음부터가 안 읽은 구간이다
-    let mut last_line: Option<u64> = None;
+    let mut prev_end = None;
+    let mut dropped = 0;
     loop {
         let pending = reader.read_new_lines(MAX_READ_BYTES)?;
-        if pending.lines.is_empty() {
-            reader.commit(pending);
-            // 끝 개행이 없는 마지막 줄은 TailReader 규칙대로 읽지 않는다. 진단 도구라 알린다
-            let rest = unread_bytes(path, last_line)?;
-            if rest > 0 {
-                eprintln!(
-                    "{}: 끝 개행 없는 {rest}바이트는 읽지 않았습니다",
-                    path.display()
-                );
-            }
-            return Ok(());
-        }
+        let end = pending.finished(&mut prev_end);
+        dropped += pending.dropped_lines;
         for line in &pending.lines {
-            last_line = Some(line.offset);
             let raw = RawRef {
                 path: path.to_path_buf(),
                 generation: u64::from(reader.generation()),
@@ -150,22 +139,21 @@ fn read_file(path: &Path, out: &mut impl Write) -> io::Result<()> {
             }
         }
         reader.commit(pending);
+        if end {
+            // 끝 개행이 없는 마지막 줄은 TailReader 규칙대로 읽지 않는다. 진단 도구라 알린다
+            if dropped > 0 {
+                eprintln!("{}: 64MB 넘는 줄 {dropped}개를 버렸습니다", path.display());
+            }
+            let rest = reader.unread_len();
+            if rest > 0 {
+                eprintln!(
+                    "{}: 끝 개행 없는 {rest}바이트는 읽지 않았습니다",
+                    path.display()
+                );
+            }
+            return Ok(());
+        }
     }
-}
-
-/// 마지막으로 읽은 줄 뒤에 개행 없이 남은 바이트 수
-fn unread_bytes(path: &Path, last_line: Option<u64>) -> io::Result<usize> {
-    let mut f = fs::File::open(path)?;
-    f.seek(SeekFrom::Start(last_line.unwrap_or(0)))?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf)?;
-    Ok(match last_line {
-        None => buf.len(),
-        Some(_) => buf
-            .iter()
-            .position(|&b| b == b'\n')
-            .map_or(0, |i| buf.len() - i - 1),
-    })
 }
 
 // ponytail: 4.10 은 60초 동안 팀 4개(5MB + 2MB×4)를 재지만 여기는 횟수만 채우고 파일은 100KB 하나다.
@@ -377,23 +365,6 @@ mod tests {
         unhandled(Some(p), &mut out).unwrap();
         let s = String::from_utf8(out).unwrap();
         assert!(s.contains("Foo") && s.contains("총 3회"), "{s}");
-    }
-
-    #[test]
-    fn 끝_개행_없는_바이트를_센다() {
-        let tmp = tempfile::tempdir().unwrap();
-        let p = tmp.path().join("a.jsonl");
-        fs::write(
-            &p,
-            "{}
-{}
-abc",
-        )
-        .unwrap();
-        assert_eq!(unread_bytes(&p, Some(3)).unwrap(), 3);
-        assert_eq!(unread_bytes(&p, Some(6)).unwrap(), 0);
-        fs::write(&p, "abc").unwrap();
-        assert_eq!(unread_bytes(&p, None).unwrap(), 3);
     }
 
     #[test]

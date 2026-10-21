@@ -54,6 +54,18 @@ pub struct Pending {
     file_id: Option<FileId>,
 }
 
+impl Pending {
+    /// 끝까지 읽는 반복을 멈출 때인가. 줄이 없어도 끝이 아닐 수 있다 (8MB 넘는 한 줄, 버리는 64MB 줄).
+    /// 읽은 끝이 파일 길이에 닿았거나, Reset 이 아닌데 직전보다 나아가지 못했으면 멈춘다
+    /// (WSL 9P 처럼 stat 길이보다 적게 읽히면 같은 읽기가 되풀이된다). `prev_end` 는 부르는 쪽이 들고 다닌다
+    pub fn finished(&self, prev_end: &mut Option<u64>) -> bool {
+        let end = self.offset + self.remainder.len() as u64;
+        let stalled = !self.reset && prev_end.is_some_and(|p| end <= p);
+        *prev_end = Some(end);
+        end >= self.len || stalled
+    }
+}
+
 pub struct TailReader {
     path: PathBuf,
     file: File,
@@ -134,6 +146,11 @@ impl TailReader {
 
     pub fn generation(&self) -> u32 {
         self.generation
+    }
+
+    /// commit 한 위치 뒤에 개행 없이 남아 읽지 못한 바이트 수. 버리는 중인 줄은 세지 않는다
+    pub fn unread_len(&self) -> usize {
+        self.remainder.len()
     }
 
     fn consumed(&self) -> u64 {
@@ -517,6 +534,36 @@ mod tests {
         );
         r.commit(again);
         assert!(!r.changed().unwrap());
+    }
+
+    #[test]
+    fn unread_len_counts_bytes_after_last_newline() {
+        let (_d, _p, mut r) = setup(
+            b"{}
+{}
+abc",
+        );
+        take(&mut r);
+        assert_eq!(r.unread_len(), 3);
+    }
+
+    #[test]
+    fn finished_stops_when_read_does_not_advance() {
+        // stat 길이가 실제로 읽히는 바이트보다 크게 보이는 경우를 파일로 만들 수 없어 Pending 의 len 을 부풀린다
+        let (_d, _p, mut r) = setup(
+            b"a
+b
+",
+        );
+        let mut p = r.read_new_lines(MAX_READ_BYTES).unwrap();
+        p.len += 100;
+        let mut prev = None;
+        assert!(!p.finished(&mut prev), "처음 읽기는 비교할 직전이 없다");
+        assert!(p.finished(&mut prev), "같은 끝이 되풀이되면 멈춘다");
+        p.reset = true;
+        assert!(!p.finished(&mut prev), "Reset 은 나아가지 못한 것이 아니다");
+        p.len = 4;
+        assert!(p.finished(&mut None), "파일 끝에 닿으면 멈춘다");
     }
 
     #[test]

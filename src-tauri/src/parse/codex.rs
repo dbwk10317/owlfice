@@ -763,6 +763,11 @@ impl Parser for CodexParser {
             })
             .collect()
     }
+
+    /// 부모 thread 가 있는 자식이거나 내부 에이전트의 rollout 은 팀이 되지 않는다 (4.6.2)
+    fn side(&self) -> bool {
+        self.silent || self.parent.is_some()
+    }
 }
 
 /// `interacted` 는 추가 지시라 연출할 게 없다

@@ -1064,13 +1064,15 @@ impl HostLoop {
         if home.is_some() {
             self.path_ops += 1;
         }
-        self.alive = home
-            .map(|h| registry::live_sessions(&h))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|e| safe_id(&e.session_id))
-            .map(|e| (e.session_id.clone(), e))
-            .collect();
+        let live = match home {
+            Some(h) => match registry::live_sessions(&h, &self.alive) {
+                Some(l) => l,
+                // 폴더를 못 읽은 건 "없음"이 아니라 "못 봄"이다. 지우면 제목·생존이 깜박인다 (4.5)
+                None => return,
+            },
+            None => HashMap::new(),
+        };
+        self.alive = live.into_iter().filter(|(id, _)| safe_id(id)).collect();
         let mut w = self.world.lock().unwrap_or_else(|e| e.into_inner());
         let mut ours = Vec::new();
         for (k, t) in w.teams.iter_mut() {
@@ -2592,6 +2594,40 @@ mod tests {
         assert_ne!(e.team(REJECT).title, "mine");
         assert!(
             e.w()
+                .outbox
+                .iter()
+                .any(|(_, _, c)| matches!(c, Cue::FrameSwap { .. }))
+        );
+    }
+
+    #[test]
+    fn broken_registry_file_keeps_name_and_life_for_that_scan() {
+        let e = env();
+        let home = e.dir("claude");
+        let root = home.join("projects");
+        copy_dir(&fixture("claude/reject"), &root.join("p1"));
+        let pid = std::process::id();
+        let reg = home.join("sessions").join(format!("{pid}.json"));
+        fs::create_dir_all(reg.parent().unwrap()).unwrap();
+        fs::write(
+            &reg,
+            format!(r#"{{"pid":{pid},"sessionId":"{REJECT}","name":"mine","nameSource":"user"}}"#),
+        )
+        .unwrap();
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        let now = t0() + Duration::hours(1);
+        e.at(now);
+        h.tick();
+        assert_eq!(e.team(REJECT).title, "mine");
+        e.w().outbox.clear();
+        // 쓰는 중이라 반쯤 잘린 파일
+        fs::write(&reg, format!(r#"{{"pid":{pid},"sessionId":"#)).unwrap();
+        e.at(now + secs(3));
+        h.tick();
+        assert_eq!(e.team(REJECT).title, "mine");
+        assert!(e.team(REJECT).alive_in_registry);
+        assert!(
+            !e.w()
                 .outbox
                 .iter()
                 .any(|(_, _, c)| matches!(c, Cue::FrameSwap { .. }))

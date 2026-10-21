@@ -2784,6 +2784,7 @@ fn registry_entrypoint_only_until_jsonl_decides() {
         model: None,
         title: None,
         product,
+        product_observed: true,
         git_branch: None,
     };
     let mut cues = Vec::new();
@@ -2794,4 +2795,87 @@ fn registry_entrypoint_only_until_jsonl_decides() {
     assert!(!t.set_registry(None, Some(Product::ClaudeCli), &mut cues));
     assert_eq!(t.product, Product::ClaudeDesktop);
     assert!(cues.is_empty());
+}
+
+/// Claude 메인 기록 한 줄. entrypoint 는 있을 때만 싣는다
+fn claude_rec(secs: i64, entrypoint: Option<&str>, assistant: bool) -> serde_json::Value {
+    let mut r = if assistant {
+        serde_json::json!({"type": "assistant", "message": {"id": format!("m{secs}"),
+            "model": "claude-opus-4-1", "content": [{"type": "text", "text": "ok"}]}})
+    } else {
+        serde_json::json!({"type": "user", "message": {"role": "user", "content": "hi"}})
+    };
+    r["timestamp"] = at(secs).to_rfc3339().into();
+    r["cwd"] = "C:\\w".into();
+    r["sessionId"] = MAIN.into();
+    if let Some(e) = entrypoint {
+        r["entrypoint"] = e.into();
+    }
+    r
+}
+
+/// 파서가 실제로 낸 이벤트
+fn claude_events(parser: &mut ClaudeParser, recs: &[serde_json::Value]) -> Vec<Event> {
+    let raw = RawRef {
+        path: PathBuf::from("main.jsonl"),
+        generation: 0,
+        byte_offset: 0,
+        line_no: 1,
+    };
+    recs.iter()
+        .flat_map(|r| parser.parse_line(r.to_string().as_bytes(), &raw, &mut Vec::new()))
+        .collect()
+}
+
+/// 등록부 파일 모양 그대로 읽은 행의 동
+fn registry_product(entrypoint: &str) -> Option<Product> {
+    serde_json::from_value::<crate::discover::registry::RegistryEntry>(serde_json::json!(
+        {"pid": 1, "sessionId": MAIN, "entrypoint": entrypoint}
+    ))
+    .unwrap()
+    .product()
+}
+
+#[test]
+fn registry_decides_building_when_jsonl_has_no_entrypoint() {
+    let mut p = ClaudeParser::new(0, None);
+    let evs = claude_events(&mut p, &[claude_rec(0, None, false)]);
+    let mut t = replay(MAIN, Product::ClaudeDesktop, &[], &evs, utc());
+    let mut cues = Vec::new();
+    assert!(t.set_registry(None, registry_product("claude-desktop"), &mut cues));
+    assert_eq!(t.product, Product::ClaudeDesktop);
+    // 모델이 정해져 meta 가 기본값으로 다시 와도 등록부 동을 지킨다
+    for e in claude_events(&mut p, &[claude_rec(1, None, true)]) {
+        t.apply(&e, &mut cues);
+    }
+    assert_eq!(t.product, Product::ClaudeDesktop);
+    assert_eq!(t.employees[0].model.as_deref(), Some("claude-opus-4-1"));
+}
+
+#[test]
+fn building_returns_to_rebuilt_value_when_registry_leaves() {
+    let mut p = ClaudeParser::new(0, None);
+    let evs = claude_events(&mut p, &[claude_rec(0, None, false)]);
+    let mut t = replay(MAIN, Product::ClaudeDesktop, &[], &evs, utc());
+    assert!(t.set_registry(None, registry_product("claude-desktop"), &mut Vec::new()));
+    assert!(t.set_registry(None, None, &mut Vec::new()));
+    // 앱을 다시 켜 등록부 없이 재구성한 팀과 같다
+    let rebuilt = replay(MAIN, Product::ClaudeDesktop, &[], &evs, utc());
+    assert_eq!(t.product, rebuilt.product);
+    assert_eq!(t.product, Product::ClaudeCli);
+}
+
+#[test]
+fn observed_entrypoint_beats_registry() {
+    let mut p = ClaudeParser::new(0, None);
+    let evs = claude_events(&mut p, &[claude_rec(0, Some("cli"), false)]);
+    let mut t = replay(MAIN, Product::ClaudeDesktop, &[], &evs, utc());
+    assert!(!t.set_registry(None, registry_product("claude-desktop"), &mut Vec::new()));
+    assert_eq!(t.product, Product::ClaudeCli);
+    // 뒤 기록에 entrypoint 가 빠져도 관측한 동은 그대로다
+    for e in claude_events(&mut p, &[claude_rec(1, None, true)]) {
+        t.apply(&e, &mut Vec::new());
+    }
+    assert!(!t.set_registry(None, registry_product("claude-desktop"), &mut Vec::new()));
+    assert_eq!(t.product, Product::ClaudeCli);
 }

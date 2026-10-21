@@ -68,6 +68,8 @@ export function createStore<L extends ListMsg, S extends StateMsg>() {
     for (const m of pending?.list ?? []) if (m.listSeq > world.listSeq) applyList(m);
     for (const m of pending?.state ?? [])
       if (m.stateSeq > (lastStateSeq.get(m.officeId) ?? -1)) applyOfficeState(m);
+    if (world.selected && state.selectedId === world.selected.officeId && !state.office)
+      state.office = world.selected;
     notify();
   }
 

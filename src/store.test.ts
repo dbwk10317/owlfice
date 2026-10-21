@@ -99,6 +99,34 @@ test("시작 버퍼: 스냅샷 seq 이하는 버리고 초과는 적용한다", 
   expect(s.state.office?.tag).toBe("gt");
 });
 
+test("시작 버퍼: A→B→A 뒤 새 A 상태가 없으면 스냅샷을 복원한다", () => {
+  const s = createStore<L, S>();
+  s.applyList({ ...list(2), selectedId: "B" });
+  s.applyList(list(3));
+  s.applyOfficeState(st("B", 1, "b"));
+  s.applyOfficeState(st("A", 1, "same seq cue"));
+  s.applyWorld({ ...list(1), selected: st("A", 1, "snapshot") });
+  expect(s.state.selectedId).toBe("A");
+  expect(s.state.office?.tag).toBe("snapshot");
+});
+
+test("시작 버퍼: A→B→A 뒤 더 새 A 상태는 유지한다", () => {
+  const s = createStore<L, S>();
+  s.applyList({ ...list(2), selectedId: "B" });
+  s.applyList(list(3));
+  s.applyOfficeState(st("A", 2, "new"));
+  s.applyWorld({ ...list(1), selected: st("A", 1, "snapshot") });
+  expect(s.state.office?.tag).toBe("new");
+});
+
+test("시작 버퍼: 최종 선택 B이면 A 스냅샷을 복원하지 않는다", () => {
+  const s = createStore<L, S>();
+  s.applyList({ ...list(2), selectedId: "B" });
+  s.applyWorld({ ...list(1), selected: st("A", 1, "snapshot") });
+  expect(s.state.selectedId).toBe("B");
+  expect(s.state.office).toBeNull();
+});
+
 test("구독자는 적용될 때만 불리고 해제하면 안 불린다", () => {
   const s = started();
   const fn = vi.fn();

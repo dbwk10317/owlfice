@@ -1,4 +1,4 @@
-//! 세션 위치 탐색 (PLAN 4.4)
+//! 세션 위치 탐색 (docs/CONTRACTS.md C5)
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -55,7 +55,7 @@ pub struct Site {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum ReadMode {
     Append,
-    /// 파일 전체를 다시 읽는다. Antigravity가 append 전용이면 지운다 (PLAN 4.6.3)
+    /// 파일 전체를 다시 읽는다. 향후 비 append 형식 지원을 위한 모드
     WholeFile,
 }
 

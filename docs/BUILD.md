@@ -1,6 +1,6 @@
 # 빌드
 
-빌드·테스트 명령과 저장소 규칙. 왜 이 스택인지는 PLAN 4.1.
+빌드·테스트 명령과 저장소 규칙. 동작 계약과 검증 원칙은 [CONTRACTS](CONTRACTS.md)를 따른다.
 
 의존성 버전은 `package-lock.json`·`Cargo.lock` 이 고정한다. 툴체인이 너무 낮으면 cargo는 오류로, npm은 `EBADENGINE` 경고로 알려 준다.
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | **기본: Visual Studio (MSVC)** | `x86_64-pc-windows-msvc` | 보통의 Windows PC |
 | 폴백 1: MSYS2 (GNU) | `x86_64-pc-windows-gnu` | Visual Studio를 쓸 수 없는 PC |
-| 폴백 2: WSL 크로스 빌드 (GNU) | `x86_64-pc-windows-gnu` | 보안 소프트웨어가 Windows에서 링크한 exe를 격리하는 PC (PLAN 4.1) |
+| 폴백 2: WSL 크로스 빌드 (GNU) | `x86_64-pc-windows-gnu` | 보안 소프트웨어가 Windows에서 링크한 exe를 격리하는 PC |
 
 저장소 파일은 세 경로에서 같다. PC를 옮길 때는 저장소를 고치지 않고 이 문서의 절차만 바꾼다. `node_modules` 에는 설치한 OS의 네이티브 바인딩만 깔리므로, WSL과 Windows를 오가면 그쪽에서 `npm ci` 를 다시 한다.
 
@@ -35,11 +35,12 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | Rust 테스트 | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | Rust 포맷 검사 | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
 | Rust 린트 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
-| 실제 세션으로 포맷 변화 확인 (PLAN 4.12 코퍼스 drift. 홈의 `.claude`·`.codex` 를 읽기만 한다) | Git Bash: `OWLFICE_CORPUS_DIR=$USERPROFILE cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture`. PowerShell: `powershell -NoProfile -Command { $env:OWLFICE_CORPUS_DIR=$env:USERPROFILE; cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture }` |
+| 실제 세션으로 포맷 변화 확인 ([CONTRACTS C12](CONTRACTS.md#c12)의 코퍼스 drift. 홈의 `.claude`·`.codex` 를 읽기만 한다) | Git Bash: `OWLFICE_CORPUS_DIR=$USERPROFILE cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture`. PowerShell: `powershell -NoProfile -Command { $env:OWLFICE_CORPUS_DIR=$env:USERPROFILE; cargo test --manifest-path src-tauri/Cargo.toml --test corpus_drift -- --nocapture }` |
 | 이벤트 열 JSON 확인 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- events fixtures/claude/reject` |
 | 미대응 로그 요약 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- unhandled [경로]` |
-| fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 10 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |
-| 앱에서 fixture 재생해 보기 (실제 세션 폴더를 건드리지 않는다) | 빈 임시 폴더 T 에 `T/claude/projects` 를 먼저 만들고 앱을 띄운다. Git Bash: `APPDATA=T/appdata CLAUDE_CONFIG_DIR=T/claude CODEX_HOME=T/codex npm run tauri dev`. PowerShell: `powershell -NoProfile -Command { $env:APPDATA='T\appdata'; $env:CLAUDE_CONFIG_DIR='T\claude'; $env:CODEX_HOME='T\codex'; npm run tauri dev }`. 다른 셸에서 `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 4 --shift-to-now fixtures/claude/async-subagent T/claude/projects/replay`. 화면을 스크립트로 보려면 같은 자리에 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 을 더해 CDP 로 붙는다. 배포 CSP 까지 보려면 `tauri dev` 대신 `npm run tauri build -- --no-bundle` 로 만든 `owlfice.exe` 를 같은 환경변수로 띄운다 (`tauri dev` 는 CSP 를 걸지 않는다) |
+| 부분 I/O 벤치마크 (합성 파일을 만들므로 임시 폴더만 지정) | `cargo run --release --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- bench <임시 폴더> --json` |
+| fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 1 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |
+| 앱에서 fixture 재생해 보기 (실제 세션 폴더를 건드리지 않는다) | 빈 임시 폴더 T 에 `T/claude/projects` 를 먼저 만들고 앱을 띄운다. Git Bash: `APPDATA=T/appdata CLAUDE_CONFIG_DIR=T/claude CODEX_HOME=T/codex npm run tauri dev`. PowerShell: `powershell -NoProfile -Command { $env:APPDATA='T\appdata'; $env:CLAUDE_CONFIG_DIR='T\claude'; $env:CODEX_HOME='T\codex'; npm run tauri dev }`. 다른 셸에서 `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 1 --shift-to-now fixtures/claude/async-subagent T/claude/projects/replay`. 화면을 스크립트로 보려면 같은 자리에 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 을 더해 CDP 로 붙는다. 배포 CSP 까지 보려면 `tauri dev` 대신 `npm run tauri build -- --no-bundle` 로 만든 `owlfice.exe` 를 같은 환경변수로 띄운다 (`tauri dev` 는 CSP 를 걸지 않는다) |
 | 프론트 IPC 타입 다시 만들기 (`ipc.rs` 를 고친 뒤. 낡으면 Rust 테스트가 실패한다) | Git Bash: `OWLFICE_WRITE_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml ts_bindings`. PowerShell: `powershell -NoProfile -Command { $env:OWLFICE_WRITE_TYPES=1; cargo test --manifest-path src-tauri/Cargo.toml ts_bindings }` |
 | 프론트 포맷·린트·타입 검사 | `npm run check` (포맷만 고치기 `npm run fmt`) |
 | 프론트 테스트 | `npm test` (DOM 이 필요한 테스트 파일은 첫 줄에 `// @vitest-environment jsdom`) |
@@ -48,6 +49,10 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | 개발 실행 | `npm run tauri dev` |
 | 릴리스 | `npm run tauri build` → `src-tauri/target/release/bundle/nsis/*-setup.exe` |
 | 의존 DLL 확인 | `dumpbin /dependents src-tauri\target\release\owlfice.exe` (Developer PowerShell for VS) |
+
+`owlfice-replay`의 `--speed`는 줄을 쓰는 대기 시간만 줄이고 레코드 timestamp 간격은 압축하지 않는다. 실제 앱 검증은 `--speed 1`을 기본으로 쓴다. `--shift-to-now`와 함께 1보다 큰 값을 쓰면 현재 시각보다 미래인 레코드가 먼저 기록될 수 있다.
+
+`probe bench`는 파일 I/O 일부만 잰다. [CONTRACTS C13](CONTRACTS.md#c13)의 전체 성능 목표를 확인하려면 해당 팀·직원·파일 조건에서 앱을 실행하고 파일 기록부터 화면 반영까지의 지연, CPU와 WebView2 포함 메모리를 별도로 측정한다.
 
 의존 DLL에는 Windows 시스템 DLL만 나와야 한다. `vcruntime140.dll` 이 보이면 VC 런타임이 정적으로 링크되지 않은 것이고, VC++ 재배포 패키지가 없는 PC에서 실행되지 않는다. `api-ms-win-crt-*` 는 Windows 10부터 OS에 든 UCRT라 괜찮다.
 
@@ -64,7 +69,7 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 - 명령은 MSYS2 셸이나 Git Bash에서 돌린다. 기본 경로 명령표의 `cargo test`·`cargo clippy`·`tauri dev` 에 `--target x86_64-pc-windows-gnu` 를 붙인다 (`tauri dev` 는 `npm run tauri dev -- --target ...`).
 - 릴리스는 `bash build-gnu.sh` 다. 설치 파일을 만들고 의존 DLL을 검사한다.
 - **(미확인)** Vite+ 전환 뒤 이 경로.
-- **(미확인)** 이 경로로 앱 전체를 빌드한 적은 없다. UCRT64와 Rust의 C 런타임이 섞이는 문제는 PLAN 6부.
+- **(미확인)** 이 경로로 앱 전체를 빌드한 적은 없다. UCRT64와 Rust의 C 런타임이 섞일 때의 호환성도 미확인이다.
 
 ## 폴백 2: WSL 크로스 빌드 (GNU)
 
@@ -115,5 +120,5 @@ frames[-1].save('src-tauri/icons/icon.ico', sizes=[f.size for f in frames], appe
 
 ## 저장소 규칙
 
-- 티켓 하나 = 브랜치 하나 = PR 하나. 브랜치 이름은 `t<두 자리 번호>-<영문 요약>` (예: `t04-tail-reader`). 아트와 코드는 PR을 나눈다 (PLAN 5.5).
+- 티켓 하나 = 브랜치 하나 = PR 하나. 브랜치 이름은 `t<두 자리 번호>-<영문 요약>` (예: `t04-tail-reader`). 아트와 코드는 PR을 나눈다.
 - main에는 사용하는 경로의 명령표 테스트·검사가 모두 통과한 것만 합친다.

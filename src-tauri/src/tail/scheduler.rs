@@ -1,4 +1,4 @@
-//! 호스트별 폴링 스레드 (PLAN 4.5 폴링 계층, 4.4.2 깨우지 않기)
+//! 호스트별 폴링 스레드 (docs/CONTRACTS.md C6·C5)
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -30,18 +30,18 @@ const WARM: Duration = Duration::seconds(2);
 const COLD: Duration = Duration::seconds(60);
 const SCAN: Duration = Duration::seconds(3);
 const PROBE: StdDuration = StdDuration::from_secs(30);
-/// 등록부에 있는데 jsonl 이 아직 없는 세션을 보는 간격 (4.5 신규 세션 발견 1번)
+/// 등록부에 있는데 jsonl 이 아직 없는 세션을 보는 간격 (docs/CONTRACTS.md C6 신규 세션 발견)
 const AWAIT: Duration = Duration::seconds(1);
-/// 첫 레코드가 이보다 최근이면 방금 시작된 세션이라 출근 연출을 낸다 (4.5 신규 세션 발견 3번)
+/// 첫 레코드가 이보다 최근이면 방금 시작된 세션이라 출근 연출을 낸다 (docs/CONTRACTS.md C6 신규 세션 발견)
 const JUST_STARTED: Duration = Duration::seconds(60);
-/// 다른 호스트의 심장박동이 이만큼 멈추면 의심 (4.5 감시자)
+/// 다른 호스트의 심장박동이 이만큼 멈추면 의심 (docs/CONTRACTS.md C6 감시자)
 const STALL_MS: i64 = 2000;
 const TICK: StdDuration = StdDuration::from_millis(200);
 const SLOW_TICK: StdDuration = StdDuration::from_millis(400);
-/// 이만큼 연달아 틱이 200ms 를 넘기면 그 호스트만 늦춘다 (4.10)
+/// 이만큼 연달아 틱이 200ms 를 넘기면 그 호스트만 늦춘다 (docs/CONTRACTS.md C13)
 const SLOW_AFTER: u32 = 5;
 
-/// 실행 중에는 벽시계, replay·테스트에서는 논리 시계 (4.3 시계 규칙)
+/// 실행 중에는 벽시계, replay·테스트에서는 논리 시계 (docs/CONTRACTS.md C4 시계 규칙)
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
     /// 읽은 이벤트의 ts 를 알린다. 논리 시계만 쓴다
@@ -56,7 +56,7 @@ impl Clock for WallClock {
     }
 }
 
-/// 마지막으로 읽은 이벤트 ts + 그 뒤 벽시계 경과 × 배속 (4.3).
+/// 마지막으로 읽은 이벤트 ts + 그 뒤 벽시계 경과 × 배속 (docs/CONTRACTS.md C4).
 /// 배속만 올리고 벽시계를 쓰면 결재 대기·졸음·종료 추정이 벽시계로 계산되어 결과가 달라진다
 pub struct LogicalClock {
     speed: f64,
@@ -111,16 +111,16 @@ pub struct ProbeUpdate {
     pub removed: Vec<(Vendor, PathBuf)>,
 }
 
-/// 다른 스레드가 이 호스트를 지켜보고 지시하는 값 (4.5 감시자). 멈춘 I/O 안의 스레드는 자기 지연을 잴 수 없다
+/// 다른 스레드가 이 호스트를 지켜보고 지시하는 값 (docs/CONTRACTS.md C6 감시자). 멈춘 I/O 안의 스레드는 자기 지연을 잴 수 없다
 pub struct Heartbeat {
     pub diagnostic: Mutex<Option<mpsc::Sender<HostDiagnostic>>>,
     /// `mono_ms` 로 잰 마지막 틱
     pub last_tick_ms: AtomicI64,
-    /// 의심 상태. Probe 가 켜짐을 다시 확인할 때까지 UNC 를 건드리지 않는다 (4.4.2).
+    /// 의심 상태. Probe 가 켜짐을 다시 확인할 때까지 UNC 를 건드리지 않는다 (docs/CONTRACTS.md C5).
     /// 바꿀 때는 `set_suspect` 로 world 목록에도 알린다
     // ponytail: 소등과 통신 지연을 이 깃발 하나로 둔다, 사이드바가 둘을 나눠 그리는 티켓에서 나눈다
     pub suspect: AtomicBool,
-    /// Probe 가 넘긴 Site. WSL 은 이것을 받은 틱만 경로 접근(나열, verify_path, 열기·닫기)을 한다 (4.4.2)
+    /// Probe 가 넘긴 Site. WSL 은 이것을 받은 틱만 경로 접근(나열, verify_path, 열기·닫기)을 한다 (docs/CONTRACTS.md C5)
     pub probed: Mutex<Option<ProbeUpdate>>,
     /// 켜면 스레드가 다음 틱 전에 끝난다
     pub stop: AtomicBool,
@@ -159,7 +159,7 @@ type Remotes = Arc<Mutex<Vec<(String, Arc<Heartbeat>)>>>;
 /// 세션 파일 하나와 그 파서
 struct Tracked {
     key: TeamKey,
-    /// None 이면 WSL 졸음·퇴근 팀이라 핸들을 닫아 두었다 (4.4.2). 다음 Probe 직후 Scan 에서 바뀌었으면 다시 연다
+    /// None 이면 WSL 졸음·퇴근 팀이라 핸들을 닫아 두었다 (docs/CONTRACTS.md C5). 다음 Probe 직후 Scan 에서 바뀌었으면 다시 연다
     reader: Option<TailReader>,
     /// 핸들을 닫을 때의 (길이, mtime)
     closed: Option<(u64, SystemTime)>,
@@ -172,7 +172,7 @@ struct Tracked {
     has_meta: bool,
     /// 읽기 실패를 이미 알렸나. 실패가 이어져도 한 번만 남긴다
     failed: bool,
-    /// 이 파일에서 지금까지 읽은 줄의 최대 ts. 실행 중 병합의 정렬 키 (4.3 순서)
+    /// 이 파일에서 지금까지 읽은 줄의 최대 ts. 실행 중 병합의 정렬 키 (docs/CONTRACTS.md C4 순서)
     max_ts: Option<DateTime<Utc>>,
     /// 핸들을 닫았을 때의 세대. 다시 열 때 잇는다
     generation: u32,
@@ -188,7 +188,7 @@ impl Tracked {
     }
 }
 
-/// 미뤄 둔 재구성의 이유. 성공할 때까지 합쳐 들고 가고, 어느 길의 재구성이든 이것을 합쳐 쓴다. 잃으면 성공했을 때 rebuilt 표시(4.3 조용한 재구성)나
+/// 미뤄 둔 재구성의 이유. 성공할 때까지 합쳐 들고 가고, 어느 길의 재구성이든 이것을 합쳐 쓴다. 잃으면 성공했을 때 rebuilt 표시(docs/CONTRACTS.md C4 조용한 재구성)나
 /// Reset 파일의 세대 올림이 빠져, 팝업의 옛 커서가 같은 바이트 자리의 새 줄에 붙는다
 #[derive(Debug, Default)]
 struct Due {
@@ -219,7 +219,7 @@ pub struct HostLoop {
     side: BTreeSet<PathBuf>,
     /// Windows 스레드만: 감시할 다른 호스트
     remotes: Remotes,
-    /// Claude 등록부에 살아 있는 세션(id → 항목)과 Windows에서 jsonl 이 아직 없는 세션 (4.5 신규 세션 발견 1번)
+    /// Claude 등록부에 살아 있는 세션(id → 항목)과 Windows에서 jsonl 이 아직 없는 세션 (docs/CONTRACTS.md C6 신규 세션 발견)
     alive: HashMap<String, registry::RegistryEntry>,
     registry_roots: BTreeMap<PathBuf, HashMap<String, registry::RegistryEntry>>,
     #[cfg(test)]
@@ -229,7 +229,7 @@ pub struct HostLoop {
     project_dirs: Vec<PathBuf>,
     /// 경로로 한 접근(나열, 열기, verify_path, stat) 수. WSL 에서는 Probe 직후 틱 밖에서 늘면 안 된다
     pub path_ops: u64,
-    /// 로딩 화면(3.8)에 첫 Scan 의 나열·읽기 진행을 알린다. 첫 Scan 이 끝나면 비운다
+    /// 로딩 화면(docs/CONTRACTS.md C4)에 첫 Scan 의 나열·읽기 진행을 알린다. 첫 Scan 이 끝나면 비운다
     pub watch: Option<Arc<ScanWatch>>,
 }
 
@@ -273,7 +273,7 @@ impl HostLoop {
         }
     }
 
-    /// 다른 호스트의 심장박동을 매 틱 본다 (4.5 감시자)
+    /// 다른 호스트의 심장박동을 매 틱 본다 (docs/CONTRACTS.md C6 감시자)
     pub fn watch(&mut self, host_id: String, heartbeat: Arc<Heartbeat>) {
         self.remotes
             .lock()
@@ -302,7 +302,7 @@ impl HostLoop {
         self.world.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// 한 틱. 읽기·파싱은 잠금 밖에서, 적용만 잠금 안에서 한다 (4.3)
+    /// 한 틱. 읽기·파싱은 잠금 밖에서, 적용만 잠금 안에서 한다 (docs/CONTRACTS.md C4)
     pub fn tick(&mut self) {
         self.reply_diagnostic();
         let now = self.clock.now();
@@ -319,7 +319,7 @@ impl HostLoop {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take();
-        // WSL 은 경로 접근이 Probe 직후에만 된다. 나열도 경로 기반이라 Scan 도 그때만 돈다 (4.4.2)
+        // WSL 은 경로 접근이 Probe 직후에만 된다. 나열도 경로 기반이라 Scan 도 그때만 돈다 (docs/CONTRACTS.md C5)
         let fresh = probed.is_some();
         let path_ok = !self.is_wsl() || fresh;
         if let Some(update) = probed {
@@ -469,7 +469,7 @@ impl HostLoop {
         self.sites = sites;
     }
 
-    /// 선택 사무실의 팀은 Hot, 퇴근 팀은 Cold, 나머지 Warm (4.5 표).
+    /// 선택 사무실의 팀은 Hot, 퇴근 팀은 Cold, 나머지 Warm (docs/CONTRACTS.md C6).
     /// 선택이 퇴근보다 앞선다. 보고 있는 퇴근 팀이 다시 일하면 60초가 아니라 바로 보여야 한다
     fn tiers(&self) -> HashMap<TeamKey, (Tier, TeamPhase)> {
         let w = self.lock_world();
@@ -489,7 +489,7 @@ impl HostLoop {
             .collect()
     }
 
-    /// 때가 된 팀의 파일을 팀 단위로 읽는다. 한 팀의 여러 파일은 한 번에 병합해 적용한다 (4.3 순서)
+    /// 때가 된 팀의 파일을 팀 단위로 읽는다. 한 팀의 여러 파일은 한 번에 병합해 적용한다 (docs/CONTRACTS.md C4 순서)
     fn poll_teams(&mut self, now: DateTime<Utc>, path_ok: bool) {
         let tiers = self.tiers();
         let mut teams: BTreeMap<TeamKey, Vec<PathBuf>> = BTreeMap::new();
@@ -514,7 +514,7 @@ impl HostLoop {
             if !paths.iter().any(|p| now - self.files[p].last_read >= every) {
                 continue;
             }
-            // 퇴근 팀은 매 Scan 대신 Cold 폴링 때 바꿔치기를 본다 (4.4.2, 실제 기록 수백 개에 매 3초 열기를 피한다)
+            // 퇴근 팀은 매 Scan 대신 Cold 폴링 때 바꿔치기를 본다 (docs/CONTRACTS.md C5, 실제 기록 수백 개에 매 3초 열기를 피한다)
             if tier == Tier::Cold && !self.is_wsl() {
                 for p in &paths {
                     self.path_ops += 1;
@@ -528,7 +528,7 @@ impl HostLoop {
         }
     }
 
-    /// 한 팀의 파일들을 읽어 4.3 순서로 합쳐 한 번 적용하고, 적용이 끝난 뒤에만 모두 commit 한다 (4.5 2단계 commit)
+    /// 한 팀의 파일들을 읽어 docs/CONTRACTS.md C4 순서로 합쳐 한 번 적용하고, 적용이 끝난 뒤에만 모두 commit 한다 (docs/CONTRACTS.md C6 2단계 commit)
     fn poll_team(&mut self, key: &TeamKey, paths: &[PathBuf], now: DateTime<Utc>, path_ok: bool) {
         let mut batch: Vec<(PathBuf, Pending)> = Vec::new();
         let mut reset = BTreeSet::new();
@@ -571,7 +571,7 @@ impl HostLoop {
                 }
             }
         }
-        // 멈췄던 I/O 의 결과는 버리고 commit 하지 않는다. 재개한 첫 틱이 같은 구간을 다시 읽는다 (4.5 감시자).
+        // 멈췄던 I/O 의 결과는 버리고 commit 하지 않는다. 재개한 첫 틱이 같은 구간을 다시 읽는다 (docs/CONTRACTS.md C6 감시자).
         // 파서에 넣기 전에 본다. 넣고 버리면 파서가 같은 줄을 두 번 본다. 이미 본 Reset 은 재구성에 싣는다
         if self.suspect() {
             if !reset.is_empty() {
@@ -580,7 +580,7 @@ impl HostLoop {
             return;
         }
         if !reset.is_empty() {
-            // 어느 파일의 Reset 이든 팀 전체를 다시 만든다 (4.3 범위). 다른 파일의 이번 읽기는 재구성이 다시 읽는다
+            // 어느 파일의 Reset 이든 팀 전체를 다시 만든다 (docs/CONTRACTS.md C4 범위). 다른 파일의 이번 읽기는 재구성이 다시 읽는다
             for p in &reset {
                 crate::oplog!("Reset {}", p.display());
             }
@@ -649,7 +649,7 @@ impl HostLoop {
     }
 
     /// WSL 핸들 에러. Probe 직후 틱이면 배포판이 켜져 있으니 배포판 재시작으로 죽은 핸들로 보고 경로로 다시 연다.
-    /// 아니면 꺼졌거나 공유가 끊긴 것이라 의심으로 두고, Probe 가 켜짐을 본 뒤 다시 만든다 (4.4.2).
+    /// 아니면 꺼졌거나 공유가 끊긴 것이라 의심으로 두고, Probe 가 켜짐을 본 뒤 다시 만든다 (docs/CONTRACTS.md C5).
     /// `reset` 은 같은 폴링에서 앞 파일들이 본 Reset 이다
     fn on_wsl_error(
         &mut self,
@@ -669,7 +669,7 @@ impl HostLoop {
         self.defer_rebuild(key, false, reset);
     }
 
-    /// Probe 직후 틱에 근무 중이 아닌 WSL 팀의 핸들을 닫는다 (4.4.2). 열어 둔 핸들은 배포판이 스스로 꺼지지 못하게 하고,
+    /// Probe 직후 틱에 근무 중이 아닌 WSL 팀의 핸들을 닫는다 (docs/CONTRACTS.md C5). 열어 둔 핸들은 배포판이 스스로 꺼지지 못하게 하고,
     /// 꺼진 뒤 그 핸들을 만지거나 닫으면 다시 켠다. 켜짐을 확인한 지금 닫아야 안전하다
     fn close_idle(&mut self, now: DateTime<Utc>) {
         let tiers = self.tiers();
@@ -699,7 +699,7 @@ impl HostLoop {
                 continue;
             }
             for p in &paths {
-                // poll_team 이 의심을 켰으면 경로를 더 건드리지 않는다 (4.4.2)
+                // poll_team 이 의심을 켰으면 경로를 더 건드리지 않는다 (docs/CONTRACTS.md C5)
                 if self.suspect() {
                     return;
                 }
@@ -725,8 +725,8 @@ impl HostLoop {
         }
     }
 
-    /// Spawn 결과로 안 서브 파일은 Scan 을 기다리지 않고 바로 읽는다. S19 가 끊기지 않게 (4.5 서브 파일 발견).
-    /// 서브 파일에는 Spawn 보다 이른 줄이 있어 이어 읽지 않고 팀을 다시 만든다 (4.3 직원 사전 등록).
+    /// Spawn 결과로 안 서브 파일은 Scan 을 기다리지 않고 바로 읽는다. S19 가 끊기지 않게 (docs/CONTRACTS.md C6 서브 파일 발견).
+    /// 서브 파일에는 Spawn 보다 이른 줄이 있어 이어 읽지 않고 팀을 다시 만든다 (docs/CONTRACTS.md C4 직원 사전 등록).
     /// 아직 없으면 Scan 이 찾는다
     fn register_subs(&mut self, key: &TeamKey, events: &[Event], now: DateTime<Utc>) {
         if key.vendor != Vendor::Claude {
@@ -809,7 +809,7 @@ impl HostLoop {
         }
     }
 
-    /// 팀의 파일을 모두 처음부터 다시 읽어 만든다 (새 세션, Reset. 4.3 재구성 규칙).
+    /// 팀의 파일을 모두 처음부터 다시 읽어 만든다 (새 세션, Reset. docs/CONTRACTS.md C4 재구성 규칙).
     /// `new` 는 이번에 처음 찾은 파일, `reset` 은 Reset 을 본 파일이다 (세대를 하나 올린다).
     /// 서브 파일 하나가 안 열리면 그 파일만 "못 봄"으로 빼고 나머지로 만든다. 메인이 안 열리면 기존 상태를 둔다.
     /// 방금 시작된 새 파일이면 출근 cue 를 내고 미대응 재료를 센다. 늦게 발견한 옛 파일은 세지 않는다 (재시작마다 다시 세지 않게)
@@ -828,7 +828,7 @@ impl HostLoop {
             .map(|(p, _)| p.clone())
             .chain(new.iter().cloned())
             .collect();
-        // 메인 파일이 먼저다 (4.3 순서)
+        // 메인 파일이 먼저다 (docs/CONTRACTS.md C4 순서)
         paths.sort_by_key(|p| (is_subagent(p), p.clone()));
         paths.dedup();
         if paths.is_empty() {
@@ -906,7 +906,7 @@ impl HostLoop {
         );
         team.alive_in_registry = self.alive.contains_key(&key.session);
         if let Some(r) = self.alive.get(&key.session) {
-            // 재구성은 조용하다 (4.3). 제목이 바뀌어도 액자 연출은 내지 않는다
+            // 재구성은 조용하다 (docs/CONTRACTS.md C4). 제목이 바뀌어도 액자 연출은 내지 않는다
             team.set_registry(r.user_name(), r.product(), &mut Vec::new());
         }
         let product = team.product;
@@ -930,7 +930,7 @@ impl HostLoop {
                 .get(key)
                 .map(|t| t.employees.iter().map(|e| e.id.clone()).collect())
                 .unwrap_or_default();
-            // 조용한 재구성은 새 세션과 Reset 뿐이다 (4.3). 서브 파일이 새로 보인 것은 진행 중 연출을 끊지 않는다.
+            // 조용한 재구성은 새 세션과 Reset 뿐이다 (docs/CONTRACTS.md C4). 서브 파일이 새로 보인 것은 진행 중 연출을 끊지 않는다.
             // 미뤄졌다 성공한 재구성은 미뤄질 때의 이유(carried_quiet)도 함께 본다
             w.put_team(
                 key.clone(),
@@ -969,7 +969,7 @@ impl HostLoop {
         self.files.extend(fresh);
     }
 
-    /// 첫 레코드 ts(없으면 파일 생성 시각)가 지금부터 60초 안인가 (4.5 신규 세션 발견 3번)
+    /// 첫 레코드 ts(없으면 파일 생성 시각)가 지금부터 60초 안인가 (docs/CONTRACTS.md C6 신규 세션 발견)
     fn just_started(&mut self, path: &Path, events: &[Event], now: DateTime<Utc>) -> bool {
         let first = events.iter().find_map(|e| e.ts).or_else(|| {
             self.path_ops += 1;
@@ -979,7 +979,7 @@ impl HostLoop {
         first.is_some_and(|t| now - t < JUST_STARTED)
     }
 
-    /// 새 세션 파일·서브 파일·meta.json 과 사라진 파일을 찾는다 (4.5 신규 세션 발견).
+    /// 새 세션 파일·서브 파일·meta.json 과 사라진 파일을 찾는다 (docs/CONTRACTS.md C6 신규 세션 발견).
     /// 접근에 실패한 Site 의 파일은 "없음"이 아니라 "못 봄"이라 아무것도 지우지 않는다.
     /// 경로 접근마다 앞에서 의심을 보고 멈춘다
     fn scan(&mut self, now: DateTime<Utc>) {
@@ -1075,7 +1075,7 @@ impl HostLoop {
                 verify.push(path.clone());
             }
         }
-        // 로컬은 매 Scan, WSL 은 Probe 직후 Scan 에 근무 중·졸음 팀 파일만 경로의 파일과 핸들의 파일을 대조한다 (4.4.2).
+        // 로컬은 매 Scan, WSL 은 Probe 직후 Scan 에 근무 중·졸음 팀 파일만 경로의 파일과 핸들의 파일을 대조한다 (docs/CONTRACTS.md C5).
         // 핸들을 닫아 둔 파일은 닫을 때의 길이·mtime 과 비교해 바뀌었으면 다시 연다
         for path in verify {
             if self.suspect() {
@@ -1092,7 +1092,7 @@ impl HostLoop {
                     if (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)) != stat {
                         crate::oplog!("파일 교체 감지, 재구성 {}", path.display());
                         let reset = rebuild.entry(t.key.clone()).or_default();
-                        // 줄었으면 Reset 이다 (4.5 (a)). 세대를 올려야 옛 커서가 새 내용에 붙지 않는다
+                        // 줄었으면 Reset 이다 (docs/CONTRACTS.md C6). 세대를 올려야 옛 커서가 새 내용에 붙지 않는다
                         if m.len() < stat.0 {
                             reset.insert(path.clone());
                         }
@@ -1206,7 +1206,7 @@ impl HostLoop {
         self.lock_world().retire_employee(key, &agent, now);
     }
 
-    /// Claude 세션 등록부 (4.4.1): 살아 있는 세션을 팀에 표시하고 이름·동을 넣는다
+    /// Claude 세션 등록부 (docs/CONTRACTS.md C5): 살아 있는 세션을 팀에 표시하고 이름·동을 넣는다
     fn read_registry(&mut self) {
         if self.suspect() {
             return;
@@ -1290,7 +1290,7 @@ impl HostLoop {
         }
     }
 
-    /// 기다리는 세션의 jsonl 이 생겼나. 그 경로만 1초 간격으로 본다 (4.5 신규 세션 발견 1번).
+    /// 기다리는 세션의 jsonl 이 생겼나. 그 경로만 1초 간격으로 본다 (docs/CONTRACTS.md C6 신규 세션 발견).
     /// 새 프로젝트 폴더에 생긴 파일은 다음 Scan 이 찾는다
     fn awaited_appeared(&mut self, now: DateTime<Utc>) -> bool {
         if self.awaited.is_empty() || self.last_await.is_some_and(|t| now - t < AWAIT) {
@@ -1305,7 +1305,7 @@ impl HostLoop {
         })
     }
 
-    /// 2초 넘게 멈춘 호스트를 의심으로 바꾼다. 멈춘 I/O 는 취소하지 않는다 (4.5 감시자)
+    /// 2초 넘게 멈춘 호스트를 의심으로 바꾼다. 멈춘 I/O 는 취소하지 않는다 (docs/CONTRACTS.md C6 감시자)
     fn watch_remotes(&self) {
         let now = mono_ms();
         let remotes = self
@@ -1344,8 +1344,8 @@ fn wsl_proc_root(home: &Path, distro: &str) -> Option<PathBuf> {
     )))
 }
 
-/// 30초마다 Windows Site 와 WSL 배포판의 켜짐·꺼짐을 각 호스트에 넘긴다 (4.4.2).
-/// `wsl.exe` 와 켜진 배포판의 UNC 를 쓰므로 자기 스레드에서 돈다. 멈춰도 Windows 갱신과 감시자는 계속된다 (4.5)
+/// 30초마다 Windows Site 와 WSL 배포판의 켜짐·꺼짐을 각 호스트에 넘긴다 (docs/CONTRACTS.md C5).
+/// `wsl.exe` 와 켜진 배포판의 UNC 를 쓰므로 자기 스레드에서 돈다. 멈춰도 Windows 갱신과 감시자는 계속된다 (docs/CONTRACTS.md C6)
 pub struct Prober {
     runtime: Arc<Runtime>,
     probe: ProbeFn,
@@ -1455,7 +1455,7 @@ pub fn spawn_probe(mut p: Prober) -> thread::JoinHandle<()> {
     })
 }
 
-/// 틱 간격. 연달아 5번 200ms 를 넘기면 그 호스트만 400ms 로 늦추고, 5번 연달아 안 넘기면 되돌린다 (4.10)
+/// 틱 간격. 연달아 5번 200ms 를 넘기면 그 호스트만 400ms 로 늦추고, 5번 연달아 안 넘기면 되돌린다 (docs/CONTRACTS.md C13)
 struct Pace {
     slow: bool,
     run: u32,
@@ -1481,7 +1481,7 @@ impl Pace {
     }
 }
 
-/// 호스트 하나의 루프를 스레드로 돌린다. 한 호스트가 UNC 에서 멈춰도 다른 호스트는 돈다 (4.5).
+/// 호스트 하나의 루프를 스레드로 돌린다. 한 호스트가 UNC 에서 멈춰도 다른 호스트는 돈다 (docs/CONTRACTS.md C6).
 /// `heartbeat.stop` 을 켜면 끝난다
 pub fn spawn(mut host: HostLoop) -> thread::JoinHandle<()> {
     thread::spawn(move || {
@@ -1496,14 +1496,14 @@ pub fn spawn(mut host: HostLoop) -> thread::JoinHandle<()> {
             host.tick_stats.record(spent);
             thread::sleep(pace.next(&host.host.id, spent));
         }
-        // 꺼진 배포판의 핸들은 닫기만 해도 배포판을 다시 켠다 (4.4.2). 의심 중이면 닫지 않고 둔다
+        // 꺼진 배포판의 핸들은 닫기만 해도 배포판을 다시 켠다 (docs/CONTRACTS.md C5). 의심 중이면 닫지 않고 둔다
         if host.suspect() {
             std::mem::forget(host);
         }
     })
 }
 
-/// 한 틱에 같은 팀의 여러 파일에서 읽은 이벤트를 적용 순서로 늘어놓는다 (4.3 순서, `classify::merge` 와 같은 규칙).
+/// 한 틱에 같은 팀의 여러 파일에서 읽은 이벤트를 적용 순서로 늘어놓는다 (docs/CONTRACTS.md C4 순서, `classify::merge` 와 같은 규칙).
 /// 키는 파일마다 이전 틱까지 포함한 누적 최대 ts. 키가 같으면 파일 순서(메인 먼저), 그다음 줄 순서
 fn merge_live(files: Vec<(Option<DateTime<Utc>>, Vec<Event>)>) -> Vec<Event> {
     let mut keyed = Vec::new();
@@ -1556,7 +1556,7 @@ fn open(
     })
 }
 
-/// 재구성용으로 끝까지 읽는다. 8MB 상한이 있어 backlog 가 남으면 이어 읽는다 (4.5).
+/// 재구성용으로 끝까지 읽는다. 8MB 상한이 있어 backlog 가 남으면 이어 읽는다 (docs/CONTRACTS.md C6).
 /// 줄이 안 나온 읽기에서 멈추면 첫 줄이 8MB 넘는 세션을 영영 못 만든다. 파일 끝에 닿을 때까지 읽는다.
 /// 읽기가 나아가지 않으면(stat 이 길이를 부풀려 말하는 경우) 끝낸다.
 /// 읽는 사이에 파일이 다시 쓰여 Reset 이 나면 그 세대 처음부터 다시 모은다. 안 그러면 옛 줄과 새 줄이 둘 다 붙는다
@@ -1605,7 +1605,7 @@ pub fn is_subagent(p: &Path) -> bool {
         .is_some_and(|n| n == "subagents")
 }
 
-/// Codex 세션 id 는 파일명 끝 UUID 36자 (4.6.2)
+/// Codex 세션 id 는 파일명 끝 UUID 36자 (docs/CONTRACTS.md C7)
 pub fn codex_id(stem: &str) -> &str {
     stem.get(stem.len().saturating_sub(36)..).unwrap_or(stem)
 }
@@ -1633,7 +1633,7 @@ fn claude_session_of(path: &Path) -> Option<String> {
         .map(|n| n.to_string_lossy().into_owned())
 }
 
-/// 옆의 `agent-<id>.meta.json` (4.6.1 서브에이전트)
+/// 옆의 `agent-<id>.meta.json` (docs/CONTRACTS.md C7 서브에이전트)
 pub fn sub_meta(path: &Path) -> Option<SubMeta> {
     let stem = path.file_stem()?.to_str()?;
     let agent_id = stem.strip_prefix("agent-")?.to_string();
@@ -1674,7 +1674,7 @@ pub struct Listing {
 }
 
 /// Site 아래 세션 파일과 그 세션 id. Claude 는 `<프로젝트>/<uuid>.jsonl` 과 `<프로젝트>/<uuid>/subagents/*.jsonl`,
-/// Codex 는 `YYYY/MM/DD/rollout-*.jsonl` (4.4.1). 어디서든 나열이 실패하면 Site 전체를 "못 봄"으로 돌려준다
+/// Codex 는 `YYYY/MM/DD/rollout-*.jsonl` (docs/CONTRACTS.md C5). 어디서든 나열이 실패하면 Site 전체를 "못 봄"으로 돌려준다
 pub fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
     let mut out = Listing::default();
     match site.vendor {
@@ -1722,7 +1722,7 @@ pub fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
     Ok(out)
 }
 
-/// 폴더 안 (경로, 폴더인가). 종류는 나열 결과에서 읽어 항목마다 stat 하지 않는다 (4.10 Scan 예산).
+/// 폴더 안 (경로, 폴더인가). 종류는 나열 결과에서 읽어 항목마다 stat 하지 않는다 (docs/CONTRACTS.md C13 Scan 예산).
 /// `missing_ok` 면 그새 없어진 폴더는 빈 목록이다. Site 루트가 없으면 "못 봄"이라 에러로 둔다
 fn entries(p: &Path, missing_ok: bool, ops: &mut u64) -> io::Result<Vec<(PathBuf, bool)>> {
     *ops += 1;
@@ -2335,7 +2335,7 @@ mod tests {
         assert_eq!(h.files[&file].generation(), 1);
     }
 
-    /// 퇴근 팀은 매 Scan 대신 Cold 폴링 때 바꿔치기를 본다 (4.4.2 D3)
+    /// 퇴근 팀은 매 Scan 대신 Cold 폴링 때 바꿔치기를 본다 (docs/CONTRACTS.md C5)
     #[test]
     fn off_team_is_checked_for_swap_at_cold_poll_not_every_scan() {
         let e = env();
@@ -2359,7 +2359,7 @@ mod tests {
     }
 
     /// fixture 하나를 (a) 한 번에 전체 읽기 (b) 줄마다 그 논리 시각에 append 하며 틱.
-    /// 같은 논리 시점에서 팀 상태 전체가 같다 (4.3 시계·순서)
+    /// 같은 논리 시점에서 팀 상태 전체가 같다 (docs/CONTRACTS.md C4 시계·순서)
     #[test]
     fn appending_line_by_line_matches_full_read_under_logical_clock() {
         let cases = [
@@ -2383,7 +2383,7 @@ mod tests {
                 Vendor::Claude => "p1",
                 _ => "2026/03/02",
             };
-            // (파일 상대 경로, 줄, ts) 를 4.3 병합 순서(파일별 누적 최대 ts, 메인 먼저, 줄 순서)로
+            // (파일 상대 경로, 줄, ts) 를 docs/CONTRACTS.md C4 병합 순서(파일별 누적 최대 ts, 메인 먼저, 줄 순서)로
             let mut jsonl = Vec::new();
             let mut stack = vec![src.clone()];
             while let Some(d) = stack.pop() {
@@ -2461,7 +2461,7 @@ mod tests {
         }
     }
 
-    /// 한 틱에 메인과 서브에 함께 붙은 줄은 4.3 순서로 합쳐 적용한다. 파일마다 따로 적용하면
+    /// 한 틱에 메인과 서브에 함께 붙은 줄은 docs/CONTRACTS.md C4 순서로 합쳐 적용한다. 파일마다 따로 적용하면
     /// 서브의 40분 줄이 메인의 30분30초 결과보다 먼저 들어가 31분 포기가 앞당겨진다 (T12 리뷰 재현)
     #[test]
     fn lines_batched_across_main_and_sub_merge_by_ts() {
@@ -2532,7 +2532,7 @@ mod tests {
     }
 
     /// 잠든 노트북·의심이 풀린 WSL 처럼 시계가 크게 건너뛴 뒤 밀린 줄을 한 번에 읽어도 전체 읽기와 같다.
-    /// 결과보다 30분 포기가 먼저 일어나야 한다 (4.3 재구성 규칙, 4.7.2)
+    /// 결과보다 30분 포기가 먼저 일어나야 한다 (docs/CONTRACTS.md C4 재구성 규칙, docs/CONTRACTS.md C8)
     #[test]
     fn batch_after_clock_jump_matches_full_read() {
         let lines = [
@@ -2699,7 +2699,7 @@ mod tests {
         assert_eq!(e.w().teams.len(), 2);
     }
 
-    /// 근무 중이 아닌 WSL 팀의 핸들은 Probe 직후에 닫고, 바뀌면 다음 Probe 직후에 다시 연다 (4.4.2 D1)
+    /// 근무 중이 아닌 WSL 팀의 핸들은 Probe 직후에 닫고, 바뀌면 다음 Probe 직후에 다시 연다 (docs/CONTRACTS.md C5)
     #[test]
     fn idle_wsl_team_closes_handles_and_reopens_when_file_changes() {
         let e = env();
@@ -2965,7 +2965,7 @@ mod tests {
         assert!(h.files[&file].reader.is_some());
     }
 
-    /// 닫아 둔 동안 파일이 줄었으면 Reset 이라 세대를 올려 다시 만든다 (4.5 규칙 (a))
+    /// 닫아 둔 동안 파일이 줄었으면 Reset 이라 세대를 올려 다시 만든다 (docs/CONTRACTS.md C6)
     #[test]
     fn closed_file_that_shrank_rebuilds_with_new_generation() {
         let e = env();
@@ -3142,7 +3142,7 @@ mod tests {
         assert!(w.list_seq > list);
     }
 
-    /// 시간 전이는 자기 호스트 팀만, 의심 중인 호스트의 팀은 멈춘다 (4.3 시계)
+    /// 시간 전이는 자기 호스트 팀만, 의심 중인 호스트의 팀은 멈춘다 (docs/CONTRACTS.md C4 시계)
     #[test]
     fn tick_moves_only_own_host_teams_and_freezes_suspect_host() {
         let e = env();
@@ -3258,7 +3258,7 @@ mod tests {
         );
     }
 
-    /// 서브 종료 10분 뒤(논리 시계) 퇴근해 자리가 비고, 서브 파일의 새 줄로 재출근한다 (4.7.2, S60)
+    /// 서브 종료 10분 뒤(논리 시계) 퇴근해 자리가 비고, 서브 파일의 새 줄로 재출근한다 (docs/CONTRACTS.md C8, S60)
     #[test]
     fn sub_departs_ten_minutes_after_done_and_rehires_on_a_new_line() {
         let e = env();
@@ -3695,7 +3695,7 @@ mod tests {
         assert_eq!(e.team(REJECT).turns, 2);
     }
 
-    /// 결재(허가 대기)가 cue 없이 끝나고, 승인 창(require_escalated)이 뜬 채 세션이 끊기는 Codex 세션 (4.11).
+    /// 결재(허가 대기)가 cue 없이 끝나고, 승인 창(require_escalated)이 뜬 채 세션이 끊기는 Codex 세션 (docs/CONTRACTS.md C11).
     /// 끊긴 것은 그 호출의 반려 줄 앞에서 잘라 재생한다
     const STATE_FIXTURE: &str = "codex/ask-reject-compact";
 

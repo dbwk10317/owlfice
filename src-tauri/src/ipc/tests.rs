@@ -125,7 +125,7 @@ fn office_id_round_trips_and_rejects_garbage() {
     }
 }
 
-/// 3.3 범례의 각 경우
+/// design/HANDOFF.md 4.2 범례의 각 경우
 #[test]
 fn status_dot_legend() {
     let now = t0() + Duration::minutes(1);
@@ -588,7 +588,7 @@ fn publisher_emits_on_change_and_drains_cues() {
     let state = e.ipc.poll(&mut sent, now).1.unwrap();
     assert_eq!((state.state_seq, state.cues.len()), (seq, 1));
 
-    // 미대응 기록(4.11)은 office-state 에 실리지 않는다
+    // 미대응 기록(docs/CONTRACTS.md C11)은 office-state 에 실리지 않는다
     lock(&e.world).cue(
         &a,
         Cue::Unhandled(crate::parse::Unhandled::StateConflict {
@@ -606,7 +606,7 @@ fn publisher_emits_on_change_and_drains_cues() {
 }
 
 /// 서브가 보여 다시 넣은 팀(조용하지 않은 재구성)은 rebuilt 로 나가지 않고 연출도 버리지 않는다.
-/// 규모를 바꾸면 그 전 연출은 버리고 rebuilt 로 내며 목록이 바뀐 선택을 알린다 (4.7.9 2·4·5번)
+/// 규모를 바꾸면 그 전 연출은 버리고 rebuilt 로 내며 목록이 바뀐 선택을 알린다 (docs/CONTRACTS.md C8·C10)
 #[test]
 fn non_quiet_rebuild_keeps_cues_and_scale_change_is_rebuilt() {
     let e = env(Scale::Large);
@@ -650,7 +650,7 @@ fn non_quiet_rebuild_keeps_cues_and_scale_change_is_rebuilt() {
     assert!(state.rebuilt && state.cues.is_empty());
 }
 
-/// 설정으로 규모를 바꾸면 world 가 재배치하고 목록·상태가 rebuilt 로 나간다 (4.7.9).
+/// 설정으로 규모를 바꾸면 world 가 재배치하고 목록·상태가 rebuilt 로 나간다 (docs/CONTRACTS.md C8).
 /// 저장이 실패해도 규모는 바뀐다
 #[test]
 fn set_settings_scale_rebuilds_and_failed_save_still_applies() {
@@ -1409,7 +1409,7 @@ fn ts_bindings_are_fresh() {
     );
 }
 
-/// 4.10 "상태 직렬화 + emit < 2ms". 측정만 한다:
+/// docs/CONTRACTS.md C13 "상태 직렬화 + emit < 2ms". 측정만 한다:
 /// `cargo test --release --manifest-path src-tauri/Cargo.toml serialize_time -- --ignored --nocapture`
 #[test]
 #[ignore]

@@ -1,4 +1,4 @@
-//! 상태 기계 단위 테스트(4.12)와 fixture 스냅샷. 기대값은 PLAN 규칙으로 손으로 정했다
+//! 상태 기계 단위 테스트와 fixture 스냅샷 (docs/CONTRACTS.md C12)
 
 use std::path::{Path, PathBuf};
 
@@ -151,7 +151,7 @@ fn is(e: &Employee, room: Room, sentence: &str, confidence: Confidence) {
     );
 }
 
-// ---------- 4.12 단위 ----------
+// ---------- docs/CONTRACTS.md C12 단위 ----------
 
 #[test]
 fn unpaired_results_are_ignored() {
@@ -868,7 +868,7 @@ fn departs(cues: &[Cue]) -> usize {
         .count()
 }
 
-/// 종료 10분 뒤 문턱 시각으로 한 번만 퇴근한다 (4.7.2)
+/// 종료 10분 뒤 문턱 시각으로 한 번만 퇴근한다 (docs/CONTRACTS.md C8)
 #[test]
 fn retired_sub_departs_ten_minutes_later_once() {
     let mut s = Sim::new();
@@ -1586,7 +1586,7 @@ fn snapshot_async_subagent() {
         "백그라운드: `VAR1=\"C:/dir3/dir4/dir5/dir6/dir7/dir8/d` 돌아가는 중 (작업표 1장)",
         Confirmed,
     );
-    // 49.840 의 응답으로 턴이 끝났지만 완료 알림이 다음 응답을 부른다 (2.4 응답 대기)
+    // 49.840 의 응답으로 턴이 끝났지만 완료 알림이 다음 응답을 부른다 (docs/CONTRACTS.md C2 응답 대기)
     let t = c.at("2026-03-02T09:01:30.259Z", 0);
     assert!(boss(&t).background.is_empty());
     is(
@@ -1777,7 +1777,7 @@ fn snapshot_codex_aborted() {
     assert_eq!(t.phase, TeamPhase::Off);
 }
 
-// ---------- 순서 불변 (4.12 통합) ----------
+// ---------- 순서 불변 (docs/CONTRACTS.md C12 통합) ----------
 
 /// ts 있는 이벤트 하나와 그 뒤 같은 파일의 ts 없는 이벤트를 한 묶음으로 두고,
 /// ts 가 같은 묶음끼리 순서를 바꾼다 (merge 가 허용하는 범위). 한 줄에서 나온 이벤트도 섞인다
@@ -1849,7 +1849,7 @@ fn replayed(id: &str, events: &[Event], end: DateTime<Utc>) -> Team {
     t
 }
 
-/// 하나씩 적용하며 1초마다 tick 한다. 실제 간격으로 append 한 것과 같은 시계다 (4.3)
+/// 하나씩 적용하며 1초마다 tick 한다. 실제 간격으로 append 한 것과 같은 시계다 (docs/CONTRACTS.md C4)
 fn stepwise(id: &str, events: &[Event], end: DateTime<Utc>) -> Team {
     let sec = Duration::seconds(1);
     let mut clock = events.iter().find_map(|e| e.ts).unwrap();
@@ -1932,7 +1932,7 @@ fn preregistered_sub_is_hired_when_it_first_appears() {
     }
 }
 
-// ---------- 담당 (4.7.5) · 오늘의 업무 (4.7.6) ----------
+// ---------- 담당 (docs/CONTRACTS.md C8) · 오늘의 업무 (docs/CONTRACTS.md C8) ----------
 
 use super::work::{Role, WorkType};
 
@@ -2353,7 +2353,7 @@ fn work_counts_only_boss_calls() {
     assert_eq!(s.team.work_type, WorkType::CodeReview);
 }
 
-// ---------- 말풍선·경과 자리·행적 (4.8) ----------
+// ---------- 말풍선·경과 자리·행적 (docs/CONTRACTS.md C9) ----------
 
 fn bubble(at_secs: i64, say: BubbleSay) -> Option<Bubble> {
     Some(Bubble {
@@ -3316,7 +3316,7 @@ fn wall_commits_count_only_confirmed_unmixed_success_once() {
     assert_eq!(stepwise(MAIN, &events, at(25)).commits, s.team.commits);
 }
 
-/// 실적 요약 (3.7): 같은 항목은 횟수만 올리고 자리는 처음 본 순서 그대로
+/// 실적 요약 (docs/CONTRACTS.md C9): 같은 항목은 횟수만 올리고 자리는 처음 본 순서 그대로
 #[test]
 fn record_counts_repeats_in_first_seen_order() {
     let mut s = Sim::new();
@@ -3340,7 +3340,7 @@ fn record_counts_repeats_in_first_seen_order() {
     );
 }
 
-// ---------- 미대응 기록 (4.11 state_conflict·scenario_gap) ----------
+// ---------- 미대응 기록 (docs/CONTRACTS.md C11 state_conflict·scenario_gap) ----------
 
 fn unhandled(cues: &[Cue]) -> Vec<&Unhandled> {
     cues.iter()
@@ -3484,7 +3484,6 @@ fn request_fail_report_doze_off_and_revisit_has_no_gaps() {
     assert_eq!(gaps(&s.cues), []);
 }
 
-/// 사장님 방문 없이 졸던 팀이 깨는 것은 3.10 에 없다
 #[test]
 fn team_waking_from_doze_without_a_visit_is_a_gap() {
     let mut s = Sim::new();

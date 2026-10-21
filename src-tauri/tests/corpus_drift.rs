@@ -1,4 +1,4 @@
-//! 코퍼스 drift 테스트 (PLAN 4.12). `OWLFICE_CORPUS_DIR` 아래 실제 세션 파일을 제품 파서로 끝까지 읽어
+//! 코퍼스 drift 테스트 (docs/CONTRACTS.md C12). `OWLFICE_CORPUS_DIR` 아래 실제 세션 파일을 제품 파서로 끝까지 읽어
 //! 포맷이 바뀌었는지 본다. 출력은 이름·개수·경로까지만이고 레코드 내용은 찍지 않는다 (AGENTS 8절)
 
 use std::collections::BTreeMap;

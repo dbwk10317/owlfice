@@ -1,4 +1,4 @@
-//! 팀을 사무실로 묶고 변경 번호를 붙인다 (PLAN 4.7.9, 4.3)
+//! 팀을 사무실로 묶고 변경 번호를 붙인다 (docs/CONTRACTS.md C8·C4)
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -15,9 +15,9 @@ use crate::parse::{Event, Unhandled};
 /// 비교용 복제본이 기록 자리에 두는 빈 기록
 static NO_RECORD: LazyLock<Arc<Record>> = LazyLock::new(Arc::default);
 
-/// 개발실 6 + 임시 책상 4 (4.9 floorplan)
+/// 개발실 6 + 임시 책상 4 (docs/CONTRACTS.md C10 floorplan)
 const SEATS: u8 = 10;
-/// 팀장석 4, 그다음 간이 책상 2 (4.7.9)
+/// 팀장석 4, 그다음 간이 책상 2 (docs/CONTRACTS.md C8)
 const DESKS: u8 = 4;
 const SPARES: u8 = 2;
 
@@ -27,7 +27,7 @@ pub enum Scale {
     Small,
 }
 
-/// 같은 원시 세션 id 가 다른 호스트·제조사에서 와도 겹치지 않게 (4.7.9).
+/// 같은 원시 세션 id 가 다른 호스트·제조사에서 와도 겹치지 않게 (docs/CONTRACTS.md C8).
 /// product 는 첫 레코드를 읽어야 알아서 파일을 찾은 시점에 아는 vendor 로 둔다
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TeamKey {
@@ -36,7 +36,7 @@ pub struct TeamKey {
     pub session: String,
 }
 
-/// 대기업은 팀마다, 중소기업은 제조사마다 사무실 하나 (4.7.9)
+/// 대기업은 팀마다, 중소기업은 제조사마다 사무실 하나 (docs/CONTRACTS.md C8)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum OfficeId {
     Team(TeamKey),
@@ -54,24 +54,24 @@ pub struct OfficeWorld {
     pub teams: HashMap<TeamKey, Team>,
     pub scale: Scale,
     pub selected: Option<OfficeId>,
-    /// 목록이 바뀔 때마다 +1 (4.3)
+    /// 목록이 바뀔 때마다 +1 (docs/CONTRACTS.md C4)
     pub list_seq: u64,
-    /// 사무실 상태가 바뀔 때마다 그 사무실만 +1. 전역 번호 하나를 두 스트림이 나누면 같은 변경의 둘째 이벤트가 버려진다 (4.3)
+    /// 사무실 상태가 바뀔 때마다 그 사무실만 +1. 전역 번호 하나를 두 스트림이 나누면 같은 변경의 둘째 이벤트가 버려진다 (docs/CONTRACTS.md C4)
     pub state_seq: HashMap<OfficeId, u64>,
-    /// 의심(통신 지연) 상태인 호스트. 목록에 S46 점선으로 나간다 (4.4.2)
+    /// 의심(통신 지연) 상태인 호스트. 목록에 S46 점선으로 나간다 (docs/CONTRACTS.md C5)
     pub suspect_hosts: BTreeSet<String>,
-    /// 야근 판정 시간대 (4.7.2)
+    /// 야근 판정 시간대 (docs/CONTRACTS.md C8)
     pub local: FixedOffset,
-    /// 아직 프론트에 보내지 않은 연출 신호와 그 팀. 상태 번호를 올린 같은 잠금 안에서 넣고 발행기가 비운다 (4.8).
+    /// 아직 프론트에 보내지 않은 연출 신호와 그 팀. 상태 번호를 올린 같은 잠금 안에서 넣고 발행기가 비운다 (docs/CONTRACTS.md C9).
     /// 따로 넣으면 발행기가 그 사이에 돌아 번호만 먼저 나가고 연출이 늦게 붙는다
     pub outbox: Vec<(OfficeId, TeamKey, Cue)>,
-    /// 상태 기계가 낸 미대응 기록(Cue::Unhandled)과 그 팀의 동. 프론트로 가지 않고 `drain_unhandled` 가 diag 에 넘긴다 (4.11)
+    /// 상태 기계가 낸 미대응 기록(Cue::Unhandled)과 그 팀의 동. 프론트로 가지 않고 `drain_unhandled` 가 diag 에 넘긴다 (docs/CONTRACTS.md C11)
     unhandled: Vec<(Product, Unhandled)>,
     /// 호스트 id → Host. 호스트 스레드가 만들어질 때 등록한다. 층 번호·배지가 종류를 본다
     pub hosts: HashMap<String, Host>,
-    /// 조용히 다시 만들었거나 규모를 바꾼 뒤 아직 발행하지 않은 사무실. 다음 office-state 가 rebuilt 로 나간다 (4.3, 4.7.9)
+    /// 조용히 다시 만들었거나 규모를 바꾼 뒤 아직 발행하지 않은 사무실. 다음 office-state 가 rebuilt 로 나간다 (docs/CONTRACTS.md C4, docs/CONTRACTS.md C8)
     pub rebuilt: HashSet<OfficeId>,
-    /// 규모를 바꾼 뒤 아직 발행하지 않은 목록 (4.7.9 5번)
+    /// 규모를 바꾼 뒤 아직 발행하지 않은 목록 (docs/CONTRACTS.md C8)
     pub list_rebuilt: bool,
     names: NameBook,
 }
@@ -113,7 +113,7 @@ impl OfficeWorld {
         office_for(self.scale, key)
     }
 
-    /// 처음부터 다시 만든 팀을 통째로 넣는다. 재구성은 조용해서 cue 가 없다 (4.3).
+    /// 처음부터 다시 만든 팀을 통째로 넣는다. 재구성은 조용해서 cue 가 없다 (docs/CONTRACTS.md C4).
     /// `quiet` 는 시작·새 세션·Reset 의 조용한 재구성이라 다음 office-state 를 rebuilt 로 낸다.
     /// 서브 파일이 새로 보여 다시 만든 것은 아니다. 진행 중 연출을 끊으면 안 된다
     /// 재구성은 마지막 이벤트 시각에서 끝나므로 여기서 now 까지 조용히 따라잡는다. 안 하면 다음 tick 이 cue 를 낸다.
@@ -205,9 +205,9 @@ impl OfficeWorld {
         }
     }
 
-    /// 실행 중 append 된 이벤트를 적용한다 (4.3). 잠금 안에서는 이것만 한다.
+    /// 실행 중 append 된 이벤트를 적용한다 (docs/CONTRACTS.md C4). 잠금 안에서는 이것만 한다.
     /// 이벤트마다 적용하기 전에 그 ts 로 tick 한다. 재구성(replay)과 같은 순서라서
-    /// 몇 줄씩 묶어 읽혔든 한 줄씩 읽혔든 같은 상태가 된다 (4.3 시계)
+    /// 몇 줄씩 묶어 읽혔든 한 줄씩 읽혔든 같은 상태가 된다 (docs/CONTRACTS.md C4 시계)
     pub fn apply(&mut self, key: &TeamKey, events: &[Event], now: DateTime<Utc>) {
         let local = self.local;
         let Some(team) = self.teams.get_mut(key) else {
@@ -235,7 +235,7 @@ impl OfficeWorld {
         }
     }
 
-    /// 세션 등록부 값을 팀에 넣는다 (4.4.1 쓰임 2·3). 제목이 바뀌면 jsonl 제목처럼 액자를 간다 (S39)
+    /// 세션 등록부 값을 팀에 넣는다 (docs/CONTRACTS.md C5). 제목이 바뀌면 jsonl 제목처럼 액자를 간다 (S39)
     pub fn set_registry(&mut self, key: &TeamKey, name: Option<&str>, product: Option<Product>) {
         let Some(team) = self.teams.get_mut(key) else {
             return;
@@ -252,7 +252,7 @@ impl OfficeWorld {
         }
     }
 
-    /// 서브 파일·meta.json 이 사라진 직원을 퇴장시킨다 (4.5 신규 세션 발견 5번)
+    /// 서브 파일·meta.json 이 사라진 직원을 퇴장시킨다 (docs/CONTRACTS.md C6 신규 세션 발견)
     pub fn retire_employee(&mut self, key: &TeamKey, agent_id: &str, at: DateTime<Utc>) {
         let Some(team) = self.teams.get_mut(key) else {
             return;
@@ -279,7 +279,7 @@ impl OfficeWorld {
         }
     }
 
-    /// 선택 사무실을 바꾼다. 상태는 이미 있어서 폴링 주기만 바뀐다 (4.5 선택 전환).
+    /// 선택 사무실을 바꾼다. 상태는 이미 있어서 폴링 주기만 바뀐다 (docs/CONTRACTS.md C6 선택 전환).
     /// 프론트가 보낸 값이라 지금 있는 사무실만 받는다
     pub fn select(&mut self, office: Option<OfficeId>) -> bool {
         if let Some(o) = &office
@@ -291,7 +291,7 @@ impl OfficeWorld {
         true
     }
 
-    /// 규모 변경 (4.7.9 1~3번). 팀 상태는 그대로 두고 배치만 다시 한다.
+    /// 규모 변경 (docs/CONTRACTS.md C8). 팀 상태는 그대로 두고 배치만 다시 한다.
     /// 4·5번(연출 비우기, rebuilt 발행)은 outbox·rebuilt 를 보고 발행기가 한다
     pub fn set_scale(&mut self, scale: Scale) {
         if scale == self.scale {
@@ -330,14 +330,14 @@ impl OfficeWorld {
             *self.state_seq.entry(office.clone()).or_default() += 1;
         }
         self.list_seq += 1;
-        // 이전 배치를 향한 연출은 버린다 (4.7.9 4번)
+        // 이전 배치를 향한 연출은 버린다 (docs/CONTRACTS.md C8)
         self.outbox.clear();
         self.rebuilt.extend(offices);
         self.list_rebuilt = true;
     }
 
-    /// 시간 전이 (4.7.2). `host` 의 팀만 돌린다. 다른 호스트의 팀은 그 스레드가 돌리고,
-    /// 의심 중인 호스트의 팀은 못 읽은 줄이 있을 수 있어 멈춘다 (4.3 시계). 바뀐 팀의 사무실만 번호를 올린다
+    /// 시간 전이 (docs/CONTRACTS.md C8). `host` 의 팀만 돌린다. 다른 호스트의 팀은 그 스레드가 돌리고,
+    /// 의심 중인 호스트의 팀은 못 읽은 줄이 있을 수 있어 멈춘다 (docs/CONTRACTS.md C4 시계). 바뀐 팀의 사무실만 번호를 올린다
     pub fn tick(&mut self, now: DateTime<Utc>, host: &str) {
         let mut out = Vec::new();
         let mut bumps = Vec::new();
@@ -365,12 +365,12 @@ impl OfficeWorld {
         self.outbox.extend(out);
     }
 
-    /// 아직 저장하지 않은 이름. 부르는 쪽이 잠금을 놓은 뒤 쓴다 (4.7.7)
+    /// 아직 저장하지 않은 이름. 부르는 쪽이 잠금을 놓은 뒤 쓴다 (docs/CONTRACTS.md C8)
     pub fn unsaved_names(&mut self) -> Option<NamesSave> {
         self.names.unsaved()
     }
 
-    /// 이름이 빈 직원에게 이름을 준다. 같은 사무실 안에서 겹치지 않아야 해서 팀이 아니라 여기서 정한다 (4.7.7).
+    /// 이름이 빈 직원에게 이름을 준다. 같은 사무실 안에서 겹치지 않아야 해서 팀이 아니라 여기서 정한다 (docs/CONTRACTS.md C8).
     /// 잠금 안이라 메모리에만 배정하고, 저장은 `unsaved_names` 로 잠금 밖에서 한다
     fn name_employees(&mut self, key: &TeamKey, now: DateTime<Utc>) {
         let office = self.office_of(key);
@@ -399,7 +399,7 @@ impl OfficeWorld {
             .collect()
     }
 
-    /// 들어온 팀에 팀장석을 준다. 한 번 준 자리는 활동 순서로 바꾸지 않는다 (4.7.9).
+    /// 들어온 팀에 팀장석을 준다. 한 번 준 자리는 활동 순서로 바꾸지 않는다 (docs/CONTRACTS.md C8).
     /// 네 자리가 찼으면 새 팀을 포함해 가장 오래 조용한 팀이 간이 책상으로, 간이 책상도 찼으면 카드만.
     /// 새 팀을 포함하는 것은 시작 때 옛 세션들이 아무 순서로 들어와도 활동 중인 팀이 밀려나지 않게다
     fn place_desk(&mut self, key: &TeamKey) {
@@ -440,7 +440,7 @@ impl OfficeWorld {
     }
 
     /// 자리 없는 직원에게 빈 자리를 입사 순으로 준다. 부장(팀장석)과 퇴장·퇴근한 직원은 자리를 비운다.
-    /// 개발실 좌석은 사무실의 모든 팀이 함께 쓴다 (4.7.9)
+    /// 개발실 좌석은 사무실의 모든 팀이 함께 쓴다 (docs/CONTRACTS.md C8)
     fn seat(&mut self, office: &OfficeId) {
         let mut keys = self.keys_in(office);
         keys.sort();

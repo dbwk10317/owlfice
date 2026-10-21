@@ -1,4 +1,4 @@
-//! 이벤트 → 방·행동·문장 (PLAN 4.7.1), 시간 전이 (4.7.2)
+//! 이벤트 → 방·행동·문장 및 시간 전이 (docs/CONTRACTS.md C8)
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -28,17 +28,17 @@ const WAIT_USER_AFTER: Duration = Duration::seconds(3);
 const LONG_RUN: Duration = Duration::seconds(120);
 const CALL_GIVE_UP: Duration = Duration::minutes(30);
 const SUB_DONE_AFTER: Duration = Duration::seconds(60);
-/// 서브 종료 뒤 탕비실에 머무는 시간 (4.7.2 목표값)
+/// 서브 종료 뒤 탕비실에 머무는 시간 (docs/CONTRACTS.md C8 목표값)
 const DEPART_AFTER: Duration = Duration::minutes(10);
 const DOZE_AFTER: Duration = Duration::minutes(3);
 const OFF_AFTER: Duration = Duration::minutes(30);
 const INCIDENT_CLEAR: Duration = Duration::seconds(120);
-/// codex 소스의 yield 상한 (4.7.2)
+/// codex 소스의 yield 상한 (docs/CONTRACTS.md C8)
 const ESCALATION_WAIT: Duration = Duration::seconds(35);
 const REPEAT_EDIT_WINDOW: Duration = Duration::seconds(60);
 const REPEAT_EDITS: usize = 3;
 const PIZZA_AFTER: Duration = Duration::hours(2);
-/// 이 시간 안에 이만큼 읽으면 연속 읽기라 서고로 간다 (4.7.1)
+/// 이 시간 안에 이만큼 읽으면 연속 읽기라 서고로 간다 (docs/CONTRACTS.md C8)
 const READ_WINDOW: Duration = Duration::seconds(10);
 const READ_BURST: usize = 3;
 
@@ -130,7 +130,7 @@ impl Employee {
         }
     }
 
-    /// 진행 중이거나 머무는 상태 (호출 대표 작업, 대기, 졸음 등). 행적은 끝난 일이라 넣지 않는다 (3.5)
+    /// 진행 중이거나 머무는 상태 (호출 대표 작업, 대기, 졸음 등). 행적은 끝난 일이라 넣지 않는다 (docs/CONTRACTS.md C3)
     fn set_activity(&mut self, a: Activity) {
         self.activity = a;
         self.logged = false;
@@ -162,7 +162,7 @@ impl Employee {
         self.rank == Rank::Bujang
     }
 
-    /// 일 말풍선. 사장님 손이 필요한 직원은 작업 중·농담 풀을 쓰지 않는다 (3.6)
+    /// 일 말풍선. 사장님 손이 필요한 직원은 작업 중·농담 풀을 쓰지 않는다 (docs/CONTRACTS.md C3)
     /// 냈으면 true. "처음 한 번" 알림은 낸 뒤에만 소비한다
     fn say(&mut self, at: DateTime<Utc>, say: BubbleSay) -> bool {
         !needs_boss(self, at) && self.say_waiting(at, say)
@@ -241,7 +241,7 @@ impl Team {
         }
     }
 
-    /// 재구성 전에 meta.json 으로 서브를 먼저 만든다 (4.3 직원 사전 등록).
+    /// 재구성 전에 meta.json 으로 서브를 먼저 만든다 (docs/CONTRACTS.md C4 직원 사전 등록).
     /// 자식 파일의 이벤트가 부모의 Spawn 보다 이른 ts 라서 없으면 임시 직원이 생긴다
     pub fn preregister(
         &mut self,
@@ -268,14 +268,14 @@ impl Team {
         self.employees.push(e);
     }
 
-    /// 서브 파일·meta.json 이 사라진 직원만 퇴장시킨다. 팀은 그대로 둔다 (4.5 신규 세션 발견 5번)
+    /// 서브 파일·meta.json 이 사라진 직원만 퇴장시킨다. 팀은 그대로 둔다 (docs/CONTRACTS.md C6 신규 세션 발견)
     pub fn retire_employee(&mut self, agent_id: &str, at: DateTime<Utc>, cues: &mut Vec<Cue>) {
         if let Some(i) = self.employees.iter().skip(1).position(|e| e.id == agent_id) {
             self.retire(i + 1, at, Confidence::Confirmed, cues);
         }
     }
 
-    /// 이벤트 하나를 적용한다 (4.7.1). 시각은 언제나 `ev.ts` 다. 없으면 같은 파일의 직전 ts.
+    /// 이벤트 하나를 적용한다 (docs/CONTRACTS.md C8). 시각은 언제나 `ev.ts` 다. 없으면 같은 파일의 직전 ts.
     /// 끝에 `note_gaps` 를 본다
     pub fn apply(&mut self, ev: &Event, cues: &mut Vec<Cue>) {
         let before = self.words();
@@ -286,7 +286,7 @@ impl Team {
 
     fn apply_event(&mut self, ev: &Event, cues: &mut Vec<Cue>) {
         if ev.kind == EventKind::Reset {
-            // 팀 전체를 다시 만드는 것은 부르는 쪽 몫이다 (4.3 재구성 규칙)
+            // 팀 전체를 다시 만드는 것은 부르는 쪽 몫이다 (docs/CONTRACTS.md C4 재구성 규칙)
             return;
         }
         let path = &ev.raw_ref.path;
@@ -379,7 +379,7 @@ impl Team {
                 if e.is_boss() && e.pending.is_empty() {
                     e.waiting_user_since = Some(ts);
                 }
-                // 리뷰실에서 한 말의 `파일:줄` 이 빨간펜이다. 리뷰 중엔 리뷰실에 남는다 (3.4)
+                // 리뷰실에서 한 말의 `파일:줄` 이 빨간펜이다. 리뷰 중엔 리뷰실에 남는다 (docs/CONTRACTS.md C3)
                 let (sentence, room) = if e.activity.room == Room::Review {
                     e.review_pens += count_file_lines(text);
                     e.approved |= approves(text);
@@ -396,7 +396,7 @@ impl Team {
                     });
                 }
                 let e = &mut self.employees[i];
-                // 응답 원문은 풀이 아니다. 반려 직후 4초에도 낸다 (3.6)
+                // 응답 원문은 풀이 아니다. 반려 직후 4초에도 낸다 (docs/CONTRACTS.md C3)
                 if e.is_boss() {
                     e.say_waiting(
                         ts,
@@ -487,7 +487,7 @@ impl Team {
                                 e.retired_at = None;
                                 e.departed_at = None;
                                 e.spawn_logged = false;
-                                // 옛 텍스트 응답이 남으면 다음 tick 이 60초 규칙으로 다시 퇴근시킨다 (4.7.2)
+                                // 옛 텍스트 응답이 남으면 다음 tick 이 60초 규칙으로 다시 퇴근시킨다 (docs/CONTRACTS.md C8)
                                 e.last_was_text = false;
                                 cues.push(Cue::Rehire {
                                     agent: e.id.clone(),
@@ -525,7 +525,7 @@ impl Team {
                         }
                     };
                 // 이름은 world 가 붙여서 여기선 직급과 지시 내용으로 쓴다.
-                // 허가 대기나 다른 진행 중 호출이 있으면 그쪽이 앞선다 (2.5)
+                // 허가 대기나 다른 진행 중 호출이 있으면 그쪽이 앞선다 (docs/CONTRACTS.md C2)
                 let e = &mut self.employees[i];
                 let busy = e.asking.is_some()
                     || e.pending.last().is_some_and(|c| c.tool != ToolKind::Spawn);
@@ -542,7 +542,7 @@ impl Team {
                 }
             }
             EventKind::SubagentDone { child_id } => {
-                // 완료 알림을 받은 쪽은 이어서 응답한다. 턴 종료(결재 대기)가 아니다 (2.4)
+                // 완료 알림을 받은 쪽은 이어서 응답한다. 턴 종료(결재 대기)가 아니다 (docs/CONTRACTS.md C2)
                 let e = &mut self.employees[i];
                 e.waiting_user_since = None;
                 e.quiet_since = Some(ts);
@@ -551,7 +551,7 @@ impl Team {
                 }
             }
             EventKind::PermissionRequest { question, plan } => {
-                // ExitPlanMode 는 계획 본문 대신 정해진 문구를 단다 (3.4 팀장실)
+                // ExitPlanMode 는 계획 본문 대신 정해진 문구를 단다 (docs/CONTRACTS.md C3 팀장실)
                 let q = if *plan {
                     sentence::PLAN.to_string()
                 } else {
@@ -633,7 +633,7 @@ impl Team {
         }
     }
 
-    /// 세션 등록부 값 (4.4.1 쓰임 2·3). 등록부에 없으면 둘 다 None 이라 jsonl 제목으로 돌아간다.
+    /// 세션 등록부 값 (docs/CONTRACTS.md C5). 등록부에 없으면 둘 다 None 이라 jsonl 제목으로 돌아간다.
     /// 보이는 값(제목·동)이 바뀌었으면 true
     pub fn set_registry(
         &mut self,
@@ -647,7 +647,7 @@ impl Team {
         self.show_title(cues) || moved
     }
 
-    /// 제목처럼 동도 값 두 개(jsonl·등록부)에서 여기서만 정한다. 등록부가 사라지면 재구성과 같은 동으로 돌아간다 (4.3).
+    /// 제목처럼 동도 값 두 개(jsonl·등록부)에서 여기서만 정한다. 등록부가 사라지면 재구성과 같은 동으로 돌아간다 (docs/CONTRACTS.md C4).
     /// 바뀌었으면 true
     fn show_product(&mut self) -> bool {
         let p = match self.registry_product {
@@ -659,7 +659,7 @@ impl Team {
         moved
     }
 
-    /// 같은 제목이 턴마다 다시 쓰인다 (4.6.1). 바뀔 때만 액자를 간다
+    /// 같은 제목이 턴마다 다시 쓰인다 (docs/CONTRACTS.md C7). 바뀔 때만 액자를 간다
     fn show_title(&mut self, cues: &mut Vec<Cue>) -> bool {
         let title = self.registry_name.as_ref().unwrap_or(&self.log_title);
         if *title == self.title {
@@ -687,7 +687,7 @@ impl Team {
         }
     }
 
-    /// 팝업(3.7) 재료를 쌓는다. 이벤트 순서만 보므로 재구성과 실행 중 적용이 같은 값을 낸다
+    /// 팝업(docs/CONTRACTS.md C9) 재료를 쌓는다. 이벤트 순서만 보므로 재구성과 실행 중 적용이 같은 값을 낸다
     fn record(&mut self, i: usize, ev: &Event, ts: DateTime<Utc>) {
         match &ev.kind {
             EventKind::UserMessage { .. } if self.employees[i].is_boss() => self.turns += 1,
@@ -799,9 +799,9 @@ impl Team {
         }
     }
 
-    /// 시간 기반 전이 (4.7.2). `now` 는 벽시계 또는 논리 시계(4.3)다.
+    /// 시간 기반 전이 (docs/CONTRACTS.md C8). `now` 는 벽시계 또는 논리 시계(docs/CONTRACTS.md C4)다.
     /// `local` 은 야근 판정용 현지 시간대. 테스트가 실행 환경의 시간대에 기대지 않게 받는다.
-    /// 전이가 남기는 시각은 이 틱이 아니라 문턱 시각이다. 그래야 틱 간격과 무관하다 (4.3 재구성 규칙).
+    /// 전이가 남기는 시각은 이 틱이 아니라 문턱 시각이다. 그래야 틱 간격과 무관하다 (docs/CONTRACTS.md C4 재구성 규칙).
     /// 끝에 `note_gaps` 를 본다
     pub fn tick(&mut self, now: DateTime<Utc>, local: FixedOffset, cues: &mut Vec<Cue>) {
         let before = self.words();
@@ -836,7 +836,7 @@ impl Team {
         for i in 0..self.employees.len() {
             self.tick_employee(i, now, working, cues);
         }
-        // 팀 단계가 뒤에 와야 졸음이 결재 대기를 이긴다 (2.5 우선순위 4·5번)
+        // 팀 단계가 뒤에 와야 졸음이 결재 대기를 이긴다 (docs/CONTRACTS.md C2 우선순위)
         let quiet = now - self.last_activity;
         let idle = self
             .employees
@@ -861,7 +861,7 @@ impl Team {
         }
         if quiet > OFF_AFTER && !self.alive_in_registry && self.phase != TeamPhase::Off {
             self.phase = TeamPhase::Off;
-            // 사장님을 기다리던 호출은 30분 포기에서 빠져 퇴근이 덮는다 (4.7.2)
+            // 사장님을 기다리던 호출은 30분 포기에서 빠져 퇴근이 덮는다 (docs/CONTRACTS.md C8)
             if self
                 .employees
                 .iter()
@@ -872,14 +872,14 @@ impl Team {
                     masked: word::ASKING,
                 }));
             }
-            // 끝내 결과가 안 올 호출과 작업표의 뒷정리 (4.7.2)
+            // 끝내 결과가 안 올 호출과 작업표의 뒷정리 (docs/CONTRACTS.md C8)
             let at = self.last_activity + OFF_AFTER;
             for i in 0..self.employees.len() {
                 self.employees[i].waiting_user_since = None;
                 self.give_up_all(i, at, cues);
             }
         }
-        // 서브 퇴근은 팀 단계와 무관하다. 위에서 막 종료로 본 서브도 문턱이 지났으면 같은 틱에 나간다 (4.7.2).
+        // 서브 퇴근은 팀 단계와 무관하다. 위에서 막 종료로 본 서브도 문턱이 지났으면 같은 틱에 나간다 (docs/CONTRACTS.md C8).
         // 졸음 시각이 직원 활동 시각의 최댓값이라, 팀 단계보다 앞에 두면 한 틱으로 따라잡을 때만 퇴근 시각이 끼어든다
         for e in &mut self.employees {
             let Some(r) = e
@@ -909,25 +909,25 @@ impl Team {
         }
     }
 
-    /// 결재 대기 또는 응답 대기 (3.3 상태 점 초록 깜빡임)
+    /// 결재 대기 또는 응답 대기 (docs/CONTRACTS.md C3 상태 점 초록 깜빡임)
     pub fn awaiting(&self, e: &Employee, now: DateTime<Utc>) -> bool {
         thinking(e, now)
             || e.waiting_user_since
                 .is_some_and(|t| now - t >= WAIT_USER_AFTER)
     }
 
-    /// 허가 대기: 질문했거나 Codex 승인 창으로 짐작한다 (3.3 결재판 아이콘)
+    /// 허가 대기: 질문했거나 Codex 승인 창으로 짐작한다 (docs/CONTRACTS.md C3 결재판 아이콘)
     pub fn asking(&self, e: &Employee, now: DateTime<Utc>) -> bool {
         e.asking.is_some() || escalated_call(e, now).is_some()
     }
 
-    /// 사장님 손이 필요한 상태: 허가 대기, 결재 대기, 반려 직후 (4.7.2 끝 문단).
+    /// 사장님 손이 필요한 상태: 허가 대기, 결재 대기, 반려 직후 (docs/CONTRACTS.md C8).
     /// 말풍선·토스트·장애 판정·탕비실 연출 금지가 모두 이것을 쓴다
     pub fn needs_boss(&self, e: &Employee, now: DateTime<Utc>) -> bool {
         needs_boss(e, now)
     }
 
-    /// 장애 해제 (4.7.3). 상황실에 있던 부장은 자리로 돌아간다 (S27)
+    /// 장애 해제 (docs/CONTRACTS.md C8). 상황실에 있던 부장은 자리로 돌아간다 (S27)
     fn end_incident(&mut self, at: DateTime<Utc>, cues: &mut Vec<Cue>) {
         if self.incident.take().is_none() {
             return;
@@ -970,7 +970,7 @@ impl Team {
             }
             return Some(i);
         }
-        // 서브 파일을 Spawn 보다 먼저 읽었다. 직급·설명은 뒤의 SubagentSpawn 이 채운다 (4.3)
+        // 서브 파일을 Spawn 보다 먼저 읽었다. 직급·설명은 뒤의 SubagentSpawn 이 채운다 (docs/CONTRACTS.md C4)
         let e = Employee::new(
             &ev.agent_id,
             Rank::Sawon,
@@ -996,7 +996,7 @@ impl Team {
         };
         let test_result = *test_result;
         let e = &mut self.employees[i];
-        // 4.7.1 공통 전제
+        // docs/CONTRACTS.md C8 공통 전제
         let (call, was_background) =
             if let Some(k) = e.pending.iter().position(|c| &c.call_id == call_id) {
                 (e.pending.remove(k), false)
@@ -1017,7 +1017,7 @@ impl Team {
         }
         if *outcome != ToolOutcome::Started {
             e.quiet_since = Some(ts);
-            // 턴이 끝난 뒤 온 백그라운드 완료도 다음 응답을 부른다 (2.4 응답 대기)
+            // 턴이 끝난 뒤 온 백그라운드 완료도 다음 응답을 부른다 (docs/CONTRACTS.md C2 응답 대기)
             e.waiting_user_since = None;
         }
         let home = home_room(e);
@@ -1086,7 +1086,7 @@ impl Team {
                     (ToolKind::Release, true) => cues.push(Cue::Fireworks),
                     _ => {}
                 }
-                // 테스트 전부 통과는 빨간불을 끄고 장애를 푼다 (4.7.3). Mixed 는 종료 코드가
+                // 테스트 전부 통과는 빨간불을 끄고 장애를 푼다 (docs/CONTRACTS.md C8). Mixed 는 종료 코드가
                 // 통과를 보증하지 못해 본문의 숫자로만 본다
                 let all_pass = call.tool == ToolKind::Test
                     && if declares {
@@ -1201,7 +1201,7 @@ impl Team {
         }
     }
 
-    /// 이벤트 자기 연출(`hidden`)이 허가 대기·진행 중 호출에 가려졌다 (2.5 우선순위 1·2번, 4.11 state_conflict).
+    /// 이벤트 자기 연출(`hidden`)이 허가 대기·진행 중 호출에 가려졌다 (docs/CONTRACTS.md C2 우선순위, docs/CONTRACTS.md C11 state_conflict).
     /// 이긴 쪽은 화면의 문 앞과 같은 근거로 정한다
     fn conflict(&self, i: usize, ts: DateTime<Utc>, hidden: &'static str, cues: &mut Vec<Cue>) {
         let winner = if self.asking(&self.employees[i], ts) {
@@ -1215,7 +1215,7 @@ impl Team {
         }));
     }
 
-    /// 화면에 보이는 상태 단어: 팀 단계와 직원마다 (4.11 scenario_gap 의 직전 상태)
+    /// 화면에 보이는 상태 단어: 팀 단계와 직원마다 (docs/CONTRACTS.md C11 scenario_gap 의 직전 상태)
     fn words(&self) -> (TeamPhase, Vec<&'static str>) {
         let words = self
             .employees
@@ -1226,7 +1226,7 @@ impl Team {
     }
 
     /// `apply`·`tick` 한 번에서 연출 cue 가 하나도 안 나갔는데 상태가 바뀌었고 표에 없는 전이면
-    /// 미대응으로 cue 길에 함께 낸다 (4.11 scenario_gap). 재구성이 cue 를 버릴 때 같이 버려져 다시 세지 않는다.
+    /// 미대응으로 cue 길에 함께 낸다 (docs/CONTRACTS.md C11 scenario_gap). 재구성이 cue 를 버릴 때 같이 버려져 다시 세지 않는다.
     /// 이 호출에서 새로 생긴 직원은 출근 연출이나 임시 직원이라 전이가 아니다
     fn note_gaps(
         &self,
@@ -1258,7 +1258,7 @@ impl Team {
         }
     }
 
-    /// 허가 대기와 진행 중 호출은 다른 무엇보다 앞선다 (2.5 우선순위 1·2번). 그 문장을 썼으면 true
+    /// 허가 대기와 진행 중 호출은 다른 무엇보다 앞선다 (docs/CONTRACTS.md C2 우선순위). 그 문장을 썼으면 true
     fn refresh(&mut self, i: usize, ts: DateTime<Utc>) -> bool {
         let boss = self.employees[i].is_boss();
         let expected = self.employees[i]
@@ -1404,7 +1404,7 @@ impl Team {
         }
     }
 
-    /// 결과가 영영 오지 않는 호출을 Unknown 으로 정리한다 (4.7.2). 실적·평균은 건드리지 않는다
+    /// 결과가 영영 오지 않는 호출을 Unknown 으로 정리한다 (docs/CONTRACTS.md C8). 실적·평균은 건드리지 않는다
     fn give_up(&mut self, i: usize, call: PendingCall, at: DateTime<Utc>, bubble: bool) {
         if call.tool == ToolKind::Ask {
             self.employees[i].asking = None;
@@ -1445,7 +1445,7 @@ impl Team {
         if self.employees[i].retired_at.is_some() {
             return;
         }
-        // 남은 호출이 팀 졸음을 막지 않게 (4.7.2)
+        // 남은 호출이 팀 졸음을 막지 않게 (docs/CONTRACTS.md C8)
         self.give_up_all(i, at, cues);
         let e = &mut self.employees[i];
         e.retired_at = Some(at);
@@ -1478,7 +1478,7 @@ impl Team {
                 ));
                 return;
             }
-            // 함께 도는 호출 하나만 평균 2배를 넘어도 쪼그린다 (4.7.2). 말풍선은 넘은 문턱 시각에
+            // 함께 도는 호출 하나만 평균 2배를 넘어도 쪼그린다 (docs/CONTRACTS.md C8). 말풍선은 넘은 문턱 시각에
             let slow = e.pending.iter().find_map(|c| {
                 let a = *c.summary.command_key.as_ref().and_then(|k| avg.get(k))?;
                 ((now - c.started).num_milliseconds() as f32 / 1000.0 > a * 2.0).then(|| {
@@ -1537,7 +1537,7 @@ impl Team {
             );
             return;
         }
-        // 장애 중 부장은 상황실에 있다 (3.4, S26). 사장님 손이 필요한 상태가 먼저다
+        // 장애 중 부장은 상황실에 있다 (docs/CONTRACTS.md C3, S26). 사장님 손이 필요한 상태가 먼저다
         if let Some(since) = incident.filter(|_| working && e.is_boss()) {
             // 들어가는 때는 장애 시작과 앞 일이 끝난 때 중 늦은 쪽
             let entered = (e.activity.room != Room::Incident).then(|| since.max(e.activity.since));
@@ -1590,7 +1590,7 @@ impl Team {
                 });
             }
         }
-        // 완료 기록을 못 본 서브: 마지막이 텍스트 응답이고 60초 무변경 (4.7.2)
+        // 완료 기록을 못 본 서브: 마지막이 텍스트 응답이고 60초 무변경 (docs/CONTRACTS.md C8)
         if !e.is_boss()
             && e.background.is_empty()
             && e.last_was_text
@@ -1602,7 +1602,7 @@ impl Team {
     }
 }
 
-/// 여러 파일의 이벤트를 적용 순서로 늘어놓는다 (4.3 "순서"). `files[0]` 이 메인 파일이다.
+/// 여러 파일의 이벤트를 적용 순서로 늘어놓는다 (docs/CONTRACTS.md C4 "순서"). `files[0]` 이 메인 파일이다.
 /// 키는 파일 안 누적 최대 ts 라서 ts 가 거꾸로 가는 줄도 파일 안 순서를 지킨다.
 /// 키가 같으면 파일 순서, 그다음 줄 순서
 pub fn merge(files: Vec<Vec<Event>>) -> Vec<Event> {
@@ -1621,12 +1621,12 @@ pub fn merge(files: Vec<Vec<Event>>) -> Vec<Event> {
 /// 직원 상세의 명령 목록 한 줄. 원문 전체는 heredoc 스크립트처럼 길 수 있다
 const COMMAND_CHARS: usize = 200;
 
-/// 퇴근한 직원은 그보다 뒤 ts 의 이벤트로만 돌아온다. 늦게 읽힌 옛 줄은 확인된 종료를 풀지 않는다 (4.7.1)
+/// 퇴근한 직원은 그보다 뒤 ts 의 이벤트로만 돌아온다. 늦게 읽힌 옛 줄은 확인된 종료를 풀지 않는다 (docs/CONTRACTS.md C8)
 fn rehires(e: &Employee, ts: Option<DateTime<Utc>>) -> bool {
     e.retired_at.is_some_and(|r| ts.is_some_and(|t| t > r))
 }
 
-/// 2.4 상태 단어. 미대응 기록(4.11)의 key 라서 정해진 낱말만 쓴다
+/// docs/CONTRACTS.md C2 상태 단어. 미대응 기록(docs/CONTRACTS.md C11)의 key 라서 정해진 낱말만 쓴다
 mod word {
     pub const ARRIVING: &str = "출근";
     pub const WORKING: &str = "근무 중";
@@ -1642,7 +1642,7 @@ mod word {
     pub const SUB_DONE: &str = "서브 종료";
 }
 
-/// state_conflict 의 이긴 쪽(허가 대기·퇴근은 상태 단어)과 가려진 연출 이름 (4.11).
+/// state_conflict 의 이긴 쪽(허가 대기·퇴근은 상태 단어)과 가려진 연출 이름 (docs/CONTRACTS.md C11).
 /// 완료는 없다. 병렬 호출(S53)에서 먼저 끝난 결과가 남은 호출에 가리는 것은 이미 대응한 시나리오다
 mod conflict {
     pub const PENDING: &str = "진행 중 호출";
@@ -1655,9 +1655,8 @@ mod conflict {
 }
 
 /// 상태만으로 화면이 따라가는 전이: (도착 상태, 떠나온 상태들). 프론트는 방·자세를 상태로 그려서 cue 가 없어도 된다.
-/// 출근에서는 입장 연출(Enter) 뒤 지금 상태로 간다. 출근 중 사건은 뒤에 재생한다 (S02·S19, 2.5). 퇴근에서는 불이 켜지며 돌아온다 (S37).
+/// 출근에서는 입장 연출(Enter) 뒤 지금 상태로 간다. 출근 중 사건은 뒤에 재생한다 (S02·S19, docs/CONTRACTS.md C2). 퇴근에서는 불이 켜지며 돌아온다 (S37).
 /// 반려·서브 종료로 들어가는 전이와 서브 종료에서 나오는 전이는 cue(Reject·Retire·Rehire)가 늘 붙어 표에 없다.
-/// 허가 대기에서 나오는 전이(결재 통과·철회)는 3.10 에 시나리오가 없어 퇴근 말고는 표에 없다
 const FOLLOWS: &[(&str, &[&str])] = {
     use word::*;
     &[
@@ -1748,7 +1747,6 @@ fn follows(from: &str, to: &str) -> bool {
         .any(|(t, froms)| *t == to && froms.contains(&from))
 }
 
-/// 팀 단계의 같은 표. 졸다 깨는 것(사장님 방문 없이)은 3.10 에 시나리오가 없다
 const TEAM_FOLLOWS: &[(TeamPhase, TeamPhase)] = &[
     // S35
     (TeamPhase::Working, TeamPhase::Dozing),
@@ -1759,7 +1757,7 @@ const TEAM_FOLLOWS: &[(TeamPhase, TeamPhase)] = &[
     (TeamPhase::Off, TeamPhase::Working),
 ];
 
-/// 이미 정한 출력(활동·퇴장·팀 단계)에서 읽은 2.4 상태 단어. 상태 기계의 판정을 다시 하지 않는다
+/// 이미 정한 출력(활동·퇴장·팀 단계)에서 읽은 docs/CONTRACTS.md C2 상태 단어. 상태 기계의 판정을 다시 하지 않는다
 fn state_word(phase: TeamPhase, e: &Employee) -> &'static str {
     let a = &e.activity;
     if e.departed_at.is_some() {
@@ -1819,12 +1817,12 @@ fn event_name(kind: &EventKind) -> &'static str {
 }
 
 /// 사장님 결재를 기다리는 호출. 자리를 비우면 30분을 넘길 수 있어 포기하지 않는다.
-/// 죽은 세션은 팀 Off 가 정리한다 (4.7.2)
+/// 죽은 세션은 팀 Off 가 정리한다 (docs/CONTRACTS.md C8)
 fn waits_for_boss(c: &PendingCall) -> bool {
     c.tool == ToolKind::Ask || c.summary.escalated
 }
 
-/// 신호등을 노랑으로 켜는 호출. Mixed 는 결과를 보증하지 못해 신호등을 건드리지 않는다 (4.6.4)
+/// 신호등을 노랑으로 켜는 호출. Mixed 는 결과를 보증하지 못해 신호등을 건드리지 않는다 (docs/CONTRACTS.md C7)
 fn lights(tool: &ToolKind, s: &ToolSummary) -> bool {
     matches!(tool, ToolKind::Build | ToolKind::Test) && s.compound != Compound::Mixed
 }
@@ -1838,7 +1836,7 @@ fn needs_boss(e: &Employee, now: DateTime<Utc>) -> bool {
         || e.rejected_at.is_some_and(|t| now - t < REJECT_HOLD)
 }
 
-/// Codex 승인 창 추정 (4.7.2): 결과 없이 35초 지난 escalated 호출 중 가장 오래된 것
+/// Codex 승인 창 추정 (docs/CONTRACTS.md C8): 결과 없이 35초 지난 escalated 호출 중 가장 오래된 것
 fn escalated_call(e: &Employee, now: DateTime<Utc>) -> Option<&PendingCall> {
     e.pending
         .iter()
@@ -1846,7 +1844,7 @@ fn escalated_call(e: &Employee, now: DateTime<Utc>) -> Option<&PendingCall> {
         .min_by_key(|c| c.started)
 }
 
-/// 활성 2시간을 넘기면 1상자, 그 뒤 60분마다 1상자 (4.7.2, S42)
+/// 활성 2시간을 넘기면 1상자, 그 뒤 60분마다 1상자 (docs/CONTRACTS.md C8, S42)
 fn pizza_count(active: Duration) -> u32 {
     if active <= PIZZA_AFTER {
         return 0;
@@ -1863,7 +1861,7 @@ fn is_review(tool: &ToolKind) -> bool {
     }
 }
 
-/// 리뷰 승인 문구 (3.4 리뷰실). 대소문자는 가리지 않는다
+/// 리뷰 승인 문구 (docs/CONTRACTS.md C3 리뷰실). 대소문자는 가리지 않는다
 // ponytail: 낱말 경계를 안 봐서 "미승인"·"disapprove" 도 승인으로 센다, 오판 사례가 나오면 경계를 본다
 fn approves(text: &str) -> bool {
     let t = text.to_lowercase();
@@ -1879,7 +1877,7 @@ fn verdict(failed: u32) -> TestVerdict {
     }
 }
 
-/// 리뷰 지적 수: `auth.rs:42` 처럼 확장자 있는 파일 이름 뒤에 `:숫자` 가 붙은 토큰 (3.4 리뷰실)
+/// 리뷰 지적 수: `auth.rs:42` 처럼 확장자 있는 파일 이름 뒤에 `:숫자` 가 붙은 토큰 (docs/CONTRACTS.md C3 리뷰실)
 fn count_file_lines(text: &str) -> u32 {
     let is_ref = |tok: &str| {
         tok.char_indices().any(|(k, c)| {
@@ -1896,7 +1894,7 @@ fn count_file_lines(text: &str) -> u32 {
     u32::try_from(toks.filter(|t| is_ref(t)).count()).unwrap_or(u32::MAX)
 }
 
-/// 응답 대기 중인가 (2.5 우선순위 4번)
+/// 응답 대기 중인가 (docs/CONTRACTS.md C2 우선순위)
 fn thinking(e: &Employee, now: DateTime<Utc>) -> bool {
     e.pending.is_empty()
         && e.waiting_user_since.is_none()
@@ -1949,7 +1947,7 @@ fn pose_for(call: &PendingCall) -> Pose {
     }
 }
 
-/// 카드 실적 칸. Other 는 세지 않는다 (4.7.1)
+/// 카드 실적 칸. Other 는 세지 않는다 (docs/CONTRACTS.md C8)
 fn count(c: &mut Counters, tool: &ToolKind) {
     match tool {
         ToolKind::FileRead | ToolKind::FileSearch | ToolKind::GitQuery => c.read += 1,
@@ -1970,13 +1968,13 @@ fn count(c: &mut Counters, tool: &ToolKind) {
     }
 }
 
-/// 컨텍스트 창 (4.7.1 끝 문단 규칙 1): compaction 의 preTokens 를 200k·1M 중 가까운 위로 올린다
+/// 컨텍스트 창 (docs/CONTRACTS.md C8): compaction 의 preTokens 를 200k·1M 중 가까운 위로 올린다
 fn window_from_pre_tokens(pre: u64, known: Option<u64>) -> u64 {
     let w = if pre <= 200_000 { 200_000 } else { 1_000_000 };
     known.map_or(w, |k| k.max(w))
 }
 
-/// 서브 meta.json 에서 읽은 것 (4.3 직원 사전 등록)
+/// 서브 meta.json 에서 읽은 것 (docs/CONTRACTS.md C4 직원 사전 등록)
 #[derive(Debug, Clone)]
 pub struct SubMeta {
     pub agent_id: String,
@@ -1986,7 +1984,7 @@ pub struct SubMeta {
     pub depth: u8,
 }
 
-/// 파일을 처음부터 읽어 팀을 다시 만든다 (4.3 재구성 규칙). `files[0]` 이 메인 파일이다
+/// 파일을 처음부터 읽어 팀을 다시 만든다 (docs/CONTRACTS.md C4 재구성 규칙). `files[0]` 이 메인 파일이다
 pub fn rebuild(
     id: &str,
     product: Product,
@@ -2054,7 +2052,7 @@ fn window_from_model(model: Option<&str>, input_total: u64) -> u64 {
     }
 }
 
-/// "지금 하는 일" 문장 (3.5 표). 경과 시간은 `{elapsed}` 자리만 두고 프론트가 채운다 (4.8).
+/// "지금 하는 일" 문장 (docs/CONTRACTS.md C3). 경과 시간은 `{elapsed}` 자리만 두고 프론트가 채운다 (docs/CONTRACTS.md C9).
 /// 경로·명령·패턴은 백틱으로 감싼다. 명령은 파서가 이미 40자로 잘랐다
 pub(crate) mod sentence {
     use super::{
@@ -2069,7 +2067,7 @@ pub(crate) mod sentence {
     pub const ARRIVAL: &str = "출근 중 · 자리 찾는 중";
     pub const REQUEST: &str = "요구사항 접수";
     pub const ASKING: &str = "결재판 들고 문 앞 대기";
-    /// ExitPlanMode 의 질문 자리 (3.4 팀장실)
+    /// ExitPlanMode 의 질문 자리 (docs/CONTRACTS.md C3 팀장실)
     pub const PLAN: &str = "계획 결재 올립니다";
     pub const INCIDENT: &str = "장애 상황실 소집, 무재해 기록 0분";
     pub const INCIDENT_OVER: &str = "장애 해제";
@@ -2280,7 +2278,7 @@ pub(crate) mod sentence {
         }
     }
 
-    /// 서브 생성 (3.5). 이름 대신 직급과 description, 없으면 prompt 앞부분
+    /// 서브 생성 (docs/CONTRACTS.md C3). 이름 대신 직급과 description, 없으면 prompt 앞부분
     pub fn spawn(rank: Rank, what: &str) -> String {
         format!("{}에게 \"{}\" 지시", rank_name(rank), cut(what, QUOTE))
     }
@@ -2292,7 +2290,7 @@ pub(crate) mod sentence {
         )
     }
 
-    /// 확인된 성공. Mixed 명령은 결과를 보증하지 못해 "완료"만 적는다 (4.6.4)
+    /// 확인된 성공. Mixed 명령은 결과를 보증하지 못해 "완료"만 적는다 (docs/CONTRACTS.md C7)
     pub fn done(call: &PendingCall, declares: bool, test: Option<TestResult>, pens: u32) -> String {
         let s = &call.summary;
         match &call.tool {
@@ -2375,7 +2373,7 @@ pub(crate) mod sentence {
     pub fn is_rejected(s: &str) -> bool {
         s.starts_with(REJECTED)
     }
-    /// 표(3.5)의 문구를 그대로 쓴다. 추정 표시는 confidence 가 한다
+    /// 고정 문구를 쓰고 추정 표시는 confidence 가 한다 (docs/CONTRACTS.md C2·C8).
     pub fn unknown(call: &PendingCall) -> String {
         format!("결과 확인 불가: {}", subject(call))
     }

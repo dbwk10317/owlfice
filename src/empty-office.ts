@@ -1,4 +1,4 @@
-// 빈 목록에서도 탐색 중·폴더 없음·모두 퇴근을 구분한다 (PLAN 3.9, HANDOFF 4.7).
+// 빈 목록에서도 탐색 중·폴더 없음·모두 퇴근을 구분한다 (docs/CONTRACTS.md C3, HANDOFF 9절).
 import phrases from "../design/handoff/phrases.ko.json";
 import { emptyState } from "./sidebar-left.ts";
 import type { Invoke, Sheet } from "./scale.ts";

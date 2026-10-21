@@ -29,7 +29,7 @@ use settings::SettingsBook;
 use startup::{Boot, Limits, ScanWatch, Startup, StartupSummary, StepState};
 use tail::scheduler::{self, HostLoop, Prober, WallClock};
 
-/// `%APPDATA%\Owlfice`. 이름·방 번호·미대응 로그를 둔다 (4.7.7, 4.7.8, 4.11)
+/// `%APPDATA%\Owlfice`. 이름·방 번호·미대응 로그를 둔다 (docs/CONTRACTS.md C8·C11)
 fn data_dir() -> Result<PathBuf, String> {
     let appdata =
         std::env::var_os("APPDATA").ok_or("APPDATA 가 없어 저장 폴더를 정할 수 없습니다")?;
@@ -85,7 +85,7 @@ impl Boot for AppBoot {
         (found.sites, found.distros)
     }
 
-    /// 호스트 스레드를 띄운다. WSL 스레드는 Probe 가 켜진 배포판을 보고 띄운다 (4.4.2)
+    /// 호스트 스레드를 띄운다. WSL 스레드는 Probe 가 켜진 배포판을 보고 띄운다 (docs/CONTRACTS.md C5)
     fn spawn_hosts(&self, sites: Vec<Site>, distros: Vec<WslDistro>, watch: Arc<ScanWatch>) {
         let mut host = HostLoop::new(
             windows_host(),

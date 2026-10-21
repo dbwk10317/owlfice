@@ -1,6 +1,6 @@
-//! WSL 배포판에서 Site 찾기 (PLAN 4.4.2)
+//! WSL 배포판에서 Site 찾기 (docs/CONTRACTS.md C5)
 //!
-//! 꺼진 배포판의 UNC 경로는 만들지도 열지도 않는다. 첫 UNC 접근이 VM을 부팅시키기 때문이다 (PLAN 1.3).
+//! 꺼진 배포판의 UNC 경로는 만들지도 열지도 않는다. 첫 UNC 접근이 VM을 부팅시키기 때문이다 (docs/CONTRACTS.md C1).
 //! 그래서 UNC 루트는 `roots` 주입 함수로만 얻고, 켜졌다고 확인된 배포판에만 부른다.
 
 use std::fs;

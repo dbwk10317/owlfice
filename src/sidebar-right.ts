@@ -1,4 +1,4 @@
-// 오른쪽 직원 현황판 (PLAN 3.5, 4.9, HANDOFF 4.5). 카드는 (team_id, agent_id) 키로 재사용한다.
+// 오른쪽 직원 현황판 (docs/CONTRACTS.md C3·C10, HANDOFF 4.5). 카드는 (team_id, agent_id) 키로 재사용한다.
 import "../design/handoff/tokens.css";
 import "./styles/panel.css";
 import phrases from "../design/handoff/phrases.ko.json";
@@ -37,7 +37,7 @@ import type {
   TeamDto,
 } from "./types/ipc.ts";
 
-/** 이 너비 미만이면 현황판을 접고 드로어로 (PLAN 3.2) */
+/** 이 너비 미만이면 현황판을 접고 드로어로 (design/HANDOFF.md 2.2) */
 const DRAWER_BELOW = 1100;
 /** 이 높이 미만이면 티커를 숨기고 카드를 압축형으로 */
 const COMPACT_BELOW = 640;
@@ -178,7 +178,7 @@ export function setRich(node: HTMLElement, text: string): void {
 }
 
 /**
- * 컨텍스트 눈금 재료: 켜진 칸 = round(사용률/20). 창 크기를 모르면 20만 토큰으로 어림하고 "?" (PLAN 3.5).
+ * 컨텍스트 눈금 재료: 켜진 칸 = round(사용률/20). 창 크기를 모르면 20만 토큰으로 어림하고 "?" (docs/CONTRACTS.md C3).
  * 쓴 양을 모르면 null
  */
 export function contextMeter(used: number | null, windowSize: number | null) {
@@ -207,7 +207,7 @@ function roomLabel(room: Room, small: boolean): string {
   return room === "TeamLead" && small ? phrases.rooms.bossSmall : ROOM_LABEL[room];
 }
 
-/** 부장 맨 위, 그 아래 마지막 사건이 최근인 순, 탕비실은 맨 아래 (PLAN 3.5). 부장은 team.employees[0] */
+/** 부장 맨 위, 그 아래 마지막 사건이 최근인 순, 탕비실은 맨 아래 (docs/CONTRACTS.md C3). 부장은 team.employees[0] */
 function orderEmployees(team: TeamDto): EmployeeDto[] {
   const [boss, ...rest] = team.employees;
   const idle = (e: EmployeeDto) => (e.activity.room === "Pantry" ? 1 : 0);
@@ -714,7 +714,7 @@ export function mountPanel(
     displayedOfficeId = office.officeId;
 
     const small = info?.scale === "Small";
-    // 처음 그리기와 조용한 재구성(PLAN 4.5)에는 토스트·연출을 내지 않는다
+    // 처음 그리기와 조용한 재구성(docs/CONTRACTS.md C4)에는 토스트·연출을 내지 않는다
     const quiet = office.officeId !== lastOfficeId || office.rebuilt;
     lastOfficeId = office.officeId;
 
@@ -771,7 +771,7 @@ export function mountPanel(
         updateCard(c, e, i === 0, t.phase === "Off", small, byId, t.building);
         tickCard(c, Date.now());
         liveCards.add(key);
-        // 부장은 퇴근 묶음에 넣지 않는다. 서브만 (PLAN 3.5)
+        // 부장은 퇴근 묶음에 넣지 않는다. 서브만 (docs/CONTRACTS.md C3)
         const off = i > 0 && e.departedAt !== null;
         c.el.classList.toggle("is-departed", off);
         if (off) departed.push(c.el);

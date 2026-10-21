@@ -1,4 +1,4 @@
-//! 설정 파일 `settings.json` (PLAN 4.8 `get_settings`/`set_settings`).
+//! 설정 파일 `settings.json` (docs/CONTRACTS.md C9 `get_settings`/`set_settings`).
 //! 모르는 칸은 읽은 대로 두고 다시 쓴다.
 
 use std::io;
@@ -78,7 +78,7 @@ pub struct SettingsBook {
     inner: Mutex<Inner>,
     /// 규모가 정해지면 깨운다 (기동이 첫 선택을 기다린다)
     chosen: Condvar,
-    /// 파일이 있는데 JSON 객체가 아니었다 (3.9 "설정 파일 손상")
+    /// 파일이 있는데 JSON 객체가 아니었다 (docs/CONTRACTS.md C3 "설정 파일 손상")
     pub corrupt: bool,
 }
 

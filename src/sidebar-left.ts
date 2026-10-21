@@ -1,4 +1,4 @@
-// 왼쪽 사이드바 (PLAN 3.3, 4.9). 목록 전체 교체를 받아 DOM 을 키(office id)로 재사용하며 고친다.
+// 왼쪽 사이드바 (docs/CONTRACTS.md C3·C10). 목록 전체 교체를 받아 DOM 을 키(office id)로 재사용하며 고친다.
 import "../design/handoff/tokens.css";
 import "./styles/sidebar.css";
 import phrases from "../design/handoff/phrases.ko.json";
@@ -80,7 +80,7 @@ const DOT_WORD: Record<string, string> = {
   "idle-alive": P.idleAlive,
   off: P.stateOff,
 };
-// 동 글자 = 제품 (PLAN 2부). 제품이 색을 정한다
+// 동 글자 = 제품 (docs/CONTRACTS.md C2). 제품이 색을 정한다
 export const BUILDING_PRODUCT: Record<string, [string, string]> = {
   A: ["Claude Desktop", "claude"],
   B: ["Claude Code CLI", "claude"],
@@ -469,9 +469,9 @@ function entitiesOf(list: OfficeListDto): Map<string, Entity> {
   return m;
 }
 
-// 대기업은 사무실, 중소기업은 팀이 입주·퇴근하는 단위다 (3.3)
+// 대기업은 사무실, 중소기업은 팀이 입주·퇴근하는 단위다 (docs/CONTRACTS.md C3)
 function diffToasts(prev: OfficeListDto, next: OfficeListDto): ToastMsg[] {
-  // 규모가 바뀌었거나 조용한 재구성이면 알릴 일이 아니다 (4.5)
+  // 규모가 바뀌었거나 조용한 재구성이면 알릴 일이 아니다 (docs/CONTRACTS.md C6)
   if (prev.scale !== next.scale || next.rebuilt) return [];
   const a = entitiesOf(prev);
   const b = entitiesOf(next);
@@ -986,7 +986,7 @@ export function mountSidebar(
         queue.push(...diffToasts(lastList, list));
         pump();
       }
-      // 조용한 재구성(4.5)이면 새 행도 애니메이션 없이 놓는다
+      // 조용한 재구성(docs/CONTRACTS.md C6)이면 새 행도 애니메이션 없이 놓는다
       slideIn = lastList !== null && !list.rebuilt;
       if (lastScale !== null && lastScale !== list.scale) {
         // 규모가 바뀌면 구조가 다르다: 키가 겹쳐도 같은 행이 아니다
@@ -1014,7 +1014,7 @@ export function mountSidebar(
     syncSelect(plan.selectables, store.state.selectedId);
   }
 
-  // ----- 창 너비 구간 (3.2) -----
+  // ----- 창 너비 구간 (design/HANDOFF.md 2.2) -----
   const getWidth = opts.getWidth ?? (() => doc.documentElement.clientWidth);
   function applyMode(): void {
     const w = getWidth();

@@ -1,4 +1,4 @@
-//! 명령별 평균 소요와 장애 판정 (PLAN 4.7.3)
+//! 명령별 평균 소요와 장애 판정 (docs/CONTRACTS.md C8)
 
 use std::collections::{HashMap, VecDeque};
 

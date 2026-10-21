@@ -1,4 +1,4 @@
-// 로딩 화면 (PLAN 3.8, HANDOFF 4.7). 백엔드의 startup-progress 를 받아 건물 창문을 켜고 단계 목록을 그린다.
+// 로딩 화면 (docs/CONTRACTS.md C4, HANDOFF 4.7). 백엔드의 startup-progress 를 받아 건물 창문을 켜고 단계 목록을 그린다.
 // 문구 틀은 phrases.ko.json 의 loading 이 갖고, 여기서는 백엔드가 준 재료로 채우기만 한다.
 import "./styles/loading.css";
 import phrases from "../design/handoff/phrases.ko.json";
@@ -285,7 +285,7 @@ export function showLoading(
       case "error": {
         const s = r.summary ?? { kind: "None" as const };
         const failed = r.state === "error";
-        // 세션 폴더를 하나도 못 찾은 3단계는 임대 문구 대신 3.9 의 말을 쓴다
+        // 세션 폴더를 하나도 못 찾은 3단계는 임대 문구 대신 docs/CONTRACTS.md C3 의 말을 쓴다
         const text =
           s.kind === "NoFolders" ? phrases.empty.noFoldersTitle : doneText(step, s, company);
         paint(
@@ -419,7 +419,7 @@ export function showLoading(
   document.addEventListener("click", skip);
   paintAll();
 
-  // 구독을 먼저 걸고 쌓인 기록을 다시 받는다: 앞 단계는 화면이 뜨기 전에 이미 끝났을 수 있다 (PLAN 4.3 시작 순서)
+  // 구독을 먼저 걸고 쌓인 기록을 다시 받는다: 앞 단계는 화면이 뜨기 전에 이미 끝났을 수 있다 (docs/CONTRACTS.md C4 시작 순서)
   void (async () => {
     try {
       unlisten = await io.listen("startup-progress", (e) => apply(e.payload));

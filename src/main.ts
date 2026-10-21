@@ -211,7 +211,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
 }
 
 async function start(): Promise<void> {
-  // 규모를 아직 안 골랐으면(첫 실행, 손상된 설정) 고를 때까지 진행하지 않는다. 그다음 로딩 화면 (PLAN 3.8)
+  // 규모를 아직 안 골랐으면(첫 실행, 손상된 설정) 고를 때까지 진행하지 않는다. 그다음 로딩 화면 (docs/CONTRACTS.md C4)
   let settings = await invoke<SettingsDto>("get_settings");
   const root = document.body.appendChild(document.createElement("div"));
   const sheet = await loadSheet();
@@ -223,7 +223,7 @@ async function start(): Promise<void> {
   await showLoading(root, { invoke, listen }, sheet, companyName);
   root.remove();
   mountShell(settings, sheet);
-  // 구독을 먼저 걸어야 스냅샷과 첫 이벤트 사이의 변경을 놓치지 않는다 (PLAN 4.3 시작 순서)
+  // 구독을 먼저 걸어야 스냅샷과 첫 이벤트 사이의 변경을 놓치지 않는다 (docs/CONTRACTS.md C4 시작 순서)
   await Promise.all([
     listen<OfficeListDto>("office-list", (e) => store.applyList(e.payload)),
     listen<OfficeDto>("office-state", (e) => store.applyOfficeState(e.payload)),

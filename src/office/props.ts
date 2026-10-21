@@ -1,4 +1,4 @@
-// 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV·미팅실·리뷰실·장애 상황실·외근 팻말 (HANDOFF 5, 6.5, 6.6, PLAN 3.4, 4.7.9).
+// 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV·미팅실·리뷰실·장애 상황실·외근 팻말 (HANDOFF 5, 6.5, 6.6, docs/CONTRACTS.md C3·C8).
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
 import { BitmapFont, BitmapText, Graphics, type Sprite, type Spritesheet } from "pixi.js";
 import type { CueDto, EmployeeDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
@@ -175,7 +175,7 @@ export interface Magnet {
 }
 
 /**
- * 직원마다 자석 하나: 퇴근한 팀·퇴근한 서브는 퇴근, 외근은 외근, 탕비실에서 조는 직원과 종료 뒤 탕비실의 서브는 외출, 나머지는 출근 (PLAN 3.4).
+ * 직원마다 자석 하나: 퇴근한 팀·퇴근한 서브는 퇴근, 외근은 외근, 탕비실에서 조는 직원과 종료 뒤 탕비실의 서브는 외출, 나머지는 출근 (docs/CONTRACTS.md C3).
  * 한 칸에 슬롯 수까지만 (넘치면 뒤 직원은 자석이 없다). 중소기업은 모든 팀을 한 판에 합친다 (labFx 와 같은 규칙).
  */
 export function magnets(office: OfficeDto | null, kind: Kind, slots: number): Magnet[] {

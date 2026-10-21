@@ -1,4 +1,4 @@
-//! 운영 로그 (PLAN 4.11). `%APPDATA%\Owlfice\logs\owlfice-YYYY-MM-DD.log` 에 한 줄씩 남긴다.
+//! 운영 로그 (docs/CONTRACTS.md C11). `%APPDATA%\Owlfice\logs\owlfice-YYYY-MM-DD.log` 에 한 줄씩 남긴다.
 //! 세션 내용(프롬프트·명령·결과)은 부르는 쪽이 넘기지 않는다. 구조 정보와 경로만 쓴다.
 //! 초기화 전(단위 테스트, probe·replay bin)에는 stderr 로 쓴다.
 

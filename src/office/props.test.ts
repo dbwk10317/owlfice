@@ -883,7 +883,7 @@ test("서브 종료: 탕비실 콘솔에 앉으면 게임기가 켜지고 자석
   expect(tex(scene, "game_tv")).toBe("game_tv/game_0");
   props.tick(NOW + 400);
   expect(tex(scene, "game_tv")).toBe("game_tv/game_1");
-  // 종료 뒤 탕비실에 있는 10분은 외출 (PLAN 3.4)
+  // 종료 뒤 탕비실에 있는 10분은 외출 (docs/CONTRACTS.md C3)
   expect(magnetsOn(scene).map(([, col]) => col)).toEqual([0, 2]);
   // 퇴근: 백엔드는 문 앞으로 옮기고 departed_at 을 찍는다
   props.update(crew(lead, sub("Door", { retiredAt: SINCE, departedAt: SINCE })), NOW + 500);

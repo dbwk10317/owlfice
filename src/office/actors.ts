@@ -219,7 +219,7 @@ export function seatSpots(
     return { spots, index: emp.seat ?? spots.length };
   }
   if (kind === "large") return { spots: s.boss.map(toSpot), index: 0 };
-  // 팀장석 0~3, 간이 4~5 (PLAN 4.7.9). deskSlot null 은 layoutActors 가 먼저 거른다
+  // 팀장석 0~3, 간이 4~5 (design/HANDOFF.md 6.5). deskSlot null 은 layoutActors 가 먼저 거른다
   return { spots: [...s.boss, ...s.spare].map(toSpot), index: team.deskSlot ?? 0 };
 }
 
@@ -241,7 +241,7 @@ export function layoutActors(
     if (team.phase === "Off") continue;
     team.employees.forEach((emp, i) => {
       const boss = i === 0;
-      // 팀장석·간이 책상이 다 찬 팀은 카드만 (PLAN 3.4). 상황실·탕비실에서도 자리를 차지하지 않는다
+      // 팀장석·간이 책상이 다 찬 팀은 카드만 (design/HANDOFF.md 6.4·6.5). 상황실·탕비실에서도 자리를 차지하지 않는다
       if (boss && kind === "small" && team.deskSlot === null) return;
       // 퇴근한 서브는 캔버스에서 빠진다. 보이던 액터는 sync 가 출구까지 걷게 한 뒤 숨긴다 (HANDOFF 5절)
       if (emp.departedAt !== null) return;
@@ -334,7 +334,7 @@ export function seatProps(fp: Floorplan, kind: Kind, office: OfficeDto | null): 
     }
   }
   if (temp) {
-    // 접이식 책상은 7명째부터 4자리가 한꺼번에 펴진다 (PLAN 3.4)
+    // 접이식 책상은 7명째부터 4자리가 한꺼번에 펴진다 (design/HANDOFF.md 6.4·6.5)
     for (const x of s.temp) if (x.desk) out.add(x.desk);
     out.add(full ? "note_full" : "note_temp");
   }
@@ -364,7 +364,7 @@ export function owlFrameKeys(
   return keys.map((k) => (k && textures[k] ? k : null));
 }
 
-// ---------- 말풍선 문구 (PLAN 3.6, 4.8) ----------
+// ---------- 말풍선 문구 (docs/CONTRACTS.md C3·C10) ----------
 
 const warned = new Set<string>();
 function warnOnce(key: string): void {
@@ -526,7 +526,7 @@ export class ActorLayer {
   /**
    * 스냅샷 전체 교체. 같은 (team_id, agent_id) 는 스프라이트·DOM 을 그대로 쓰고, 목록에 없는 직원은 지운다. 그린 자리를 돌려준다.
    * 자리가 바뀐 직원은 큐에 걷기를 넣는다. `instant` 면 큐를 비우고 바로 제자리, cue 는 버린다
-   * (사무실 전환 첫 스냅샷, 숨은 창에서 돌아옴). 조용한 재구성도 바로 제자리지만 백엔드가 남긴 출근 cue 는 재생한다 (PLAN 4.3).
+   * (사무실 전환 첫 스냅샷, 숨은 창에서 돌아옴). 조용한 재구성도 바로 제자리지만 백엔드가 남긴 출근 cue 는 재생한다 (docs/CONTRACTS.md C4).
    * `earlier` 는 두 sync 사이에 도착해 지나간 DTO 들의 cue 다. `office` 자신의 cue 앞에 이어 재생한다.
    */
   sync(
@@ -602,7 +602,7 @@ export class ActorLayer {
         cues.some((c) => c.kind === "Enter") ||
         (cues.some((c) => c.kind === "Rehire") && !old?.root.visible);
       const target = targetOf(p);
-      // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (PLAN 4.8)
+      // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (docs/CONTRACTS.md C10)
       if (instant || (!old && !entering)) a.track.reset(target, now);
       // 테스트실에 있던 직원이 합격 도장 때 만세를 부르고 나서 자리로 돌아간다 (추정 도장은 합격을 보증하지 않는다)
       if (

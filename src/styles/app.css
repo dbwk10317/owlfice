@@ -1,4 +1,4 @@
-/* 화면 배치 보강. 기본 모양은 design/handoff/tokens.css, 창 너비 구간은 header.ts 가 app.dataset.layout 으로 정한다 (PLAN 3.2) */
+/* 화면 배치 보강. 기본 모양은 design/handoff/tokens.css, 창 너비 구간은 header.ts 가 app.dataset.layout 으로 정한다 (design/HANDOFF.md 2.2) */
 /* 브라우저 기본 body 여백 8px 이 모든 화면에 세로 스크롤을 만들고 무대를 줄인다 */
 html,
 body {

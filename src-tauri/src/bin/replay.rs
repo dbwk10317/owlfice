@@ -1,4 +1,4 @@
-//! owlfice-replay: fixture를 대상 폴더에 시각 순으로 한 줄씩 append한다 (PLAN 4.12)
+//! owlfice-replay: fixture를 대상 폴더에 시각 순으로 한 줄씩 append한다 (docs/CONTRACTS.md C12)
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

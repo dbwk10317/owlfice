@@ -46,7 +46,7 @@ const RESIZE_DEBOUNCE_MS = 100;
 const DRAG_PX = 4;
 
 /**
- * 배율은 장치 픽셀 기준 정수 (PLAN 3.2). 백킹은 장치 픽셀, CSS 크기는 소수여도 된다.
+ * 배율은 장치 픽셀 기준 정수 (design/HANDOFF.md 6.1). 백킹은 장치 픽셀, CSS 크기는 소수여도 된다.
  * 사용 가능 크기도 장치 픽셀로 받는다. 반올림한 CSS px 에 DPR 을 곱하면 실제보다 커져 배율이 한 단계 올라간다.
  */
 export function canvasScale(availDevW: number, availDevH: number, dpr: number) {
@@ -122,7 +122,7 @@ export interface Scene {
 const SESSION_PROP = /^(rules_frame|boss_desk_\d+)$/;
 
 /**
- * 눌린 소품이 가리키는 팀. 사규 액자는 포커스 팀 또는 최근 활동 팀 것(4.7.9), 팀장석은 그 자리(deskSlot)의 팀이다.
+ * 눌린 소품이 가리키는 팀. 사규 액자는 포커스 팀 또는 최근 활동 팀 것(docs/CONTRACTS.md C8), 팀장석은 그 자리(deskSlot)의 팀이다.
  * 명패는 따로 그리는 소품이 없어 팀장석 책상을 누르게 한다.
  */
 export function teamOfProp(
@@ -237,7 +237,7 @@ export function buildScene(
  * 틱 사이에 office-state 가 둘 이상 오면 sync 는 마지막 DTO 만 본다. 앞 DTO 의 cue 를 모아 두었다가 다음 sync 에 넘긴다.
  * 이미 sync 에 넘긴 DTO 의 cue 는 다시 넘기지 않는다.
  * 창이 숨었을 땐 모은 것을 다 버리고 모으지 않는다. 틱이 멈춰 take 가 없고, 돌아온 첫 sync 는 cue 를 버리니
- * 숨기 전 DTO 가 그 뒤 sync 에 끼어들면 안 된다 (PLAN 4.9).
+ * 숨기 전 DTO 가 그 뒤 sync 에 끼어들면 안 된다 (docs/CONTRACTS.md C10).
  */
 export function cueCollector() {
   let earlier: CueDto[] = [];
@@ -680,7 +680,7 @@ export async function mountOffice(
   }).observe(stage, { box: "device-pixel-content-box" });
 
   // ---------- 렌더 루프 ----------
-  // 스냅샷은 표시만 해 두고 틱에서 한 번 적용한다. 숨은 창에선 틱이 멈춰 마지막 것만 보일 때 적용된다 (PLAN 4.9)
+  // 스냅샷은 표시만 해 두고 틱에서 한 번 적용한다. 숨은 창에선 틱이 멈춰 마지막 것만 보일 때 적용된다 (docs/CONTRACTS.md C10)
   let dirty = true;
   let resumed = false;
   const cues = cueCollector();

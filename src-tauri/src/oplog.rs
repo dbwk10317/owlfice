@@ -158,13 +158,22 @@ pub fn log(msg: &str) {
 pub fn log_once(msg: &str) {
     let first = {
         let mut seen = ONCE.lock().unwrap_or_else(|e| e.into_inner());
-        let set = seen.get_or_insert_with(HashSet::new);
-        // 기억이 찼으면 새 줄은 기억 없이 쓴다
-        set.len() >= ONCE_MAX || set.insert(msg.to_string())
+        first_time(seen.get_or_insert_with(HashSet::new), msg)
     };
     if first {
         log(msg);
     }
+}
+
+fn first_time(set: &mut HashSet<String>, msg: &str) -> bool {
+    if set.contains(msg) {
+        return false;
+    }
+    // 기억이 찼으면 새 줄은 기억 없이 쓴다
+    if set.len() < ONCE_MAX {
+        set.insert(msg.to_string());
+    }
+    true
 }
 
 #[macro_export]
@@ -262,6 +271,17 @@ mod tests {
         }
         let seen = ONCE.lock().unwrap();
         assert_eq!(seen.as_ref().unwrap().len(), ONCE_MAX);
+    }
+
+    #[test]
+    fn log_once_는_기억이_찬_뒤에도_기억한_줄은_다시_안_쓰고_새_줄은_쓴다() {
+        let mut set = HashSet::new();
+        for i in 0..ONCE_MAX {
+            assert!(first_time(&mut set, &format!("줄 {i}")));
+        }
+        assert!(!first_time(&mut set, "줄 0"));
+        assert!(first_time(&mut set, "새 줄"));
+        assert!(first_time(&mut set, "새 줄"), "기억 못 한 줄은 다시 쓴다");
     }
 
     #[test]

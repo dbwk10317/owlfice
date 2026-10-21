@@ -625,6 +625,7 @@ function says(room: Room, sentence: string, o: object = {}): TeamDto["employees"
   return {
     agentId: "e",
     retiredAt: null,
+    departedAt: null,
     activity: { room, pose: "Sit", since: SINCE, sentence },
     ...o,
   } as TeamDto["employees"][number];
@@ -791,7 +792,7 @@ const magnetsOn = (scene: Built) =>
     });
 const sub = (room: Room, o: object = {}) => says(room, "일하는 중", { agentId: "s", ...o });
 
-test("서브 종료: 탕비실 콘솔에 앉으면 게임기가 켜지고 자석은 퇴근 칸, 재출근하면 둘 다 돌아온다", () => {
+test("서브 종료: 탕비실 콘솔에 앉으면 게임기가 켜지고 자석은 외출 칸, 퇴근하면 퇴근 칸, 재출근하면 둘 다 돌아온다", () => {
   const { scene, props } = layer();
   const lead = says("TeamLead", "일하는 중", { agentId: "boss" });
   props.update(crew(lead, sub("Dev", { seat: 0 })), NOW);
@@ -802,8 +803,12 @@ test("서브 종료: 탕비실 콘솔에 앉으면 게임기가 켜지고 자석
   expect(tex(scene, "game_tv")).toBe("game_tv/game_0");
   props.tick(NOW + 400);
   expect(tex(scene, "game_tv")).toBe("game_tv/game_1");
+  // 종료 뒤 탕비실에 있는 10분은 외출 (PLAN 3.4)
+  expect(magnetsOn(scene).map(([, col]) => col)).toEqual([0, 2]);
+  // 퇴근: 백엔드는 문 앞으로 옮기고 departed_at 을 찍는다
+  props.update(crew(lead, sub("Door", { retiredAt: SINCE, departedAt: SINCE })), NOW + 500);
   expect(magnetsOn(scene).map(([, col]) => col)).toEqual([0, 3]);
-  // 재출근: 다시 개발실, retired_at 이 비면 출근 칸
+  // 재출근: 다시 개발실, retired_at·departed_at 이 비면 출근 칸
   props.update(crew(lead, sub("Dev", { seat: 0 })), NOW + 1000);
   expect(tex(scene, "game_tv")).toBe("game_tv/off");
   expect(magnetsOn(scene).map(([, col]) => col)).toEqual([0, 0]);
@@ -843,7 +848,7 @@ test("근태판: 외근은 외근 칸, 조는 부장은 외출 칸, 퇴근한 �
   expect(magnetsOn(scene)).toEqual([
     ["magnet/teal", 0],
     ["magnet/teal", 1],
-    ["magnet/teal", 3],
+    ["magnet/teal", 2],
     ["magnet/violet", 3],
     ["magnet/coral", 2],
   ]);

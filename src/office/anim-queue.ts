@@ -394,7 +394,7 @@ function along(path: Pt[], f: number): { at: Pt; seg: number } {
 // ---------- cue ----------
 
 /**
- * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire 는 자리 이동(retarget)이 이미 걷게 했다.
+ * cue 하나를 그 직원 큐에 (팀 단위 cue 는 track 없이). Enter·Rehire·Retire·Depart 는 자리 이동(retarget)이 이미 걷게 했다.
  * 사장님 방문(BossVisit)은 직원 큐가 아니라 ActorLayer 가 액터를 만들어 한다.
  * 도장·트럭·반송·폭죽·작업표·분갈이는 소품 층(PropsLayer.cue), 도장 때 하이파이브와 액자 교체(FrameSwap)는 ActorLayer 가 한다.
  * 사이렌(Siren)·흔들림(Shake)은 상태(incident, 카드)가 장면을 다 정하고 캔버스에 순간 연출 그림·소리가 HANDOFF 에 없어 무시한다.

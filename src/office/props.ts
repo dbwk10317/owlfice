@@ -142,7 +142,7 @@ export interface Magnet {
 }
 
 /**
- * 직원마다 자석 하나: 퇴근한 팀·퇴장한 서브는 퇴근, 외근은 외근, 탕비실에서 조는 직원은 외출, 나머지는 출근.
+ * 직원마다 자석 하나: 퇴근한 팀·퇴근한 서브는 퇴근, 외근은 외근, 탕비실에서 조는 직원과 종료 뒤 탕비실의 서브는 외출, 나머지는 출근 (PLAN 3.4).
  * 한 칸에 슬롯 수까지만 (넘치면 뒤 직원은 자석이 없다). 중소기업은 모든 팀을 한 판에 합친다 (labFx 와 같은 규칙).
  */
 export function magnets(office: OfficeDto | null, kind: Kind, slots: number): Magnet[] {
@@ -151,13 +151,15 @@ export function magnets(office: OfficeDto | null, kind: Kind, slots: number): Ma
   for (const team of office?.teams ?? [])
     team.employees.forEach((emp, i) => {
       const col =
-        team.phase === "Off" || emp.retiredAt !== null
+        team.phase === "Off" || emp.departedAt !== null
           ? COL_OFF
-          : emp.activity.room === "Outside"
-            ? COL_OUT
-            : emp.activity.room === "Pantry" && emp.activity.pose === "Sleep"
-              ? COL_NAP
-              : COL_IN;
+          : emp.retiredAt !== null
+            ? COL_NAP
+            : emp.activity.room === "Outside"
+              ? COL_OUT
+              : emp.activity.room === "Pantry" && emp.activity.pose === "Sleep"
+                ? COL_NAP
+                : COL_IN;
       const line = used[col]++;
       if (line >= slots) return;
       const color =

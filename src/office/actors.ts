@@ -28,6 +28,8 @@ import { placeSprite } from "./sprites.ts";
 const BLINK_MS = 150;
 const ZZ_OFFSET: [number, number] = [6, -10];
 const BADGE_OFFSET: [number, number] = [14, 6];
+/** 자리 초과 "+n" 은 그 자리 직원 머리 기준 (HANDOFF 4.4) */
+const CROWD_OFFSET: [number, number] = [14, -6];
 const BUBBLE_MS = 4000;
 /** 사장님 말풍선은 30자에서 자른다 (HANDOFF 5절) */
 const BOSS_TEXT_MAX = 30;
@@ -213,7 +215,7 @@ export function seatSpots(
   });
   if (!boss) {
     const spots = [...s.dev, ...s.temp].map(toSpot);
-    // ponytail: 백엔드는 10명째 뒤 직원에게 좌석을 안 준다(카드만). 문서(3.4)대로 마지막 임시 책상에 겹치고 만석 쪽지를 붙인다
+    // 백엔드는 10명째 뒤 직원에게 좌석을 안 준다(카드만). 마지막 임시 책상부터 보고, 차 있으면 layoutActors 가 "+n" 으로 센다
     return { spots, index: emp.seat ?? spots.length };
   }
   if (kind === "large") return { spots: s.boss.map(toSpot), index: 0 };
@@ -224,8 +226,14 @@ export function seatSpots(
 /**
  * 스냅샷 → 그릴 직원과 자리. 순서는 팀 순서 → 직원 순서 (같은 depth 에서 그리는 순서, HANDOFF 6.2).
  * 같은 자리를 먼저 차지한 직원이 있으면 그 목록의 다음 자리, 다 찼으면 마지막 자리에 겹친다.
+ * 서브 좌석과 탕비실 쉬는 자리는 겹치지 않는다: 남는 직원은 그리지 않고 `crowd` 에 마지막 자리 id → 남은 수로 센다 (HANDOFF 4.4, 6.5).
  */
-export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Placed[] {
+export function layoutActors(
+  fp: Floorplan,
+  kind: Kind,
+  office: OfficeDto,
+  crowd = new Map<string, number>(),
+): Placed[] {
   const used = new Set<string>();
   const out: Placed[] = [];
   for (const team of office.teams) {
@@ -235,6 +243,8 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
       const boss = i === 0;
       // 팀장석·간이 책상이 다 찬 팀은 카드만 (PLAN 3.4). 상황실·탕비실에서도 자리를 차지하지 않는다
       if (boss && kind === "small" && team.deskSlot === null) return;
+      // 퇴근한 서브는 캔버스에서 빠진다. 보이던 액터는 sync 가 출구까지 걷게 한 뒤 숨긴다 (HANDOFF 5절)
+      if (emp.departedAt !== null) return;
       const rule = placeRule(emp.activity.room, emp.activity.pose, boss);
       if (!rule) return;
       let spots: Spot[];
@@ -251,7 +261,15 @@ export function layoutActors(fp: Floorplan, kind: Kind, office: OfficeDto): Plac
       start = Math.min(Math.max(0, start), spots.length - 1);
       let k = start;
       while (k < spots.length && used.has(spots[k].id)) k++;
-      // ponytail: 자리가 모자라면 마지막 자리에 겹친다, 겹침 연출은 T29
+      if (
+        k === spots.length &&
+        ((rule.at === "seat" && !boss) || rule.at === ROOM_RULE.Pantry?.at)
+      ) {
+        const last = spots[spots.length - 1].id;
+        crowd.set(last, (crowd.get(last) ?? 0) + 1);
+        return;
+      }
+      // ponytail: 그 밖의 방은 자리가 모자라면 마지막 자리에 겹친다, 겹침 연출은 T29
       const spot = spots[Math.min(k, spots.length - 1)];
       used.add(spot.id);
       // 스킬은 앉아서 매뉴얼을 펼치고 MCP 는 서서 미팅한다 (HANDOFF 5절)
@@ -460,6 +478,8 @@ export class ActorLayer {
   private nametagText: HTMLElement;
   private lastOffice: OfficeDto | null = null;
   private visitors: Visitor[] = [];
+  /** 자리 초과 "+n" 배지. 키는 마지막 자리 id, x·y 는 1× 캔버스 좌표 */
+  private crowds = new Map<string, { el: HTMLElement; x: number; y: number }>();
   /** 사장님이 오면 인터폰이 울린다 (소품 층이 건다) */
   onRing: ((now: number) => void) | null = null;
   /** 외근 복귀로 문이 열릴 때 (소품 층이 건다) */
@@ -531,7 +551,8 @@ export class ActorLayer {
       else if (c.kind === "FrameSwap") frames.push(c);
       else playCue(c, undefined, now);
     }
-    const placed = office ? layoutActors(this.fp, kind, office) : [];
+    const crowd = new Map<string, number>();
+    const placed = office ? layoutActors(this.fp, kind, office, crowd) : [];
     const away = new Set(
       office?.teams.flatMap((t) =>
         t.phase === "Off"
@@ -616,6 +637,7 @@ export class ActorLayer {
         a.spot = "";
         if (this.hovered === a.key) this.hover(null);
       }
+    this.setCrowds(crowd, placed);
     // 방문 중에 사무실을 옮기거나 그 팀이 퇴근하면 사장님도 없다
     for (const v of this.visitors.filter(
       (v) => instant || !office?.teams.some((t) => t.teamId === v.teamId && t.phase !== "Off"),
@@ -725,6 +747,7 @@ export class ActorLayer {
       if (a.badge) this.put(a.badge, h.x + BADGE_OFFSET[0], h.y + BADGE_OFFSET[1]);
       if (a.bubble) this.put(a.bubble, h.x, h.y);
     }
+    for (const c of this.crowds.values()) this.put(c.el, c.x, c.y);
     const a = this.hovered ? this.actors.get(this.hovered) : undefined;
     if (a) {
       const h = this.head(a);
@@ -996,6 +1019,32 @@ export class ActorLayer {
     if (a.badge) a.badge.textContent = `+${n}`;
   }
 
+  /** 자리 초과 "+n": 마지막 자리에 앉을 직원의 머리 위에 고정한다. 그 직원이 자리를 떠나 걸어도 배지는 자리에 남는다 */
+  private setCrowds(crowd: Map<string, number>, placed: Placed[]): void {
+    for (const [spot, c] of this.crowds)
+      if (!crowd.has(spot)) {
+        c.el.remove();
+        this.crowds.delete(spot);
+      }
+    for (const [spot, n] of crowd) {
+      // 남는 직원이 있으면 마지막 자리는 늘 누가 차지했다
+      const p = placed.find((q) => q.spot === spot);
+      if (!p) continue;
+      let c = this.crowds.get(spot);
+      if (!c) {
+        const el = this.overlay.ownerDocument.createElement("div");
+        el.className = "ow-crowd";
+        this.overlay.insertBefore(el, this.nametag);
+        c = { el, x: 0, y: 0 };
+        this.crowds.set(spot, c);
+      }
+      const h = this.headAt(p.x, p.y, p.look, 1);
+      c.x = h.x + CROWD_OFFSET[0];
+      c.y = h.y + CROWD_OFFSET[1];
+      c.el.textContent = `+${n}`;
+    }
+  }
+
   private setBubble(a: Actor, now: number): void {
     const b = a.emp.bubble;
     a.bubbleAt = b ? Date.parse(b.at) : Number.NaN;
@@ -1022,12 +1071,16 @@ export class ActorLayer {
   }
 
   private head(a: Body): { x: number; y: number } {
+    return this.headAt(a.x, a.y, a.look, a.root.scale.x);
+  }
+
+  private headAt(x: number, y: number, look: Look, scaleX: number): { x: number; y: number } {
     const meta = this.owls?.meta;
-    const anchor = meta?.anchors[`${a.look.pose}_${a.look.dir}_0`];
-    if (!meta || !anchor) return { x: a.x, y: a.y - 18 };
+    const anchor = meta?.anchors[`${look.pose}_${look.dir}_0`];
+    if (!meta || !anchor) return { x, y: y - 18 };
     return {
-      x: a.x + (anchor.head[0] - meta.anchor[0]) * a.root.scale.x,
-      y: a.y + anchor.head[1] - meta.anchor[1],
+      x: x + (anchor.head[0] - meta.anchor[0]) * scaleX,
+      y: y + anchor.head[1] - meta.anchor[1],
     };
   }
 

@@ -199,8 +199,8 @@ pub struct HostLoop {
     side: BTreeSet<PathBuf>,
     /// Windows 스레드만: 감시할 다른 호스트
     remotes: Remotes,
-    /// Windows Claude 만: 등록부에 살아 있는 세션과 그중 jsonl 이 아직 없는 세션 (4.5 신규 세션 발견 1번)
-    alive: HashSet<String>,
+    /// Windows Claude 만: 등록부에 살아 있는 세션(id → 항목)과 그중 jsonl 이 아직 없는 세션 (4.5 신규 세션 발견 1번)
+    alive: HashMap<String, registry::RegistryEntry>,
     awaited: BTreeSet<String>,
     last_await: Option<DateTime<Utc>>,
     project_dirs: Vec<PathBuf>,
@@ -236,7 +236,7 @@ impl HostLoop {
             gone: BTreeMap::new(),
             side: BTreeSet::new(),
             remotes: Arc::new(Mutex::new(Vec::new())),
-            alive: HashSet::new(),
+            alive: HashMap::new(),
             awaited: BTreeSet::new(),
             last_await: None,
             project_dirs: Vec::new(),
@@ -757,7 +757,10 @@ impl HostLoop {
             files,
             local,
         );
-        team.alive_in_registry = self.alive.contains(&key.session);
+        team.alive_in_registry = self.alive.contains_key(&key.session);
+        if let Some(r) = self.alive.get(&key.session) {
+            team.set_registry(r.user_name(), r.product(), &mut Vec::new());
+        }
         let product = team.product;
         let boss = team.employees[0].id.clone();
         let gone = self.gone.get(key).cloned().unwrap_or_default();
@@ -1018,7 +1021,7 @@ impl HostLoop {
                 .collect();
             self.awaited = self
                 .alive
-                .iter()
+                .keys()
                 .filter(|id| !tracked.contains(id.as_str()))
                 .cloned()
                 .collect();
@@ -1050,7 +1053,7 @@ impl HostLoop {
         self.lock_world().retire_employee(key, &agent, now);
     }
 
-    /// Windows Claude 세션 등록부 (4.4.1): 살아 있는 세션을 팀에 표시하고, jsonl 이 아직 없는 세션을 기다린다
+    /// Windows Claude 세션 등록부 (4.4.1): 살아 있는 세션을 팀에 표시하고 이름·동을 넣고, jsonl 이 아직 없는 세션을 기다린다
     fn read_registry(&mut self) {
         let home = self
             .sites
@@ -1065,14 +1068,24 @@ impl HostLoop {
             .map(|h| registry::live_sessions(&h))
             .unwrap_or_default()
             .into_iter()
-            .map(|e| e.session_id)
-            .filter(|id| safe_id(id))
+            .filter(|e| safe_id(&e.session_id))
+            .map(|e| (e.session_id.clone(), e))
             .collect();
         let mut w = self.world.lock().unwrap_or_else(|e| e.into_inner());
+        let mut ours = Vec::new();
         for (k, t) in w.teams.iter_mut() {
             if k.host == self.host.id && k.vendor == Vendor::Claude {
-                t.alive_in_registry = self.alive.contains(&k.session);
+                t.alive_in_registry = self.alive.contains_key(&k.session);
+                ours.push(k.clone());
             }
+        }
+        for k in ours {
+            let r = self.alive.get(&k.session);
+            w.set_registry(
+                &k,
+                r.and_then(|r| r.user_name()),
+                r.and_then(|r| r.product()),
+            );
         }
     }
 
@@ -2551,6 +2564,38 @@ mod tests {
         h.tick();
         assert!(e.team(REJECT).alive_in_registry);
         assert!(h.awaited.is_empty());
+    }
+
+    #[test]
+    fn registry_user_name_titles_the_team_until_it_leaves() {
+        let e = env();
+        let home = e.dir("claude");
+        let root = home.join("projects");
+        copy_dir(&fixture("claude/reject"), &root.join("p1"));
+        let reg = home.join("sessions").join("1.json");
+        fs::create_dir_all(reg.parent().unwrap()).unwrap();
+        let pid = std::process::id();
+        fs::write(
+            &reg,
+            format!(r#"{{"pid":{pid},"sessionId":"{REJECT}","name":"mine","nameSource":"user"}}"#),
+        )
+        .unwrap();
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        let now = t0() + Duration::hours(1);
+        e.at(now);
+        h.tick();
+        assert_eq!(e.team(REJECT).title, "mine");
+        e.w().outbox.clear();
+        fs::write(&reg, format!(r#"{{"pid":{pid},"sessionId":"{REJECT}"}}"#)).unwrap();
+        e.at(now + secs(3));
+        h.tick();
+        assert_ne!(e.team(REJECT).title, "mine");
+        assert!(
+            e.w()
+                .outbox
+                .iter()
+                .any(|(_, _, c)| matches!(c, Cue::FrameSwap { .. }))
+        );
     }
 
     #[test]

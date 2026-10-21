@@ -189,7 +189,10 @@ impl Team {
         Self {
             id,
             product,
+            product_known: false,
             title: String::new(),
+            log_title: String::new(),
+            registry_name: None,
             work_type: WorkType::NewDev,
             work: WorkTally::default(),
             cwd: PathBuf::new(),
@@ -295,6 +298,7 @@ impl Team {
             } => {
                 self.cwd = cwd.clone();
                 self.product = *product;
+                self.product_known = true;
                 self.git_branch = git_branch.clone();
                 if model.is_some() {
                     self.employees[i].model = model.clone();
@@ -549,13 +553,8 @@ impl Team {
                 self.employees[i].say(ts, BubbleSay::Compaction);
             }
             EventKind::TitleChanged { title } => {
-                // 같은 제목이 턴마다 다시 쓰인다 (4.6.1). 바뀔 때만 액자를 간다
-                if *title != self.title {
-                    self.title = title.clone();
-                    cues.push(Cue::FrameSwap {
-                        title: title.clone(),
-                    });
-                }
+                self.log_title = title.clone();
+                self.show_title(cues);
             }
             EventKind::PrLinked { number, url } => {
                 self.props.pr = Some((*number, url.clone()));
@@ -588,9 +587,42 @@ impl Team {
         }
     }
 
+    /// 세션 등록부 값 (4.4.1 쓰임 2·3). 등록부에 없으면 둘 다 None 이라 jsonl 제목으로 돌아간다.
+    /// 보이는 값(제목·동)이 바뀌었으면 true
+    pub fn set_registry(
+        &mut self,
+        name: Option<&str>,
+        product: Option<Product>,
+        cues: &mut Vec<Cue>,
+    ) -> bool {
+        let mut changed = false;
+        if let Some(p) = product
+            && !self.product_known
+            && p != self.product
+        {
+            self.product = p;
+            changed = true;
+        }
+        self.registry_name = name.map(str::to_string);
+        self.show_title(cues) || changed
+    }
+
+    /// 같은 제목이 턴마다 다시 쓰인다 (4.6.1). 바뀔 때만 액자를 간다
+    fn show_title(&mut self, cues: &mut Vec<Cue>) -> bool {
+        let title = self.registry_name.as_ref().unwrap_or(&self.log_title);
+        if *title == self.title {
+            return false;
+        }
+        self.title = title.clone();
+        cues.push(Cue::FrameSwap {
+            title: self.title.clone(),
+        });
+        true
+    }
+
     fn recordable(&self, ev: &Event) -> bool {
         match &ev.kind {
-            EventKind::TitleChanged { title } => *title != self.title,
+            EventKind::TitleChanged { title } => *title != self.log_title,
             EventKind::PrLinked { number, .. } => {
                 self.props.pr.as_ref().map(|p| p.0) != Some(*number)
             }

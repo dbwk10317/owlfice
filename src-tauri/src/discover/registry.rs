@@ -6,11 +6,16 @@ use std::path::Path;
 
 use serde::Deserialize;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_ACCESS_DENIED, GetLastError, STILL_ACTIVE,
+    CloseHandle, ERROR_ACCESS_DENIED, FILETIME, GetLastError, STILL_ACTIVE,
 };
 use windows_sys::Win32::System::Threading::{
-    GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+
+use super::Product;
+
+/// 프로세스 생성 시각이 등록부 startedAt 보다 이만큼 넘게 늦으면 pid 를 물려받은 다른 프로세스다 (4.4.1 쓰임 1)
+const REUSE_SLACK_MS: i64 = 5_000;
 
 /// `<home>\sessions\<pid>.json` 한 개. 알 수 없는 필드는 무시한다.
 /// 필수는 pid, sessionId 뿐이다. 선택 필드는 타입이 달라도 그 필드만 None 이 된다.
@@ -24,11 +29,33 @@ pub struct RegistryEntry {
     pub entrypoint: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub name_source: Option<String>,
+    /// epoch ms
+    #[serde(default, deserialize_with = "lenient")]
+    pub started_at: Option<i64>,
     /// `idle`, `busy` 확인됨. 허가 대기 값은 미확인이라 문자열로 둔다
     #[serde(default, deserialize_with = "lenient")]
     pub status: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
     pub updated_at: Option<i64>,
+}
+
+impl RegistryEntry {
+    /// 사용자가 붙인 이름만. Claude Code 는 이름을 직접 붙일 때 "user" 를 쓰고 자동·충돌 이름은 auto·derived·collision 등으로 따로 적는다
+    pub fn user_name(&self) -> Option<&str> {
+        self.name
+            .as_deref()
+            .filter(|n| !n.is_empty() && self.name_source.as_deref() == Some("user"))
+    }
+
+    /// 동 보조 (4.4.1 쓰임 3). 대응은 parse/claude.rs 의 jsonl entrypoint 와 같다
+    pub fn product(&self) -> Option<Product> {
+        self.entrypoint.as_deref().map(|e| match e {
+            "claude-desktop" => Product::ClaudeDesktop,
+            _ => Product::ClaudeCli,
+        })
+    }
 }
 
 /// 타입이 맞지 않는 값은 에러 대신 None
@@ -82,14 +109,51 @@ pub fn read_registry(home: &Path) -> Vec<RegistryEntry> {
         .collect()
 }
 
-/// 등록부 중 pid가 살아 있는 것만
+/// 등록부 중 그 세션의 프로세스가 살아 있는 것만
 pub fn live_sessions(home: &Path) -> Vec<RegistryEntry> {
+    live_with(home, is_alive, created_ms)
+}
+
+fn live_with(
+    home: &Path,
+    alive: impl Fn(u32) -> bool,
+    created: impl Fn(u32) -> Option<i64>,
+) -> Vec<RegistryEntry> {
     let mut v = read_registry(home);
-    v.retain(|e| is_alive(e.pid));
+    v.retain(|e| alive(e.pid) && !reused(e, &created));
     v
 }
 
-// ponytail: pid 재사용(죽은 세션의 pid를 다른 프로세스가 받음)을 못 가린다, 등록부의 procStart와 프로세스 생성 시각을 대조할 때 올린다
+/// 죽은 세션의 pid 를 다른 프로세스가 받았나. 생성 시각이나 startedAt 을 모르면 pid 생존만 믿는다
+fn reused(e: &RegistryEntry, created: impl Fn(u32) -> Option<i64>) -> bool {
+    e.started_at
+        .zip(created(e.pid))
+        .is_some_and(|(started, created)| created - started > REUSE_SLACK_MS)
+}
+
+/// 프로세스 생성 시각 (epoch ms). 열 수 없으면 None
+fn created_ms(pid: u32) -> Option<i64> {
+    // FILETIME 은 1601-01-01 부터의 100ns 단위다
+    const EPOCH_DIFF_MS: i64 = 11_644_473_600_000;
+    let zero = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+    // SAFETY: 핸들은 이 함수 안에서 열고 닫는다
+    let ok = unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if h.is_null() {
+            return None;
+        }
+        let ok = GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user) != 0;
+        CloseHandle(h);
+        ok
+    };
+    let ft = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+    ok.then(|| (ft / 10_000) as i64 - EPOCH_DIFF_MS)
+}
+
 pub fn is_alive(pid: u32) -> bool {
     // SAFETY: 핸들은 이 함수 안에서 열고 닫는다
     unsafe {
@@ -183,5 +247,60 @@ mod tests {
         let got = live_sessions(home.path());
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].session_id, "live");
+    }
+
+    #[test]
+    fn pid_created_more_than_5s_after_start_is_another_process() {
+        let home = home_with(&[
+            (
+                "a.json",
+                r#"{"pid":1,"sessionId":"reused","startedAt":10000}"#,
+            ),
+            (
+                "b.json",
+                r#"{"pid":2,"sessionId":"same","startedAt":10000}"#,
+            ),
+            (
+                "c.json",
+                r#"{"pid":3,"sessionId":"unknown","startedAt":10000}"#,
+            ),
+            ("d.json", r#"{"pid":4,"sessionId":"no-start"}"#),
+        ]);
+        let created = |pid| match pid {
+            1 => Some(15_001),
+            2 => Some(15_000),
+            4 => Some(99_999),
+            _ => None, // 권한 등으로 못 얻음
+        };
+        let mut got: Vec<String> = live_with(home.path(), |_| true, created)
+            .into_iter()
+            .map(|e| e.session_id)
+            .collect();
+        got.sort();
+        assert_eq!(got, ["no-start", "same", "unknown"]);
+        // 생성 시각을 못 얻어도 죽은 pid 는 죽은 것이다
+        assert!(live_with(home.path(), |_| false, |_| None).is_empty());
+    }
+
+    #[test]
+    fn own_creation_time_is_before_now() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let created = created_ms(std::process::id()).unwrap();
+        assert!(created <= now && now - created < 600_000, "{created} {now}");
+    }
+
+    #[test]
+    fn only_user_given_name_counts() {
+        let entry = |extra: &str| -> RegistryEntry {
+            serde_json::from_str(&format!(r#"{{"pid":1,"sessionId":"s"{extra}}}"#)).unwrap()
+        };
+        let user = entry(r#","name":"n","nameSource":"user""#);
+        assert_eq!(user.user_name(), Some("n"));
+        assert_eq!(
+            entry(r#","name":"n","nameSource":"auto""#).user_name(),
+            None
+        );
+        assert_eq!(entry(r#","name":"n""#).user_name(), None);
+        assert_eq!(entry(r#","name":"","nameSource":"user""#).user_name(), None);
     }
 }

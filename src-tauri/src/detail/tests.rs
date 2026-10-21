@@ -1491,3 +1491,25 @@ fn task_stop_result_paged_alone_falls_back_to_raw() {
         "{results:?}"
     );
 }
+
+/// 실행 중이던 exec 의 결과는 wait 출력 줄에서 exec 의 call_id 로 난다. 그 줄 원문을 결과 본문으로 읽는다
+#[test]
+fn cell_wait_result_reads_its_raw_line() {
+    let s = Session::fixture("codex/exec-cell-wait", "windows");
+    let e = env();
+    e.put(&s, s.team(0));
+    let agent = &e.agents(&s)[0];
+    let all = e.timeline(&s, agent, None, Some(200)).unwrap();
+    let r = all
+        .iter()
+        .find(|d| d.kind == TimelineKind::ToolResult && d.line_no == 21)
+        .expect("21번 줄 결과 칸");
+    assert!(
+        r.body
+            .as_ref()
+            .is_some_and(|b| b.head.contains("Script completed")),
+        "{r:?}"
+    );
+    assert_ne!(r.summary, MISSING, "{r:?}");
+    assert_ne!(r.summary, UNREADABLE, "{r:?}");
+}

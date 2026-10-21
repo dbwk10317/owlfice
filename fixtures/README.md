@@ -14,3 +14,4 @@
 - `claude/bg-fail-reject-compact/dcc68dd7-8ab5-ede5-fb28-c09de28115be.jsonl` → 실패한 백그라운드 작업의 `<task-notification>`(`status: failed`, exit code 2), 사용자 반려(Bash), 수동 `/compact`(`trigger: manual`, 슬래시 명령 흔적 셋), 압축 뒤 턴. 실제 세션 발췌
 - `codex/ask-reject-compact/rollout-2026-03-02T09-00-00-a9e19951-4ff7-996b-7dfa-2cfe04d16f10.jsonl` → `request_user_input_async` 질문과 `<send_user_message_question_reply>` 답, exec 거부(`Rejected(...)`), `/compact`(`compacted`, `ContextCompaction`). 실제 세션 발췌
 - `codex/aborted/rollout-2026-03-02T09-00-00-fbeee44f-138a-8f82-87fd-61f01dfc0cca.jsonl` → 중단된 턴(`turn_aborted`, `reason: interrupted`). 실제 세션 발췌
+- `codex/exec-cell-wait/rollout-2026-03-02T09-00-00-9394fa16-cc2e-5621-fd1e-7497c4634613.jsonl` → `exec` 결과 `Script running with cell ID <n>` 뒤 `wait` 호출(아직 실행 중 응답 한 번, 이어서 `Script completed` 응답), 두 번째 exec 의 wait 사이에 낀 `item_completed` CommandExecution. 실제 세션 발췌

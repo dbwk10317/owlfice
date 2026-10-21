@@ -987,14 +987,30 @@ fn raw_result(rec: &Value, call: u64, vendor: Vendor) -> Option<RawResult> {
             }),
         Vendor::Codex => {
             let p = rec.get("payload")?;
-            if !matches!(
-                p.get("type")?.as_str()?,
-                "function_call_output" | "custom_tool_call_output"
-            ) {
+            let ty = p.get("type")?.as_str()?;
+            if !matches!(ty, "function_call_output" | "custom_tool_call_output") {
                 return None;
             }
+            // 실행 중이던 exec 의 결과는 그 cell 의 wait 출력 줄에서 exec 의 call_id 로 난다.
+            // 칸 자리의 줄이니 call_id 가 달라도 cell 결과 모양이면 받는다
+            let first = match p.get("output") {
+                Some(Value::String(s)) => Some(s.as_str()),
+                Some(Value::Array(a)) => a.iter().find_map(|b| b.get("text")?.as_str()),
+                _ => None,
+            };
+            let cell = ty == "function_call_output"
+                && first.is_some_and(|t| {
+                    ["Script completed", "Script failed", "Script running"]
+                        .iter()
+                        .any(|s| t.starts_with(s))
+                });
+            let id = match hashed(p, "call_id", call) {
+                Some(id) => id,
+                None if cell => p.get("call_id")?.as_str()?.to_string(),
+                None => return None,
+            };
             Some(RawResult {
-                id: hashed(p, "call_id", call)?,
+                id,
                 text: codex_text(p.get("output")),
             })
         }

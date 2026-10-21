@@ -15,6 +15,8 @@ use crate::discover::Product;
 /// 승인 창 거부 때 하네스가 쓰는 문구. 결과 text 안에서는 따옴표가 `\"` 로 이스케이프돼 있다
 const REJECTED: &str = r#"Rejected(\"rejected by user\")"#;
 const QUESTION_REPLY: &str = "<send_user_message_question_reply>";
+/// exec 가 끝나기 전에 돌아왔다는 첫 text. 결과는 같은 cell 의 `wait` 응답으로 온다
+const CELL_RUNNING: &str = "Script running with cell ID ";
 const PREVIEW_CHARS: usize = 200;
 
 /// rollout 파일 하나에 하나. 파일이 Reset되면 새로 만든다
@@ -36,6 +38,8 @@ pub struct CodexParser {
     background: HashMap<String, String>,
     /// 이벤트를 내지 않는 호출(`sleep`, `send_message`). 뒤따르는 출력도 버린다
     ignored: HashSet<String>,
+    /// 실행 중인 exec 를 기다리는 `wait` 의 call_id → 그 exec 의 call_id. 이벤트 없이 결과만 원래 exec 로 넘긴다
+    cell_waits: HashMap<String, String>,
     /// 내부 에이전트의 rollout. 파일 전체에서 이벤트를 내지 않는다
     silent: bool,
     /// 마지막 token_count 의 누적 사용량 (입력, 캐시, 출력). 누적이 그대로인 기록은 같은 사용량을 다시 쓴 것이다
@@ -74,6 +78,8 @@ struct ExecWait {
     test: bool,
     /// `write_stdin` 으로 `\u0003` 을 보낸 백그라운드 session_id
     stop_session: Option<String>,
+    /// `Script running with cell ID` 로 돌아온 cell. 결과는 이 cell 의 `wait` 가 받는다
+    cell: Option<String>,
     /// 중단을 기다리는 동안 온 그 세션의 item. 중단이 실패하면 이것으로 닫는다
     held: Option<Value>,
     items: u32,
@@ -105,6 +111,7 @@ impl CodexParser {
             pending: Vec::new(),
             background: HashMap::new(),
             ignored: HashSet::new(),
+            cell_waits: HashMap::new(),
             silent: false,
             last_total: None,
         }
@@ -369,11 +376,32 @@ impl CodexParser {
         else {
             return;
         };
-        let p = self.pending.remove(i);
-        let Wait::Exec(w) = p.wait else {
-            unreachable!("위에서 Exec 만 골랐다")
-        };
         let texts = output_texts(output);
+        // 시작됨은 완료가 아니다 (docs/CONTRACTS.md C8). 호출을 남겨 두고 cell 의 wait 응답을 기다린다
+        if let Some(cell) = texts
+            .first()
+            .and_then(|t| t.strip_prefix(CELL_RUNNING))
+            .and_then(|t| t.split_whitespace().next())
+            && let Wait::Exec(w) = &mut self.pending[i].wait
+        {
+            w.cell = Some(cell.to_string());
+            return;
+        }
+        let p = self.pending.remove(i);
+        self.exec_close(p, texts, out, un);
+    }
+
+    /// exec 의 최종 결과. 바로 온 출력과 cell 의 wait 응답이 같이 쓴다
+    fn exec_close(
+        &mut self,
+        p: Pending,
+        texts: Vec<String>,
+        out: &mut Vec<EventKind>,
+        un: &mut Vec<Unhandled>,
+    ) {
+        let Wait::Exec(w) = p.wait else {
+            unreachable!("부르는 쪽이 Exec 만 넘긴다")
+        };
         let first = texts.first().map(String::as_str).unwrap_or_default();
         // 둘째 text부터는 모델이 찍은 값이라 모양이 정해져 있지 않다. 백그라운드 판별에만 쓴다
         let objs: Vec<Map<String, Value>> = texts
@@ -463,6 +491,15 @@ impl CodexParser {
         let call_id = str_at(p, &["call_id"]).unwrap_or_default().to_string();
         let name = str_at(p, &["name"]).unwrap_or_default();
         let args = parse_maybe_json(p.get("arguments"));
+        if name == "wait"
+            && let Some(cell) = args.get("cell_id").and_then(id_string)
+            && let Some(exec) = self.pending.iter().rev().find(
+                |p| matches!(&p.wait, Wait::Exec(w) if w.cell.as_deref() == Some(cell.as_str())),
+            )
+        {
+            self.cell_waits.insert(call_id, exec.call_id.clone());
+            return;
+        }
         let mut ask = false;
         let tool = match name {
             // `sleep` 은 질문 답을 기다리며 부르고 `send_message` 는 에이전트 사이 배관이다. 연출할 게 없다
@@ -520,6 +557,22 @@ impl CodexParser {
         un: &mut Vec<Unhandled>,
     ) {
         if self.ignored.remove(call_id) {
+            return;
+        }
+        if let Some(exec) = self.cell_waits.remove(call_id) {
+            let texts = output_texts(output);
+            // 아직 실행 중이면 모델이 같은 cell 로 wait 를 다시 부른다
+            if texts.first().is_some_and(|t| t.starts_with(CELL_RUNNING)) {
+                return;
+            }
+            if let Some(i) = self
+                .pending
+                .iter()
+                .position(|p| p.call_id == exec && matches!(p.wait, Wait::Exec(_)))
+            {
+                let p = self.pending.remove(i);
+                self.exec_close(p, texts, out, un);
+            }
             return;
         }
         let Some(i) = self
@@ -2700,5 +2753,157 @@ mod tests {
         let (tool, summary) = only_call(&k);
         assert_eq!(tool, &ToolKind::GitCommit);
         assert_eq!(summary.commit_message.as_deref(), Some("fix: x"));
+    }
+
+    /// (줄 번호, 호출·결과, call_id). 도구 이벤트만
+    fn tool_lines(ev: &[Event]) -> Vec<(u64, String, String)> {
+        ev.iter()
+            .filter_map(|e| match &e.kind {
+                EventKind::ToolCall { call_id, .. } => {
+                    Some((e.raw_ref.line_no, "call".into(), call_id.clone()))
+                }
+                EventKind::ToolResult {
+                    call_id, outcome, ..
+                } => Some((
+                    e.raw_ref.line_no,
+                    format!("result {outcome:?}"),
+                    call_id.clone(),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn cell_wait_result_goes_to_original_exec() {
+        let (ev, un) = fixture("exec-cell-wait");
+        let first = "call_788ab61139f70b90465ef05f8340ec8e";
+        let second = "call_86d81e3c219658a5d131f5e8cf9fb84d";
+        // 9·15 `Script running` 과 13·19·29 wait 호출은 아무것도 내지 않는다.
+        // 21 은 exit_code 없는 session_id 가 있어 exec 의 백그라운드 시작 규칙대로 Started,
+        // 32 는 write_stdin 폴링이라 판정 근거가 없어 Unknown
+        assert_eq!(
+            tool_lines(&ev),
+            [
+                (7, "call".to_string(), first.to_string()),
+                (21, "result Started".into(), first.into()),
+                (25, "call".into(), second.into()),
+                (32, "result Unknown".into(), second.into()),
+            ]
+        );
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    #[test]
+    fn cell_wait_failure_closes_exec_with_test_counts() {
+        let (k, un) = feed(&[
+            exec("c1", "tools.exec_command({cmd:\"cargo test\"})"),
+            exec_out(
+                "c1",
+                &["Script running with cell ID 7\nWall time 10.0 seconds\n"],
+            ),
+            func(
+                "w1",
+                "wait",
+                json!({"cell_id": "7", "yield_time_ms": 20000}),
+            ),
+            func_out(
+                "w1",
+                "Script running with cell ID 7\nWall time 30.0 seconds\n",
+            ),
+            func("w2", "wait", json!({"cell_id": 7})),
+            func_out(
+                "w2",
+                "Script failed\ntest result: FAILED. 3 passed; 1 failed; 0 ignored\n",
+            ),
+        ]);
+        assert_eq!(
+            k.iter().map(tag).collect::<Vec<_>>(),
+            ["call Test Single", "result Err"]
+        );
+        assert_eq!(outcome_of(&k, "c1"), [ToolOutcome::Err]);
+        let got = k.iter().find_map(|e| match e {
+            EventKind::ToolResult { test_result, .. } => *test_result,
+            _ => None,
+        });
+        assert_eq!(
+            got,
+            Some(crate::parse::TestResult {
+                passed: 3,
+                failed: 1
+            })
+        );
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    /// cell 대기 중 온 item 은 아직 남은 exec 에 붙어 wait 응답의 판정 근거가 된다
+    #[test]
+    fn item_during_cell_wait_decides_exec() {
+        let (k, un) = feed(&[
+            exec("c1", "tools.exec_command({cmd:\"cargo build\"})"),
+            exec_out("c1", &["Script running with cell ID 5\n"]),
+            func("w1", "wait", json!({"cell_id": "5"})),
+            cmd_item("completed", Some(0), "1"),
+            func_out("w1", "Script completed\n"),
+        ]);
+        assert_eq!(outcome_of(&k, "c1"), [ToolOutcome::Ok]);
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    #[test]
+    fn turn_aborted_closes_exec_waiting_for_cell() {
+        let (k, un) = feed(&[
+            exec("c1", "tools.exec_command({cmd:\"cargo build\"})"),
+            exec_out("c1", &["Script running with cell ID 2\n"]),
+            func("w1", "wait", json!({"cell_id": "2"})),
+            rec(
+                "event_msg",
+                json!({"type": "turn_aborted", "reason": "interrupted"}),
+            ),
+            func_out("w1", "Script completed\n"),
+        ]);
+        assert_eq!(
+            k.iter().map(tag).collect::<Vec<_>>(),
+            ["call Build Single", "result Unknown"]
+        );
+        assert_eq!(outcome_of(&k, "c1"), [ToolOutcome::Unknown]);
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    /// 파일을 중간부터 읽어 cell 을 모르면 wait 는 그대로 모르는 도구다
+    #[test]
+    fn wait_without_known_cell_stays_unknown_tool() {
+        let (k, un) = feed(&[
+            func("w1", "wait", json!({"cell_id": "9"})),
+            func_out("w1", "Script completed\n"),
+        ]);
+        assert_eq!(
+            k.iter().map(tag).collect::<Vec<_>>(),
+            ["call Other(\"wait\") Single", "result Unknown"]
+        );
+        assert!(
+            un.iter()
+                .any(|u| matches!(u, Unhandled::ToolName { name, .. } if name == "wait")),
+            "{un:?}"
+        );
+    }
+
+    #[test]
+    fn replayed_cell_wait_leaves_no_pending_call() {
+        use crate::office::classify::replay;
+        let (ev, _) = fixture("exec-cell-wait");
+        let local = chrono::FixedOffset::east_opt(0).unwrap();
+        let team = replay(
+            "9394fa16-cc2e-5621-fd1e-7497c4634613",
+            Product::CodexApp,
+            &[],
+            &ev,
+            local,
+        );
+        assert!(
+            team.employees[0].pending.is_empty(),
+            "{:?}",
+            team.employees[0].pending
+        );
     }
 }

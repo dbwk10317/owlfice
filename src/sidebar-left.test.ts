@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { createStore } from "./store.ts";
-import { emptyState, mountSidebar } from "./sidebar-left.ts";
+import { emptyState, mountSidebar, type SidebarOptions } from "./sidebar-left.ts";
 import type {
   Border,
   Dot,
@@ -70,7 +70,7 @@ const list = (
   ...over,
 });
 
-function setup(first: OfficeListDto, width = 1200) {
+function setup(first: OfficeListDto, width = 1200, onDetail?: SidebarOptions["onDetail"]) {
   const store = createStore<OfficeListDto, OfficeDto>();
   store.applyWorld({ ...first, selected: null });
   const root = document.createElement("div");
@@ -79,6 +79,7 @@ function setup(first: OfficeListDto, width = 1200) {
   const picked: [string, number][] = [];
   const dispose = mountSidebar(root, store, (id, req) => picked.push([id, req]), {
     getWidth: () => widthRef.w,
+    onDetail,
   });
   const listEl = byClass(root, "ow-sidebar__list")[0];
   const slot = byClass(root, "ow-toast-slot")[0];
@@ -390,4 +391,43 @@ test("빈 상태: 아이콘과 제목·본문이 보인다", () => {
   expect(el.querySelector("svg")).not.toBeNull();
   expect(el.querySelector("b")!.textContent).toBe("제목");
   expect(el.textContent).toContain("본문");
+});
+
+test("상세 버튼은 그 행의 사무실·팀으로 세션 상세를 열고 행 선택은 바꾸지 않는다", () => {
+  const onDetail = vi.fn();
+  const s = setup(list([office("101"), office("102")]), 1200, onDetail);
+  const row = rowByName(s.root, "B동 102");
+  const info = byClass(row, "ow-row__info")[0];
+  expect(info.getAttribute("aria-label")).toBe("B동 102 세션 상세");
+  expect(info.getAttribute("tabindex")).toBe("-1");
+  info.click();
+  expect(onDetail).toHaveBeenCalledWith("102", "t-102", "B동 102", info);
+  expect(s.picked).toEqual([]);
+});
+
+test("→ 키로도 연다. 중소기업은 팀 행만 열고 층 행에는 버튼이 없다", () => {
+  const onDetail = vi.fn();
+  const floor = office("vendor/claude", {
+    building: null,
+    floor: 1,
+    room: null,
+    label: "1층 Claude 사무실",
+    teams: [team("ta"), team("tb", { bossName: "서아린" })],
+  });
+  const s = setup(list([floor], "Small"), 1200, onDetail);
+  const rs = rows(s.root);
+  expect(byClass(rs[0], "ow-row__info")[0].hidden).toBe(true); // 층 행
+  const second = rs[2]; // 서아린 부장 팀
+  const main = byClass(second, "ow-row__main")[0];
+  main.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  expect(onDetail).toHaveBeenCalledWith(
+    "vendor/claude",
+    "tb",
+    "서아린 부장 팀",
+    byClass(second, "ow-row__info")[0],
+  );
+  byClass(rs[0], "ow-row__main")[0].dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+  );
+  expect(onDetail).toHaveBeenCalledTimes(1);
 });

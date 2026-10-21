@@ -44,7 +44,7 @@ const TOAST_MS = 3000;
 const NEW_MS = 300;
 const HIGHLIGHT_MS = 2000;
 const QUOTE_MAX = 60;
-const CTX_CELLS = 5;
+export const CTX_CELLS = 5;
 const CTX_DEFAULT_WINDOW = 200_000;
 const TEAM_COLORS = 6;
 
@@ -63,7 +63,7 @@ const ROOM_ICON: Record<Room, string> = {
   Door: roomDoor,
 };
 
-const ROOM_LABEL: Record<Room, string> = {
+export const ROOM_LABEL: Record<Room, string> = {
   TeamLead: phrases.rooms.boss,
   Dev: phrases.rooms.dev,
   Archive: phrases.rooms.library,
@@ -78,7 +78,7 @@ const ROOM_LABEL: Record<Room, string> = {
   Door: phrases.rooms.door,
 };
 
-const ROLE_LABEL: Record<Role, string> = {
+export const ROLE_LABEL: Record<Role, string> = {
   Backend: phrases.roles.backend,
   Frontend: phrases.roles.frontend,
   Qa: phrases.roles.qa,
@@ -126,11 +126,15 @@ export interface PanelOptions {
   viewport?: Viewport;
   /** 드로어가 열리고 닫힐 때 (머리말 버튼의 aria-expanded 용) */
   onDrawerChange?: (open: boolean) => void;
+  /** 카드를 눌렀을 때 (직원 상세를 연다). opener 는 닫을 때 초점이 돌아갈 카드 */
+  onEmployee?: (teamId: string, agentId: string, opener: HTMLElement) => void;
 }
 
 export interface PanelHandle {
   openDrawer(): void;
   toggleDrawer(): void;
+  /** 그 직원의 카드를 2초 하이라이트한다 (캔버스에서 직원을 눌렀을 때) */
+  highlight(teamId: string, agentId: string): void;
   destroy(): void;
 }
 
@@ -141,7 +145,7 @@ interface PanelStore {
 
 // ---- 작은 도우미 ----
 
-function h<K extends keyof HTMLElementTagNameMap>(
+export function h<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tag: K,
   cls = "",
@@ -153,21 +157,39 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-function icon(doc: Document, svg: string): HTMLElement {
+export function icon(doc: Document, svg: string): HTMLElement {
   const s = h(doc, "span", "ow-icon");
   s.setAttribute("aria-hidden", "true");
-  s.innerHTML = svg;
+  s.innerHTML = svg.trim(); // 파일 끝 줄바꿈이 글자 노드로 남지 않게
   return s;
 }
 
 /** 백엔드 문장의 `코드` 조각을 ow-code 로 */
-function setRich(node: HTMLElement, text: string): void {
+export function setRich(node: HTMLElement, text: string): void {
   const doc = node.ownerDocument;
   node.textContent = "";
   text.split("`").forEach((seg, i) => {
     if (!seg) return;
     node.append(i % 2 ? h(doc, "span", "ow-code", seg) : seg);
   });
+}
+
+/**
+ * 컨텍스트 눈금 재료: 켜진 칸 = round(사용률/20). 창 크기를 모르면 20만 토큰으로 어림하고 "?" (PLAN 3.5).
+ * 쓴 양을 모르면 null
+ */
+export function contextMeter(used: number | null, windowSize: number | null) {
+  if (used === null) return null;
+  const unknown = windowSize === null;
+  const pct = Math.min(100, Math.round((used / (windowSize || CTX_DEFAULT_WINDOW)) * 100));
+  return {
+    pct,
+    lit: Math.round(pct / 20),
+    high: pct >= 80,
+    /** "75%" 또는 창 크기를 모르면 "75%?" */
+    text: `${pct}%${unknown ? "?" : ""}`,
+    label: fill(unknown ? phrases.card.contextUnknown : phrases.card.context, { pct }),
+  };
 }
 
 /** 팀 경과: 60초 미만 "방금", 이후 "12분째", "1시간 4분째" (HANDOFF 8절) */
@@ -386,25 +408,14 @@ function updateCard(
     r.model.title = model;
   }
 
-  // 컨텍스트 눈금: 켜진 칸 = round(사용률/20). 창 크기를 모르면 20만 토큰으로 어림하고 "?" (PLAN 3.5)
-  const unknownWindow = e.contextWindow === null;
-  const pct =
-    e.contextUsed === null
-      ? null
-      : Math.min(100, Math.round((e.contextUsed / (e.contextWindow || CTX_DEFAULT_WINDOW)) * 100));
-  const ctxKey = pct === null ? "" : `${pct}${unknownWindow ? "?" : ""}`;
-  if (changed(c, "ctx", ctxKey)) {
-    r.ctx.hidden = pct === null;
-    const lit = pct === null ? 0 : Math.round(pct / 20);
-    r.ctxCells.forEach((cell, i) => cell.classList.toggle("is-on", i < lit));
-    r.ctx.classList.toggle("is-high", pct !== null && pct >= 80);
-    r.ctxText.textContent = ctxKey ? `${pct}%${unknownWindow ? "?" : ""}` : "";
-    const label =
-      pct === null
-        ? ""
-        : fill(unknownWindow ? phrases.card.contextUnknown : phrases.card.context, { pct });
-    r.ctx.setAttribute("aria-label", label);
-    r.ctx.title = label;
+  const meter = contextMeter(e.contextUsed, e.contextWindow);
+  if (changed(c, "ctx", meter?.text ?? "")) {
+    r.ctx.hidden = !meter;
+    r.ctxCells.forEach((cell, i) => cell.classList.toggle("is-on", i < (meter?.lit ?? 0)));
+    r.ctx.classList.toggle("is-high", !!meter?.high);
+    r.ctxText.textContent = meter?.text ?? "";
+    r.ctx.setAttribute("aria-label", meter?.label ?? "");
+    r.ctx.title = meter?.label ?? "";
   }
 
   // 상태 칩: 추정이면 점선 + "추정", 허가 대기(출입문)는 결재판
@@ -687,6 +698,8 @@ export function mountPanel(
         let c = cards.get(key);
         if (!c) {
           cards.set(key, (c = createCard(doc, e.agentId)));
+          const card = c;
+          card.el.addEventListener("click", () => opts.onEmployee?.(t.teamId, e.agentId, card.el));
           c.el.classList.toggle("is-compact", compact);
           if (!quiet) fresh.push({ c, e });
         }
@@ -796,6 +809,7 @@ export function mountPanel(
   return {
     openDrawer: () => setDrawer(true),
     toggleDrawer: () => setDrawer(!drawerOpen),
+    highlight: pick,
     destroy() {
       unsubscribe();
       unsubscribeViewport();

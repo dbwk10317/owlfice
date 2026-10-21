@@ -6,6 +6,7 @@ import { durationText, fill } from "./text.ts";
 import approvalSvg from "../design/handoff/icons/approval.svg?raw";
 import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
 import evictedSvg from "../design/handoff/icons/evicted.svg?raw";
+import infoSvg from "../design/handoff/icons/info.svg?raw";
 import emptySvg from "../design/handoff/icons/empty-building.svg?raw";
 import type {
   Border,
@@ -30,6 +31,8 @@ export type SelectOffice = (officeId: string, requestId: number) => void;
 export interface SidebarOptions {
   /** 창 너비. 기본은 문서 루트의 clientWidth */
   getWidth?: () => number;
+  /** 행의 상세 버튼 (세션 상세를 연다). opener 는 닫을 때 초점이 돌아갈 버튼 */
+  onDetail?: (officeId: string, teamId: string, name: string, opener: HTMLElement) => void;
 }
 
 type SidebarMode = "full" | "rail" | "select";
@@ -149,6 +152,8 @@ interface RowModel {
   /** 층 행만: 접기 키 */
   foldKey: string | null;
   open: boolean;
+  /** 세션 상세를 열 팀. 층 행과 팀이 없는 행은 null */
+  detail: { officeId: string; teamId: string } | null;
 }
 interface GroupModel {
   t: "group";
@@ -269,6 +274,7 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       hidden,
       foldKey: null,
       open: true,
+      detail: team ? { officeId: o.officeId, teamId: team.teamId } : null,
     });
     selectables.push({
       id: o.officeId,
@@ -356,6 +362,7 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       hidden: false,
       foldKey: fkey,
       open,
+      detail: null,
     });
     selectables.push({
       id: o?.officeId ?? null,
@@ -391,6 +398,7 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
         hidden,
         foldKey: null,
         open: true,
+        detail: o ? { officeId: o.officeId, teamId: t.teamId } : null,
       };
     };
     for (const t of live) items.push(teamRow(t, false, !open));
@@ -486,6 +494,7 @@ interface RowView extends View {
   elapsed: El;
   square: El | null;
   fold: El | null;
+  info: El;
 }
 interface GroupView extends View {
   model: GroupModel;
@@ -548,6 +557,11 @@ export function mountSidebar(
   let lastList: OfficeListDto | null = null;
   let slideIn = false; // 첫 목록은 그냥 깔고, 그 뒤 새 행만 미끄러져 들어온다
 
+  function openDetail(v: RowView): void {
+    const d = v.model.detail;
+    if (d) opts.onDetail?.(d.officeId, d.teamId, v.model.name, v.info);
+  }
+
   function newRow(m: RowModel): RowView {
     const el = mk(doc, "div", `ow-row is-${m.kind}`);
     const main = mk(doc, "button", "ow-row__main");
@@ -573,6 +587,12 @@ export function mountSidebar(
     text.append(top, meta);
     main.append(lead, text);
     el.append(main);
+    const info = mk(doc, "button", "ow-iconbtn ow-iconbtn--sm ow-row__info");
+    info.setAttribute("type", "button");
+    // 행 하나가 Tab 정지점 하나다. 키보드는 → 로 연다 (HANDOFF 10절)
+    info.setAttribute("tabindex", "-1");
+    info.innerHTML = infoSvg; // 앱에 묶인 정적 아이콘이다
+    el.append(info);
     let fold: El | null = null;
     if (m.foldKey) {
       fold = mk(doc, "button", "ow-iconbtn ow-iconbtn--sm ow-row__fold");
@@ -598,7 +618,9 @@ export function mountSidebar(
       elapsed,
       square,
       fold,
+      info,
     };
+    info.addEventListener("click", () => openDetail(v));
     // 모델은 갱신마다 바뀌므로 눌린 순간의 것을 본다
     main.addEventListener("click", () => pick(v.model.targetId));
     fold?.addEventListener("click", () => toggle(v.model.foldKey!, true));
@@ -635,7 +657,9 @@ export function mountSidebar(
     if (changed(L, "name", m.name)) {
       v.name.textContent = m.name;
       v.fold?.setAttribute("aria-label", m.name);
+      v.info.setAttribute("aria-label", fill(P.detail, { office: m.name }));
     }
+    if (changed(L, "detail", m.detail !== null)) v.info.hidden = m.detail === null;
     if (changed(L, "work", m.workType)) {
       v.chip.textContent = m.workType;
       v.chip.hidden = !m.workType;
@@ -770,6 +794,14 @@ export function mountSidebar(
     if (t.classList.contains("ow-row__main")) setRoving(t);
   });
   listEl.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") {
+      const row = rowViews.find((v) => v.main === e.target);
+      if (row?.model.detail) {
+        e.preventDefault();
+        openDetail(row);
+      }
+      return;
+    }
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     const mains = pickableMains();
     const i = mains.indexOf(e.target as El);

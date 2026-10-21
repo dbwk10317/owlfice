@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { mountPanel, type PanelHandle, type Viewport } from "./sidebar-right.ts";
+import { mountPanel, type PanelHandle, type PanelOptions, type Viewport } from "./sidebar-right.ts";
 import { createStore } from "./store.ts";
 import { act, emp, iso, office, team } from "./test-office.ts";
 import type { OfficeDto, OfficeListDto } from "./types/ipc.ts";
@@ -20,7 +20,12 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-function setup(first: OfficeDto, scale: "Large" | "Small" = "Large", size = { w: 1280, h: 800 }) {
+function setup(
+  first: OfficeDto,
+  scale: "Large" | "Small" = "Large",
+  size = { w: 1280, h: 800 },
+  extra: Partial<PanelOptions> = {},
+) {
   const store = createStore<OfficeListDto, OfficeDto>();
   store.applyWorld({
     listSeq: 1,
@@ -57,7 +62,7 @@ function setup(first: OfficeDto, scale: "Large" | "Small" = "Large", size = { w:
   const root = document.createElement("div");
   document.body.append(root);
   const onDrawerChange = vi.fn();
-  const panel: PanelHandle = mountPanel(root, store, { viewport: vp, onDrawerChange });
+  const panel: PanelHandle = mountPanel(root, store, { viewport: vp, onDrawerChange, ...extra });
   const q = <T extends Element = HTMLElement>(sel: string) => root.querySelector<T>(sel);
   const cards = () => [...root.querySelectorAll<HTMLElement>(".ow-card")];
   const ids = () => cards().map((c) => c.dataset.agentId);
@@ -417,4 +422,26 @@ test("접근성: 반려 아이콘과 실적 칸에 이름이 있다", () => {
   expect(reject.getAttribute("aria-hidden")).toBeNull();
   expect(reject.getAttribute("aria-label")).toBe("반려됨");
   expect(s.q(".ow-stats > span")!.getAttribute("aria-label")).toBe("읽은 파일 1");
+});
+
+test("카드를 누르면 (teamId, agentId) 와 그 카드로 직원 상세를 열고, highlight 는 2초 하이라이트", () => {
+  const onEmployee = vi.fn();
+  const o = office("o", 1, [
+    team("t1", [emp("boss"), emp("a")]),
+    team("t2", [emp("boss"), emp("a")]),
+  ]);
+  const s = setup(o, "Small", undefined, { onEmployee });
+  // 같은 agentId 가 두 팀에 있어도 카드마다 자기 팀으로 부른다
+  const cards = s.cards();
+  expect(cards).toHaveLength(4);
+  cards[3].click();
+  expect(onEmployee).toHaveBeenLastCalledWith("t2", "a", cards[3]);
+  cards[0].click();
+  expect(onEmployee).toHaveBeenLastCalledWith("t1", "boss", cards[0]);
+
+  s.panel.highlight("t2", "a");
+  expect(cards[3].classList.contains("is-highlight")).toBe(true);
+  expect(cards[1].classList.contains("is-highlight")).toBe(false);
+  vi.advanceTimersByTime(2000);
+  expect(cards[3].classList.contains("is-highlight")).toBe(false);
 });

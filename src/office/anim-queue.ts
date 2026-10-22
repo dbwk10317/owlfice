@@ -76,7 +76,7 @@ type Step =
       /** 걷는 동안 손에 든 물건 (외근 복귀의 봉투) */
       held?: string;
     }
-  | { kind: "pose"; look: Look; ms: number }
+  | { kind: "pose"; look: Look; ms: number; flip?: boolean }
   | { kind: "hide" };
 
 export interface TrackContext {
@@ -201,6 +201,31 @@ export class Track {
     this.retarget(target, now);
   }
 
+  /** 장식 자세를 끊고 지금 보이는 위치에서 현재 논리 자리로 돌아간다. */
+  cancelDecoration(now: number, target = this.target): void {
+    const shown = this.update(now);
+    this.reset({ ...target, at: shown.at, depth: shown.depth }, now);
+    this.retarget(target, now);
+  }
+
+  meetingWalkMs(to: Pt, now: number): number {
+    const from = this.update(now).at;
+    return from ? walkMs(walkPath(this.ctx.fp, from, to)) : 0;
+  }
+
+  /** 두 직원은 같은 goMs로 도착한다. 앞 큐를 쌓지 않아 한쪽만 먼저 손을 들지 않는다. */
+  highfive(to: Pt, goMs: number, flip: boolean, now: number): number {
+    const target = this.target;
+    const shown = this.update(now);
+    if (!shown.at || !target.at) return now;
+    this.reset(target, now);
+    this.pos = shown.at;
+    this.walk(walkPath(this.ctx.fp, shown.at, to), goMs, now, false, { head: shown.depth });
+    this.push({ kind: "pose", look: { pose: "highfive", dir: "f" }, ms: 1000, flip }, now);
+    this.walk(walkPath(this.ctx.fp, to, target.at), undefined, now, false, { tail: target.depth });
+    return this.queueEnd(now);
+  }
+
   /** 새 스냅샷 자리. `entering` 이면 문에서 4초 걸어 들어온다 (출근·재출근). `held` 는 숨었다 돌아올 때 들고 오는 물건 */
   retarget(target: Target, now: number, entering = false, held?: string): void {
     this.advance(now);
@@ -228,19 +253,20 @@ export class Track {
   }
 
   /** 제자리에서 자세 하나를 ms 동안 (부장 clap 등). 앞선 걷기가 끝난 뒤 */
-  pose(look: Look, ms: number, now: number): void {
+  pose(look: Look, ms: number, now: number): number {
     this.advance(now);
     const at = this.target.at;
-    if (!at) return;
+    if (!at) return now;
     // 병렬 Spawn 처럼 같은 자세가 줄줄이 와도 하나로 합쳐 MAX_STEPS 를 넘기지 않는다
     const last = this.steps[this.steps.length - 1];
-    if (last?.kind === "pose" && last.look.pose === look.pose) return;
+    if (last?.kind === "pose" && last.look.pose === look.pose) return this.queueEnd(now);
     this.cut(now);
     // 유휴 동작을 끊었으면 자리로 돌아간 뒤에
     const from = this.end();
     if (from && !same(from, at)) this.walk(walkPath(this.ctx.fp, from, at), undefined, now);
     this.push({ kind: "pose", look, ms }, now);
     if (this.steps.length > MAX_STEPS) this.reset(this.target, now);
+    return this.queueEnd(now);
   }
 
   /**
@@ -286,8 +312,10 @@ export class Track {
     let look = settled ? t.look : IDLE_LOOK;
     let flip = false;
     let depth = settled ? t.depth : this.pos ? this.pos.gx + this.pos.gy : 0;
-    if (s?.kind === "pose") look = s.look;
-    else if (s?.kind === "walk") {
+    if (s?.kind === "pose") {
+      look = s.look;
+      flip = s.flip ?? false;
+    } else if (s?.kind === "walk") {
       const w = along(s.path, s.ms > 0 ? (now - this.t0) / s.ms : 1);
       const f = facing(s.path[w.seg], s.path[w.seg + 1] ?? s.path[w.seg]);
       at = w.at;

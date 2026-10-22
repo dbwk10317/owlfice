@@ -204,7 +204,7 @@ SPECIES = {
                  c=(250, 250, 246))),
 }
 EMPLOYEE_SPECIES = ["eagle", "longeared", "little", "barn", "scops"]  # 흰올빼미는 사장님 전용
-BODY_PAL = dict(k=OUTLINE, p=(26, 26, 26), y=(232, 163, 58))
+BODY_PAL = dict(k=OUTLINE, p=(26, 26, 26), y=(232, 163, 58), m=(244, 236, 212), M=(110, 70, 42))
 
 TORSO = ["kdccccccccccdk", "kdccccccccccdk", "kdccccccccccdk", "kddccccccccddk", ".kdccccccccdk.",
          ".kdccccccccdk.", "..kkcccccckk..", "...kkkkkkkk..."]   # 템플릿 9~16행
@@ -220,6 +220,7 @@ WING_BLOBS = {   # 왼쪽 날개 모양 (템플릿 좌표, 몸통 기준). 오�
            (0, 6, "d"), (0, 7, "d"), (0, 8, "k")],
     "head": [(1, 1, "k"), (2, 1, "k"), (0, 2, "k"), (1, 2, "d"), (2, 2, "d"), (3, 2, "k"), (0, 3, "k"),
              (1, 3, "d"), (2, 3, "k"), (1, 4, "k")],
+    "chin": [(3, 9, "k"), (4, 8, "k"), (5, 8, "d"), (6, 8, "k"), (4, 9, "d"), (5, 9, "k"), (3, 10, "k")],
 }
 HEAD_BLOBS = {"up", "head"}   # 머리 기준으로 움직이는 날개
 
@@ -234,10 +235,15 @@ POSES = {
     "jump": dict(f=1, fps=0, loop=False, note="펄쩍 (사장님 등장). 0.4초"),
     "scratch": dict(f=2, fps=4, loop=True, note="머리 긁기 (반려, 같은 파일 3회 수정)"),
     "panic": dict(f=2, fps=6, loop=True, note="머리 쥐어뜯기 (장애 상황실)"),
-    "cheer": dict(f=1, fps=0, loop=False, note="만세·하이파이브 (테스트 전부 통과)"),
+    "cheer": dict(f=1, fps=0, loop=False, note="만세 (테스트 전부 통과)"),
     "clap": dict(f=2, fps=6, loop=True, note="손뼉 (서브에이전트 지시)"),
     "crouch": dict(f=1, fps=0, loop=False, note="쪼그려 앉기 (명령이 평균 2배 초과)"),
     "carry": dict(f=1, b=1, fps=0, loop=False, note="앞으로 들기 (결재판, 서류철, 러버덕, 상자)"),
+    "think": dict(f=2, fps=1, loop=True, note="턱 괴기. 기존 침묵 추정 자세"),
+    "highfive": dict(f=1, fps=0, loop=False, note="같은 팀 두 직원 확정 통과. 동시에 1초"),
+    "stretch": dict(f=2, fps=2, loop=True, note="근속 1시간 경계마다 기지개 1.5초"),
+    "drink": dict(f=2, fps=2, loop=True, note="응답 대기 30초 경계마다 커피 1초"),
+    "phone": dict(f=1, fps=0, loop=False, note="사장님 메시지. 펄쩍 뒤 수화기 1초"),
 }
 
 
@@ -273,6 +279,16 @@ def pose_geo(pose, dirn, f):
         g.update(crouch=True, hy=2)
     elif pose == "carry" and dirn == "f":
         g.update(wl=("fwd", 0), wr=("fwd", 0))
+    elif pose == "think":
+        g.update(wr=("chin", f), hy=f)
+    elif pose == "highfive":
+        g.update(wr=("up", 0))
+    elif pose == "stretch":
+        g.update(wl=("up", f), wr=("up", f), eyes="closed", hy=-f)
+    elif pose == "drink":
+        g.update(wr=("fwd", -2 * f))
+    elif pose == "phone":
+        g.update(wr=("head", 3))
     return g
 
 
@@ -341,6 +357,14 @@ def owl_body(sp, pose, dirn, f):
             pts.append(p)
         lowest = max(pts, key=lambda p: (p[1], -abs(p[0] - 6.5)))
         hands[side] = lowest
+    if pose == "drink":
+        y = 9 - 2 * f
+        for x, dy, ch in [(10, 0, "k"), (11, 0, "M"), (12, 0, "k"), (10, 1, "m"), (11, 1, "m"),
+                          (12, 1, "m"), (13, 1, "k"), (10, 2, "k"), (11, 2, "k"), (12, 2, "k")]:
+            cells[(x, y + dy)] = ch
+    elif pose == "phone":
+        for x, y in [(11, 4), (12, 4), (10, 5), (11, 5), (10, 6), (10, 7), (10, 8), (11, 8), (11, 9), (12, 9)]:
+            cells[(x, y)] = "k"
     g["hands"] = hands
     return cells, g
 
@@ -1924,7 +1948,7 @@ def make_previews():
             labels.append(dict(species=SPECIES[sp]["name"], rank=RANK_KO[rank], role=ROLE_KO[roles[c]], vendor=THEMES[vendor]["label"]))
     sheet.save(os.path.join(PREV, "owls-20.png"))
     poses = [(p, "f", f) for p, d_, f in pose_frames() if d_ == "f"] + [(p, "b", f) for p, d_, f in pose_frames() if d_ == "b"]
-    strip = Image.new("RGBA", (24 * 12, 28 * 3), (0, 0, 0, 0))
+    strip = Image.new("RGBA", (24 * 12, 28 * ((len(poses) + 11) // 12)), (0, 0, 0, 0))
     for i, (pose, dirn, f) in enumerate(poses):
         held = "clipboard" if pose == "carry" else None
         img = owl_composite("eagle", "bujang-claude", "backend", pose, dirn, f, held)

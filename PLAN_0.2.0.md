@@ -99,6 +99,7 @@
 - 범위: `design/sprites/floorplan.json`(rooms·stands·path·layouts.large/small), `design/tools/owlfice_art.py`(회의실 화이트보드, 자료실 파쇄기, 경비실 창구·차단봉, 옥상 조각·자판기), `design/sprites/office.*`, `design/assets/office-*.png`, `src/office/floorplan.ts`(+test), `src/office/actors.ts`·`anim-queue.ts`(+test), `src/office/canvas-tooltip.ts`(방 이름표), `design/handoff/phrases.ko.json` rooms, `design/handoff/icons/room-*.svg` 4개, HANDOFF 4.4·5·6.5절.
 - 방별 조건 (T92 가 확정):
   - `design/HANDOFF.md` 5.4절. 장애·퇴근은 회의실 연출만 중단하고 `planning`은 보존한다. 일반 질문 응답을 계획 종료로 쓰지 않는다.
+  - 회의실 우선순위는 기존 Rust 판정에 둔다. 추가 범위: `office/mod.rs`의 `Room::Conference`, `classify.rs`와 관련 테스트, IPC 타입 재생성, `sidebar-right.ts` 방 아이콘·이름 대응. 기존 `Room::Archive`는 소스 서고 의미를 유지한다.
 - 순서: 메인이 격자 안에서 방 4개의 사각형·출입 지점·서 있을 자리를 정하고 줄어드는 기존 방(후보: 개발실 임시 책상 열, 거래처 미팅실 폭)을 HANDOFF 6.5절에 적는다 → 과장이 생성기·배치·이동 → 대리가 테스트·fixture.
 - 완료 기준: 방마다 replay 테스트(진입·종료·중단 각 1개), 우선순위 테스트(회의실 중 장애 → 상황실), 참조 렌더 비교 통과, 1×·2× 방 이름표 비겹침, 좌석·임시 책상 수가 HANDOFF 11절과 같음.
 

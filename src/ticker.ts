@@ -13,6 +13,9 @@ export interface TickerEvent {
   agentId: string;
   at: number;
   time: string;
+  team: string | null;
+  who: string;
+  summary: string;
   text: string;
 }
 
@@ -69,15 +72,26 @@ export function createEventCollector() {
           const at = Date.parse(a.since);
           if (prev?.has(key) || Number.isNaN(at)) continue;
           const time = hhmm(at);
+          const event = a.sentence.split("`").join("");
           // 시각은 항목 안에서 따로 그리므로 틀의 {time} 자리는 비운다
           const text = fill(withTeam ? phrases.ticker.itemTeamPerson : phrases.ticker.item, {
             time: "",
             team: tn,
             name: e.name,
             rank: RANK_LABEL[e.rank],
-            event: a.sentence.split("`").join(""),
+            event,
           }).trim();
-          added.push({ key, teamId: team.teamId, agentId: e.agentId, at, time, text });
+          added.push({
+            key,
+            teamId: team.teamId,
+            agentId: e.agentId,
+            at,
+            time,
+            team: withTeam ? tn : null,
+            who: `${e.name} ${RANK_LABEL[e.rank]}`,
+            summary: event,
+            text,
+          });
         }
         seen.set(who, keys);
       }
@@ -111,6 +125,12 @@ export function createTicker(doc: Document, onPick: (teamId: string, agentId: st
   root.append(label, view);
 
   let shown: string | null = null;
+  let hovered = false;
+  let focused = false;
+
+  function syncPause(): void {
+    track.classList.toggle("is-paused", hovered || focused);
+  }
 
   function item(ev: TickerEvent, dup: boolean): HTMLElement {
     const b = doc.createElement("button");
@@ -121,7 +141,36 @@ export function createTicker(doc: Document, onPick: (teamId: string, agentId: st
     const t = doc.createElement("span");
     t.className = "ow-mono ow-ticker__time";
     t.textContent = ev.time;
-    b.append(t, ` ${ev.text}`);
+    b.append(t);
+    if (ev.team) {
+      const team = doc.createElement("span");
+      team.className = "ow-ticker__team";
+      team.textContent = `[${ev.team}]`;
+      b.append(team);
+    }
+    const who = doc.createElement("span");
+    who.className = "ow-ticker__who";
+    who.textContent = `${ev.who}, `;
+    const summary = doc.createElement("span");
+    summary.className = "ow-ticker__summary";
+    summary.textContent = ev.summary;
+    b.append(who, summary);
+    b.addEventListener("mouseenter", () => {
+      hovered = true;
+      syncPause();
+    });
+    b.addEventListener("mouseleave", () => {
+      hovered = false;
+      syncPause();
+    });
+    b.addEventListener("focus", () => {
+      focused = true;
+      syncPause();
+    });
+    b.addEventListener("blur", () => {
+      focused = false;
+      syncPause();
+    });
     b.addEventListener("click", () => onPick(ev.teamId, ev.agentId));
     return b;
   }
@@ -131,9 +180,14 @@ export function createTicker(doc: Document, onPick: (teamId: string, agentId: st
     if (sig === shown) return;
     shown = sig;
     track.textContent = "";
+    hovered = focused = false;
+    syncPause();
     if (events.length === 0) {
       track.classList.remove("is-flowing");
-      track.textContent = phrases.ticker.quiet;
+      const quiet = doc.createElement("span");
+      quiet.className = "ow-chip ow-ticker__quiet";
+      quiet.textContent = phrases.ticker.quiet;
+      track.append(quiet);
       return;
     }
     // 움직임 줄이기: 최신 항목 하나를 정지 표시 (HANDOFF 7절)

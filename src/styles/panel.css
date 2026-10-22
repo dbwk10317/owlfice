@@ -119,7 +119,12 @@
   display: none;
 }
 
-/* 티커: 목록을 두 번 이어 붙여 -50% 만큼 흐르면 이음매가 없다. 간격은 항목 오른쪽 여백으로 (gap 이면 반이 어긋난다). tokens.css 의 `.ow-app button { margin: 0 }` 에 지지 않게 선택자를 한 단계 더 쓴다 */
+/* 티커: 목록을 두 번 이어 붙여 -50% 만큼 흐르면 이음매가 없다. 간격은 항목 오른쪽 여백으로 (gap 이면 반이 어긋난다). */
+.ow-ticker__label {
+  position: relative;
+  z-index: 1;
+  box-shadow: 8px 0 8px var(--ow-surface);
+}
 .ow-ticker__view {
   flex: 1;
   min-width: 0;
@@ -128,20 +133,22 @@
 .ow-ticker__track {
   gap: 0;
 }
-.ow-ticker__track .ow-ticker__item {
-  font: inherit;
-  color: inherit;
+.ow-ticker__item {
   margin-right: 24px;
   white-space: nowrap;
 }
-.ow-ticker__track .ow-ticker__item:hover {
-  color: var(--ow-ink);
+.ow-ticker__item:focus-visible {
+  background: var(--ow-fill);
 }
-.ow-ticker__time {
-  color: var(--ow-ink-3);
+.ow-ticker__quiet {
+  background: var(--ow-fill);
+  color: var(--ow-ink-2);
 }
 .ow-ticker__track.is-flowing {
   animation: ow-tick 48s linear infinite;
+}
+.ow-ticker__track.is-flowing.is-paused {
+  animation-play-state: paused;
 }
 @keyframes ow-tick {
   to {

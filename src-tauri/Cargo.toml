@@ -53,3 +53,6 @@ opt-level = 3
 # 시작 작업 패닉을 오류 단계로 복구하기 위함
 panic = "unwind"
 strip = true
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

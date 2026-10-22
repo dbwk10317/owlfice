@@ -38,6 +38,8 @@ const summary = (over: Partial<OfficeSummaryDto> = {}): OfficeSummaryDto => ({
       folder: "f",
       others: 2,
       started: STARTED,
+      lastActivity: STARTED,
+      readFailed: false,
       phase: "Working",
       dot: "Working",
       asking: false,

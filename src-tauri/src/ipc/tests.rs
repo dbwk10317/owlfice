@@ -212,6 +212,32 @@ fn asking_count_excludes_retired_and_off_and_updates_at_escalation_boundary() {
     assert_eq!((off.asking_count, off.asking), (0, true));
 }
 
+#[test]
+fn read_failure_and_recovery_publish_with_actual_last_activity() {
+    let e = env(Scale::Large);
+    let k = key("windows", Vendor::Claude, "s");
+    let mut t = team("s");
+    t.last_activity = t0() + Duration::minutes(4);
+    lock(&e.world).put_team(k.clone(), t, t0(), true);
+    let mut sent = Sent::default();
+    let (initial, _) = e.ipc.poll(&mut sent, t0());
+    let initial = initial.unwrap();
+    let row = &initial.offices[0].teams[0];
+    assert_eq!(row.last_activity, t0() + Duration::minutes(4));
+    assert!(!row.read_failed);
+    lock(&e.world).set_read_failed(&k, true);
+    let (failed, _) = e.ipc.poll(&mut sent, t0());
+    let failed = failed.unwrap();
+    assert!(failed.list_seq > initial.list_seq);
+    assert!(failed.offices[0].teams[0].read_failed);
+    lock(&e.world).set_read_failed(&k, false);
+    let (recovered, _) = e.ipc.poll(&mut sent, t0());
+    let recovered = recovered.unwrap();
+    assert!(recovered.list_seq > failed.list_seq);
+    assert!(!recovered.offices[0].teams[0].read_failed);
+    assert!(e.ipc.poll(&mut sent, t0()).0.is_none());
+}
+
 /// 중소기업 층 점: 장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근. 결재판은 어느 팀이든
 #[test]
 fn small_floor_dot_follows_most_urgent_team() {
@@ -255,7 +281,7 @@ fn small_floor_dot_follows_most_urgent_team() {
         assert_eq!(floor.dot, want, "{:?}", floor.teams);
         assert_eq!(
             (floor.floor, floor.label.as_str(), floor.building.as_deref()),
-            (Some(1), "1층 Claude", None)
+            (Some(1), "1층 Claude 사무실", None)
         );
     }
     let mut w = lock(&e.world);

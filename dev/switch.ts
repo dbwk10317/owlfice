@@ -59,6 +59,8 @@ let backend: WorldDto = {
         folder: `sample-${o.officeId}`,
         others: 1,
         started: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        readFailed: false,
         phase: "Working",
         dot: "Working",
         asking: false,

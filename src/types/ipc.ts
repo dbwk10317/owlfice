@@ -74,7 +74,7 @@ others: number,
 /**
  * 활성 경과는 프론트가 이것으로 센다. 매초 다시 보내지 않으려고
  */
-started: string, phase: TeamPhase, dot: Dot, 
+started: string, lastActivity: string, readFailed: boolean, phase: TeamPhase, dot: Dot, 
 /**
  * 점 옆 결재판 (허가 대기)
  */

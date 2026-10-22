@@ -7,7 +7,7 @@ use std::sync::{Condvar, Mutex, MutexGuard};
 
 use serde_json::{Map, Value};
 
-use crate::ipc::SettingsDto;
+use crate::ipc::{NightMode, SettingsDto};
 use crate::office::names::{unwritable, write_atomic};
 use crate::office::world::Scale;
 
@@ -207,6 +207,10 @@ impl SettingsBook {
             g.map
                 .insert("manual_paths".into(), serde_json::to_value(paths)?);
         }
+        if let Some(mode) = dto.night_mode {
+            g.map
+                .insert("nightMode".into(), serde_json::to_value(mode)?);
+        }
         if !g.writable {
             return Err(unwritable(&g.path));
         }
@@ -233,6 +237,12 @@ impl SettingsBook {
             company_name: name("company_name"),
             manual_paths: Some(paths),
             sound: Some(flag("sound", false)),
+            night_mode: Some(
+                g.map
+                    .get("nightMode")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .unwrap_or(NightMode::Auto),
+            ),
             os_notifications: Some(flag("os_notifications", true)),
             boss_name: name("boss_name"),
             raw_diagnostics: Some(flag("raw_diagnostics", false)),
@@ -246,6 +256,59 @@ mod tests {
 
     fn read(dir: &Path) -> Value {
         serde_json::from_slice(&std::fs::read(dir.join("settings.json")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn night_mode_defaults_for_missing_old_or_invalid_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            SettingsBook::load(dir.path()).snapshot().night_mode,
+            Some(NightMode::Auto)
+        );
+        for value in [
+            serde_json::json!({"scale": "Small", "sound": true}),
+            serde_json::json!({"nightMode": "unknown"}),
+            serde_json::json!({"nightMode": true}),
+            serde_json::json!({"nightMode": null}),
+        ] {
+            std::fs::write(dir.path().join("settings.json"), value.to_string()).unwrap();
+            assert_eq!(
+                SettingsBook::load(dir.path()).snapshot().night_mode,
+                Some(NightMode::Auto)
+            );
+        }
+    }
+
+    #[test]
+    fn night_mode_round_trip_partial_null_and_invalid_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let book = SettingsBook::load(dir.path());
+        for mode in ["on", "off", "auto"] {
+            let patch: SettingsDto =
+                serde_json::from_value(serde_json::json!({"nightMode": mode})).unwrap();
+            book.update(&patch).unwrap();
+            assert_eq!(read(dir.path())["nightMode"], mode);
+            assert_eq!(
+                SettingsBook::load(dir.path()).snapshot().night_mode,
+                patch.night_mode
+            );
+            let null_patch =
+                serde_json::from_value(serde_json::json!({"nightMode": null, "sound": true}))
+                    .unwrap();
+            book.update(&null_patch).unwrap();
+            assert_eq!(book.snapshot().night_mode, patch.night_mode);
+            assert_eq!(book.snapshot().sound, Some(true));
+        }
+        for invalid in [
+            serde_json::json!("Auto"),
+            serde_json::json!("unknown"),
+            serde_json::json!(true),
+        ] {
+            assert!(
+                serde_json::from_value::<SettingsDto>(serde_json::json!({"nightMode": invalid}))
+                    .is_err()
+            );
+        }
     }
 
     #[test]

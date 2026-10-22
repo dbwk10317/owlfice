@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { layoutOf, mountHeader } from "./header.ts";
+import { layoutOf, mountHeader, type HeaderOptions } from "./header.ts";
+import { saveSettings } from "./popup-settings.ts";
+import type { Invoke } from "./scale.ts";
 import { mountPanel, type Viewport } from "./sidebar-right.ts";
 import { createStore } from "./store.ts";
 import { emp, office, team } from "./test-office.ts";
-import type { OfficeDto, OfficeListDto, OfficeSummaryDto, Scale } from "./types/ipc.ts";
+import type { NightMode, OfficeDto, OfficeListDto, OfficeSummaryDto, Scale } from "./types/ipc.ts";
 
 // 2026-01-01 22:47 (로컬). 팀 시작은 12분 전
 const NOW = new Date(2026, 0, 1, 22, 47, 0);
@@ -17,6 +19,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   document.body.innerHTML = "";
+  delete document.documentElement.dataset.theme;
 });
 
 const summary = (over: Partial<OfficeSummaryDto> = {}): OfficeSummaryDto => ({
@@ -58,6 +61,7 @@ function setup(
   scale: Scale = "Large",
   over: Partial<OfficeDto> = {},
   bandSlot?: () => HTMLElement | null,
+  options: Partial<HeaderOptions> = {},
 ) {
   const store = createStore<OfficeListDto, OfficeDto>();
   const sel = {
@@ -108,6 +112,7 @@ function setup(
     stage,
     centerCanvas,
     toggleMaximize,
+    ...options,
   });
   const q = (sel: string) => header.querySelector<HTMLElement>(sel)!;
   return {
@@ -136,6 +141,91 @@ test("3.2 표의 너비 경계", () => {
     "rail",
     "select",
   ]);
+});
+
+test.each([
+  ["auto", 12, false],
+  ["auto", 22, true],
+  ["on", 12, true],
+  ["off", 22, false],
+] as const)("야근 %s 모드는 %s시에 크롬·토글만 바꾼다", (nightMode, hour, night) => {
+  const s = setup(summary(), "Large", {}, undefined, {
+    nightMode,
+    now: () => new Date(2026, 0, 1, hour).getTime(),
+    onNightMode: vi.fn(),
+  });
+  expect(document.documentElement.dataset.theme === "night").toBe(night);
+  const toggle = s.q(`[aria-label="야근 모드 ${night ? "끄기" : "켜기"}"]`);
+  expect(toggle.getAttribute("aria-pressed")).toBe(String(night));
+  expect(s.store.state.office!.shared.night).toBe(false);
+  expect(s.q(".ow-header__status").textContent).toContain("근무 중");
+});
+
+test.each([
+  [19, 59, 20, true],
+  [5, 59, 6, false],
+])("자동은 %s:%s에서 %s시로 넘어가는 틱에 반영된다", (hour, minute, nextHour, night) => {
+  let clock = new Date(2026, 0, 1, hour, minute).getTime();
+  const s = setup(summary(), "Large", {}, undefined, { now: () => clock });
+  expect(document.documentElement.dataset.theme === "night").toBe(!night);
+  clock = new Date(2026, 0, 1, nextHour).getTime();
+  vi.advanceTimersByTime(30_000);
+  expect(document.documentElement.dataset.theme === "night").toBe(night);
+  expect(
+    s.q(`[aria-label="야근 모드 ${night ? "끄기" : "켜기"}"]`).getAttribute("aria-pressed"),
+  ).toBe(String(night));
+});
+
+test("절전 복귀는 다음 틱을 기다리지 않고 현재 시각을 읽으며 수동 모드는 유지한다", () => {
+  let clock = new Date(2026, 0, 1, 19, 59).getTime();
+  const s = setup(summary(), "Large", {}, undefined, { now: () => clock });
+  Object.defineProperty(document, "hidden", { configurable: true, value: true });
+  clock = new Date(2026, 0, 2, 1).getTime();
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(document.documentElement.dataset.theme).toBeUndefined();
+  Object.defineProperty(document, "hidden", { configurable: true, value: false });
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(document.documentElement.dataset.theme).toBe("night");
+  s.handle!.setSettings(null, false, "off");
+  vi.advanceTimersByTime(30_000);
+  expect(document.documentElement.dataset.theme).toBeUndefined();
+  s.handle!.setSettings(null, false, "auto");
+  expect(document.documentElement.dataset.theme).toBe("night");
+});
+
+test("헤더 토글은 클릭 시점의 테마 반대를 저장하고 실패 뒤 읽은 설정도 반영한다", async () => {
+  let clock = new Date(2026, 0, 1, 19, 59).getTime();
+  let nightMode: NightMode = "auto";
+  const invoke = vi.fn(async <T>(cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === "set_settings") {
+      nightMode = (args!.dto as { nightMode: NightMode }).nightMode;
+      throw new Error("저장 실패");
+    }
+    return { nightMode } as T;
+  });
+  const s = setup(summary(), "Large", {}, undefined, {
+    now: () => clock,
+    onNightMode: (mode) =>
+      saveSettings(
+        {
+          invoke: invoke as Invoke,
+          onSettings: (next) => s.handle!.setSettings(null, false, next.nightMode ?? "auto"),
+        },
+        { nightMode: mode },
+      ),
+  });
+  const toggle = s.q('[aria-label="야근 모드 켜기"]') as HTMLButtonElement;
+  clock = new Date(2026, 0, 1, 20).getTime();
+  toggle.click();
+  await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(invoke).toHaveBeenCalledWith("set_settings", { dto: { nightMode: "off" } });
+  expect(document.documentElement.dataset.theme).toBeUndefined();
+  expect(s.app.querySelector('[role="alert"]')!.textContent).toContain("저장 실패");
+  toggle.click();
+  await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(invoke).toHaveBeenLastCalledWith("get_settings");
+  expect(nightMode).toBe("on");
+  expect(document.documentElement.dataset.theme).toBe("night");
 });
 
 test("설정 갱신으로 본사 이름과 소리 토글이 바로 바뀌고 실패는 알린다", async () => {
@@ -292,15 +382,15 @@ test("결재 칩은 선택 사무실의 활성 팀 인원을 합하고, 퇴근·
   expect(s.q(".ow-header__asking").hidden).toBe(true);
 });
 
-test("세그먼트의 이름·소리 상태와 미연결 야근 버튼은 aria-pressed로 표시한다", () => {
-  const s = setup(summary());
+test("세그먼트의 이름·소리·자동 야근 상태는 aria-pressed로 표시한다", () => {
+  const s = setup(summary(), "Large", {}, undefined, { onNightMode: vi.fn() });
   const buttons = s.header.querySelectorAll<HTMLButtonElement>(".ow-segment button");
   expect([...buttons].map((b) => b.getAttribute("aria-pressed"))).toEqual([
     "true",
     "false",
-    "false",
+    "true",
   ]);
-  expect(buttons[2].disabled).toBe(true);
+  expect(buttons[2].disabled).toBe(false);
   buttons[0].click();
   expect(s.setRoomLabels).toHaveBeenCalledWith(false);
   expect(buttons[0].getAttribute("aria-pressed")).toBe("false");

@@ -11,6 +11,7 @@ const defaults = (): SettingsDto => ({
   bossName: null,
   manualPaths: [],
   sound: null,
+  nightMode: "auto",
   osNotifications: null,
   rawDiagnostics: null,
 });
@@ -42,6 +43,24 @@ afterEach(() => {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   document.body.innerHTML = "";
 });
+
+test.each(["auto", "on", "off"] as const)(
+  "야근 모드 %s를 표시하고 세 값 모두 부분 저장한다",
+  async (nightMode) => {
+    const s = setup({ nightMode });
+    await settle();
+    const choices = { auto: "자동", on: "켜기", off: "끄기" } as const;
+    for (const [mode, text] of Object.entries(choices))
+      expect(button(text).getAttribute("aria-pressed")).toBe(String(mode === nightMode));
+    for (const mode of ["on", "off", "auto"] as const) {
+      button(choices[mode]).click();
+      await settle();
+      expect(s.invoke).toHaveBeenCalledWith("set_settings", { dto: { nightMode: mode } });
+      expect(button(choices[mode]).getAttribute("aria-pressed")).toBe("true");
+      expect(s.onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ nightMode: mode }));
+    }
+  },
+);
 
 test("불러온 설정과 기본값을 표시하고 원문 진단 설명은 항상 보인다", async () => {
   const s = setup({ companyName: "야근상사", bossName: "김사장" });

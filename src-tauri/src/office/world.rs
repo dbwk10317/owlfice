@@ -60,6 +60,7 @@ pub struct OfficeWorld {
     pub state_seq: HashMap<OfficeId, u64>,
     /// 의심(통신 지연) 상태인 호스트. 목록에 S46 점선으로 나간다 (docs/CONTRACTS.md C5)
     pub suspect_hosts: BTreeSet<String>,
+    pub read_failed_teams: BTreeSet<TeamKey>,
     /// 야근 판정 시간대 (docs/CONTRACTS.md C8)
     pub local: FixedOffset,
     /// 아직 프론트에 보내지 않은 연출 신호와 그 팀. 상태 번호를 올린 같은 잠금 안에서 넣고 발행기가 비운다 (docs/CONTRACTS.md C9).
@@ -99,6 +100,7 @@ impl OfficeWorld {
             list_seq: 0,
             state_seq: HashMap::new(),
             suspect_hosts: BTreeSet::new(),
+            read_failed_teams: BTreeSet::new(),
             local,
             outbox: Vec::new(),
             unhandled: Vec::new(),
@@ -147,6 +149,7 @@ impl OfficeWorld {
     }
 
     pub fn remove_team(&mut self, key: &TeamKey) {
+        self.read_failed_teams.remove(key);
         if self.teams.remove(key).is_none() {
             return;
         }
@@ -157,6 +160,20 @@ impl OfficeWorld {
             && !self.teams.keys().any(|k| self.office_of(k) == *sel)
         {
             self.selected = None;
+        }
+    }
+
+    pub fn set_read_failed(&mut self, key: &TeamKey, failed: bool) {
+        if !self.teams.contains_key(key) {
+            return;
+        }
+        let changed = if failed {
+            self.read_failed_teams.insert(key.clone())
+        } else {
+            self.read_failed_teams.remove(key)
+        };
+        if changed {
+            self.list_seq += 1;
         }
     }
 

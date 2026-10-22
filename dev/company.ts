@@ -77,6 +77,10 @@ function summary(id: string, members: TeamDto[], floor: number): OfficeSummaryDt
       folder: t.folder,
       others: 1,
       started: since,
+      lastActivity: sidebarStates
+        ? new Date(Date.now() - 35 * 60_000).toISOString()
+        : t.lastActivity,
+      readFailed: sidebarStates && t.teamId === "one",
       phase: t.phase,
       dot:
         t.phase === "Off"
@@ -246,9 +250,12 @@ header = mountHeader(app, document.getElementById("header")!, store, {
   bandSlot: () => side.querySelector(".ow-side-band"),
   togglePanel: () => panel.toggleDrawer(),
   setRoomLabels: (on) => view?.setRoomLabels(on),
+  setScale: (scale) => view?.setScale(scale),
+  stage,
+  centerCanvas: () => view?.centerCanvas(),
 });
 await mountOffice(stage, store, {
-  onScale: (n) => header?.setScale(n),
+  onScale: (n, maxFit) => header?.setScale(n, maxFit),
   onEmployee: (officeId, teamId, agentId) => {
     panel.highlight(teamId, agentId);
     openEmployee(officeId, teamId, agentId);

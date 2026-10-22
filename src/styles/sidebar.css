@@ -111,7 +111,8 @@
   align-items: center;
   gap: 3px;
 }
-.ow-row__ask {
+.ow-row__ask,
+.ow-row__warning {
   color: var(--ow-ask);
 }
 .ow-row__text {

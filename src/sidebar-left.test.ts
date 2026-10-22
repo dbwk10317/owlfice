@@ -32,6 +32,8 @@ const team = (id: string, over: Partial<TeamSummaryDto> = {}): TeamSummaryDto =>
   folder: "lumaweave",
   others: 3,
   started: new Date(Date.now() - 12 * 60_000).toISOString(),
+  lastActivity: new Date(Date.now() - 35 * 60_000).toISOString(),
+  readFailed: false,
   phase: "Working",
   dot: "Working",
   asking: false,
@@ -500,6 +502,11 @@ test("30분 조용·프로세스 있음: 대기 중 칩이 업무를 대신하�
     "대기 중",
   ]);
   expect(chip.classList.contains("is-idle")).toBe(true);
+  expect(row.querySelector(".ow-row__meta")?.textContent).toBe(
+    "lumaweave · 부장 외 3명 · 35분 조용",
+  );
+  vi.advanceTimersByTime(60_000);
+  expect(row.querySelector(".ow-row__meta")?.textContent).toContain("36분 조용");
   expect(byClass(row, "ow-row__main")[0].getAttribute("aria-label")).toContain("대기 중");
   s.store.applyList(list([idle("Dozing")]));
   expect([dotOf(row).dataset.state, chip.textContent]).toEqual(["sleepy", "버그 수정"]);
@@ -513,6 +520,37 @@ test("30분 조용·프로세스 있음: 대기 중 칩이 업무를 대신하�
   );
   const teamRow = rowByName(s.root, "김하늘 부장 팀");
   expect(teamRow.querySelector(".ow-worktype.is-idle")?.textContent).toBe("대기 중");
+  expect(teamRow.querySelector(".ow-row__meta")?.textContent).toContain("35분 조용");
+  s.dispose();
+});
+
+test("읽기 실패는 경고와 안내를 보이고 복구되면 기존 업무·경과를 다시 보인다", () => {
+  const s = setup(list([office("101", { teams: [team("one", { readFailed: true })] })]));
+  const row = rowByName(s.root, "B동 101");
+  expect(row.classList.contains("is-broken")).toBe(true);
+  expect(row.querySelector<HTMLElement>(".ow-row__warning")!.hidden).toBe(false);
+  expect(row.querySelector(".ow-row__meta")?.textContent).toBe("세션 파일을 읽지 못했어요");
+  expect(row.querySelector(".ow-row__main")?.getAttribute("aria-label")).toContain(
+    "세션 파일을 읽지 못했어요",
+  );
+  s.store.applyList(list([office("101", { teams: [team("one")] })]));
+  expect(row.classList.contains("is-broken")).toBe(false);
+  expect(row.querySelector<HTMLElement>(".ow-row__warning")!.hidden).toBe(true);
+  expect(row.querySelector(".ow-row__meta")?.textContent).toContain("12분째");
+  s.store.applyList(
+    list(
+      [
+        office("claude", {
+          floor: 1,
+          teams: [team("one", { readFailed: true, dot: "IdleAlive" })],
+        }),
+      ],
+      "Small",
+    ),
+  );
+  const teamRow = rowByName(s.root, "김하늘 부장 팀");
+  expect(teamRow.classList.contains("is-broken")).toBe(true);
+  expect(teamRow.querySelector(".ow-row__meta")?.textContent).toBe("세션 파일을 읽지 못했어요");
   s.dispose();
 });
 

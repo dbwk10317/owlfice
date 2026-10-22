@@ -90,6 +90,8 @@ function list(selectedId: string | null): OfficeListDto {
             folder: "sample",
             others: 0,
             started: new Date().toISOString(),
+            lastActivity: new Date().toISOString(),
+            readFailed: false,
             phase: "Working",
             dot: "Working",
             asking: false,

@@ -11,6 +11,7 @@ import emptySvg from "../design/handoff/icons/empty-building.svg?raw";
 import ui from "../design/sprites/ui.json";
 import settingsSvg from "../design/handoff/icons/settings.svg?raw";
 import refreshSvg from "../design/handoff/icons/refresh.svg?raw";
+import warningSvg from "../design/handoff/icons/warning.svg?raw";
 import type {
   Border,
   Dot,
@@ -157,6 +158,8 @@ interface RowModel {
   host: string;
   metaHead: string;
   started: string | null;
+  lastActivity: string | null;
+  readFailed: boolean;
   state: string;
   ring: string;
   asking: boolean;
@@ -292,6 +295,8 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
       host: team?.hostBadge ?? "",
       metaHead: team ? (isOff ? team.folder : metaHead(team, true)) : "",
       started: team && !isOff ? team.started : null,
+      lastActivity: team?.lastActivity ?? null,
+      readFailed: team?.readFailed ?? false,
       state,
       ring: ringOf(o.border, o.delayed),
       asking,
@@ -380,6 +385,8 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
             n: incidents,
           }),
       started: null,
+      lastActivity: null,
+      readFailed: false,
       state,
       ring: o && !vacant ? ringOf(o.border, o.delayed) : "",
       asking,
@@ -416,6 +423,8 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
         host: t.hostBadge ?? "",
         metaHead: isOff ? t.folder : metaHead(t, false),
         started: isOff ? null : t.started,
+        lastActivity: t.lastActivity,
+        readFailed: t.readFailed,
         state: st,
         ring: isOff ? "" : ringOf(t.border, t.delayed),
         asking: t.asking && !isOff,
@@ -515,6 +524,7 @@ interface RowView extends View {
   dot: El;
   ask: El;
   name: El;
+  warning: El;
   chip: El;
   host: El;
   head: El;
@@ -669,11 +679,13 @@ export function mountSidebar(
     const top = mk(doc, "span", "ow-row__top");
     const square = m.kind === "floor" ? mk(doc, "span", "ow-square") : null;
     const name = mk(doc, "span", "ow-row__name ow-truncate");
+    const warning = svgSpan(doc, warningSvg, "ow-row__warning ow-icon ow-icon--sm");
+    warning.setAttribute("aria-hidden", "true");
     const chip = mk(doc, "span", "ow-worktype");
     const host = mk(doc, "span", "ow-host");
     chip.hidden = host.hidden = true;
     if (square) top.append(square);
-    top.append(name, chip, host);
+    top.append(name, warning, chip, host);
     const meta = mk(doc, "span", "ow-row__meta ow-truncate");
     const head = mk(doc, "span", "ow-row__head");
     const elapsed = mk(doc, "span", "ow-row__elapsed");
@@ -706,6 +718,7 @@ export function mountSidebar(
       dot,
       ask,
       name,
+      warning,
       chip,
       host,
       head,
@@ -734,6 +747,7 @@ export function mountSidebar(
       m.asking ? P.asking : "",
       m.workType,
       m.folder,
+      m.readFailed ? P.parseFailed : "",
       v.last.elapsed as string | undefined,
     ]
       .filter(Boolean)
@@ -742,7 +756,16 @@ export function mountSidebar(
   }
 
   function fillElapsed(v: RowView): void {
-    const text = v.model.started ? elapsedText(v.model.started, Date.now()) : "";
+    const m = v.model;
+    const text = m.readFailed
+      ? ""
+      : m.state === "idle-alive" && m.lastActivity
+        ? fill(P.quietFor, {
+            n: Math.max(0, Math.floor((Date.now() - Date.parse(m.lastActivity)) / 60_000)),
+          })
+        : m.started
+          ? elapsedText(m.started, Date.now())
+          : "";
     if (changed(v.last, "elapsed", text)) {
       v.elapsed.textContent = text;
       fillAria(v);
@@ -768,7 +791,12 @@ export function mountSidebar(
       v.host.textContent = m.host;
       v.host.hidden = !m.host;
     }
-    if (changed(L, "head", m.metaHead)) v.head.textContent = m.metaHead;
+    const head = m.readFailed ? P.parseFailed : m.metaHead;
+    if (changed(L, "head", head)) v.head.textContent = head;
+    if (changed(L, "readFailed", m.readFailed)) {
+      v.el.classList.toggle("is-broken", m.readFailed);
+      v.warning.hidden = !m.readFailed;
+    }
     fillElapsed(v);
     if (changed(L, "state", m.state)) {
       v.dot.dataset.state = m.state;

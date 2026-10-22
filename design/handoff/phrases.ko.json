@@ -20,7 +20,7 @@
     "detail": "{office} 세션 상세",
     "officeMeta": "{folder} · 부장 외 {n}명 · {elapsed}째",
     "officeMetaAlone": "{folder} · 부장 혼자 · {elapsed}째",
-    "quietFor": "{folder} · 부장 혼자 · {n}분 조용",
+    "quietFor": "{n}분 조용",
     "teamName": "{boss} 부장 팀",
     "teamMeta": "{folder} · 외 {n}명 · {elapsed}째",
     "teamMetaAlone": "{folder} · 혼자 · {elapsed}째",

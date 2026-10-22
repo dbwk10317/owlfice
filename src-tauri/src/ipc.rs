@@ -120,6 +120,8 @@ pub struct TeamSummaryDto {
     pub others: u32,
     /// 활성 경과는 프론트가 이것으로 센다. 매초 다시 보내지 않으려고
     pub started: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub read_failed: bool,
     pub phase: TeamPhase,
     pub dot: Dot,
     /// 점 옆 결재판 (허가 대기)
@@ -629,6 +631,8 @@ fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> T
         folder: folder(t),
         others: active_subs(t).count() as u32,
         started: t.started,
+        last_activity: t.last_activity,
+        read_failed: w.read_failed_teams.contains(k),
         phase: t.phase,
         dot: team_dot(t, now),
         asking: raw_asking_count > 0,
@@ -680,7 +684,7 @@ fn summaries(
                 }
                 OfficeId::Vendor(v) => {
                     let f = vendor_floor(*v);
-                    (None, Some(f), None, format!("{f}층 {v:?}"))
+                    (None, Some(f), None, format!("{f}층 {v:?} 사무실"))
                 }
             };
             OfficeSummaryDto {

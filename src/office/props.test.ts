@@ -1177,3 +1177,16 @@ test("램프와 비네트는 실제 night 조명에서 활성 직원의 모든 �
     expect(glows()).toBe(0);
   }
 });
+
+test("자료실 파쇄기는 허용된 방문 동안만 켜지고 전환에서 꺼진다", () => {
+  const { scene, props } = layer();
+  const shredder = scene.driven.get("shredder")!;
+  expect(frameOf(shredder)).toBe("shredder/idle");
+  props.archiveVisit(true);
+  expect(frameOf(shredder)).toBe("shredder/shred");
+  props.archiveVisit(false);
+  expect(frameOf(shredder)).toBe("shredder/idle");
+  props.archiveVisit(true);
+  props.reset();
+  expect(frameOf(shredder)).toBe("shredder/idle");
+});

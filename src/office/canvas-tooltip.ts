@@ -11,6 +11,7 @@ const ROOMS: Record<string, Room[]> = {
   review: ["Review"],
   incident: ["Incident"],
   meeting: ["Meeting"],
+  conference: ["Conference"],
   entrance: ["Door", "Shipping", "Outside"],
   pantry: ["Pantry"],
 };

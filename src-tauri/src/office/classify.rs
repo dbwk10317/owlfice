@@ -70,6 +70,10 @@ impl Activity {
 }
 
 impl Employee {
+    pub(crate) fn rejection_held(&self, now: DateTime<Utc>) -> bool {
+        self.rejected_at.is_some_and(|t| now - t < REJECT_HOLD)
+    }
+
     fn new(
         id: &str,
         rank: Rank,
@@ -1652,7 +1656,7 @@ impl Team {
             }
             return;
         }
-        if e.rejected_at.is_some_and(|t| now - t < REJECT_HOLD) {
+        if e.rejection_held(now) {
             return;
         }
         if let Some(t) = e
@@ -1686,6 +1690,15 @@ impl Team {
             if let Some(at) = entered {
                 e.say(at, BubbleSay::Incident);
             }
+            return;
+        }
+        if e.planning && working {
+            e.set_activity(Activity::new(
+                sentence::PLANNING,
+                Room::Conference,
+                e.activity.since,
+                Confidence::Confirmed,
+            ));
             return;
         }
         if let Some(t) = e.quiet_since.filter(|_| working) {
@@ -1977,7 +1990,7 @@ fn needs_boss(e: &Employee, now: DateTime<Utc>) -> bool {
         || escalated_call(e, now).is_some()
         || e.waiting_user_since
             .is_some_and(|t| now - t >= WAIT_USER_AFTER)
-        || e.rejected_at.is_some_and(|t| now - t < REJECT_HOLD)
+        || e.rejection_held(now)
 }
 
 /// Codex 승인 창 추정 (docs/CONTRACTS.md C8): 결과 없이 35초 지난 escalated 호출 중 가장 오래된 것
@@ -2217,6 +2230,7 @@ pub(crate) mod sentence {
     pub const ARRIVAL: &str = "출근 중 · 자리 찾는 중";
     pub const REQUEST: &str = "요구사항 접수";
     pub const ASKING: &str = "결재판 들고 문 앞 대기";
+    pub const PLANNING: &str = "회의실에서 계획을 세우는 중";
     /// ExitPlanMode 의 질문 자리 (docs/CONTRACTS.md C3 팀장실)
     pub const PLAN: &str = "계획 결재 올립니다";
     pub const INCIDENT: &str = "장애 상황실 소집, 무재해 기록 0분";

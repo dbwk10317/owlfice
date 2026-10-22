@@ -1730,3 +1730,15 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
         }
     }
 }
+
+#[test]
+fn rejection_dto_uses_hold_time_even_after_a_compaction_sentence() {
+    let mut team = Team::new("a", Product::ClaudeCli, t0());
+    let e = &mut team.employees[0];
+    e.rejected_at = Some(t0());
+    e.activity.sentence = "분갈이 중".into();
+    assert!(employee_dto(e, t0() + Duration::seconds(1)).rejected);
+    assert!(!employee_dto(e, t0() + Duration::seconds(4)).rejected);
+    e.activity.sentence = "반려: 옛 호출".into();
+    assert!(!employee_dto(e, t0() + Duration::seconds(5)).rejected);
+}

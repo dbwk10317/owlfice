@@ -83,8 +83,8 @@ test("걷는 시간은 0.5–1.5초로 자른다", () => {
   expect(walking(t.update(NOW + WALK_MIN_MS))).toBe(false);
   // 가장 먼 방 사이 걷기도 1.5초를 넘지 않는다
   const far = track();
-  far.reset(target(pt("shipping")), NOW);
-  far.retarget(target(pt("pantry_massage")), NOW);
+  far.reset(target(pt("door")), NOW);
+  far.retarget(target(pt("boss_window")), NOW);
   expect(walking(far.update(NOW + WALK_MAX_MS - 1))).toBe(true);
   expect(walking(far.update(NOW + WALK_MAX_MS))).toBe(false);
 });

@@ -375,6 +375,7 @@ export async function mountOffice(
     props?.ring(now);
     opts.sound?.cue(cue);
   };
+  actors.onArchiveVisit = (active) => props?.archiveVisit(active);
   actors.onDoor = (now) => props?.openDoor(now);
   actors.onCue = (c, now, o) => {
     props?.cue(c, now, o);

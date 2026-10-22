@@ -20,6 +20,7 @@ import roomDev from "../design/handoff/icons/room-dev.svg?raw";
 import roomDoor from "../design/handoff/icons/room-door.svg?raw";
 import roomIncident from "../design/handoff/icons/room-incident.svg?raw";
 import roomLibrary from "../design/handoff/icons/room-library.svg?raw";
+import roomConference from "../design/handoff/icons/room-conference.svg?raw";
 import roomMeeting from "../design/handoff/icons/room-meeting.svg?raw";
 import roomPantry from "../design/handoff/icons/room-pantry.svg?raw";
 import roomReview from "../design/handoff/icons/room-review.svg?raw";
@@ -61,6 +62,7 @@ export const ROOM_ICON: Record<Room, string> = {
   Review: roomReview,
   Incident: roomIncident,
   Meeting: roomMeeting,
+  Conference: roomConference,
   Shipping: roomShipping,
   Pantry: roomPantry,
   Outside: roomAway,
@@ -76,6 +78,7 @@ export const ROOM_LABEL: Record<Room, string> = {
   Review: phrases.rooms.review,
   Incident: phrases.rooms.incident,
   Meeting: phrases.rooms.meeting,
+  Conference: phrases.rooms.conference,
   Shipping: phrases.rooms.shipping,
   Pantry: phrases.rooms.pantry,
   Outside: phrases.rooms.away,

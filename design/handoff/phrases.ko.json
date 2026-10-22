@@ -79,6 +79,10 @@
   "workType": ["코드 리뷰", "버그 수정", "리팩터링", "문서 작업", "기술 조사", "신규 개발"],
 
   "rooms": {
+    "conference": "회의실",
+    "archive": "자료실",
+    "security": "경비실",
+    "roof": "옥상",
     "boss": "팀장실", "bossSmall": "팀장석", "dev": "개발실", "library": "소스 서고", "build": "빌드실", "test": "테스트실",
     "review": "리뷰실", "incident": "장애 상황실", "meeting": "거래처 미팅실", "shipping": "출고장", "pantry": "탕비실",
     "away": "외근", "door": "출입문", "entrance": "출입문 · 출고장"

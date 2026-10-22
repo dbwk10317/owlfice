@@ -260,6 +260,7 @@ pub struct EmployeeDto {
     pub pending_count: u32,
     pub unique_edits: u32,
     pub planning: bool,
+    pub rejected: bool,
     pub medal: bool,
     pub build_test_border: Border,
     pub last_say: Option<String>,
@@ -740,6 +741,7 @@ fn employee_dto(e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
         pending_count: u32::try_from(e.pending.len()).unwrap_or(u32::MAX),
         unique_edits: u32::try_from(e.record.files_edited.items.len()).unwrap_or(u32::MAX),
         planning: e.planning,
+        rejected: e.rejection_held(now),
         medal: e.medal_until.is_some_and(|until| now < until),
         build_test_border: match e.build_test_light() {
             Light::Yellow => Border::Running,

@@ -26,17 +26,35 @@
    "rect": [
     0,
     0,
-    6,
+    4,
     5
    ],
    "floor": "library",
    "label": [
-    184,
-    92
+    177,
+    74
    ],
    "entry": [
-    2.4,
-    5.0
+    2,
+    5
+   ]
+  },
+  "archive": {
+   "name": "자료실",
+   "rect": [
+    4,
+    0,
+    6,
+    5
+   ],
+   "floor": "archive",
+   "label": [
+    228,
+    106
+   ],
+   "entry": [
+    5,
+    5
    ]
   },
   "build": {
@@ -50,11 +68,11 @@
    "floor": "build",
    "label": [
     271,
-    133
+    138
    ],
    "entry": [
     8.45,
-    5.0
+    5
    ]
   },
   "test": {
@@ -67,12 +85,12 @@
    ],
    "floor": "test",
    "label": [
-    312,
-    161
+    337,
+    170
    ],
    "entry": [
     13.4,
-    5.0
+    5
    ]
   },
   "boss": {
@@ -86,10 +104,10 @@
    "floor": "boss",
    "label": [
     405,
-    215
+    203
    ],
    "entry": [
-    16.0,
+    16,
     4.9
    ]
   },
@@ -103,12 +121,12 @@
    ],
    "floor": "dev",
    "label": [
-    260,
-    180
+    250,
+    192
    ],
    "entry": [
     13.5,
-    8.0
+    8
    ]
   },
   "review": {
@@ -122,10 +140,10 @@
    "floor": "review",
    "label": [
     382,
-    234
+    235
    ],
    "entry": [
-    16.0,
+    16,
     7.9
    ]
   },
@@ -139,48 +157,84 @@
    ],
    "floor": "incident",
    "label": [
-    337,
-    250
+    340,
+    267
    ],
    "entry": [
     21.7,
-    9.0
+    9
+   ]
+  },
+  "conference": {
+   "name": "회의실",
+   "rect": [
+    16,
+    12,
+    20,
+    16
+   ],
+   "floor": "conference",
+   "label": [
+    244,
+    267
+   ],
+   "entry": [
+    18,
+    12
    ]
   },
   "meeting": {
    "name": "거래처 미팅실",
    "rect": [
-    16,
+    20,
     12,
     24,
     16
    ],
    "floor": "meeting",
    "label": [
-    273,
-    269
+    294,
+    301
    ],
    "entry": [
-    16.0,
-    14.4
+    22,
+    12
+   ]
+  },
+  "security": {
+   "name": "경비실",
+   "rect": [
+    0,
+    11,
+    5,
+    13
+   ],
+   "floor": "security",
+   "label": [
+    106,
+    140
+   ],
+   "entry": [
+    5,
+    12
    ]
   },
   "entrance": {
    "name": "출입문 · 출고장",
    "rect": [
     0,
-    11,
+    13,
     5,
     16
    ],
    "floor": "entrance",
    "label": [
-    75,
-    155
+    51,
+    171
    ],
    "entry": [
-    2.0,
-    11.0
+    2,
+    13
    ]
   },
   "pantry": {
@@ -188,17 +242,35 @@
    "rect": [
     5,
     11,
-    16,
+    13,
     16
    ],
    "floor": "pantry",
    "label": [
-    134,
-    195
+    136,
+    201
    ],
    "entry": [
     7.75,
-    11.0
+    11
+   ]
+  },
+  "roof": {
+   "name": "옥상",
+   "rect": [
+    13,
+    11,
+    16,
+    16
+   ],
+   "floor": "roof",
+   "label": [
+    200,
+    233
+   ],
+   "entry": [
+    13,
+    12
    ]
   }
  },
@@ -398,11 +470,11 @@
      "sprite": "door",
      "state": "closed",
      "gx": 0,
-     "gy": 12.6,
+     "gy": 13.6,
      "z": 0,
-     "depth": 13.5,
-     "x": 61,
-     "y": 136,
+     "depth": 14.5,
+     "x": 49,
+     "y": 142,
      "layer": "wall",
      "drive": "누가 드나드는 1초 동안 open"
     },
@@ -423,11 +495,11 @@
      "sprite": "doormat",
      "state": "default",
      "gx": 0,
-     "gy": 12.7,
+     "gy": 13.6,
      "z": 0,
-     "depth": 14.1,
-     "x": 60,
-     "y": 136,
+     "depth": 15.0,
+     "x": 49,
+     "y": 142,
      "layer": "decal"
     },
     {
@@ -446,6 +518,18 @@
      "id": "wallseg_01",
      "sprite": "wallseg_01",
      "state": "default",
+     "gx": 3.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 5.8,
+     "x": 259,
+     "y": 83,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_02",
+     "sprite": "wallseg_02",
+     "state": "default",
      "gx": 5.9,
      "gy": 0,
      "z": 0,
@@ -455,8 +539,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_02",
-     "sprite": "wallseg_02",
+     "id": "wallseg_03",
+     "sprite": "wallseg_03",
      "state": "default",
      "gx": 10.9,
      "gy": 0,
@@ -467,8 +551,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_03",
-     "sprite": "wallseg_03",
+     "id": "wallseg_04",
+     "sprite": "wallseg_04",
      "state": "default",
      "gx": 15.9,
      "gy": 0,
@@ -479,8 +563,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_04",
-     "sprite": "wallseg_04",
+     "id": "wallseg_05",
+     "sprite": "wallseg_05",
      "state": "default",
      "gx": 0,
      "gy": 4.9,
@@ -491,20 +575,32 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_05",
-     "sprite": "wallseg_05",
+     "id": "wallseg_06",
+     "sprite": "wallseg_06",
      "state": "default",
      "gx": 3.2,
      "gy": 4.9,
      "z": 0,
-     "depth": 10.45,
+     "depth": 8.7,
      "x": 192,
      "y": 109,
      "layer": "world"
     },
     {
-     "id": "wallseg_06",
-     "sprite": "wallseg_06",
+     "id": "wallseg_07",
+     "sprite": "wallseg_07",
+     "state": "default",
+     "gx": 5.7,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 11.7,
+     "x": 222,
+     "y": 124,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_08",
+     "sprite": "wallseg_08",
      "state": "default",
      "gx": 9.2,
      "gy": 4.9,
@@ -515,8 +611,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_07",
-     "sprite": "wallseg_07",
+     "id": "wallseg_09",
+     "sprite": "wallseg_09",
      "state": "default",
      "gx": 14.2,
      "gy": 4.9,
@@ -527,8 +623,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_08",
-     "sprite": "wallseg_08",
+     "id": "wallseg_10",
+     "sprite": "wallseg_10",
      "state": "default",
      "gx": 16,
      "gy": 5.9,
@@ -539,8 +635,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_09",
-     "sprite": "wallseg_09",
+     "id": "wallseg_11",
+     "sprite": "wallseg_11",
      "state": "default",
      "gx": 19.4,
      "gy": 5.9,
@@ -551,8 +647,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_10",
-     "sprite": "wallseg_10",
+     "id": "wallseg_12",
+     "sprite": "wallseg_12",
      "state": "default",
      "gx": 15.9,
      "gy": 6.0,
@@ -563,8 +659,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_11",
-     "sprite": "wallseg_11",
+     "id": "wallseg_13",
+     "sprite": "wallseg_13",
      "state": "default",
      "gx": 15.9,
      "gy": 8.6,
@@ -575,8 +671,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_12",
-     "sprite": "wallseg_12",
+     "id": "wallseg_14",
+     "sprite": "wallseg_14",
      "state": "default",
      "gx": 16,
      "gy": 8.9,
@@ -587,8 +683,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_13",
-     "sprite": "wallseg_13",
+     "id": "wallseg_15",
+     "sprite": "wallseg_15",
      "state": "default",
      "gx": 22.4,
      "gy": 8.9,
@@ -599,32 +695,56 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_14",
-     "sprite": "wallseg_14",
+     "id": "wallseg_16",
+     "sprite": "wallseg_16",
      "state": "default",
      "gx": 16,
      "gy": 11.9,
      "z": 0,
-     "depth": 29.0,
+     "depth": 28.6,
      "x": 261,
      "y": 227,
      "layer": "world"
     },
     {
-     "id": "wallseg_15",
-     "sprite": "wallseg_15",
+     "id": "wallseg_17",
+     "sprite": "wallseg_17",
      "state": "default",
-     "gx": 19.4,
+     "gx": 18.8,
      "gy": 11.9,
      "z": 0,
-     "depth": 33.7,
-     "x": 302,
-     "y": 248,
+     "depth": 32.0,
+     "x": 295,
+     "y": 244,
      "layer": "world"
     },
     {
-     "id": "wallseg_16",
-     "sprite": "wallseg_16",
+     "id": "wallseg_18",
+     "sprite": "wallseg_18",
+     "state": "default",
+     "gx": 22.8,
+     "gy": 11.9,
+     "z": 0,
+     "depth": 35.4,
+     "x": 343,
+     "y": 268,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_19",
+     "sprite": "wallseg_19",
+     "state": "default",
+     "gx": 19.9,
+     "gy": 12.0,
+     "z": 0,
+     "depth": 34.0,
+     "x": 307,
+     "y": 251,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_20",
+     "sprite": "wallseg_20",
      "state": "default",
      "gx": 15.9,
      "gy": 12.2,
@@ -635,8 +755,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_17",
-     "sprite": "wallseg_17",
+     "id": "wallseg_21",
+     "sprite": "wallseg_21",
      "state": "default",
      "gx": 15.9,
      "gy": 15.0,
@@ -647,8 +767,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_18",
-     "sprite": "wallseg_18",
+     "id": "wallseg_22",
+     "sprite": "wallseg_22",
      "state": "default",
      "gx": 0,
      "gy": 10.9,
@@ -659,8 +779,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_19",
-     "sprite": "wallseg_19",
+     "id": "wallseg_23",
+     "sprite": "wallseg_23",
      "state": "default",
      "gx": 3,
      "gy": 10.9,
@@ -671,8 +791,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_20",
-     "sprite": "wallseg_20",
+     "id": "wallseg_24",
+     "sprite": "wallseg_24",
      "state": "default",
      "gx": 9,
      "gy": 10.9,
@@ -683,27 +803,75 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_21",
-     "sprite": "wallseg_21",
+     "id": "wallseg_25",
+     "sprite": "wallseg_25",
      "state": "default",
      "gx": 4.9,
-     "gy": 11.4,
+     "gy": 11.0,
      "z": 0,
-     "depth": 17.4,
-     "x": 134,
-     "y": 158,
+     "depth": 16.2,
+     "x": 139,
+     "y": 155,
      "layer": "world"
     },
     {
-     "id": "wallseg_22",
-     "sprite": "wallseg_22",
+     "id": "wallseg_26",
+     "sprite": "wallseg_26",
      "state": "default",
      "gx": 4.9,
-     "gy": 15.0,
+     "gy": 12.6,
      "z": 0,
-     "depth": 20.5,
+     "depth": 19.3,
+     "x": 120,
+     "y": 165,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_27",
+     "sprite": "wallseg_27",
+     "state": "default",
+     "gx": 0,
+     "gy": 12.9,
+     "z": 0,
+     "depth": 13.6,
+     "x": 57,
+     "y": 137,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_28",
+     "sprite": "wallseg_28",
+     "state": "default",
+     "gx": 2.8,
+     "gy": 12.9,
+     "z": 0,
+     "depth": 16.9,
      "x": 91,
-     "y": 179,
+     "y": 154,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_29",
+     "sprite": "wallseg_29",
+     "state": "default",
+     "gx": 12.9,
+     "gy": 11.0,
+     "z": 0,
+     "depth": 24.2,
+     "x": 235,
+     "y": 203,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_30",
+     "sprite": "wallseg_30",
+     "state": "default",
+     "gx": 12.9,
+     "gy": 12.6,
+     "z": 0,
+     "depth": 27.3,
+     "x": 216,
+     "y": 213,
      "layer": "world"
     },
     {
@@ -746,12 +914,12 @@
      "id": "cabinet_front_0",
      "sprite": "cabinet_front",
      "state": "closed",
-     "gx": 1.4,
+     "gx": 0.8,
      "gy": 0.15,
      "z": 0,
-     "depth": 2.45,
-     "x": 227,
-     "y": 69,
+     "depth": 1.85,
+     "x": 220,
+     "y": 66,
      "layer": "world",
      "drive": null
     },
@@ -759,12 +927,12 @@
      "id": "cabinet_front_1",
      "sprite": "cabinet_front",
      "state": "closed",
-     "gx": 2.5,
+     "gx": 1.85,
      "gy": 0.15,
      "z": 0,
-     "depth": 3.55,
-     "x": 240,
-     "y": 76,
+     "depth": 2.9,
+     "x": 232,
+     "y": 72,
      "layer": "world",
      "drive": "서류철 꺼낼 때 그 직원과 가장 가까운 것 open"
     },
@@ -772,12 +940,12 @@
      "id": "cabinet_front_2",
      "sprite": "cabinet_front",
      "state": "closed",
-     "gx": 3.6,
+     "gx": 2.9,
      "gy": 0.15,
      "z": 0,
-     "depth": 4.65,
-     "x": 253,
-     "y": 82,
+     "depth": 3.95,
+     "x": 245,
+     "y": 78,
      "layer": "world",
      "drive": null
     },
@@ -785,12 +953,12 @@
      "id": "lib_desk",
      "sprite": "lib_desk",
      "state": "default",
-     "gx": 3.2,
+     "gx": 2.2,
      "gy": 3.0,
      "z": 0,
-     "depth": 7.5,
-     "x": 214,
-     "y": 97,
+     "depth": 6.5,
+     "x": 202,
+     "y": 91,
      "layer": "world"
     },
     {
@@ -1487,24 +1655,24 @@
      "id": "tv_stand",
      "sprite": "tv_stand",
      "state": "default",
-     "gx": 12.4,
+     "gx": 9.6,
      "gy": 11.25,
      "z": 0,
-     "depth": 24.7,
-     "x": 226,
-     "y": 202,
+     "depth": 21.9,
+     "x": 192,
+     "y": 185,
      "layer": "world"
     },
     {
      "id": "game_tv",
      "sprite": "game_tv",
      "state": "off",
-     "gx": 12.5,
+     "gx": 9.7,
      "gy": 11.3,
      "z": 8,
-     "depth": 24.71,
-     "x": 226,
-     "y": 195,
+     "depth": 21.91,
+     "x": 193,
+     "y": 178,
      "layer": "world",
      "drive": "게임기 앞에 직원이 있으면 game"
     },
@@ -1512,12 +1680,12 @@
      "id": "sofa",
      "sprite": "sofa_claude",
      "state": "default",
-     "gx": 9.3,
-     "gy": 13.4,
+     "gx": 7.6,
+     "gy": 13.5,
      "z": 0,
-     "depth": 24.4,
-     "x": 163,
-     "y": 196,
+     "depth": 22.8,
+     "x": 141,
+     "y": 187,
      "layer": "world",
      "themed": true
     },
@@ -1525,24 +1693,24 @@
      "id": "coffee_table",
      "sprite": "coffee_table",
      "state": "default",
-     "gx": 10.0,
-     "gy": 15.0,
+     "gx": 8.3,
+     "gy": 15.1,
      "z": 0,
-     "depth": 26.2,
-     "x": 152,
-     "y": 210,
+     "depth": 24.6,
+     "x": 130,
+     "y": 200,
      "layer": "world"
     },
     {
      "id": "massage_chair",
      "sprite": "massage_chair",
      "state": "default",
-     "gx": 14.3,
+     "gx": 11.7,
      "gy": 13.3,
      "z": 0,
-     "depth": 28.2,
-     "x": 224,
-     "y": 226,
+     "depth": 25.6,
+     "x": 193,
+     "y": 210,
      "layer": "world"
     },
     {
@@ -1550,11 +1718,11 @@
      "sprite": "label_table",
      "state": "default",
      "gx": 3.4,
-     "gy": 12.0,
+     "gy": 13.1,
      "z": 0,
-     "depth": 16.4,
-     "x": 109,
-     "y": 152,
+     "depth": 17.5,
+     "x": 96,
+     "y": 159,
      "layer": "world"
     },
     {
@@ -1696,36 +1864,36 @@
      "id": "meeting_screen",
      "sprite": "meeting_screen",
      "state": "off",
-     "gx": 18.0,
+     "gx": 20.6,
      "gy": 12.15,
      "z": 0,
-     "depth": 31.4,
-     "x": 282,
-     "y": 241,
+     "depth": 34.0,
+     "x": 313,
+     "y": 256,
      "layer": "world"
     },
     {
      "id": "meeting_table",
      "sprite": "meeting_table",
      "state": "default",
-     "gx": 17.6,
-     "gy": 13.4,
+     "gx": 20.6,
+     "gy": 13.5,
      "z": 0,
-     "depth": 33.75,
-     "x": 262,
-     "y": 246,
+     "depth": 36.15,
+     "x": 297,
+     "y": 265,
      "layer": "world"
     },
     {
      "id": "bookshelf",
      "sprite": "bookshelf",
      "state": "default",
-     "gx": 16.3,
-     "gy": 14.5,
+     "gx": 23.1,
+     "gy": 14.3,
      "z": 0,
-     "depth": 32.0,
-     "x": 234,
-     "y": 245,
+     "depth": 38.4,
+     "x": 318,
+     "y": 284,
      "layer": "world"
     },
     {
@@ -1738,6 +1906,90 @@
      "depth": 38.8,
      "x": 308,
      "y": 293,
+     "layer": "world"
+    },
+    {
+     "id": "conference_whiteboard",
+     "sprite": "conference_whiteboard",
+     "state": "default",
+     "gx": 16.4,
+     "gy": 12.3,
+     "z": 0,
+     "depth": 30.1,
+     "x": 261,
+     "y": 232,
+     "layer": "world"
+    },
+    {
+     "id": "conference_table",
+     "sprite": "conference_table",
+     "state": "default",
+     "gx": 16.7,
+     "gy": 13.5,
+     "z": 0,
+     "depth": 31.9,
+     "x": 250,
+     "y": 241,
+     "layer": "world"
+    },
+    {
+     "id": "shredder",
+     "sprite": "shredder",
+     "state": "idle",
+     "gx": 4.3,
+     "gy": 0.7,
+     "z": 0,
+     "depth": 5.85,
+     "x": 255,
+     "y": 90,
+     "layer": "world"
+    },
+    {
+     "id": "security_window",
+     "sprite": "security_window",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 11.15,
+     "z": 0,
+     "depth": 13.35,
+     "x": 90,
+     "y": 133,
+     "layer": "world"
+    },
+    {
+     "id": "security_barrier",
+     "sprite": "security_barrier",
+     "state": "default",
+     "gx": 4.1,
+     "gy": 11.3,
+     "z": 0,
+     "depth": 16.025,
+     "x": 126,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "roof_bench",
+     "sprite": "roof_bench",
+     "state": "default",
+     "gx": 13.2,
+     "gy": 13.2,
+     "z": 0,
+     "depth": 28.0,
+     "x": 212,
+     "y": 218,
+     "layer": "world"
+    },
+    {
+     "id": "roof_vending",
+     "sprite": "roof_vending",
+     "state": "default",
+     "gx": 14.6,
+     "gy": 11.2,
+     "z": 0,
+     "depth": 26.8,
+     "x": 253,
+     "y": 215,
      "layer": "world"
     },
     {
@@ -2028,11 +2280,11 @@
      "sprite": "door",
      "state": "closed",
      "gx": 0,
-     "gy": 12.6,
+     "gy": 13.6,
      "z": 0,
-     "depth": 13.5,
-     "x": 61,
-     "y": 136,
+     "depth": 14.5,
+     "x": 49,
+     "y": 142,
      "layer": "wall",
      "drive": "누가 드나드는 1초 동안 open"
     },
@@ -2053,11 +2305,11 @@
      "sprite": "doormat",
      "state": "default",
      "gx": 0,
-     "gy": 12.7,
+     "gy": 13.6,
      "z": 0,
-     "depth": 14.1,
-     "x": 60,
-     "y": 136,
+     "depth": 15.0,
+     "x": 49,
+     "y": 142,
      "layer": "decal"
     },
     {
@@ -2076,6 +2328,18 @@
      "id": "wallseg_01",
      "sprite": "wallseg_01",
      "state": "default",
+     "gx": 3.9,
+     "gy": 0,
+     "z": 0,
+     "depth": 5.8,
+     "x": 259,
+     "y": 83,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_02",
+     "sprite": "wallseg_02",
+     "state": "default",
      "gx": 5.9,
      "gy": 0,
      "z": 0,
@@ -2085,8 +2349,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_02",
-     "sprite": "wallseg_02",
+     "id": "wallseg_03",
+     "sprite": "wallseg_03",
      "state": "default",
      "gx": 10.9,
      "gy": 0,
@@ -2097,8 +2361,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_03",
-     "sprite": "wallseg_03",
+     "id": "wallseg_04",
+     "sprite": "wallseg_04",
      "state": "default",
      "gx": 15.9,
      "gy": 0,
@@ -2109,8 +2373,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_04",
-     "sprite": "wallseg_04",
+     "id": "wallseg_05",
+     "sprite": "wallseg_05",
      "state": "default",
      "gx": 0,
      "gy": 4.9,
@@ -2121,20 +2385,32 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_05",
-     "sprite": "wallseg_05",
+     "id": "wallseg_06",
+     "sprite": "wallseg_06",
      "state": "default",
      "gx": 3.2,
      "gy": 4.9,
      "z": 0,
-     "depth": 10.45,
+     "depth": 8.7,
      "x": 192,
      "y": 109,
      "layer": "world"
     },
     {
-     "id": "wallseg_06",
-     "sprite": "wallseg_06",
+     "id": "wallseg_07",
+     "sprite": "wallseg_07",
+     "state": "default",
+     "gx": 5.7,
+     "gy": 4.9,
+     "z": 0,
+     "depth": 11.7,
+     "x": 222,
+     "y": 124,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_08",
+     "sprite": "wallseg_08",
      "state": "default",
      "gx": 9.2,
      "gy": 4.9,
@@ -2145,8 +2421,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_07",
-     "sprite": "wallseg_07",
+     "id": "wallseg_09",
+     "sprite": "wallseg_09",
      "state": "default",
      "gx": 14.2,
      "gy": 4.9,
@@ -2157,8 +2433,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_08",
-     "sprite": "wallseg_08",
+     "id": "wallseg_10",
+     "sprite": "wallseg_10",
      "state": "default",
      "gx": 16,
      "gy": 5.9,
@@ -2169,8 +2445,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_09",
-     "sprite": "wallseg_09",
+     "id": "wallseg_11",
+     "sprite": "wallseg_11",
      "state": "default",
      "gx": 19.4,
      "gy": 5.9,
@@ -2181,8 +2457,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_10",
-     "sprite": "wallseg_10",
+     "id": "wallseg_12",
+     "sprite": "wallseg_12",
      "state": "default",
      "gx": 15.9,
      "gy": 6.0,
@@ -2193,8 +2469,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_11",
-     "sprite": "wallseg_11",
+     "id": "wallseg_13",
+     "sprite": "wallseg_13",
      "state": "default",
      "gx": 15.9,
      "gy": 8.6,
@@ -2205,8 +2481,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_12",
-     "sprite": "wallseg_12",
+     "id": "wallseg_14",
+     "sprite": "wallseg_14",
      "state": "default",
      "gx": 16,
      "gy": 8.9,
@@ -2217,8 +2493,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_13",
-     "sprite": "wallseg_13",
+     "id": "wallseg_15",
+     "sprite": "wallseg_15",
      "state": "default",
      "gx": 22.4,
      "gy": 8.9,
@@ -2229,32 +2505,56 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_14",
-     "sprite": "wallseg_14",
+     "id": "wallseg_16",
+     "sprite": "wallseg_16",
      "state": "default",
      "gx": 16,
      "gy": 11.9,
      "z": 0,
-     "depth": 29.0,
+     "depth": 28.6,
      "x": 261,
      "y": 227,
      "layer": "world"
     },
     {
-     "id": "wallseg_15",
-     "sprite": "wallseg_15",
+     "id": "wallseg_17",
+     "sprite": "wallseg_17",
      "state": "default",
-     "gx": 19.4,
+     "gx": 18.8,
      "gy": 11.9,
      "z": 0,
-     "depth": 33.7,
-     "x": 302,
-     "y": 248,
+     "depth": 32.0,
+     "x": 295,
+     "y": 244,
      "layer": "world"
     },
     {
-     "id": "wallseg_16",
-     "sprite": "wallseg_16",
+     "id": "wallseg_18",
+     "sprite": "wallseg_18",
+     "state": "default",
+     "gx": 22.8,
+     "gy": 11.9,
+     "z": 0,
+     "depth": 35.4,
+     "x": 343,
+     "y": 268,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_19",
+     "sprite": "wallseg_19",
+     "state": "default",
+     "gx": 19.9,
+     "gy": 12.0,
+     "z": 0,
+     "depth": 34.0,
+     "x": 307,
+     "y": 251,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_20",
+     "sprite": "wallseg_20",
      "state": "default",
      "gx": 15.9,
      "gy": 12.2,
@@ -2265,8 +2565,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_17",
-     "sprite": "wallseg_17",
+     "id": "wallseg_21",
+     "sprite": "wallseg_21",
      "state": "default",
      "gx": 15.9,
      "gy": 15.0,
@@ -2277,8 +2577,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_18",
-     "sprite": "wallseg_18",
+     "id": "wallseg_22",
+     "sprite": "wallseg_22",
      "state": "default",
      "gx": 0,
      "gy": 10.9,
@@ -2289,8 +2589,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_19",
-     "sprite": "wallseg_19",
+     "id": "wallseg_23",
+     "sprite": "wallseg_23",
      "state": "default",
      "gx": 3,
      "gy": 10.9,
@@ -2301,8 +2601,8 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_20",
-     "sprite": "wallseg_20",
+     "id": "wallseg_24",
+     "sprite": "wallseg_24",
      "state": "default",
      "gx": 9,
      "gy": 10.9,
@@ -2313,27 +2613,75 @@
      "layer": "world"
     },
     {
-     "id": "wallseg_21",
-     "sprite": "wallseg_21",
+     "id": "wallseg_25",
+     "sprite": "wallseg_25",
      "state": "default",
      "gx": 4.9,
-     "gy": 11.4,
+     "gy": 11.0,
      "z": 0,
-     "depth": 17.4,
-     "x": 134,
-     "y": 158,
+     "depth": 16.2,
+     "x": 139,
+     "y": 155,
      "layer": "world"
     },
     {
-     "id": "wallseg_22",
-     "sprite": "wallseg_22",
+     "id": "wallseg_26",
+     "sprite": "wallseg_26",
      "state": "default",
      "gx": 4.9,
-     "gy": 15.0,
+     "gy": 12.6,
      "z": 0,
-     "depth": 20.5,
+     "depth": 19.3,
+     "x": 120,
+     "y": 165,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_27",
+     "sprite": "wallseg_27",
+     "state": "default",
+     "gx": 0,
+     "gy": 12.9,
+     "z": 0,
+     "depth": 13.6,
+     "x": 57,
+     "y": 137,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_28",
+     "sprite": "wallseg_28",
+     "state": "default",
+     "gx": 2.8,
+     "gy": 12.9,
+     "z": 0,
+     "depth": 16.9,
      "x": 91,
-     "y": 179,
+     "y": 154,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_29",
+     "sprite": "wallseg_29",
+     "state": "default",
+     "gx": 12.9,
+     "gy": 11.0,
+     "z": 0,
+     "depth": 24.2,
+     "x": 235,
+     "y": 203,
+     "layer": "world"
+    },
+    {
+     "id": "wallseg_30",
+     "sprite": "wallseg_30",
+     "state": "default",
+     "gx": 12.9,
+     "gy": 12.6,
+     "z": 0,
+     "depth": 27.3,
+     "x": 216,
+     "y": 213,
      "layer": "world"
     },
     {
@@ -2376,12 +2724,12 @@
      "id": "cabinet_front_0",
      "sprite": "cabinet_front",
      "state": "closed",
-     "gx": 1.4,
+     "gx": 0.8,
      "gy": 0.15,
      "z": 0,
-     "depth": 2.45,
-     "x": 227,
-     "y": 69,
+     "depth": 1.85,
+     "x": 220,
+     "y": 66,
      "layer": "world",
      "drive": null
     },
@@ -2389,12 +2737,12 @@
      "id": "cabinet_front_1",
      "sprite": "cabinet_front",
      "state": "closed",
-     "gx": 2.5,
+     "gx": 1.85,
      "gy": 0.15,
      "z": 0,
-     "depth": 3.55,
-     "x": 240,
-     "y": 76,
+     "depth": 2.9,
+     "x": 232,
+     "y": 72,
      "layer": "world",
      "drive": "서류철 꺼낼 때 그 직원과 가장 가까운 것 open"
     },
@@ -2402,12 +2750,12 @@
      "id": "cabinet_front_2",
      "sprite": "cabinet_front",
      "state": "closed",
-     "gx": 3.6,
+     "gx": 2.9,
      "gy": 0.15,
      "z": 0,
-     "depth": 4.65,
-     "x": 253,
-     "y": 82,
+     "depth": 3.95,
+     "x": 245,
+     "y": 78,
      "layer": "world",
      "drive": null
     },
@@ -2415,12 +2763,12 @@
      "id": "lib_desk",
      "sprite": "lib_desk",
      "state": "default",
-     "gx": 3.2,
+     "gx": 2.2,
      "gy": 3.0,
      "z": 0,
-     "depth": 7.5,
-     "x": 214,
-     "y": 97,
+     "depth": 6.5,
+     "x": 202,
+     "y": 91,
      "layer": "world"
     },
     {
@@ -3230,24 +3578,24 @@
      "id": "tv_stand",
      "sprite": "tv_stand",
      "state": "default",
-     "gx": 12.4,
+     "gx": 9.6,
      "gy": 11.25,
      "z": 0,
-     "depth": 24.7,
-     "x": 226,
-     "y": 202,
+     "depth": 21.9,
+     "x": 192,
+     "y": 185,
      "layer": "world"
     },
     {
      "id": "game_tv",
      "sprite": "game_tv",
      "state": "off",
-     "gx": 12.5,
+     "gx": 9.7,
      "gy": 11.3,
      "z": 8,
-     "depth": 24.71,
-     "x": 226,
-     "y": 195,
+     "depth": 21.91,
+     "x": 193,
+     "y": 178,
      "layer": "world",
      "drive": "게임기 앞에 직원이 있으면 game"
     },
@@ -3255,12 +3603,12 @@
      "id": "sofa",
      "sprite": "sofa_claude",
      "state": "default",
-     "gx": 9.3,
-     "gy": 13.4,
+     "gx": 7.6,
+     "gy": 13.5,
      "z": 0,
-     "depth": 24.4,
-     "x": 163,
-     "y": 196,
+     "depth": 22.8,
+     "x": 141,
+     "y": 187,
      "layer": "world",
      "themed": true
     },
@@ -3268,24 +3616,24 @@
      "id": "coffee_table",
      "sprite": "coffee_table",
      "state": "default",
-     "gx": 10.0,
-     "gy": 15.0,
+     "gx": 8.3,
+     "gy": 15.1,
      "z": 0,
-     "depth": 26.2,
-     "x": 152,
-     "y": 210,
+     "depth": 24.6,
+     "x": 130,
+     "y": 200,
      "layer": "world"
     },
     {
      "id": "massage_chair",
      "sprite": "massage_chair",
      "state": "default",
-     "gx": 14.3,
+     "gx": 11.7,
      "gy": 13.3,
      "z": 0,
-     "depth": 28.2,
-     "x": 224,
-     "y": 226,
+     "depth": 25.6,
+     "x": 193,
+     "y": 210,
      "layer": "world"
     },
     {
@@ -3293,11 +3641,11 @@
      "sprite": "label_table",
      "state": "default",
      "gx": 3.4,
-     "gy": 12.0,
+     "gy": 13.1,
      "z": 0,
-     "depth": 16.4,
-     "x": 109,
-     "y": 152,
+     "depth": 17.5,
+     "x": 96,
+     "y": 159,
      "layer": "world"
     },
     {
@@ -3467,36 +3815,36 @@
      "id": "meeting_screen",
      "sprite": "meeting_screen",
      "state": "off",
-     "gx": 18.0,
+     "gx": 20.6,
      "gy": 12.15,
      "z": 0,
-     "depth": 31.4,
-     "x": 282,
-     "y": 241,
+     "depth": 34.0,
+     "x": 313,
+     "y": 256,
      "layer": "world"
     },
     {
      "id": "meeting_table",
      "sprite": "meeting_table",
      "state": "default",
-     "gx": 17.6,
-     "gy": 13.4,
+     "gx": 20.6,
+     "gy": 13.5,
      "z": 0,
-     "depth": 33.75,
-     "x": 262,
-     "y": 246,
+     "depth": 36.15,
+     "x": 297,
+     "y": 265,
      "layer": "world"
     },
     {
      "id": "bookshelf",
      "sprite": "bookshelf",
      "state": "default",
-     "gx": 16.3,
-     "gy": 14.5,
+     "gx": 23.1,
+     "gy": 14.3,
      "z": 0,
-     "depth": 32.0,
-     "x": 234,
-     "y": 245,
+     "depth": 38.4,
+     "x": 318,
+     "y": 284,
      "layer": "world"
     },
     {
@@ -3509,6 +3857,90 @@
      "depth": 38.8,
      "x": 308,
      "y": 293,
+     "layer": "world"
+    },
+    {
+     "id": "conference_whiteboard",
+     "sprite": "conference_whiteboard",
+     "state": "default",
+     "gx": 16.4,
+     "gy": 12.3,
+     "z": 0,
+     "depth": 30.1,
+     "x": 261,
+     "y": 232,
+     "layer": "world"
+    },
+    {
+     "id": "conference_table",
+     "sprite": "conference_table",
+     "state": "default",
+     "gx": 16.7,
+     "gy": 13.5,
+     "z": 0,
+     "depth": 31.9,
+     "x": 250,
+     "y": 241,
+     "layer": "world"
+    },
+    {
+     "id": "shredder",
+     "sprite": "shredder",
+     "state": "idle",
+     "gx": 4.3,
+     "gy": 0.7,
+     "z": 0,
+     "depth": 5.85,
+     "x": 255,
+     "y": 90,
+     "layer": "world"
+    },
+    {
+     "id": "security_window",
+     "sprite": "security_window",
+     "state": "default",
+     "gx": 1.0,
+     "gy": 11.15,
+     "z": 0,
+     "depth": 13.35,
+     "x": 90,
+     "y": 133,
+     "layer": "world"
+    },
+    {
+     "id": "security_barrier",
+     "sprite": "security_barrier",
+     "state": "default",
+     "gx": 4.1,
+     "gy": 11.3,
+     "z": 0,
+     "depth": 16.025,
+     "x": 126,
+     "y": 152,
+     "layer": "world"
+    },
+    {
+     "id": "roof_bench",
+     "sprite": "roof_bench",
+     "state": "default",
+     "gx": 13.2,
+     "gy": 13.2,
+     "z": 0,
+     "depth": 28.0,
+     "x": 212,
+     "y": 218,
+     "layer": "world"
+    },
+    {
+     "id": "roof_vending",
+     "sprite": "roof_vending",
+     "state": "default",
+     "gx": 14.6,
+     "gy": 11.2,
+     "z": 0,
+     "depth": 26.8,
+     "x": 253,
+     "y": 215,
      "layer": "world"
     },
     {
@@ -3699,22 +4131,22 @@
  "stands": {
   "library": [
    [
-    2.2,
-    2.0
+    1.4,
+    1.7
    ],
    [
-    1.5,
+    1.2,
     3.5
    ],
    [
-    4.7,
-    1.6
+    3.0,
+    2.0
    ]
   ],
   "librarian": [
    [
-    4.0,
-    2.75
+    2.8,
+    2.95
    ]
   ],
   "build_terminal": [
@@ -3789,81 +4221,81 @@
   ],
   "meeting": [
    [
-    18.4,
-    13.15
+    20.9,
+    13.2
    ],
    [
-    19.6,
-    13.15
+    22.4,
+    13.2
    ],
    [
-    20.8,
-    13.15
-   ],
-   [
-    18.6,
+    20.9,
     15.1
    ],
    [
-    20.2,
+    22.4,
     15.1
+   ],
+   [
+    23.6,
+    14.2
    ]
   ],
   "pantry_console": [
    [
-    13.3,
+    10.5,
     12.6
    ]
   ],
   "pantry_massage": [
    [
-    14.8,
+    12.2,
     13.9,
     6
    ]
   ],
   "pantry_sofa": [
    [
-    10.3,
-    14.0,
+    8.6,
+    14.1,
     4
    ],
    [
-    11.4,
-    14.0,
+    9.7,
+    14.1,
     4
    ]
   ],
   "pantry": [
    [
-    6.6,
+    5.9,
     12.6
    ],
    [
-    7.4,
-    13.4
+    6.4,
+    14.4
    ]
   ],
   "door": [
    [
     0.9,
-    13.5
+    14.1
    ]
   ],
   "door_wait": [
    [
     1.7,
-    12.4
+    13.6
    ]
   ],
   "shipping": [
    [
     2.9,
-    13.6
+    14.0
    ],
    [
     3.8,
-    13.2
+    14.0
    ]
   ],
   "boss_window": [
@@ -3891,7 +4323,61 @@
   "exit": [
    [
     0.2,
-    13.5
+    14.1
+   ]
+  ],
+  "conference": [
+   [
+    17.2,
+    13.2
+   ],
+   [
+    18.7,
+    13.2
+   ],
+   [
+    17.2,
+    15.1
+   ],
+   [
+    18.7,
+    15.1
+   ]
+  ],
+  "archive": [
+   [
+    5,
+    2
+   ],
+   [
+    5,
+    3.6
+   ]
+  ],
+  "security": [
+   [
+    2.1,
+    11.8
+   ],
+   [
+    3.3,
+    11.8
+   ]
+  ],
+  "roof": [
+   [
+    13.8,
+    13.8,
+    4
+   ],
+   [
+    14.9,
+    13.8,
+    4
+   ],
+   [
+    14.7,
+    15.1
    ]
   ]
  },

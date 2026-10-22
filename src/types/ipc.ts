@@ -153,7 +153,7 @@ role: Role, model: string | null, description: string | null, activity: Activity
 /**
  * 최근 행적, 최신이 먼저
  */
-recent: Array<Activity>, counters: Counters, uniqueReads: number, pendingCount: number, uniqueEdits: number, planning: boolean, medal: boolean, buildTestBorder: Border, lastSay: string | null, hiredAt: string, 
+recent: Array<Activity>, counters: Counters, uniqueReads: number, pendingCount: number, uniqueEdits: number, planning: boolean, rejected: boolean, medal: boolean, buildTestBorder: Border, lastSay: string | null, hiredAt: string, 
 /**
  * 있으면 퇴장한(또는 퇴장으로 짐작한) 직원
  */
@@ -321,7 +321,7 @@ export type WorkType = "CodeReview" | "BugFix" | "Refactor" | "Docs" | "Research
 /**
  * 사무실 안 구역 (docs/CONTRACTS.md C2)
  */
-export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" | "Incident" | "Meeting" | "Shipping" | "Pantry" | "Outside" | "Door";
+export type Room = "TeamLead" | "Dev" | "Archive" | "Build" | "Test" | "Review" | "Incident" | "Meeting" | "Conference" | "Shipping" | "Pantry" | "Outside" | "Door";
 
 /**
  * 상태가 정하는 자세. 어떤 스프라이트로 그릴지는 프론트가 정한다 (design/HANDOFF.md 5절)

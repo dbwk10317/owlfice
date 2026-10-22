@@ -21,7 +21,8 @@ const button = (text: string) =>
   )!;
 const toggle = (name: string) =>
   document.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${name}"]`)!;
-const errorText = () => document.querySelector<HTMLElement>('[role="alert"]')!.textContent;
+const errorText = () =>
+  document.querySelector<HTMLElement>('.ow-settings__foot [role="alert"]')!.textContent;
 
 function setup(over: Partial<SettingsDto> = {}) {
   let settings = { ...defaults(), ...over };
@@ -32,6 +33,7 @@ function setup(over: Partial<SettingsDto> = {}) {
       return;
     }
     if (cmd === "get_diagnostics") return "비식별 진단 <home>";
+    if (cmd === "get_log_folder") return "C:\\samples\\Owlfice\\logs";
   });
   const onSettings = vi.fn();
   const writeClipboard = vi.fn().mockResolvedValue(undefined);
@@ -72,7 +74,7 @@ test("불러온 설정과 기본값을 표시하고 원문 진단 설명은 항�
   expect(toggle("원문 진단").getAttribute("aria-checked")).toBe("false");
   expect(document.body.textContent).toContain("명령 원문 80자와 결과 앞 200자");
   expect(document.body.textContent).not.toContain("컨텍스트 창 기본값");
-  expect(s.invoke).toHaveBeenCalledExactlyOnceWith("get_settings");
+  expect(s.invoke.mock.calls.filter(([cmd]) => cmd === "get_settings")).toHaveLength(1);
 });
 
 test("소리 제스처는 저장을 기다리지 않고 켜기·끄기 클릭에서 전달된다", async () => {
@@ -129,7 +131,9 @@ test("저장 실패여도 바뀐 백엔드 메모리를 다시 읽고 오류를 
   expect(toggle("원문 진단").getAttribute("aria-checked")).toBe("true");
   expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ rawDiagnostics: true }));
   expect(errorText()).toContain("디스크 잠김");
-  expect(document.querySelector<HTMLElement>('[role="alert"]')!.hidden).toBe(false);
+  expect(document.querySelector<HTMLElement>('.ow-settings__foot [role="alert"]')!.hidden).toBe(
+    false,
+  );
 });
 
 test("저장 뒤 재조회 실패도 확인 실패로 알리고 성공을 가장하지 않는다", async () => {
@@ -197,7 +201,7 @@ test("진단은 요청한 때만 복사하고 클립보드 실패를 화면에 �
   await settle();
   expect(s.writeClipboard).toHaveBeenLastCalledWith("비식별 진단 <home>");
   expect(document.querySelector('[role="status"]')!.textContent).toContain("복사했습니다");
-  button("미대응 로그 폴더 열기").click();
+  button("로그 폴더 열기").click();
   await settle();
   expect(s.invoke).toHaveBeenCalledWith("open_log_folder");
 });
@@ -225,6 +229,7 @@ test("저장 중 팝업을 닫아도 메모리 반영과 저장 실패 알림은
   const invoke = vi
     .fn()
     .mockResolvedValueOnce(defaults())
+    .mockResolvedValueOnce("C:\\samples\\logs")
     .mockReturnValueOnce(pending)
     .mockResolvedValueOnce(changed);
   const onSettings = vi.fn();
@@ -239,7 +244,89 @@ test("저장 중 팝업을 닫아도 메모리 반영과 저장 실패 알림은
   expect(onError).toHaveBeenCalledWith(expect.stringContaining("디스크 잠김"));
 });
 
-test("공통 여백 변경은 설정 머리와 본문에 20px을 적용하고 저장 버튼 높이는 보존한다", async () => {
+test("실제 로그 경로를 HTML로 해석하지 않고 전체 선택 가능한 긴 경로로 표시한다", async () => {
+  const path = `C:\\samples\\${"긴폴더".repeat(80)}\\<img src=x>\\logs`;
+  const invoke = vi.fn(async (cmd: string) => (cmd === "get_log_folder" ? path : defaults()));
+  openSettings({ invoke: invoke as Invoke, onSettings: vi.fn() });
+  await settle();
+  const displayed = document.querySelector<HTMLElement>(".ow-settings__log-path")!;
+  expect(displayed.textContent).toBe(path);
+  expect(displayed.querySelector("img")).toBeNull();
+  expect(document.body.textContent).toContain("운영 오류 기록과 미대응 AI 동작 기록은 같은 폴더");
+  const range = document.createRange();
+  range.selectNodeContents(displayed);
+  expect(range.toString()).toBe(path);
+  expect(invoke).toHaveBeenCalledWith("get_log_folder");
+});
+
+test("로그 위치 조회 실패와 지연은 설정 저장을 막지 않고 실패는 저장 후에도 보인다", async () => {
+  let reject!: (reason: Error) => void;
+  const pending = new Promise<string>((_, no) => {
+    reject = no;
+  });
+  let settings = defaults();
+  const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === "get_log_folder") return pending;
+    if (cmd === "set_settings") settings = { ...settings, ...(args?.dto as Partial<SettingsDto>) };
+    return settings;
+  });
+  openSettings({ invoke: invoke as Invoke, onSettings: vi.fn() });
+  await settle();
+  expect(document.querySelector("fieldset")!.disabled).toBe(false);
+  toggle("소리").click();
+  await settle();
+  expect(settings.sound).toBe(true);
+  reject(new Error("로그 위치 접근 실패"));
+  await settle();
+  toggle("원문 진단").click();
+  await settle();
+  expect(settings.rawDiagnostics).toBe(true);
+  expect(document.querySelector(".ow-settings__log-path")!.textContent).toBe("");
+  expect(document.body.textContent).toContain(
+    "로그 위치를 불러오지 못했습니다: Error: 로그 위치 접근 실패",
+  );
+  expect(document.querySelector<HTMLElement>("#settings-log-error")!.hidden).toBe(false);
+});
+
+test.each([false, true])(
+  "닫힌 설정은 늦은 로그 경로 응답과 실패를 무시한다 (%s)",
+  async (fails) => {
+    let resolve!: (path: string) => void;
+    let reject!: (reason: Error) => void;
+    const pending = new Promise<string>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    const invoke = vi.fn(async (cmd: string) => (cmd === "get_log_folder" ? pending : defaults()));
+    const onError = vi.fn();
+    openSettings({ invoke: invoke as Invoke, onSettings: vi.fn(), onError });
+    await settle();
+    const displayed = document.querySelector<HTMLElement>(".ow-settings__log-path")!;
+    const before = displayed.textContent;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    if (fails) reject(new Error("늦은 조회 실패"));
+    else resolve("C:\\samples\\late-logs");
+    await settle();
+    expect(displayed.textContent).toBe(before);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(onError).not.toHaveBeenCalled();
+  },
+);
+
+test("로그 폴더 열기는 경로 인자 없이 요청하고 탐색기 실행 실패를 알린다", async () => {
+  const s = setup();
+  await settle();
+  s.invoke.mockRejectedValueOnce(new Error("탐색기 실행 실패"));
+  button("로그 폴더 열기").click();
+  await settle();
+  expect(s.invoke.mock.calls.filter(([cmd]) => cmd === "open_log_folder")).toEqual([
+    ["open_log_folder"],
+  ]);
+  expect(errorText()).toContain("탐색기 실행 실패");
+  expect(document.querySelector("fieldset")!.disabled).toBe(false);
+});
+
+test("공통 여백과 로그 긴 경로 줄바꿈·선택을 적용하고 저장 버튼 높이는 보존한다", async () => {
   const { readFileSync } = await vi.importActual<{
     readFileSync: (path: string, encoding: "utf8") => string;
   }>("node:fs");
@@ -256,6 +343,9 @@ test("공통 여백 변경은 설정 머리와 본문에 20px을 적용하고 �
     expect(css(".ow-settings").paddingLeft).toBe("20px");
     expect(css(".ow-settings").paddingBottom).toBe("20px");
     expect(css(".ow-modal__foot .ow-btn").height).toBe("36px");
+    expect(css(".ow-settings__log-path").overflowWrap).toBe("anywhere");
+    expect(css(".ow-settings__log-path").userSelect).toBe("text");
+    expect(css(".ow-settings__log-path").minWidth).toBe("0px");
   } finally {
     style.remove();
   }

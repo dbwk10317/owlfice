@@ -3506,6 +3506,8 @@ fn assert_extension_state(a: &Team, b: &Team) {
         assert_eq!(a.planning, b.planning);
         assert_eq!(a.pass_streak, b.pass_streak);
         assert_eq!(a.medal_until, b.medal_until);
+        assert_eq!(a.last_check_failed, b.last_check_failed);
+        assert_eq!(a.build_test_light(), b.build_test_light());
         assert_eq!(a.record.files_read, b.record.files_read);
         assert_eq!(a.record.files_edited, b.record.files_edited);
     }
@@ -3954,5 +3956,178 @@ fn test_give_up_breaks_streak_without_counting_a_failure() {
             }
         );
         assert_extension_state(&live, &replayed(MAIN, &events, at(1901)));
+    }
+}
+
+#[test]
+fn employee_check_light_is_local_and_running_wins_until_every_call_finishes() {
+    let events = vec![
+        ev(MAIN, 0, call("fail", ToolKind::Test, cmd("cargo test"))),
+        ev(MAIN, 1, result("fail", ToolOutcome::Err)),
+        ev(SUB, 2, call("other", ToolKind::Build, cmd("cargo build"))),
+        ev(SUB, 3, result("other", ToolOutcome::Ok)),
+        ev(MAIN, 4, call("build", ToolKind::Build, cmd("cargo build"))),
+        ev(MAIN, 5, call("test", ToolKind::Test, cmd("cargo test"))),
+        ev(MAIN, 6, result("build", ToolOutcome::Started)),
+        ev(MAIN, 7, result("test", ToolOutcome::Err)),
+        ev(MAIN, 8, result("build", ToolOutcome::Ok)),
+        ev(MAIN, 9, call("shell", ToolKind::Shell, cmd("echo check"))),
+        ev(MAIN, 10, result("shell", ToolOutcome::Err)),
+        ev(
+            MAIN,
+            11,
+            call("script", ToolKind::Script, cmd("sh check.sh")),
+        ),
+        ev(MAIN, 12, result("script", ToolOutcome::Err)),
+    ];
+    let mut live = Team::new(MAIN, Product::ClaudeCli, t0());
+    assert_eq!(live.employees[0].build_test_light(), Light::Off);
+    for (i, event) in events.iter().enumerate() {
+        let end = event.ts.unwrap();
+        live.tick(end, utc(), &mut Vec::new());
+        live.apply(event, &mut Vec::new());
+        let expected = match i {
+            0 | 4..=7 => Light::Yellow,
+            1..=3 => Light::Red,
+            _ => Light::Off,
+        };
+        assert_eq!(live.employees[0].build_test_light(), expected, "event {i}");
+        if i >= 3 {
+            assert_eq!(emp(&live, SUB).build_test_light(), Light::Off);
+            assert!(!emp(&live, SUB).last_check_failed);
+        }
+        let rebuilt = replayed(MAIN, &events[..=i], end);
+        assert_extension_state(&live, &rebuilt);
+    }
+    assert!(!live.employees[0].last_check_failed);
+}
+
+#[test]
+fn employee_check_light_only_changes_for_confirmed_check_results() {
+    use Compound::{AndOnly, Mixed, Single};
+    use ToolOutcome::{Err, Ok, Rejected, Unknown};
+    // 마지막 두 값은 Build/Test 각각이 마지막 실패를 갱신할 수 있는지와 그 값이다.
+    for (compound, outcome, confidence, failed, build, test) in [
+        (Single, Ok, Confirmed, None, Some(false), Some(false)),
+        (Single, Err, Confirmed, None, Some(true), Some(true)),
+        (Single, Ok, Confirmed, Some(1), Some(false), Some(true)),
+        (AndOnly, Ok, Confirmed, None, Some(false), Some(false)),
+        (AndOnly, Err, Confirmed, None, None, None),
+        (AndOnly, Err, Confirmed, Some(0), None, None),
+        (AndOnly, Err, Confirmed, Some(1), None, Some(true)),
+        (Mixed, Ok, Confirmed, None, None, None),
+        (Mixed, Err, Confirmed, Some(1), None, None),
+        (Single, Rejected, Confirmed, None, None, None),
+        (Single, Unknown, Confirmed, None, None, None),
+        (Single, Ok, Inferred, None, None, None),
+        (Single, Err, Inferred, Some(1), None, None),
+    ] {
+        for (tool, expected) in [(ToolKind::Build, build), (ToolKind::Test, test)] {
+            for previous_failed in [false, true] {
+                let mut s = Sim::new();
+                s.on(MAIN, 0, call("seed", ToolKind::Test, cmd("cargo test")))
+                    .on(
+                        MAIN,
+                        1,
+                        result("seed", if previous_failed { Err } else { Ok }),
+                    );
+                s.on(
+                    MAIN,
+                    2,
+                    call(
+                        "check",
+                        tool.clone(),
+                        ToolSummary {
+                            compound,
+                            ..summary()
+                        },
+                    ),
+                );
+                let previous = if previous_failed {
+                    Light::Red
+                } else {
+                    Light::Off
+                };
+                assert_eq!(
+                    s.boss().build_test_light(),
+                    if compound == Mixed {
+                        previous
+                    } else {
+                        Light::Yellow
+                    }
+                );
+                let completion = EventKind::ToolResult {
+                    call_id: "check".into(),
+                    outcome,
+                    outcome_confidence: confidence,
+                    preview: String::new(),
+                    test_result: failed.map(|failed| TestResult { passed: 3, failed }),
+                };
+                s.on(MAIN, 3, completion.clone());
+                let failed = expected.unwrap_or(previous_failed);
+                assert_eq!(
+                    s.boss().last_check_failed,
+                    failed,
+                    "{tool:?} {compound:?} {outcome:?} {confidence:?}"
+                );
+                assert_eq!(
+                    s.boss().build_test_light(),
+                    if failed { Light::Red } else { Light::Off }
+                );
+                s.on(MAIN, 4, completion);
+                assert_eq!(
+                    s.boss().last_check_failed,
+                    failed,
+                    "중복 결과는 마지막 판정을 바꾸지 않는다"
+                );
+                s.on(MAIN, 5, result("unlinked", if failed { Ok } else { Err }));
+                assert_eq!(
+                    s.boss().last_check_failed,
+                    failed,
+                    "연결 없는 결과는 무시한다"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn employee_check_light_cleanup_keeps_failure_and_rebuilds() {
+    for background in [false, true] {
+        for retire in [false, true] {
+            let agent = if retire { SUB } else { MAIN };
+            let mut events = vec![
+                ev(
+                    agent,
+                    0,
+                    call("failed", ToolKind::Build, cmd("cargo build")),
+                ),
+                ev(agent, 1, result("failed", ToolOutcome::Err)),
+                ev(agent, 2, call("pending", ToolKind::Test, cmd("cargo test"))),
+            ];
+            if background {
+                events.push(ev(agent, 3, result("pending", ToolOutcome::Started)));
+            }
+            if retire {
+                events.push(ev(
+                    MAIN,
+                    4,
+                    EventKind::SubagentDone {
+                        child_id: SUB.into(),
+                    },
+                ));
+            }
+            let end = at(if retire { 4 } else { 1900 });
+            let live = stepwise(MAIN, &events, end);
+            let employee = emp(&live, agent);
+            assert!(employee.pending.is_empty());
+            assert!(employee.background.is_empty());
+            assert!(employee.last_check_failed);
+            assert_eq!(employee.build_test_light(), Light::Red);
+            if !retire {
+                assert_eq!(live.phase, TeamPhase::Off);
+            }
+            assert_extension_state(&live, &replayed(MAIN, &events, end));
+        }
     }
 }

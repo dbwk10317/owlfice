@@ -47,6 +47,7 @@ function emp(
     uniqueEdits: 0,
     planning: false,
     medal: false,
+    buildTestBorder: "Plain",
     lastSay: null,
     hiredAt: since,
     retiredAt: null,

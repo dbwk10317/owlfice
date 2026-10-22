@@ -151,7 +151,7 @@ role: Role, model: string | null, description: string | null, activity: Activity
 /**
  * 최근 행적, 최신이 먼저
  */
-recent: Array<Activity>, counters: Counters, uniqueReads: number, pendingCount: number, uniqueEdits: number, planning: boolean, medal: boolean, lastSay: string | null, hiredAt: string, 
+recent: Array<Activity>, counters: Counters, uniqueReads: number, pendingCount: number, uniqueEdits: number, planning: boolean, medal: boolean, buildTestBorder: Border, lastSay: string | null, hiredAt: string, 
 /**
  * 있으면 퇴장한(또는 퇴장으로 짐작한) 직원
  */

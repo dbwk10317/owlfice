@@ -265,8 +265,19 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
         }
       }, "진단 정보를 복사했습니다."),
   );
+  const logPath = h(doc, "p", "ow-settings__log-path ow-mono", S.logFolderLoading);
+  logPath.setAttribute("aria-label", S.logFolder);
+  const logError = h(doc, "p", "ow-pop__error");
+  logError.id = "settings-log-error";
+  logError.setAttribute("role", "alert");
+  logError.hidden = true;
+  diag.append(
+    h(doc, "div", "ow-settings__field", S.logFolder, logPath),
+    h(doc, "p", "ow-settings__hint", S.logFolderHint),
+    logError,
+  );
   const open = button(
-    S.openUnhandled,
+    S.openLogFolder,
     () => void run(() => deps.invoke("open_log_folder"), "로그 폴더를 열었습니다."),
   );
   diag.append(h(doc, "div", "ow-settings__actions", copy, open));
@@ -323,4 +334,16 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     }
   }
   void load();
+  void (async () => {
+    try {
+      const path = await deps.invoke<string>("get_log_folder");
+      if (!modal.closed) logPath.textContent = path;
+    } catch (e) {
+      if (!modal.closed) {
+        logPath.textContent = "";
+        logError.textContent = `${S.logFolderError}: ${String(e)}`;
+        logError.hidden = false;
+      }
+    }
+  })();
 }

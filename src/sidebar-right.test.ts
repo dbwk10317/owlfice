@@ -886,3 +886,64 @@ test("부장 금색칩·아바타 바깥 핀·실적 굵기와 압축형 경계�
     style.remove();
   }
 });
+
+test("핀은 직원별 빌드·테스트 링을 쓰고 같은 카드에서 복구·지연·퇴근·복귀를 갱신한다", () => {
+  const a = emp("a", { rank: "Bujang", buildTestBorder: "Failed" });
+  const b = emp("b");
+  const initial = team("t", [a, b]);
+  initial.props.light = "Red";
+  const s = setup(office("o", 1, [initial]));
+  const cards = s.cards();
+  const pin = (i: number) => cards[i].querySelector<HTMLElement>(".ow-pin")!;
+  const push = (seq: number, delayed = false, off = false) => {
+    s.push(office("o", seq, [team("t", [a, b], { delayed, phase: off ? "Off" : "Working" })]));
+    expect(s.cards()[0]).toBe(cards[0]);
+    expect(s.cards()[1]).toBe(cards[1]);
+  };
+  expect(pin(0).dataset.ring).toBe("fail");
+  expect(pin(1).hasAttribute("data-ring")).toBe(false);
+  expect(pin(0).getAttribute("aria-label")).toBe("근무 중 · 마지막 빌드·테스트 실패");
+  expect(openButton(cards[0]).getAttribute("aria-label")).toContain("마지막 빌드·테스트 실패");
+
+  a.buildTestBorder = "Running";
+  a.pendingCount = 2;
+  b.buildTestBorder = "Running";
+  push(2, true);
+  expect(pin(0).dataset.ring).toBe("run");
+  expect(pin(1).dataset.ring).toBe("run");
+  expect(pin(0).getAttribute("aria-label")).toBe("근무 중 · 빌드·테스트 진행 중");
+  a.pendingCount = 1;
+  push(3, true);
+  expect(pin(0).dataset.ring).toBe("run");
+
+  a.pendingCount = 0;
+  a.buildTestBorder = "Failed";
+  b.buildTestBorder = "Plain";
+  push(4, true);
+  expect(pin(0).dataset.ring).toBe("fail");
+  expect(pin(1).dataset.ring).toBe("lag");
+  expect(pin(1).getAttribute("aria-label")).toBe("근무 중 · 통신 지연");
+  a.buildTestBorder = "Plain";
+  push(5);
+  expect(pin(0).hasAttribute("data-ring")).toBe(false);
+  expect(pin(0).getAttribute("aria-label")).toBe("근무 중");
+  expect(openButton(cards[0]).getAttribute("aria-label")).not.toContain("실패");
+
+  a.buildTestBorder = "Failed";
+  b.buildTestBorder = "Running";
+  push(6, true, true);
+  for (let i = 0; i < 2; i++) {
+    expect(pin(i).hasAttribute("data-ring")).toBe(false);
+    expect(pin(i).getAttribute("aria-label")).toBe("퇴근");
+  }
+  b.departedAt = iso(14, 30);
+  push(7, true);
+  expect(pin(0).dataset.ring).toBe("fail");
+  expect(pin(1).hasAttribute("data-ring")).toBe(false);
+  expect(pin(1).getAttribute("aria-label")).toBe("퇴근");
+  b.departedAt = null;
+  push(8, true);
+  expect(pin(1).dataset.ring).toBe("run");
+  expect(pin(1).getAttribute("aria-label")).toBe("근무 중 · 빌드·테스트 진행 중");
+  s.panel.destroy();
+});

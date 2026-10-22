@@ -77,6 +77,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
   const main = el("div", "ow-main");
   const headerEl = el("header");
   const stage = el("div", "ow-stage");
+  stage.append(el("div", "ow-stage__floor"));
   const selectionError = el("p", "ow-selection-error");
   selectionError.setAttribute("role", "alert");
   selectionError.hidden = true;

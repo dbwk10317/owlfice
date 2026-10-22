@@ -260,6 +260,7 @@ pub struct EmployeeDto {
     pub unique_edits: u32,
     pub planning: bool,
     pub medal: bool,
+    pub build_test_border: Border,
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     /// 있으면 퇴장한(또는 퇴장으로 짐작한) 직원
@@ -739,6 +740,11 @@ fn employee_dto(e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
         unique_edits: u32::try_from(e.record.files_edited.items.len()).unwrap_or(u32::MAX),
         planning: e.planning,
         medal: e.medal_until.is_some_and(|until| now < until),
+        build_test_border: match e.build_test_light() {
+            Light::Yellow => Border::Running,
+            Light::Red => Border::Failed,
+            Light::Off | Light::Green => Border::Plain,
+        },
         last_say: e.last_say.clone(),
         hired_at: e.hired_at,
         retired_at: e.retired_at,
@@ -1180,6 +1186,11 @@ pub async fn get_diagnostics(
     })
     .await
     .map_err(|e| format!("진단 정보를 모으지 못했습니다: {e}"))
+}
+
+#[tauri::command]
+pub fn get_log_folder(runtime: State<'_, Arc<Runtime>>) -> String {
+    runtime.log_dir.to_string_lossy().into_owned()
 }
 
 #[tauri::command]

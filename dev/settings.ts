@@ -132,6 +132,7 @@ const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>): P
       throw new Error("검증용 디스크 저장 실패 (메모리에는 반영됨)");
     }
   } else if (cmd === "get_diagnostics") result = "합성 진단: <home>\\.claude\\projects";
+  else if (cmd === "get_log_folder") result = "C:\\samples\\Owlfice\\logs";
   else get("status").textContent = `호출 확인: ${cmd}`;
   return result as T;
 };

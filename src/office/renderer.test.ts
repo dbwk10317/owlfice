@@ -137,14 +137,16 @@ test("캔버스 aria-label 은 그린 사무실의 이름·직원 수·장애를
   expect(canvasAria({ ...office(false), officeId: "x" }, list)).toBeNull();
 });
 
-test("조명: 모두 퇴근이면 off, 남은 팀이 모두 대기 중이면 dim, 야근이면 night. off > dim > night", () => {
-  const t = (phase: TeamDto["phase"], idleAlive = false) => ({ phase, idleAlive }) as TeamDto;
-  const o = (night: boolean, ...teams: TeamDto[]) => ({ teams, shared: { night } }) as OfficeDto;
+test("조명은 off > dim > DTO 시간대 순이며 공유 night 값과 독립이다", () => {
+  const t = (phase: TeamDto["phase"], daylight: TeamDto["daylight"], idleAlive = false) =>
+    ({ phase, daylight, idleAlive }) as TeamDto;
+  const o = (...teams: TeamDto[]) => ({ teams, shared: { night: false } }) as OfficeDto;
   expect(lightOf(null)).toBe("off");
-  expect(lightOf(o(true, t("Off")))).toBe("off");
-  // 퇴근한 팀은 대기 중 판정에서 뺀다
-  expect(lightOf(o(true, t("Dozing", true), t("Off")))).toBe("dim");
-  expect(lightOf(o(false, t("Dozing", true), t("Dozing")))).toBeNull();
-  expect(lightOf(o(true, t("Dozing", true), t("Working")))).toBe("night");
-  expect(lightOf(o(false, t("Working")))).toBeNull();
+  for (const daylight of ["day", "evening", "night"] as const) {
+    expect(lightOf(o(t("Off", daylight)))).toBe("off");
+    expect(lightOf(o(t("Dozing", daylight, true), t("Off", daylight)))).toBe("dim");
+    expect(lightOf(o(t("Dozing", daylight, true), t("Working", daylight)))).toBe(
+      daylight === "day" ? null : daylight,
+    );
+  }
 });

@@ -10,9 +10,9 @@ use super::rank::rank_of;
 use super::stats::TeamStats;
 use super::work::{Role, Touched, WorkTally, WorkType, touches_file};
 use super::{
-    Activity, Bubble, BubbleSay, Counters, Cue, Employee, Incident, Light, Mark, PendingCall, Pose,
-    Rank, Room, Team, TeamPhase, TeamProps, TestCounts, TestVerdict, TimelineKind, Tokens,
-    call_hash,
+    Activity, Bubble, BubbleSay, Counters, Cue, Daylight, Employee, Incident, Light, Mark,
+    PendingCall, Pose, Rank, Room, Team, TeamPhase, TeamProps, TestCounts, TestVerdict,
+    TimelineKind, Tokens, call_hash,
 };
 use crate::discover::Product;
 use crate::parse::{
@@ -260,6 +260,7 @@ impl Team {
             daily: HashMap::new(),
             date: chrono::NaiveDate::MIN,
             local: FixedOffset::east_opt(0).unwrap(),
+            daylight: daylight(started, FixedOffset::east_opt(0).unwrap()),
             tokens: None,
         }
     }
@@ -855,6 +856,10 @@ impl Team {
         self.daily.get(&self.date).map_or(0, |d| d.1)
     }
 
+    pub fn daylight(&self, now: DateTime<Utc>) -> Daylight {
+        daylight(now, self.local)
+    }
+
     fn tick_to(&mut self, now: DateTime<Utc>, local: FixedOffset, cues: &mut Vec<Cue>) {
         self.local = local;
         self.date = self.date.max(now.with_timezone(&local).date_naive());
@@ -952,8 +957,8 @@ impl Team {
         // 퇴근 문턱을 넘고도 프로세스가 살아 졸음에 남았다 (S58). 넘는 틱에 팀이 바뀌어 스냅샷이 나간다
         self.idle_alive =
             self.phase == TeamPhase::Dozing && quiet > OFF_AFTER && self.alive_in_registry;
-        let hour = now.with_timezone(&local).hour();
-        self.props.night = self.phase != TeamPhase::Off && !(6..22).contains(&hour);
+        self.daylight = self.daylight(now);
+        self.props.night = self.phase != TeamPhase::Off && self.daylight == Daylight::Night;
         if self.phase == TeamPhase::Working {
             // 졸거나 퇴근한 동안은 쌓지 않는다
             let due = self.pizza_at_wake + pizza_count(now - self.awake_since);
@@ -1887,6 +1892,14 @@ const TEAM_FOLLOWS: &[(TeamPhase, TeamPhase)] = &[
     // S37
     (TeamPhase::Off, TeamPhase::Working),
 ];
+
+fn daylight(now: DateTime<Utc>, local: FixedOffset) -> Daylight {
+    match now.with_timezone(&local).hour() {
+        6..17 => Daylight::Day,
+        17..20 => Daylight::Evening,
+        _ => Daylight::Night,
+    }
+}
 
 /// 이미 정한 출력(활동·퇴장·팀 단계)에서 읽은 docs/CONTRACTS.md C2 상태 단어. 상태 기계의 판정을 다시 하지 않는다
 fn state_word(phase: TeamPhase, e: &Employee) -> &'static str {

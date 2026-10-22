@@ -466,6 +466,14 @@ impl Cue {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum Daylight {
+    Day,
+    Evening,
+    Night,
+}
+
 /// 세션 하나 (docs/CONTRACTS.md C8). 사무실 합성·좌석은 world 몫이다
 #[derive(Debug, Clone, PartialEq)]
 pub struct Team {
@@ -521,6 +529,7 @@ pub struct Team {
     daily: HashMap<NaiveDate, (TestCounts, u32)>,
     date: NaiveDate,
     local: FixedOffset,
+    daylight: Daylight,
     /// 사용량을 한 번도 못 봤으면 None
     pub tokens: Option<Tokens>,
 }

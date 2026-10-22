@@ -62,6 +62,7 @@ THEMES = {
 }
 TEAM_TINTS = [(52, 150, 150), (128, 98, 190), (226, 112, 92), (214, 160, 40), (70, 130, 200), (150, 110, 80)]
 NIGHT_TINT = (242, 222, 173)  # 곱하기. 창문 레이어에는 적용하지 않는다
+EVENING_TINT = (246, 230, 196)
 
 ROOMS = {  # key: (이름, gx0, gy0, gx1, gy1, 바닥 타일)
     "library": ("소스 서고", 0, 0, 6, 5, "library"),
@@ -609,7 +610,7 @@ def build_wall_items():
             p.poly([(-0.1, 0, z1), (L + 0.1, 0, z1), (L + 0.1, 0.25, z1), (-0.1, 0.25, z1)], (246, 246, 244), (190, 190, 190))
             reg(f"{size}/{st}", p.result())
         prop(size, "window", ["day", "dusk", "night"], (L, 0), 40,
-             desc="창문 (오른쪽 뒷벽). 06–17시 day, 17–22시 dusk, 22–06시 night. 야간 조명 색을 곱하지 않는 레이어")
+             desc="창문 (오른쪽 뒷벽). 06–17시 day, 17–20시 dusk, 20–06시 night. 조명 색을 곱하지 않는 레이어")
     # 칸반
     for size, L in (("kanban_l", 2.2), ("kanban_s", 1.8)):
         p = wall_r(L, 36)
@@ -1139,6 +1140,12 @@ def build_fx():
         p.box(0, 0, 0.3, 0.3, 2, (255, 215, 110) if st == "on" else (90, 100, 110), z=9)
         reg(f"desk_lamp/{st}", p.result())
     prop("desk_lamp", "floor", ["off", "on"], (0.3, 0.3), 11, desc="직원 책상 야근 램프")
+    glow = Image.new("RGBA", (41, 23), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for inset, alpha in [(0, 12), (4, 20), (8, 28)]:
+        gd.ellipse((inset, inset // 2, 40 - inset, 22 - inset // 2), fill=(255, 217, 128, alpha))
+    reg("glow_lamp/default", (glow, (20, 14)))
+    prop("glow_lamp", "overlay", ["default"], desc="실제 야간 조명에서 활성 직원 책상 램프의 비네트")
     # 효과
     reg("sweat/0", sprite_from_pix([".b", "bb", "bb"], dict(b=(120, 190, 250)), 0, 2))
     reg("sweat/1", sprite_from_pix(["..", ".b", "bb"], dict(b=(120, 190, 250)), 0, 2))
@@ -1258,7 +1265,7 @@ def build_layout(kind):
 
     # 벽 소품
     put("window", "window_xl" if smb else "window_l", 18.6 if smb else 19.2, 0, "day", layer="window",
-        drive="현지 시각: 06–17 day, 17–22 dusk, 22–06 night")
+        drive="Rust daylight: 06–17 day, 17–20 dusk, 20–06 night")
     put("kanban", "kanban_s" if smb else "kanban_l", 16.5 if smb else 16.6, 0, layer="wall", drive="하이라이트 팀(없으면 최근 팀)의 할 일 목록")
     put("rules_frame", "rules_frame", 22.3 if smb else 22.2, 0, layer="wall", drive="세션 제목")
     put("joke_sign", "joke_sign", 23.45, 0, layer="wall")
@@ -1420,8 +1427,8 @@ def floorplan_json():
                         accent=hexc(v["accent"])) for t, v in THEMES.items()},
         teamTints=[hexc(c) for c in TEAM_TINTS],
         nightTint=hexc(NIGHT_TINT),
-        lightTints=dict(night=hexc(NIGHT_TINT), dim="#B4B4BE", off="#6E6E82",
-                        rule="곱하기 색. night: 22–06시 활성. dim: 30분 조용하지만 프로세스 살아 있음(S58). off: 퇴근(S36). "
+        lightTints=dict(evening=hexc(EVENING_TINT), night=hexc(NIGHT_TINT), dim="#B4B4BE", off="#6E6E82",
+                        rule="곱하기 색. evening: 17–20시, night: 20–06시. off > dim > 시간표. dim: 30분 조용하지만 프로세스 살아 있음(S58). off: 퇴근(S36). "
                              "창문 레이어에는 곱하지 않는다. 바뀔 때 1.5초에 걸쳐 보간"),
         fx=dict(cloud_lag=[8, 8], note="cloud_lag 는 캔버스 1x 좌표 (8,8)에 기준점. sweat 는 머리 기준점 + (6,-2)"),
         layouts={k: dict(placements=build_layout(k), seats=seats(k)) for k in ("large", "small")},
@@ -1471,7 +1478,7 @@ def draw_owl(canvas, c):
 
 
 def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=False, incident=False,
-                 kanban=None, magnets=None, safe="0", tv=None, balls=0, pizza=0, progress=None):
+                 kanban=None, magnets=None, safe="0", tv=None, balls=0, pizza=0, progress=None, evening=False):
     state, visible, tints = state or {}, visible or {}, tints or {}
     fp = FLOORPLAN["layouts"][kind]
     if progress is not None:
@@ -1488,6 +1495,7 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
     win = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     world = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    lamp_glows = []
     # 1. 벽과 바닥 판
     place(base, f"shell/{theme}/default", *rnd(iso(0, 0)))
     # 2. 바닥 타일
@@ -1569,13 +1577,16 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
                 meta = PROPS[pl["sprite"]]
                 for name, key in (("coffee", f"coffee_stack/s{config.get('coffee', 0)}"),
                                   ("papers", f"paper_stack/s{config.get('papers', 0)}"),
-                                  ("lamp", "desk_lamp/on" if config.get("night") else "desk_lamp/off")):
+                                  ("lamp", "desk_lamp/on" if night else "desk_lamp/off")):
                     if key.endswith("s0"):
                         continue
                     dx, dy = meta["progressSlots"][name]
                     drawn.append((pl["depth"] + 0.03, 5000 + len(drawn), ("dynamic", (pl["gx"] + dx, pl["gy"] + dy, meta["height"]), key)))
                 for i in range(len(seat.get("monitors", [])), config.get("monitors", 1)):
                     drawn.append((pl["depth"] + 0.03, 5000 + len(drawn), ("dynamic", (pl["gx"] + 0.05 + i * 0.65, pl["gy"] + 0.05, meta["height"]), "monitor_sm/off")))
+                if night:
+                    dx, dy = meta["progressSlots"]["lamp"]
+                    lamp_glows.append(rnd(iso(pl["gx"] + dx, pl["gy"] + dy, meta["height"])))
         for gx, gy in [(3.9, 14.6), (3.9, 15.4), (1.5, 15.3)][:min(3, progress.get("commits", 0))]:
             drawn.append((gx + gy + 0.65, 5000 + len(drawn), ("dynamic", (gx, gy, 0), "box_taped/default")))
         if progress.get("pr"):
@@ -1601,9 +1612,12 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
     for pl, key in items:
         if pl["layer"] == "overlay":
             place(over, key, pl["x"], pl["y"])
-    if night:
-        base = tinted(base, NIGHT_TINT)
-        world = tinted(world, NIGHT_TINT)
+    for x, y in lamp_glows:
+        place(over, "glow_lamp/default", x, y)
+    if night or evening:
+        tint = NIGHT_TINT if night else EVENING_TINT
+        base = tinted(base, tint)
+        world = tinted(world, tint)
     out = base
     out.alpha_composite(win)
     out.alpha_composite(world)
@@ -1880,14 +1894,17 @@ def make_canvas_images():
     kan = [(0, "yellow"), (1, "pink"), (2, "yellow"), (3, "blue"), (4, "yellow"), (6, "green"), (7, "green"), (8, "green")]
     mags = [(0, 0, "red"), (0, 1, "blue"), (0, 2, "green"), (0, 3, "yellow"), (3, 0, "gray")]
     tv1 = [[0.1, 0.18, 0.14, 0.3, 0.36, 0.46, 0.42, 0.56, 0.2, 0.26, 0.36, 0.42]]
-    img, pos_hero = render_scene("large", "claude", hero_cast,
-                                 state={"ci_light": "yellow", "cabinet_front_1": "open", "boss_mon_0_0": "code_0", "boss_mon_0_1": "read_0",
+    hero_args = dict(state={"ci_light": "yellow", "cabinet_front_1": "open", "boss_mon_0_0": "code_0", "boss_mon_0_1": "read_0",
                                         "dev_mon_0_0": "code_0", "dev_mon_0_1": "code_1", "plant_boss_0": "s3", "trash": "some",
                                         "mug_0": "steam_0", "test_machine": "run_0", "test_board": "pass"},
                                  visible={"duck_0": False}, tints={f"dev_part_{i}": THEMES["claude"]["cubicle"] for i in range(6)},
                                  kanban=kan, magnets=mags, safe="37", tv=tv1, balls=2,
                                  progress=dict(desks={"boss_desk_0": dict(coffee=2, papers=1, monitors=2)}, reads=50, commits=2, pr=True, tests=[12, 2]))
+    img, pos_hero = render_scene("large", "claude", hero_cast, **hero_args)
     img.save(os.path.join(CANVAS, "office-claude-day.png"))
+    evening_args = {**hero_args, "state": {**hero_args["state"], "window": "dusk"}}
+    evening, _ = render_scene("large", "claude", hero_cast, evening=True, **evening_args)
+    evening.save(os.path.join(CANVAS, "office-claude-evening.png"))
     T = TEAM_TINTS
     smb_cast = [
         dict(id="bujangA", species="scops", outfit="bujang-codex", role="devops", pose="idle", gx=17.6, gy=4.1),

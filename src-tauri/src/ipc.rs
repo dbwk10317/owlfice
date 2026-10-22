@@ -17,8 +17,8 @@ use crate::office::names::RoomBook;
 use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
-    Activity, Bubble, Counters, Cue, Employee, Incident, Light, Rank, Room, Team, TeamPhase,
-    TeamProps, TestCounts, TestVerdict, TimelineKind, Tokens,
+    Activity, Bubble, Counters, Cue, Daylight, Employee, Incident, Light, Rank, Room, Team,
+    TeamPhase, TeamProps, TestCounts, TestVerdict, TimelineKind, Tokens,
 };
 use crate::parse::{Confidence, TodoItem, ToolKind, ToolOutcome};
 use crate::runtime::Runtime;
@@ -238,6 +238,7 @@ pub struct TeamDto {
     pub idle_alive: bool,
     pub tests_today: TestCounts,
     pub commits_today: u32,
+    pub daylight: Daylight,
 }
 
 /// 직원 카드 한 장 (docs/CONTRACTS.md C3)
@@ -778,6 +779,7 @@ fn employee_dto(e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
 
 fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamDto {
     TeamDto {
+        daylight: t.daylight(now),
         team_id: team_id_str(k),
         title: t.title.clone(),
         building: building(t.product).to_string(),

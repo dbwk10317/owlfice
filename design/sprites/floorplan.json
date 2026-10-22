@@ -235,10 +235,11 @@
  ],
  "nightTint": "#F2DEAD",
  "lightTints": {
+  "evening": "#F6E6C4",
   "night": "#F2DEAD",
   "dim": "#B4B4BE",
   "off": "#6E6E82",
-  "rule": "곱하기 색. night: 22–06시 활성. dim: 30분 조용하지만 프로세스 살아 있음(S58). off: 퇴근(S36). 창문 레이어에는 곱하지 않는다. 바뀔 때 1.5초에 걸쳐 보간"
+  "rule": "곱하기 색. evening: 17–20시, night: 20–06시. off > dim > 시간표. dim: 30분 조용하지만 프로세스 살아 있음(S58). off: 퇴근(S36). 창문 레이어에는 곱하지 않는다. 바뀔 때 1.5초에 걸쳐 보간"
  },
  "fx": {
   "cloud_lag": [
@@ -261,7 +262,7 @@
      "x": 442,
      "y": 175,
      "layer": "window",
-     "drive": "현지 시각: 06–17 day, 17–22 dusk, 22–06 night"
+     "drive": "Rust daylight: 06–17 day, 17–20 dusk, 20–06 night"
     },
     {
      "id": "kanban",
@@ -1891,7 +1892,7 @@
      "x": 435,
      "y": 172,
      "layer": "window",
-     "drive": "현지 시각: 06–17 day, 17–22 dusk, 22–06 night"
+     "drive": "Rust daylight: 06–17 day, 17–20 dusk, 20–06 night"
     },
     {
      "id": "kanban",

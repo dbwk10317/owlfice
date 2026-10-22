@@ -293,25 +293,25 @@ test("피자: 개수만큼 쌓고 8개에서 멈춘다", () => {
   expect(boxes()).toHaveLength(8);
 });
 
-test("창밖: 06·17·22시 경계, 컵라면은 야근일 때만", () => {
-  expect([5, 6, 16, 17, 21, 22, 23, 0].map(windowState)).toEqual([
-    "night",
-    "day",
+test("창밖은 DTO 시간대를 쓰고 프론트 시계나 실내 조명 덮어쓰기와 독립이다", () => {
+  expect([windowState("day"), windowState("evening"), windowState("night")]).toEqual([
     "day",
     "dusk",
-    "dusk",
-    "night",
-    "night",
     "night",
   ]);
   const { scene, props } = layer();
   const win = scene.driven.get("window")!;
-  props.update(office(), at(17));
+  const t = testTeam("a", [], { daylight: "evening" });
+  const o = testOffice("a", 1, [t]);
+  props.update(o, at(12));
   expect(frameOf(win)).toBe("window_l/dusk");
-  props.update(office({ night: false }), at(22));
+  t.daylight = "night";
+  t.phase = "Off";
+  props.update(o, at(12));
   expect(frameOf(win)).toBe("window_l/night");
   expect(scene.driven.get("ramen")!.visible).toBe(false);
-  props.update(office({ night: true }), at(22));
+  o.shared.night = true;
+  props.update(o, at(12));
   expect(scene.driven.get("ramen")!.visible).toBe(true);
   // 중소기업 창은 xl
   const small = layer("small");
@@ -1117,6 +1117,7 @@ test("야근 램프와 PR 주차 트럭은 상태로 복원되고 출하 cue가 
     { deskSlot: 0, commitsToday: 2 },
   );
   t.props.night = true;
+  t.daylight = "night";
   t.props.pr = [1, "https://example.invalid/pr/1"];
   const o = testOffice("a", 1, [t]);
   const state = (scene: Built) =>
@@ -1140,8 +1141,39 @@ test("야근 램프와 PR 주차 트럭은 상태로 복원되고 출하 cue가 
   expect(state(b.scene)).toEqual(original);
   t.props.pr = null;
   t.props.night = false;
+  t.daylight = "day";
   a.props.update(o, NOW);
   expect(count(a.scene, "desk_lamp/on")).toBe(0);
   expect(count(a.scene, "desk_lamp/off")).toBe(1);
   expect(count(a.scene, "truck/pr")).toBe(0);
+});
+
+test("램프와 비네트는 실제 night 조명에서 활성 직원의 모든 책상에 켜지고 dim·off가 우선한다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind);
+    const t = testTeam("a", [testEmp("boss"), testEmp("sub", { seat: 0 })], { deskSlot: 0 });
+    const o = testOffice("a", 1, [t]);
+    const lamps = () => count(scene, "desk_lamp/on");
+    const glows = () => withFrame(scene.overlay.children, "glow_lamp/default").length;
+    for (const daylight of ["day", "evening", "night"] as const) {
+      t.daylight = daylight;
+      props.update(o, NOW);
+      expect([lamps(), glows()]).toEqual(daylight === "night" ? [2, 2] : [0, 0]);
+      expect(frameOf(scene.driven.get("window")!)).toBe(
+        `window_${kind === "large" ? "l" : "xl"}/${windowState(daylight)}`,
+      );
+    }
+    t.idleAlive = true;
+    props.update(o, NOW);
+    expect([lamps(), glows()]).toEqual([0, 0]);
+    expect(frameOf(scene.driven.get("window")!)).toMatch(/night$/);
+    t.idleAlive = false;
+    props.update(o, NOW);
+    expect([lamps(), glows()]).toEqual([2, 2]);
+    t.phase = "Off";
+    props.update(o, NOW);
+    expect([lamps(), glows()]).toEqual([0, 0]);
+    props.reset();
+    expect(glows()).toBe(0);
+  }
 });

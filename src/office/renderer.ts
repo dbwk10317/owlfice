@@ -359,7 +359,9 @@ export async function mountOffice(
   let switchFade: Animation | undefined;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   reducedMotion.addEventListener("change", () => {
-    if (reducedMotion.matches) switchFade?.cancel();
+    switchFade?.cancel();
+    resumed = true;
+    dirty = true;
   });
   let suppressClick = false;
   actors.onPick = (teamId, agentId) => {
@@ -416,7 +418,7 @@ export async function mountOffice(
   let lightT = 1;
   function setLight(name: LightName | null, immediate: boolean): void {
     const to = name ? hexToRgb(fp.lightTints[name]) : WHITE;
-    if (to.every((v, i) => v === lightTo[i])) return;
+    if (!immediate && to.every((v, i) => v === lightTo[i])) return;
     lightFrom = immediate ? to : lightCur;
     lightTo = to;
     lightT = immediate ? 1 : 0;
@@ -495,7 +497,6 @@ export async function mountOffice(
       instant: switched || resumed,
       earlier: cues.take(office),
     });
-    resumed = false;
     const seated = seatProps(fp, kind, office);
     for (const [id, s] of scene?.toggled ?? []) s.visible = seated.has(id);
     shown = office;
@@ -504,7 +505,8 @@ export async function mountOffice(
     propsAt = Date.now();
     propsTeam = actors.focusedTeam(propsAt);
     props?.update(office, propsAt, propsTeam);
-    setLight(lightOf(office), switched);
+    setLight(lightOf(office), switched || resumed || reducedMotion.matches);
+    resumed = false;
     stepLight(0);
     if (switched) {
       switchFade?.cancel();

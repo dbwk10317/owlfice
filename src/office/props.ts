@@ -422,6 +422,9 @@ export class PropsLayer {
 
   /** 김·화면보호기·벨은 프레임이 바뀌어서 매 프레임 불린다. 상태는 update 가 정한 것을 쓴다 */
   tick(nowMs: number): void {
+    // 움직임 줄이기: 반복 프레임은 첫 장에 멈춘다
+    const still = reducedMotion();
+    const f = (fps: number) => (still ? 0 : blink(nowMs, fps));
     if (this.pendingTitle && (nowMs >= this.pendingTitle.at || reducedMotion())) {
       const { title } = this.pendingTitle;
       this.pendingTitle = null;
@@ -429,17 +432,14 @@ export class PropsLayer {
     }
     this.bossSeats.forEach((seat, i) => {
       const fx = this.fx[i];
-      if (seat.mug) this.state(seat.mug, fx?.steam ? `steam_${blink(nowMs, MUG_FPS)}` : undefined);
+      if (seat.mug) this.state(seat.mug, fx?.steam ? `steam_${f(MUG_FPS)}` : undefined);
       const duck = seat.duck && this.target.driven.get(seat.duck);
       if (duck) duck.visible = !fx?.duck;
       for (const m of seat.monitors ?? [])
-        this.state(m, fx?.saver ? `saver_${blink(nowMs, SAVER_FPS)}` : undefined);
+        this.state(m, fx?.saver ? `saver_${f(SAVER_FPS)}` : undefined);
     });
-    this.state("interphone", nowMs < this.ringUntil ? `ring_${blink(nowMs, RING_FPS)}` : undefined);
+    this.state("interphone", nowMs < this.ringUntil ? `ring_${f(RING_FPS)}` : undefined);
     this.state("door", nowMs < this.doorUntil ? "open" : undefined);
-    // 움직임 줄이기: 반복 프레임은 첫 장에 멈춘다
-    const still = reducedMotion();
-    const f = (fps: number) => (still ? 0 : blink(nowMs, fps));
     for (const id of ["rack_0", "rack_1"])
       this.state(id, this.lab.shell ? `led_${f(RACK_FPS)}` : undefined);
     this.state("game_tv", this.game ? `game_${f(GAME_FPS)}` : undefined);
@@ -506,6 +506,7 @@ export class PropsLayer {
 
   /** 사무실 전환: 지난 사무실에서 진행 중인 효과를 지운다 */
   reset(): void {
+    this.ringUntil = this.doorUntil = 0;
     this.archiveVisit(false);
     this.pendingTitle = null;
     for (const [id, r] of this.repots) {

@@ -51,7 +51,7 @@ const QUOTE_MAX = 60;
 const CTX_DEFAULT_WINDOW = 200_000;
 const TEAM_COLORS = 6;
 
-const ROOM_ICON: Record<Room, string> = {
+export const ROOM_ICON: Record<Room, string> = {
   TeamLead: roomBoss,
   Dev: roomDev,
   Archive: roomLibrary,

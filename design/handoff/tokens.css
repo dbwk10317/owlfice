@@ -253,7 +253,8 @@
 .ow-row:hover { background: var(--ow-fill); }
 .ow-row[aria-current="true"], .ow-row.is-selected { background: var(--ow-surface); box-shadow: var(--ow-shadow-row); }
 .ow-row.is-selected::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--ow-row-accent, var(--ow-ink)); }
-.ow-row.is-off { opacity: 0.6; }
+.ow-row.is-off .ow-row__name { color: var(--ow-ink-2); }
+.ow-row.is-off .ow-dot, .ow-row.is-off .ow-square { opacity: 0.5; }
 .ow-row.is-broken .ow-row__meta { color: var(--ow-ask); } /* 세션 파일을 읽지 못했어요 */
 .ow-row.is-team .ow-row__main { padding-left: 30px; }
 .ow-row.is-team .ow-row__name { font-weight: 500; }
@@ -267,7 +268,7 @@
 /* 아이콘 레일 (창 너비 720–899) */
 .ow-rail { width: var(--ow-rail-w); flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; background: var(--ow-panel); border-right: 1px solid var(--ow-line); }
 .ow-rail__item { position: relative; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font: 700 11px var(--ow-font-sans); background: var(--ow-square); }
-.ow-rail__item.is-off { opacity: 0.5; }
+.ow-rail__item.is-off .ow-rail__state { opacity: 0.5; }
 .ow-rail__item[aria-current="true"] { box-shadow: 0 0 0 2px var(--ow-panel), 0 0 0 3.5px var(--ow-ink); }
 .ow-rail__state { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ow-panel); background: var(--ow-dot-color, var(--ow-off)); }
 
@@ -506,10 +507,13 @@
   --ow-elev-3: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 [data-theme="night"] .ow-toast, [data-theme="night"] .ow-ticker__label, [data-theme="night"] .ow-btn.is-primary { background: var(--ow-ink) !important; color: var(--ow-bg); }
+[data-theme="night"] .ow-toast__ago { color: var(--ow-bg); }
+[data-theme="night"] .ow-status.is-ask small { color: inherit; }
 [data-theme="night"] .ow-nametag, [data-theme="night"] .ow-parallel, [data-theme="night"] .ow-crowd { background: #F4F4F5; color: #18181B; }
 [data-theme="night"] .ow-nametag span { color: #52525B; }
 [data-theme="night"] .ow-brand__tile { background: #F4F4F5; border-color: transparent; }
 [data-theme="night"] .ow-host { border-color: #34343A; }
+[data-theme="night"] .ow-rail__item { color: var(--ow-bg); }
 [data-theme="night"] .ow-card:hover { border-color: #34343A; }
 [data-theme="night"] .ow-segment .ow-iconbtn[aria-pressed="true"] { background: #34343A; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
 [data-theme="night"] .ow-zz { color: var(--ow-night-ink); }

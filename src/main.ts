@@ -5,7 +5,7 @@ import "../design/handoff/tokens.css";
 import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 이 필요해 가장 먼저 부른다
 import { firstOffice } from "./first-office.ts";
 import { mountEmptyOffice } from "./empty-office.ts";
-import { mountHeader } from "./header.ts";
+import { applyNightMode, mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
 import { OfficeSound } from "./office/sound.ts";
 import { emptyState, mountSidebar, popupNames } from "./sidebar-left.ts";
@@ -176,6 +176,8 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
   header = mountHeader(app, headerEl, store, {
     companyName,
     sound: settings.sound ?? false,
+    nightMode: settings.nightMode ?? "auto",
+    onNightMode: (nightMode) => saveSettings({ invoke, onSettings: applySettings }, { nightMode }),
     onSound: (on) => {
       soundGesture(on);
       return saveSettings({ invoke, onSettings: applySettings }, { sound: on });
@@ -237,7 +239,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     settings = next;
     sound.setEnabled(next.sound ?? false);
     sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
-    header?.setSettings(next.companyName, next.sound ?? false);
+    header?.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
     office?.setBossName(next.bossName);
   }
 }
@@ -245,6 +247,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
 async function start(): Promise<void> {
   // 규모를 아직 안 골랐으면(첫 실행, 손상된 설정) 고를 때까지 진행하지 않는다. 그다음 로딩 화면 (docs/CONTRACTS.md C4)
   let settings = await invoke<SettingsDto>("get_settings");
+  applyNightMode(document, settings.nightMode ?? "auto");
   const root = document.body.appendChild(document.createElement("div"));
   const sheet = await loadSheet();
   if (!settings.scale) {

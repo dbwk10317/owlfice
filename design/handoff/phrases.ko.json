@@ -250,6 +250,8 @@
     "company": "회사", "scale": "회사 규모", "scaleHint": "바꾸면 사무실만 다시 배치하고 데이터는 다시 읽지 않아요.", "large": "대기업", "small": "중소기업",
     "bossName": "사장님 이름", "bossNameHint": "비워 두면 “사장님”으로 불러요.", "bossNamePlaceholder": "사장님",
     "screenSound": "화면과 소리", "sound": "소리", "soundHint": "키보드, 인터폰, 경광등, 무재해 리셋 소리",
+    "nightMode": "야근 모드", "nightModes": { "auto": "자동", "on": "켜기", "off": "끄기" },
+    "nightModeHint": "자동은 로컬 시각 20시부터 다음 날 06시까지 켜집니다. 사무실 조명은 시각에 따라 바뀝니다.",
     "folders": "세션 폴더", "auto": "자동", "manual": "직접 지정", "removePath": "이 경로 빼기", "addFolder": "폴더 직접 지정",
     "contextDefault": "컨텍스트 창 기본값", "contextDefaultHint": "요약 기록을 아직 못 본 세션의 화분 크기 계산에 써요.",
     "contextOptions": ["200,000 토큰", "1,000,000 토큰"],

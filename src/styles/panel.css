@@ -96,7 +96,7 @@
   height: 14px;
 }
 .ow-model {
-  max-width: 110px;
+  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
 }

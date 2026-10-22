@@ -148,7 +148,7 @@ test("(teamId, agentId) 로 요약과 타임라인 첫 50개를 불러 머리·�
   ]);
   expect(s.qa(".ow-stat__head b").map((e) => e.textContent)).toEqual(["2", "2", "5"]);
   expect(s.qa(".ow-tl__row")).toHaveLength(3);
-  expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("50개 중 3개");
+  expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("3개");
 });
 
 test("부장은 상사 토막이 빠지고, 요약이 거절되면 코드별 문구만 보인다", async () => {
@@ -294,6 +294,7 @@ test("더 보기는 마지막 칸의 cursor 를 before 로 50개씩 이어 붙�
   });
   await flush();
   expect(s.qa(".ow-tl__row")).toHaveLength(50);
+  expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("50개");
   const more = s.q<HTMLButtonElement>(".ow-pop__more")!;
   expect(more.hidden).toBe(false);
   expect(more.textContent).toBe("더 보기50개씩");
@@ -312,7 +313,7 @@ test("더 보기는 마지막 칸의 cursor 를 before 로 50개씩 이어 붙�
   await flush();
   expect(s.qa(".ow-tl__row")).toHaveLength(57);
   expect(s.q(".ow-tl__head")!.getAttribute("aria-expanded")).toBe("true");
-  expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("57");
+  expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("57개");
   expect(s.q<HTMLButtonElement>(".ow-pop__more")!.hidden).toBe(true);
 });
 
@@ -473,11 +474,12 @@ test("닫힌 직원 팝업의 늦은 응답은 팝업을 다시 그리거나 초
   expect(document.activeElement).toBe(s.opener);
 });
 
-test("직원 타임라인은 세로 flex와 38px 접힌 행, 아바타는 80×88을 사용한다", async () => {
+test("직원 상세는 원문 라벨을 보존하고 좁은 창 규칙에서 본문과 머리 액션을 다음 줄로 배치한다", async () => {
   const { readFileSync } = await vi.importActual<{
     readFileSync: (path: string, encoding: "utf8") => string;
   }>("node:fs");
   const style = document.createElement("style");
+  const narrow = document.createElement("style");
   style.textContent =
     readFileSync("design/handoff/tokens.css", "utf8") +
     readFileSync("src/styles/popup.css", "utf8");
@@ -497,7 +499,34 @@ test("직원 타임라인은 세로 flex와 38px 접힌 행, 아바타는 80×88
     s.q<HTMLElement>(".ow-tl__head")!.click();
     expect(css(".ow-tl__row").height).toBe("auto");
     expect(css(".ow-tl__raw").display).toBe("flex");
+    expect(s.q(".ow-emp__linklabel")!.textContent).toBe(phrases.employeeDetail.openRaw);
+    expect(css(".ow-emp__linklabel").flexShrink).toBe("0");
+    expect(css(".ow-emp__linklabel").whiteSpace).toBe("nowrap");
+    expect(css(".ow-emp__linkfile").minWidth).toBe("0px");
+    expect(css(".ow-emp__linkfile").overflowWrap).toBe("anywhere");
+    expect(css(".ow-emp").flexDirection).toBe("row");
+    expect(css(".ow-emp__aside").width).toBe("280px");
+    // jsdom은 화면 너비로 미디어 쿼리를 적용하지 않으므로 실제 좁은 창 규칙을 꺼내 검증한다.
+    const narrowRules = [...style.sheet!.cssRules]
+      .filter((rule) => rule.type === CSSRule.MEDIA_RULE)
+      .map((rule) => rule as CSSMediaRule)
+      .filter((rule) => rule.conditionText === "(max-width: 719px)")
+      .flatMap((rule) => [...rule.cssRules]) as CSSStyleRule[];
+    narrow.textContent = narrowRules.map((rule) => rule.cssText).join("\n");
+    document.head.append(narrow);
+    expect(css(".ow-emp").flexDirection).toBe("column");
+    expect(css(".ow-emp__aside").width).toBe("auto");
+    expect(css(".ow-emp__aside").borderLeftWidth).toBe("0px");
+    // var()가 있는 테두리도 jsdom 계산값에서 빠져 선언 자체를 확인한다.
+    expect(
+      narrowRules.find((rule) => rule.selectorText === ".ow-emp__aside")!.style.borderTop,
+    ).toBe("1px solid var(--ow-line)");
+    expect(css(".ow-pop__head--emp").gridTemplateColumns).toBe("80px minmax(0, 1fr)");
+    expect(css(".ow-pop__actions").gridColumn).toBe("1 / -1");
+    expect(css(".ow-pop__actions").justifySelf).toBe("end");
+    expect(css(".ow-pop__headmain").overflowWrap).toBe("anywhere");
   } finally {
+    narrow.remove();
     style.remove();
   }
 });

@@ -1,0 +1,49 @@
+{
+  "source": [
+    "https://astro.kasi.re.kr/kor/life/pageView/8?form=MG0AV3",
+    "https://astro.kasi.re.kr/life/lunc/between?start_yyyy=2026&end_yyyy=2035&mm=01&dd=01&isLeap=0",
+    "https://astro.kasi.re.kr/life/lunc/between?start_yyyy=2026&end_yyyy=2035&mm=08&dd=15&isLeap=0"
+  ],
+  "dates": {
+    "2026": {
+      "seollal": "02-17",
+      "chuseok": "09-25"
+    },
+    "2027": {
+      "seollal": "02-07",
+      "chuseok": "09-15"
+    },
+    "2028": {
+      "seollal": "01-27",
+      "chuseok": "10-03"
+    },
+    "2029": {
+      "seollal": "02-13",
+      "chuseok": "09-22"
+    },
+    "2030": {
+      "seollal": "02-03",
+      "chuseok": "09-12"
+    },
+    "2031": {
+      "seollal": "01-23",
+      "chuseok": "10-01"
+    },
+    "2032": {
+      "seollal": "02-11",
+      "chuseok": "09-19"
+    },
+    "2033": {
+      "seollal": "01-31",
+      "chuseok": "09-08"
+    },
+    "2034": {
+      "seollal": "02-19",
+      "chuseok": "09-27"
+    },
+    "2035": {
+      "seollal": "02-08",
+      "chuseok": "09-16"
+    }
+  }
+}

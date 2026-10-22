@@ -140,7 +140,10 @@ async function main(): Promise<void> {
   const result: Record<string, number> = {};
   for (const c of CASES) {
     const scene = buildScene(assets, c.kind, c.theme, false);
-    new PropsLayer(assets.floorplan, assets.sheet, c.kind, scene).update(c.office, c.now);
+    new PropsLayer(assets.floorplan, assets.sheet, c.kind, scene, null, false).update(
+      c.office,
+      c.now,
+    );
     const tv = assets.floorplan.layouts[c.kind].placements.find((p) => p.id === "tv")!;
     const inTvScreen = tvScreenTest(tv.x, tv.y, assets.sheet);
     if (c.lit) {

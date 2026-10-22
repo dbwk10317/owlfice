@@ -2,6 +2,7 @@
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
 import { BitmapFont, BitmapText, Graphics, type Sprite, type Spritesheet } from "pixi.js";
 import type { CueDto, Daylight, EmployeeDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
+import holidays from "../../design/sprites/holidays.json";
 import { reducedMotion } from "../loading.ts";
 import {
   gridToScreen,
@@ -398,6 +399,7 @@ export class PropsLayer {
     private readonly kind: Kind,
     private readonly target: PropsTarget,
     private readonly label: ScreenLabel | null = null,
+    private readonly season = true,
   ) {
     this.meta = (
       sheet.data as unknown as { owlfice: { props: Record<string, PropMeta> } }
@@ -629,7 +631,9 @@ export class PropsLayer {
     }
     this.updateStats(shared?.stats);
     this.state("ci_light", shared ? shared.light.toLowerCase() : undefined);
-    this.state("window", windowState(office?.teams[0]?.daylight ?? "day"));
+    const daylight = windowState(office?.teams[0]?.daylight ?? "day");
+    this.state("window", daylight);
+    if (this.season) this.updateSeason(nowMs, daylight);
     this.state("trash", shared ? trashState(shared.trash) : undefined);
     const ramen = this.target.driven.get("ramen");
     if (ramen) ramen.visible = shared?.night ?? false;
@@ -656,6 +660,50 @@ export class PropsLayer {
       ),
     );
     this.tick(nowMs);
+  }
+
+  private updateSeason(nowMs: number, daylight: string): void {
+    const date = new Date(nowMs);
+    const month = date.getMonth() + 1;
+    const day = `${String(month).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const season =
+      month >= 3 && month <= 5
+        ? "spring"
+        : month >= 6 && month <= 8
+          ? "summer"
+          : month >= 9 && month <= 11
+            ? "autumn"
+            : "winter";
+    const window = this.target.driven.get("window");
+    const size = this.pl.get("window")?.sprite;
+    if (window) window.texture = this.sheet.textures[`season/${size}_${season}_${daylight}`];
+    const year = date.getFullYear();
+    // ponytail: 날짜표 밖 연도는 명절만 생략, 날짜표를 갱신할 때 늘린다.
+    const holiday = (
+      holidays.dates as Record<string, { seollal: string; chuseok: string } | undefined>
+    )[year];
+    const lantern = holiday?.seollal === day || holiday?.chuseok === day;
+    if (!this.changed("season", `${month === 12}/${lantern}`)) return;
+    const parts: Sprite[] = [];
+    if (month === 12) {
+      const tree = this.fxSprite("season/tree", 0.8, 15.5, 0);
+      tree.zIndex = zIndexOf(16.3, LOOSE_SEQ);
+      parts.push(tree);
+      const desk = this.pl.get(this.bossSeats[0].desk)!;
+      const meta = this.meta[desk.sprite];
+      const p = gridToScreen(desk.gx + 0.65, desk.gy + meta.footprint![1] - 0.15, meta.height);
+      const stocking = placeSprite(this.sheet, "season/stocking", Math.round(p.x), Math.round(p.y));
+      stocking.zIndex = zIndexOf(desk.depth + 0.01, LOOSE_SEQ);
+      this.target.world.addChild(stocking);
+      parts.push(stocking);
+    }
+    if (lantern) {
+      const p = gridToScreen(11.4, 0);
+      const s = placeSprite(this.sheet, "season/lantern", Math.round(p.x), Math.round(p.y));
+      this.target.wall.addChild(s);
+      parts.push(s);
+    }
+    this.replace("season", parts);
   }
 
   private updateProgress(office: OfficeDto | null, nowMs: number): void {

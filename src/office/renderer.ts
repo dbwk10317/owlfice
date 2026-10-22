@@ -293,6 +293,7 @@ export interface OfficeHandle {
   highlightTeam(officeId: string, teamId: string): void;
 }
 export interface OfficeOptions {
+  season?: boolean;
   sound?: OfficeSound;
   bossName?: string | null;
   /** 장치 픽셀 기준. 현재 배율 또는 최대맞춤 배율이 바뀔 때 알린다 */
@@ -477,7 +478,7 @@ export async function mountOffice(
         });
       }
       for (const [id, room] of next.rooms) room.on("pointertap", () => showRoom(id));
-      props = new PropsLayer(fp, assets.sheet, kind, next, screenLabel);
+      props = new PropsLayer(fp, assets.sheet, kind, next, screenLabel, opts.season ?? true);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);

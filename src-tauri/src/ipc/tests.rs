@@ -781,6 +781,7 @@ fn set_settings_company_name_alone() {
         company_name: Some("야근상사".into()),
         manual_paths: Some(Vec::new()),
         sound: Some(false),
+        night_mode: Some(NightMode::Auto),
         os_notifications: Some(true),
         boss_name: None,
         raw_diagnostics: Some(false),
@@ -891,7 +892,7 @@ fn settings_save_failure_keeps_all_changes_in_memory() {
     let book = SettingsBook::load(&file);
     let dto: SettingsDto = serde_json::from_value(serde_json::json!({
         "scale": "Small", "companyName": "회사", "bossName": "이름",
-        "sound": true, "osNotifications": false, "rawDiagnostics": true,
+        "sound": true, "nightMode": "on", "osNotifications": false, "rawDiagnostics": true,
         "manualPaths": [{"vendor": "Claude", "root": "D:/fixture/projects"}]
     }))
     .unwrap();
@@ -1455,6 +1456,7 @@ fn bindings() -> String {
         Light,
         Scale,
         SettingsDto,
+        NightMode,
         DiscoveryPathDto,
         DiscoveryStatus,
         ManualPath,

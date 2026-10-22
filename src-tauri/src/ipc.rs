@@ -42,6 +42,14 @@ pub struct OfficeListDto {
     pub select_request: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum NightMode {
+    Auto,
+    On,
+    Off,
+}
+
 /// `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +61,7 @@ pub struct SettingsDto {
     // 자동 탐색에 추가한다. 빈 배열은 저장된 수동 경로를 모두 지운다.
     pub manual_paths: Option<Vec<ManualPath>>,
     pub sound: Option<bool>,
+    pub night_mode: Option<NightMode>,
     pub os_notifications: Option<bool>,
     // 비면 프론트가 기본 호칭을 쓴다. 빈 문자열을 보내면 기본으로 되돌린다.
     pub boss_name: Option<String>,

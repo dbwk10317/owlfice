@@ -18,6 +18,7 @@ let settings: SettingsDto = {
   bossName: null,
   manualPaths: [],
   sound: false,
+  nightMode: "auto",
   osNotifications: true,
   rawDiagnostics: false,
 };
@@ -168,10 +169,11 @@ const header = mountHeader(get("app"), get("header"), store, {
   togglePanel: () => panel.toggleDrawer(),
   setRoomLabels: (on) => canvas?.setRoomLabels(on),
   onSound: (sound) => saveSettings({ invoke, onSettings: applySettings }, { sound }),
+  onNightMode: (nightMode) => saveSettings({ invoke, onSettings: applySettings }, { nightMode }),
 });
 function applySettings(next: SettingsDto): void {
   sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
-  header.setSettings(next.companyName, next.sound ?? false);
+  header.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
   canvas?.setBossName(next.bossName);
   get("status").textContent =
     `회사: ${next.companyName ?? "Owlfice"} · 사장님: ${next.bossName ?? "사장님"} · 소리: ${next.sound} · OS 알림: ${next.osNotifications} · 원문 진단: ${next.rawDiagnostics}`;

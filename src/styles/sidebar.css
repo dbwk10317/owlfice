@@ -139,8 +139,8 @@
 .ow-row__fold[aria-expanded="false"] svg {
   transform: rotate(-90deg);
 }
-.ow-row.is-vacant {
-  opacity: 0.55;
+.ow-row.is-vacant .ow-row__name {
+  color: var(--ow-ink-2);
 }
 .ow-row.is-new {
   animation: ow-slide-in 200ms var(--ow-ease);

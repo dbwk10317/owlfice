@@ -2,7 +2,7 @@ import phrases from "../design/handoff/phrases.ko.json";
 import { openModal } from "./popup-modal.ts";
 import { h } from "./sidebar-right.ts";
 import type { Invoke } from "./scale.ts";
-import type { SettingsDto } from "./types/ipc.ts";
+import type { NightMode, SettingsDto } from "./types/ipc.ts";
 
 const S = phrases.settings;
 
@@ -176,6 +176,25 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     );
   }
   const sound = section(S.screenSound);
+  const nightModes = h(doc, "div", "ow-seg");
+  nightModes.setAttribute("role", "group");
+  nightModes.setAttribute("aria-label", S.nightMode);
+  const nightChoices = (["auto", "on", "off"] as const).map((mode: NightMode) => {
+    const control = button(S.nightModes[mode], () => save({ nightMode: mode }));
+    control.className = "";
+    nightModes.append(control);
+    return { mode, control };
+  });
+  sound.append(
+    h(
+      doc,
+      "div",
+      "ow-settings__field",
+      S.nightMode,
+      nightModes,
+      h(doc, "small", "ow-settings__hint", S.nightModeHint),
+    ),
+  );
   toggle(sound, "sound", S.sound, S.soundHint);
   toggle(
     sound,
@@ -260,6 +279,10 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     small.setAttribute("aria-pressed", String(current.scale === "Small"));
     large.classList.toggle("is-primary", current.scale === "Large");
     small.classList.toggle("is-primary", current.scale === "Small");
+    for (const { mode, control } of nightChoices) {
+      const selected = mode === (current.nightMode ?? "auto");
+      control.setAttribute("aria-pressed", String(selected));
+    }
     for (const [key, el] of switches)
       el.setAttribute("aria-checked", String(current[key] ?? key === "osNotifications"));
     paths.replaceChildren(

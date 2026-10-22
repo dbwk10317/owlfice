@@ -13,10 +13,18 @@ import fullscreenSvg from "../design/handoff/icons/fullscreen.svg?raw";
 import { BUILDING_PRODUCT, DOT_STATE, FLOOR_PRODUCT, ringOf, WORK_TYPES } from "./sidebar-left.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { windowViewport, type Viewport } from "./sidebar-right.ts";
-import type { OfficeDto, OfficeListDto, TeamSummaryDto } from "./types/ipc.ts";
+import type { NightMode, OfficeDto, OfficeListDto, TeamSummaryDto } from "./types/ipc.ts";
 
 const H = phrases.header;
 const TICK_MS = 30_000;
+
+export function applyNightMode(doc: Document, mode: NightMode, now = Date.now()): boolean {
+  const hour = new Date(now).getHours();
+  const night = mode === "on" || (mode === "auto" && (hour >= 20 || hour < 6));
+  if (night) doc.documentElement.dataset.theme = "night";
+  else delete doc.documentElement.dataset.theme;
+  return night;
+}
 
 type Layout = "wide" | "drawer" | "rail" | "select";
 /** 3.2 표의 너비 구간. 사이드바(900/720)와 현황판(900) 경계가 같다 */
@@ -48,12 +56,15 @@ export interface HeaderOptions {
   companyName?: string;
   sound?: boolean;
   onSound?: (on: boolean) => Promise<void>;
+  nightMode?: NightMode;
+  onNightMode?: (mode: NightMode) => Promise<void>;
+  now?: () => number;
 }
 export interface HeaderHandle {
   roomLabels(): boolean;
   setScale(scale: number, maxFit?: number): void;
   setDrawerOpen(open: boolean): void;
-  setSettings(companyName: string | null, sound: boolean): void;
+  setSettings(companyName: string | null, sound: boolean, nightMode?: NightMode): void;
 }
 
 type El = HTMLElement;
@@ -91,6 +102,8 @@ export function mountHeader(
   header.classList.add("ow-header");
   let hq = fill(H.hq, { company: opts.companyName ?? phrases.app.brand });
   let soundOn = opts.sound ?? false;
+  let nightMode = opts.nightMode ?? "auto";
+  const now = opts.now ?? Date.now;
 
   const square = mk(doc, "span", "ow-header__square");
   const title = mk(doc, "h1", "ow-header__title");
@@ -132,11 +145,23 @@ export function mountHeader(
       sound.disabled = false;
     }
   });
-  const night = iconBtn(doc, nightSvg, H.nightOn);
-  night.disabled = true; // ponytail: 야근 설정은 T90에서 연결한다
-  night.setAttribute("aria-pressed", "false");
+  const nightToggle = iconBtn(doc, nightSvg, H.nightOn);
+  nightToggle.disabled = !opts.onNightMode;
+  nightToggle.addEventListener("click", async () => {
+    nightToggle.disabled = true;
+    soundError.hidden = true;
+    render();
+    try {
+      await opts.onNightMode?.(doc.documentElement.dataset.theme === "night" ? "off" : "on");
+    } catch (e) {
+      soundError.textContent = String(e);
+      soundError.hidden = false;
+    } finally {
+      nightToggle.disabled = false;
+    }
+  });
   const segment = mk(doc, "div", "ow-segment ow-header__wide");
-  segment.append(labels, sound, night);
+  segment.append(labels, sound, nightToggle);
   const zoom = mk(doc, "div", "ow-header__zoom ow-header__full");
   const scale = iconBtn(doc, chevronSvg, H.scale);
   scale.className = "ow-chip is-line is-zoom ow-header__scale";
@@ -263,7 +288,10 @@ export function mountHeader(
     setText(session, sessionTitle);
     slash.hidden = session.hidden = !sessionTitle;
 
-    const t = Date.now();
+    const t = now();
+    const nightTheme = applyNightMode(doc, nightMode, t);
+    nightToggle.setAttribute("aria-pressed", String(nightTheme));
+    nightToggle.setAttribute("aria-label", nightTheme ? H.nightOff : H.nightOn);
     const night = !!office?.shared.night;
     const off = !sel || sel.phase === "Off" || live.length === 0;
     statusDot.hidden = night;
@@ -312,13 +340,17 @@ export function mountHeader(
   store.subscribe(render);
   view.subscribe(onResize);
   setInterval(render, TICK_MS);
+  doc.addEventListener("visibilitychange", () => {
+    if (!doc.hidden) render();
+  });
   onResize();
   render();
 
   return {
-    setSettings(companyName, on) {
+    setSettings(companyName, on, mode = nightMode) {
       hq = fill(H.hq, { company: companyName || phrases.app.brand });
       soundOn = on;
+      nightMode = mode;
       sound.setAttribute("aria-pressed", String(on));
       sound.setAttribute("aria-label", on ? H.soundOff : H.soundOn);
       sound.firstElementChild!.innerHTML = on ? soundOnSvg : soundOffSvg;

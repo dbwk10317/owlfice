@@ -51,6 +51,7 @@
     "back": "{office} 재출근",
     "off": "{office} 퇴근",
     "evicted": "{office} 퇴거",
+    "update": "새 버전 {version} · 설정에서 설치",
     "hired": "{name} {rank} 입사했습니다!"
   },
 
@@ -253,6 +254,29 @@
 
   "settings": {
     "title": "설정",
+    "update": "업데이트",
+    "currentVersion": "현재 버전 {version}",
+    "versionLoading": "현재 버전을 불러오는 중이에요.",
+    "versionError": "현재 버전을 불러오지 못했어요.",
+    "checkUpdate": "새 버전 확인",
+    "installUpdate": "{version} 설치",
+    "updateAvailable": "새 버전 {version}을 설치할 수 있어요.",
+    "updateProgress": "다운로드 중이에요 · {percent}%",
+    "updateDownloaded": "다운로드 중이에요 · {bytes}바이트",
+    "updateStates": {
+      "idle": "버튼을 눌러 새 버전을 확인해요.",
+      "checking": "새 버전을 확인하는 중이에요.",
+      "latest": "최신 버전이에요.",
+      "preparing": "서명을 확인하고 설치를 준비하는 중이에요. 설치가 시작되면 앱이 종료돼요.",
+      "installing": "설치를 시작했어요. 앱이 종료돼요."
+    },
+    "updateErrors": {
+      "check": "새 버전을 확인하지 못했어요. 연결을 확인하고 다시 시도해 주세요.",
+      "manifest": "업데이트 안내 파일을 찾지 못했어요. 나중에 다시 확인해 주세요.",
+      "download": "업데이트를 다운로드하지 못했어요. 연결을 확인하고 다시 시도해 주세요.",
+      "signature": "업데이트 서명을 확인하지 못했어요. 설치하지 않았어요. 나중에 다시 확인해 주세요.",
+      "install": "업데이트 설치를 시작하지 못했어요. 다시 확인해 주세요."
+    },
     "company": "회사", "scale": "회사 규모", "scaleHint": "바꾸면 사무실만 다시 배치하고 데이터는 다시 읽지 않아요.", "large": "대기업", "small": "중소기업",
     "bossName": "사장님 이름", "bossNameHint": "비워 두면 “사장님”으로 불러요.", "bossNamePlaceholder": "사장님",
     "screenSound": "화면과 소리", "sound": "소리", "soundHint": "키보드, 인터폰, 경광등, 무재해 리셋 소리",

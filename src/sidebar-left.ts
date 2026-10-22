@@ -458,7 +458,7 @@ function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
 
 // ---------- 토스트 ----------
 
-type ToastKind = "moveIn" | "teamIn" | "back" | "off" | "evicted";
+type ToastKind = "moveIn" | "teamIn" | "back" | "off" | "evicted" | "update";
 interface ToastMsg {
   kind: ToastKind;
   name: string;
@@ -505,7 +505,7 @@ function toastEl(doc: Document, m: ToastMsg): El {
     dot.dataset.state = m.kind === "off" ? "off" : "working";
     el.append(dot);
   }
-  const [before, after = ""] = T[m.kind].split(/\{(?:office|team)\}/);
+  const [before, after = ""] = T[m.kind].split(/\{(?:office|team|version)\}/);
   const text = mk(doc, "span", "ow-toast__text");
   text.append(mk(doc, "span", "", before), mk(doc, "b", "", m.name), mk(doc, "span", "", after));
   el.append(text, mk(doc, "span", "ow-toast__ago", phrases.units.now));
@@ -552,7 +552,10 @@ export function mountSidebar(
   store: SidebarStore,
   selectOffice: SelectOffice,
   opts: SidebarOptions = {},
-): (() => void) & { setSettings(companyName: string | null, rawDiagnostics: boolean): void } {
+): (() => void) & {
+  notifyUpdate(version: string): void;
+  setSettings(companyName: string | null, rawDiagnostics: boolean): void;
+} {
   const doc = root.ownerDocument;
   root.classList.add("ow-side-host");
 
@@ -1146,6 +1149,10 @@ export function mountSidebar(
       band.remove();
     },
     {
+      notifyUpdate(version: string) {
+        queue.push({ kind: "update", name: version });
+        pump();
+      },
       setSettings(companyName: string | null, rawDiagnostics: boolean) {
         brandName.textContent = companyName || phrases.app.brand;
         warning.hidden = !rawDiagnostics;

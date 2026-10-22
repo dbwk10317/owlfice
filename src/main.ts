@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
 import "../design/handoff/tokens.css";
 import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 이 필요해 가장 먼저 부른다
 import { firstOffice } from "./first-office.ts";
@@ -17,7 +19,7 @@ import { detailErrorText } from "./popup-modal.ts";
 import { openSettings, saveSettings } from "./popup-settings.ts";
 import { showScale } from "./scale.ts";
 import phrases from "../design/handoff/phrases.ko.json";
-import { createStore } from "./store.ts";
+import { createStore, createUpdateStore } from "./store.ts";
 import type {
   EmployeeDto,
   OfficeDto,
@@ -28,6 +30,8 @@ import type {
 } from "./types/ipc.ts";
 
 const store = createStore<OfficeListDto, OfficeDto>();
+const updates = createUpdateStore({ getVersion, check });
+window.addEventListener("beforeunload", () => updates.destroy(), { once: true });
 
 // 사이드바 클릭과 첫 사무실 자동 선택이 같은 경로로 부른다
 function requestSelect(officeId: string, requestId: number): void {
@@ -192,6 +196,22 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     toggleMaximize: () => getCurrentWindow().toggleMaximize(),
   });
   const emptyOffice = mountEmptyOffice(stage, store, { invoke, onSettings: showSettings, sheet });
+  let updateStarted = false;
+  const stopUpdateStart = store.subscribe(checkAfterOffice);
+  function checkAfterOffice(): void {
+    const { list, office: selected } = store.state;
+    if (updateStarted || !office || !list || (!selected && list.offices.length > 0)) return;
+    updateStarted = true;
+    stopUpdateStart();
+    // 렌더러의 첫 프레임 다음에 확인해 시작 화면을 네트워크 응답으로 늦추지 않는다.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        void updates.check(true).then((version) => {
+          if (version) sidebar.notifyUpdate(version);
+        });
+      }),
+    );
+  }
   mountOffice(stage, store, {
     sound,
     bossName: settings.bossName,
@@ -212,6 +232,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
       pendingTeam = null;
       o.setRoomLabels(header?.roomLabels() ?? true);
       o.setBossName(settings.bossName);
+      checkAfterOffice();
     },
     (e) => {
       console.error("사무실 캔버스", e);
@@ -226,6 +247,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     openSettings(
       {
         invoke,
+        updates,
         onSettings: applySettings,
         onSoundGesture: soundGesture,
         onError(message) {

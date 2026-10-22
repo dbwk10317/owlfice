@@ -3,6 +3,8 @@ import { afterEach, expect, test, vi } from "vite-plus/test";
 import { openSettings, saveSettings } from "./popup-settings.ts";
 import type { Invoke } from "./scale.ts";
 import type { SettingsDto } from "./types/ipc.ts";
+import { createUpdateStore, type UpdateDeps } from "./store.ts";
+import type { DownloadEvent } from "@tauri-apps/plugin-updater";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const defaults = (): SettingsDto => ({
@@ -349,4 +351,182 @@ test("공통 여백과 로그 긴 경로 줄바꿈·선택을 적용하고 저�
   } finally {
     style.remove();
   }
+});
+
+function updateSetup(check: UpdateDeps["check"]) {
+  const updates = createUpdateStore({ getVersion: async () => "0.1.1", check });
+  const invoke: Invoke = async <T>(cmd: string) =>
+    (cmd === "get_settings" ? defaults() : "C:\\samples\\logs") as T;
+  const open = () => openSettings({ invoke, onSettings() {}, updates });
+  open();
+  return { updates, open };
+}
+const updateText = () =>
+  [...document.querySelectorAll(".ow-settings__section")].find(
+    (el) => el.querySelector("h2")?.textContent === "업데이트",
+  )!.textContent;
+
+test("현재 버전과 확인 중·최신을 표시하고 중복 확인은 시작하지 않는다", async () => {
+  let resolve!: (value: null) => void;
+  const check = vi.fn(
+    () =>
+      new Promise<null>((done) => {
+        resolve = done;
+      }),
+  );
+  const { updates } = updateSetup(check);
+  await settle();
+  expect(updateText()).toContain("현재 버전 0.1.1");
+  button("새 버전 확인").click();
+  expect(updateText()).toContain("확인하는 중이에요");
+  expect(button("새 버전 확인").disabled).toBe(true);
+  void updates.check();
+  expect(check).not.toHaveBeenCalled();
+  await settle();
+  expect(check).toHaveBeenCalledTimes(1);
+  resolve(null);
+  await settle();
+  expect(updateText()).toContain("최신 버전이에요");
+  expect(button("새 버전 확인").disabled).toBe(false);
+  updates.destroy();
+});
+
+test("새 버전은 명시 설치만 시작하며 닫기·재열기·다른 설정 저장 뒤 진행을 유지한다", async () => {
+  let progress!: (event: DownloadEvent) => void;
+  let finish!: () => void;
+  const downloadAndInstall = vi.fn((callback?: (event: DownloadEvent) => void) => {
+    progress = callback!;
+    return new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+  });
+  const close = vi.fn().mockResolvedValue(undefined);
+  const { updates, open } = updateSetup(async () => ({
+    version: "0.1.2",
+    downloadAndInstall,
+    close,
+  }));
+  await settle();
+  button("새 버전 확인").click();
+  await settle();
+  expect(updateText()).toContain("새 버전 0.1.2을 설치할 수 있어요");
+  expect(downloadAndInstall).not.toHaveBeenCalled();
+  toggle("소리").click();
+  await settle();
+  expect(button("0.1.2 설치").hidden).toBe(false);
+  button("0.1.2 설치").click();
+  void updates.install();
+  expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+  progress({ event: "Started", data: { contentLength: 200 } });
+  progress({ event: "Progress", data: { chunkLength: 50 } });
+  expect(updateText()).toContain("25%");
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  progress({ event: "Progress", data: { chunkLength: 50 } });
+  open();
+  await settle();
+  expect(updateText()).toContain("50%");
+  expect(button("새 버전 확인").disabled).toBe(true);
+  void updates.check();
+  void updates.install();
+  expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+  progress({ event: "Finished" });
+  expect(updateText()).toContain("서명을 확인하고 설치를 준비");
+  expect(close).not.toHaveBeenCalled();
+  finish();
+  await settle();
+  expect(updateText()).toContain("설치를 시작했어요");
+  expect(close).toHaveBeenCalledTimes(1);
+  progress({ event: "Progress", data: { chunkLength: 100 } });
+  progress({ event: "Finished" });
+  expect(updateText()).toContain("설치를 시작했어요");
+  updates.destroy();
+});
+
+test("다운로드 크기를 모르면 받은 바이트를 표시한다", async () => {
+  let progress!: (event: DownloadEvent) => void;
+  let reject!: (error: string) => void;
+  const { updates } = updateSetup(async () => ({
+    version: "0.1.2",
+    close: async () => {},
+    downloadAndInstall(callback) {
+      progress = callback!;
+      return new Promise<void>((_, fail) => {
+        reject = fail;
+      });
+    },
+  }));
+  await settle();
+  button("새 버전 확인").click();
+  await settle();
+  button("0.1.2 설치").click();
+  progress({ event: "Started", data: {} });
+  progress({ event: "Progress", data: { chunkLength: 512 } });
+  expect(updateText()).toContain("512바이트");
+  reject("offline");
+  await settle();
+  expect(updateText()).toContain("다운로드하지 못했어요");
+  progress({ event: "Finished" });
+  expect(updateText()).toContain("다운로드하지 못했어요");
+  updates.destroy();
+});
+
+test.each([
+  ["Could not fetch a valid release JSON from the remote", "안내 파일을 찾지 못했어요"],
+  ["error sending request for url", "새 버전을 확인하지 못했어요"],
+])("확인 String 오류를 최신으로 오인하지 않는다: %s", async (failure, expected) => {
+  const { updates } = updateSetup(async () => {
+    throw failure;
+  });
+  await settle();
+  button("새 버전 확인").click();
+  await settle();
+  expect(updateText()).toContain(expected);
+  expect(updateText()).not.toContain("최신 버전이에요");
+  updates.destroy();
+});
+
+test.each([
+  ["Download request failed with status: 404 Not Found", false, "다운로드하지 못했어요"],
+  ["The signature verification failed", true, "서명을 확인하지 못했어요"],
+  ["Invalid encoding in minisign data", true, "서명을 확인하지 못했어요"],
+  ["Invalid symbol 35, offset 100.", true, "서명을 확인하지 못했어요"],
+  ["Invalid input length: 101", true, "서명을 확인하지 못했어요"],
+  ["Invalid last symbol 65, offset 100.", true, "서명을 확인하지 못했어요"],
+  ["Invalid padding", true, "서명을 확인하지 못했어요"],
+  ["Unexpected signature algorithm", true, "서명을 확인하지 못했어요"],
+  [
+    "The signature was created with a different key than the one provided",
+    true,
+    "서명을 확인하지 못했어요",
+  ],
+  [
+    "The update was signed for version 0.1.1 but the update endpoint announced version 0.1.2.",
+    true,
+    "서명을 확인하지 못했어요",
+  ],
+  [
+    "The update signature does not specify the version it was signed for",
+    true,
+    "서명을 확인하지 못했어요",
+  ],
+  ["failed to create temporary directory", true, "설치를 시작하지 못했어요"],
+])("Finished 뒤에도 실제 설치 오류를 표시한다: %s", async (failure, finished, expected) => {
+  const close = vi.fn().mockResolvedValue(undefined);
+  const { updates } = updateSetup(async () => ({
+    version: "0.1.2",
+    close,
+    async downloadAndInstall(progress) {
+      if (finished) progress?.({ event: "Finished" });
+      throw failure;
+    },
+  }));
+  await settle();
+  button("새 버전 확인").click();
+  await settle();
+  button("0.1.2 설치").click();
+  await settle();
+  expect(updateText()).toContain(expected);
+  expect(button("새 버전 확인").disabled).toBe(false);
+  expect(close).toHaveBeenCalledTimes(1);
+  updates.destroy();
 });

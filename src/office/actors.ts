@@ -96,8 +96,7 @@ const SEAT_LOOK: Record<Exclude<Pose, "Pace">, Look> = {
   Sit: SIT,
   Type: { pose: "type", dir: "f" },
   Read: { pose: "read", dir: "f" },
-  // 창 쪽으로 돌아앉음
-  Think: { pose: "idle", dir: "b" },
+  Think: { pose: "think", dir: "f" },
   Duck: { pose: "carry", dir: "f", held: "duck" },
   Squat: { pose: "crouch", dir: "f" },
   Sleep: { pose: "sleep", dir: "f" },
@@ -507,6 +506,31 @@ function canRoomVisit(team: TeamDto, emp: EmployeeDto, room: "archive" | "securi
   );
 }
 
+type Decoration = "stretch" | "drink" | "phone" | "highfive";
+
+function canDecorate(team: TeamDto, emp: EmployeeDto, pose: Decoration): boolean {
+  if (
+    team.phase === "Off" ||
+    team.incident !== null ||
+    emp.pendingCount > 0 ||
+    emp.rejected ||
+    emp.retiredAt !== null ||
+    emp.departedAt !== null ||
+    emp.planning ||
+    emp.meeting !== null ||
+    (emp.activity.room !== "Dev" && emp.activity.room !== "TeamLead")
+  )
+    return false;
+  return pose === "drink"
+    ? emp.activity.pose === "Pace"
+    : ["Sit", "Think", "Duck"].includes(emp.activity.pose);
+}
+
+function timerBoundary(source: string, now: number, period: number): number {
+  const since = Date.parse(source);
+  return Number.isFinite(since) ? Math.max(0, Math.floor((now - since) / period)) : 0;
+}
+
 export class ActorLayer {
   private actors = new Map<string, Actor>();
   private world: Container | null = null;
@@ -520,6 +544,14 @@ export class ActorLayer {
   private lastOffice: OfficeDto | null = null;
   private visitors: Visitor[] = [];
   private roomVisits = new Map<string, { room: "archive" | "security"; until: number }>();
+  private decorations = new Map<string, { kind: Decoration; until: number }>();
+  private clocks = new Map<
+    string,
+    { stretch: number; hired: string; drink: number; since: string }
+  >();
+  private pass = new Map<string, Extract<CueDto, { kind: "Stamp" }>>();
+  private passSeenAt = new Map<string, number>();
+  private pair: { keys: string[]; until: number } | null = null;
   private layoutKind: Kind = "large";
   /** 실제 허용된 자료실 방문에만 파쇄기 소품을 켠다. */
   onArchiveVisit: ((active: boolean) => void) | null = null;
@@ -587,6 +619,15 @@ export class ActorLayer {
     const previous = this.lastOffice;
     this.lastOffice = office;
     const instant = opts.instant || (fresh && !!office?.rebuilt);
+    const quiet = !!instant || switched || reducedMotion();
+    if (switched) this.passSeenAt.clear();
+    if (this.pair && now >= this.pair.until) this.pair = null;
+    if (quiet) {
+      for (const key of this.decorations.keys()) this.actors.get(key)?.track.cancelDecoration(now);
+      this.decorations.clear();
+      this.pass.clear();
+      this.pair = null;
+    }
     const canEmote = fresh && !!previous && !instant && !switched && !reducedMotion();
     if (!canEmote && (instant || switched || reducedMotion()))
       for (const a of this.actors.values()) this.clearEmote(a);
@@ -643,6 +684,16 @@ export class ActorLayer {
     const crowd = new Map<string, number>();
     const visitsAt = new Map([...this.roomVisits].map(([key, v]) => [key, v.room]));
     const placed = office ? layoutActors(this.fp, kind, office, crowd, visitsAt) : [];
+    for (const [key, d] of this.decorations) {
+      const p = placed.find((p) => empKey(p.team.teamId, p.emp.agentId) === key);
+      if (
+        !p ||
+        !canDecorate(p.team, p.emp, d.kind) ||
+        visitsAt.has(key) ||
+        this.actors.get(key)?.spot !== p.spot
+      )
+        this.cancelDecoration(key, now, placed);
+    }
     this.onArchiveVisit?.(
       placed.some((p) => visitsAt.get(empKey(p.team.teamId, p.emp.agentId)) === "archive"),
     );
@@ -666,6 +717,7 @@ export class ActorLayer {
         a.bubble?.remove();
         this.clearEmote(a);
         this.actors.delete(key);
+        this.clocks.delete(key);
         if (this.hovered === key) this.hover(null);
       }
     const shown = new Set<string>();
@@ -677,6 +729,7 @@ export class ActorLayer {
       shown.add(key);
       const before = old?.spot ? old.emp : null;
       a.emp = p.emp;
+      if (quiet || !old?.spot || !this.clocks.has(key)) this.recordClock(a, now);
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
       a.role = p.emp.role === "Trainee" ? null : p.emp.role.toLowerCase();
@@ -735,6 +788,7 @@ export class ActorLayer {
         a.bubble = null;
         this.clearEmote(a);
         a.spot = "";
+        this.recordClock(a, now);
         if (this.hovered === a.key) this.hover(null);
       }
     this.setCrowds(crowd, placed);
@@ -746,6 +800,15 @@ export class ActorLayer {
     // 부장 큐가 새 자리로 정해진 뒤에 펄쩍을 얹는다
     if (office && !instant)
       for (const c of visits) if (c.kind === "BossVisit") this.visit(c, office, kind, now);
+    if (fresh)
+      this.highfives(
+        quiet
+          ? [...(opts.earlier ?? []), ...(office?.cues ?? [])].filter((c) => c.kind === "Stamp")
+          : stamps,
+        placed,
+        now,
+        !!previous && !quiet,
+      );
     // 제목 변경: 새 자리가 정해진 뒤 한 명이 액자까지 갔다 온다. 움직임 줄이기면 액자 글자(상태)만
     // 액자는 하나(공유 frame_title)라 한 sync 에 여럿이 와도 마지막 것만 연출한다
     // ponytail: 직원 큐가 나중에 reset 되면(MAX_STEPS·instant·숨김 복귀) 사다리만 4초 남는다, 거슬리면 사다리를 직원 큐에 묶는다
@@ -754,6 +817,107 @@ export class ActorLayer {
     this.update(now);
     this.placeOverlay();
     return placed;
+  }
+
+  private cancelDecoration(key: string, now: number, placed?: Placed[]): void {
+    const keys = this.pair?.keys.includes(key) ? this.pair.keys : [key];
+    if (keys.length === 2) this.pair = null;
+    for (const k of keys) {
+      if (this.decorations.delete(k)) {
+        const p = placed?.find((p) => empKey(p.team.teamId, p.emp.agentId) === k);
+        this.actors
+          .get(k)
+          ?.track.cancelDecoration(now, placed ? (p ? targetOf(p) : HIDDEN) : undefined);
+      }
+    }
+  }
+
+  private recordClock(a: Actor, now: number): void {
+    this.clocks.set(a.key, {
+      stretch: timerBoundary(a.emp.hiredAt, now, 3_600_000),
+      hired: a.emp.hiredAt,
+      drink: timerBoundary(a.emp.activity.since, now, 30_000),
+      since: a.emp.activity.since,
+    });
+  }
+
+  private timedPose(a: Actor, now: number): void {
+    const before = this.clocks.get(a.key);
+    this.recordClock(a, now);
+    const clock = this.clocks.get(a.key)!;
+    if (
+      !before ||
+      !a.spot ||
+      reducedMotion() ||
+      this.decorations.has(a.key) ||
+      this.roomVisits.has(a.key)
+    )
+      return;
+    const owner = this.lastOffice?.teams.find((t) =>
+      t.employees.some((e) => empKey(t.teamId, e.agentId) === a.key),
+    );
+    if (!owner || this.visitors.some((v) => v.teamId === owner.teamId)) return;
+    const kind =
+      before.hired === clock.hired &&
+      clock.stretch > before.stretch &&
+      canDecorate(owner, a.emp, "stretch")
+        ? "stretch"
+        : before.since === clock.since &&
+            clock.drink > before.drink &&
+            canDecorate(owner, a.emp, "drink")
+          ? "drink"
+          : null;
+    if (!kind) return;
+    const until = a.track.pose({ pose: kind, dir: "f" }, kind === "stretch" ? 1500 : 1000, now);
+    this.decorations.set(a.key, { kind, until });
+  }
+
+  private highfives(
+    stamps: Extract<CueDto, { kind: "Stamp" }>[],
+    placed: Placed[],
+    now: number,
+    allowed: boolean,
+  ): void {
+    for (const c of stamps) {
+      const at = Date.parse(c.at);
+      if (!c.confirmedPass || c.estimated || !Number.isFinite(at)) continue;
+      const key = empKey(c.teamId, c.agent);
+      if (at <= (this.passSeenAt.get(key) ?? -Infinity)) continue;
+      this.passSeenAt.set(key, at);
+      if (!allowed) continue;
+      const prev = this.pass.get(c.teamId);
+      if (
+        !prev ||
+        prev.agent === c.agent ||
+        Math.abs(Date.parse(c.at) - Date.parse(prev.at)) > 10_000
+      ) {
+        this.pass.set(c.teamId, c);
+        continue;
+      }
+      // 한 쌍은 허용 여부와 관계없이 소비한다. 공유 장소가 비어도 밀린 짝을 재생하지 않는다.
+      this.pass.delete(c.teamId);
+      if (this.pair) continue;
+      const keys = [empKey(c.teamId, prev.agent), empKey(c.teamId, c.agent)];
+      const people = keys.map((key) =>
+        placed.find((p) => empKey(p.team.teamId, p.emp.agentId) === key),
+      );
+      if (
+        people.some((p) => !p || !canDecorate(p.team, p.emp, "highfive")) ||
+        keys.some((key) => this.roomVisits.has(key) || this.decorations.has(key)) ||
+        this.visitors.some((v) => v.teamId === c.teamId)
+      )
+        continue;
+      const actors = keys.map((key) => this.actors.get(key)!);
+      const to = [
+        { gx: 13, gy: 10.6, z: 0 },
+        { gx: 13.6, gy: 10, z: 0 },
+      ];
+      const go = Math.max(...actors.map((a, i) => a.track.meetingWalkMs(to[i], now)));
+      const ends = actors.map((a, i) => a.track.highfive(to[i], go, i === 1, now));
+      const until = Math.max(...ends);
+      this.pair = { keys, until };
+      for (const key of keys) this.decorations.set(key, { kind: "highfive", until });
+    }
   }
 
   /** 제목 변경 (S39): 그 팀에서 제 자리에 앉은 직원 중 제목 해시로 한 명을 골라 액자 앞 사다리로 보낸다 */
@@ -780,7 +944,15 @@ export class ActorLayer {
       return;
     }
     let moved = false;
+    if (reducedMotion()) {
+      for (const key of this.decorations.keys()) this.cancelDecoration(key, now);
+      this.pass.clear();
+      this.pair = null;
+    }
+    for (const [key, d] of this.decorations) if (now >= d.until) this.decorations.delete(key);
+    if (this.pair && now >= this.pair.until) this.pair = null;
     for (const a of this.actors.values()) {
+      this.timedPose(a, now);
       moved = this.draw(a, now) || moved;
       this.placeSweat(a, now);
       if (now >= a.emoteUntil || reducedMotion() || !a.root.visible) this.clearEmote(a);
@@ -1015,7 +1187,19 @@ export class ActorLayer {
     // 같은 팀에 또 오면 앞 사장님은 없던 것으로
     for (const v of this.visitors.filter((v) => v.teamId === c.teamId)) this.dropVisitor(v);
     this.onRing?.(now, c);
-    this.actors.get(empKey(c.teamId, lead.agentId))?.track.pose(JUMP, JUMP_MS, now);
+    const key = empKey(c.teamId, lead.agentId);
+    const actor = this.actors.get(key);
+    if (
+      actor &&
+      !reducedMotion() &&
+      !this.roomVisits.has(key) &&
+      canDecorate(team, lead, "phone")
+    ) {
+      this.cancelDecoration(key, now);
+      actor.track.pose(JUMP, JUMP_MS, now);
+      const until = actor.track.pose({ pose: "phone", dir: "f" }, 1000, now);
+      this.decorations.set(key, { kind: "phone", until });
+    }
     // 그 부장 좌석 앞(화면 아래쪽)에서 부장을 마주 본다
     const to = { gx: seat.gx, gy: seat.gy + VISIT_FRONT, z: 0 };
     const id = `boss-visit:${c.teamId}`;

@@ -2565,3 +2565,66 @@ test("퇴근한 직원의 새 Rehire도 소등 사무실에서 실제 진입 걷
   layer.update(start + ENTER_MS);
   expect(heldItems(layer)).toEqual([]);
 });
+
+for (const [room, pose, name] of [
+  ["TeamLead", "Type", "type"],
+  ["TeamLead", "Sleep", "sleep"],
+  ["TeamLead", "Think", "think"],
+  ["Incident", "Sit", "panic"],
+] as const)
+  test(`움직임 줄이기는 ${name} 몸·옷·담당·근속·착용물을 모두 0프레임에 둔다`, () => {
+    let reduced = false;
+    vi.stubGlobal("matchMedia", () => ({ matches: reduced }));
+    const layer = itemLayer();
+    const e = {
+      ...boss(room, pose),
+      hiredAt: new Date(NOW - 3 * 3_600_000).toISOString(),
+      items: ["Medal", "Headphones"] as EmployeeDto["items"],
+    };
+    try {
+      layer.sync(office([team("t", [e])]), "large", NOW);
+      const dt = Math.ceil(1000 / meta.poses[name].fps);
+      layer.update(NOW + dt);
+      expect(bodyOf(layer, "boss")).toMatch(new RegExp(`/${name}_f_1$`));
+      reduced = true;
+      for (const extra of [1, 501, 2001]) {
+        layer.update(NOW + dt + extra);
+        const keys = visibleTextures(layer);
+        for (const prefix of [
+          "body/",
+          "outfit/",
+          "role/",
+          "wear/",
+          "item/medal/",
+          "item/headphones/",
+        ])
+          expect(
+            keys.some((key) => key.startsWith(prefix)),
+            prefix,
+          ).toBe(true);
+        expect(keys.every((key) => key.endsWith(`/${name}_f_0`))).toBe(true);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+test("움직임 줄이기를 켜면 진행 중인 idle 눈 깜빡임도 0프레임에 멈춘다", () => {
+  let reduced = false;
+  vi.stubGlobal("matchMedia", () => ({ matches: reduced }));
+  const random = vi.spyOn(Math, "random").mockReturnValue(0);
+  const { layer } = newLayer({ owls: labeled });
+  try {
+    layer.sync(office([team("t", [boss("Test")])]), "large", NOW);
+    layer.update(NOW + 3000);
+    expect(bodyOf(layer, "boss")).toMatch(/\/idle_f_1$/);
+    reduced = true;
+    for (const dt of [3001, 3100, 6000]) {
+      layer.update(NOW + dt);
+      expect(bodyOf(layer, "boss")).toMatch(/\/idle_f_0$/);
+    }
+  } finally {
+    random.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});

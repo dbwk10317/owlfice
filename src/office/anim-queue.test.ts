@@ -335,3 +335,52 @@ test("prefers-reduced-motion 이면 걷지 않고 즉시 이동, 왕복·유휴 
   t.reset(target(SEAT, { wander: true }), NOW);
   expect(t.update(NOW + 60_000).at).toEqual(SEAT);
 });
+
+test("걷는 중 움직임 줄이기를 켜면 현재 논리 자리에 즉시 멈추고 큐와 출입 소품은 다시 나오지 않는다", () => {
+  let reduced = false;
+  const t = new Track({ fp, seed: 0, reduced: () => reduced });
+  const destination = target(pt("library"));
+  t.reset(target(SEAT), NOW);
+  t.retarget(destination, NOW, true, "flashlight");
+  playCue({ kind: "Clap", teamId: "t", agent: "a" }, t, NOW + 1);
+  expect(t.update(NOW + 100).look).toMatchObject({ pose: "walk", held: "flashlight" });
+  reduced = true;
+  expect(t.update(NOW + 101)).toMatchObject({
+    at: destination.at,
+    look: SIT,
+    depth: destination.depth,
+    flip: false,
+  });
+  reduced = false;
+  for (const dt of [102, ENTER_MS, ENTER_MS + CLAP_MS + 100])
+    expect(t.update(NOW + dt)).toMatchObject({ at: destination.at, look: SIT });
+});
+
+test("퇴근 걷기 중 움직임 줄이기는 즉시 숨기고 다시 켜도 서류 가방·걷기를 재생하지 않는다", () => {
+  let reduced = false;
+  const t = new Track({ fp, seed: 0, reduced: () => reduced });
+  t.reset(target(SEAT), NOW);
+  t.retarget(HIDDEN, NOW, false, "briefcase");
+  expect(t.update(NOW + 100).look).toMatchObject({ pose: "walk", held: "briefcase" });
+  reduced = true;
+  expect(t.update(NOW + 101).at).toBeNull();
+  reduced = false;
+  const shown = t.update(NOW + 102);
+  expect(shown.at).toBeNull();
+  expect(shown.look.held).toBeUndefined();
+  expect(t.update(NOW + WALK_MAX_MS + 100).at).toBeNull();
+});
+
+for (const decoration of ["highfive", "errand"] as const)
+  test(`${decoration} 도중 움직임 줄이기는 임시 목적지가 아닌 논리 복귀 자리에 멈춘다`, () => {
+    let reduced = false;
+    const t = new Track({ fp, seed: 0, reduced: () => reduced });
+    t.reset(target(SEAT), NOW);
+    if (decoration === "highfive") t.highfive(pt("dev_center"), WALK_MAX_MS, true, NOW);
+    else t.errand(pt("library"), { pose: "phone", dir: "f" }, 1000, NOW);
+    expect(walking(t.update(NOW + 100))).toBe(true);
+    reduced = true;
+    expect(t.update(NOW + 101)).toMatchObject({ at: SEAT, look: SIT, flip: false });
+    reduced = false;
+    expect(t.update(NOW + 5000)).toMatchObject({ at: SEAT, look: SIT, flip: false });
+  });

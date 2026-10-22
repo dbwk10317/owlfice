@@ -1086,6 +1086,7 @@ export function mountPanel(
       render();
     },
     destroy() {
+      ticker.destroy();
       switchFade?.cancel();
       reducedMotion?.removeEventListener("change", onMotionChange);
       doc.removeEventListener("visibilitychange", stopFade);

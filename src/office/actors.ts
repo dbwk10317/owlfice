@@ -1104,11 +1104,13 @@ export class ActorLayer {
     const pose = this.owls.meta.poses[a.look.pose];
     const n = pose?.dirs[a.look.dir] ?? 1;
     let frame = 0;
-    if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
-    else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
-      // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
-      if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
-      frame = now >= a.nextBlink ? 1 : 0;
+    if (!reducedMotion()) {
+      if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
+      else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
+        // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
+        if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
+        frame = now >= a.nextBlink ? 1 : 0;
+      }
     }
     if ("emp" in a) {
       const hours = (now - Date.parse((a as Actor).emp.hiredAt)) / 3_600_000;

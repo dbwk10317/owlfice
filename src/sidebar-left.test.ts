@@ -207,6 +207,73 @@ test("간판은 넘겨받은 회사 이름, 없으면 기본 이름이다", () =
   expect(name({})).toBe("Owlfice");
 });
 
+test("지표는 활성 팀이 있는 사무실·직원·결재 인원을 세고 퇴근 팀은 제외한다", () => {
+  const offices = [
+    office("101", {
+      teams: [
+        team("one", { others: 2, asking: true, askingCount: 2 }),
+        team("off", { phase: "Off", others: 8, asking: true, askingCount: 5 }),
+      ],
+    }),
+    office("102", { teams: [team("two", { others: 0 })] }),
+    office("103", {
+      phase: "Off",
+      teams: [team("gone", { phase: "Off", others: 7, askingCount: 3 })],
+    }),
+    office("empty", { teams: [] }),
+  ];
+  const s = setup(list(offices));
+  const values = () => byClass(s.root, "ow-kpi__v").map((v) => v.textContent);
+  expect(values()).toEqual(["2", "4", "2"]);
+  expect(byClass(s.root, "ow-kpi__k").map((v) => v.textContent)).toEqual([
+    "사무실",
+    "근무 중",
+    "결재 대기",
+  ]);
+  expect(s.root.querySelector(".ow-kpi__v.is-ask")?.textContent).toBe("2");
+  expect(s.root.querySelector(".ow-brand__tile .ow-brand__logo")).not.toBeNull();
+  expect(s.root.querySelector(".ow-brand__sub")?.textContent).toBe("Owlfice · 대기업");
+  s.store.applyList(list([]));
+  expect(values()).toEqual(["0", "0", "0"]);
+  expect(s.root.querySelector(".ow-kpi__v.is-ask")).toBeNull();
+  s.dispose();
+});
+
+test("중소기업 지표는 활성 층 수와 모든 활성 팀의 직원·결재 인원을 합한다", () => {
+  const s = setup(
+    list(
+      [
+        office("claude", {
+          floor: 1,
+          teams: [
+            team("one", { others: 2, askingCount: 2 }),
+            team("two", { others: 1, askingCount: 1 }),
+          ],
+        }),
+        office("codex", { floor: 2, teams: [team("three", { others: 0 })] }),
+        office("gemini", { floor: 3, teams: [team("off", { phase: "Off", askingCount: 3 })] }),
+      ],
+      "Small",
+    ),
+  );
+  expect(byClass(s.root, "ow-kpi__v").map((v) => v.textContent)).toEqual(["2", "6", "3"]);
+  expect(byClass(s.root, "ow-kpi__k")[0].textContent).toBe("층");
+  expect(s.root.querySelector(".ow-brand__sub")?.textContent).toBe("Owlfice · 중소기업");
+  s.dispose();
+});
+
+test("레일은 동 색 타일이고 결재 시 타일 전체가 바뀌며 해제하면 복구된다", () => {
+  const s = setup(list([office("101", { asking: true })]), 800);
+  const tile = byClass(s.root, "ow-rail__item")[0];
+  expect(tile.style.getPropertyValue("--ow-square")).toBe("var(--ow-ask)");
+  expect(tile.textContent).toBe("B");
+  expect(tile.querySelector(".ow-rail__letter")).toBeNull();
+  expect(tile.querySelector<HTMLElement>(".ow-rail__state")!.dataset.state).toBe("ask");
+  s.store.applyList(list([office("101")]));
+  expect(tile.style.getPropertyValue("--ow-square")).toBe("var(--ow-claude)");
+  s.dispose();
+});
+
 test("행을 누르면 store 선택과 select_office 를 부른다", () => {
   const s = setup(list([office("101"), office("102")]));
   byClass(rowByName(s.root, "B동 102"), "ow-row__main")[0].click();
@@ -294,11 +361,16 @@ test("퇴근 묶음은 접혀 있고 머리글을 누르면 펼쳐진다", () =>
   s.dispose();
 });
 
-test("창 너비 구간: 900 미만 레일, 720 미만 드롭다운, 디바운스 100ms", () => {
-  const s = setup(list([office("101"), office("102")]), 1200);
+test("창 너비 구간: 1600·960 사이드바, 800 레일, 720 미만 드롭다운, 디바운스 100ms", () => {
+  const s = setup(list([office("101"), office("102")]), 1600);
   expect(s.root.dataset.mode).toBe("full");
 
-  s.widthRef.w = 850;
+  s.widthRef.w = 960;
+  roInstances[0].cb();
+  vi.advanceTimersByTime(100);
+  expect(s.root.dataset.mode).toBe("full");
+
+  s.widthRef.w = 800;
   roInstances[0].cb();
   vi.advanceTimersByTime(99);
   expect(s.root.dataset.mode).toBe("full"); // 아직 디바운스 중
@@ -416,20 +488,22 @@ test("행 버튼 이름에 이름·상태·업무·폴더·경과가 들어간�
   s.dispose();
 });
 
-test("30분 조용·프로세스 있음: 노란 idle-alive 점과 대기 중 칩, 깨어나면 칩이 사라진다", () => {
+test("30분 조용·프로세스 있음: 대기 중 칩이 업무를 대신하고 깨어나면 업무를 복구한다", () => {
   const idle = (dot: Dot) =>
     office("101", { phase: "Dozing", dot, teams: [team("t-101", { phase: "Dozing", dot })] });
   const s = setup(list([idle("IdleAlive")]));
   const row = rowByName(s.root, "B동 101");
-  const chip = byClass(row, "ow-row__idle")[0];
+  const chip = byClass(row, "ow-worktype")[0];
   expect([dotOf(row).dataset.state, chip.hidden, chip.textContent]).toEqual([
     "idle-alive",
     false,
     "대기 중",
   ]);
+  expect(chip.classList.contains("is-idle")).toBe(true);
   expect(byClass(row, "ow-row__main")[0].getAttribute("aria-label")).toContain("대기 중");
   s.store.applyList(list([idle("Dozing")]));
-  expect([dotOf(row).dataset.state, chip.hidden]).toEqual(["sleepy", true]);
+  expect([dotOf(row).dataset.state, chip.textContent]).toEqual(["sleepy", "버그 수정"]);
+  expect(chip.classList.contains("is-idle")).toBe(false);
   // 중소기업 팀 행도 같다
   s.store.applyList(
     list(
@@ -438,7 +512,7 @@ test("30분 조용·프로세스 있음: 노란 idle-alive 점과 대기 중 칩
     ),
   );
   const teamRow = rowByName(s.root, "김하늘 부장 팀");
-  expect(byClass(teamRow, "ow-row__idle")[0].hidden).toBe(false);
+  expect(teamRow.querySelector(".ow-worktype.is-idle")?.textContent).toBe("대기 중");
   s.dispose();
 });
 

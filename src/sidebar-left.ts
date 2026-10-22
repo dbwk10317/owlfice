@@ -8,7 +8,7 @@ import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
 import evictedSvg from "../design/handoff/icons/evicted.svg?raw";
 import infoSvg from "../design/handoff/icons/info.svg?raw";
 import emptySvg from "../design/handoff/icons/empty-building.svg?raw";
-import logoUrl from "../design/assets/logo.png?no-inline";
+import ui from "../design/sprites/ui.json";
 import settingsSvg from "../design/handoff/icons/settings.svg?raw";
 import refreshSvg from "../design/handoff/icons/refresh.svg?raw";
 import type {
@@ -515,7 +515,6 @@ interface RowView extends View {
   dot: El;
   ask: El;
   name: El;
-  idle: El;
   chip: El;
   host: El;
   head: El;
@@ -553,11 +552,15 @@ export function mountSidebar(
   brand.setAttribute("type", "button");
   brand.setAttribute("aria-label", P.openSettings);
   brand.addEventListener("click", () => opts.onSettings?.(brand));
-  const logo = doc.createElement("img");
-  logo.className = "ow-brand__logo ow-px";
-  logo.src = logoUrl;
-  logo.alt = "";
-  const brandSub = mk(doc, "span", "ow-brand__sub", phrases.app.brandSub);
+  const logo = mk(doc, "span", "ow-brand__logo ow-px");
+  const frame = ui.frames["logo/default"].frame;
+  const sx = 24 / frame.w;
+  const sy = 20 / frame.h;
+  logo.style.background = `url(/ui.png) -${frame.x * sx}px -${frame.y * sy}px / ${ui.meta.size.w * sx}px ${ui.meta.size.h * sy}px no-repeat`;
+  logo.setAttribute("aria-hidden", "true");
+  const tile = mk(doc, "span", "ow-brand__tile");
+  tile.append(logo);
+  const brandSub = mk(doc, "span", "ow-brand__sub");
   const brandText = mk(doc, "span", "ow-brand__text");
   const brandName = mk(doc, "b", "ow-brand__name", opts.companyName ?? phrases.app.brand);
   brandText.append(brandName, brandSub);
@@ -565,9 +568,24 @@ export function mountSidebar(
   warning.hidden = !opts.rawDiagnostics;
   warning.setAttribute("role", "img");
   warning.setAttribute("aria-label", "원문 진단 켜짐");
-  brand.append(logo, brandText, warning, svgSpan(doc, settingsSvg, "ow-icon"));
+  brand.append(tile, brandText, warning, svgSpan(doc, settingsSvg, "ow-icon"));
+  const kpi = mk(doc, "div", "ow-kpi");
+  const kpiValues: El[] = [];
+  const kpiLabels: El[] = [];
+  for (const label of [P.kpiOffices, P.kpiWorking, P.kpiAsking]) {
+    const cell = mk(doc, "div");
+    const value = mk(doc, "span", "ow-kpi__v", "0");
+    const key = mk(doc, "span", "ow-kpi__k", label);
+    cell.append(value, key);
+    kpi.append(cell);
+    kpiValues.push(value);
+    kpiLabels.push(key);
+  }
   const listEl = mk(doc, "div", "ow-sidebar__list");
-  const footer = mk(doc, "div", "ow-sidebar__footer", phrases.sidebar.autoCheck);
+  const footer = mk(doc, "div", "ow-sidebar__footer");
+  const autoCheck = mk(doc, "span", "ow-sidebar__status");
+  autoCheck.setAttribute("aria-hidden", "true");
+  footer.append(autoCheck, mk(doc, "span", "", P.autoCheck));
   const refresh = doc.createElement("button");
   refresh.type = "button";
   refresh.className = "ow-iconbtn";
@@ -589,7 +607,7 @@ export function mountSidebar(
     }
   });
   footer.append(refresh);
-  aside.append(brand, listEl, rescanError, footer);
+  aside.append(brand, kpi, listEl, rescanError, footer);
   // 레일·드롭다운 모드에선 aside 가 숨으므로 토스트 칸은 aside 밖에 둔다
   const toastSlot = mk(doc, "div", "ow-toast-slot");
   toastSlot.setAttribute("role", "status");
@@ -651,12 +669,11 @@ export function mountSidebar(
     const top = mk(doc, "span", "ow-row__top");
     const square = m.kind === "floor" ? mk(doc, "span", "ow-square") : null;
     const name = mk(doc, "span", "ow-row__name ow-truncate");
-    const idle = mk(doc, "span", "ow-chip ow-row__idle", P.idleAlive);
     const chip = mk(doc, "span", "ow-worktype");
     const host = mk(doc, "span", "ow-host");
-    idle.hidden = chip.hidden = host.hidden = true;
+    chip.hidden = host.hidden = true;
     if (square) top.append(square);
-    top.append(name, idle, chip, host);
+    top.append(name, chip, host);
     const meta = mk(doc, "span", "ow-row__meta ow-truncate");
     const head = mk(doc, "span", "ow-row__head");
     const elapsed = mk(doc, "span", "ow-row__elapsed");
@@ -689,7 +706,6 @@ export function mountSidebar(
       dot,
       ask,
       name,
-      idle,
       chip,
       host,
       head,
@@ -742,9 +758,11 @@ export function mountSidebar(
       v.info.setAttribute("aria-label", fill(P.detail, { office: m.name }));
     }
     if (changed(L, "detail", m.detail !== null)) v.info.hidden = m.detail === null;
-    if (changed(L, "work", m.workType)) {
-      v.chip.textContent = m.workType;
-      v.chip.hidden = !m.workType;
+    const work = m.state === "idle-alive" && m.kind !== "floor" ? P.idleAlive : m.workType;
+    if (changed(L, "work", work)) {
+      v.chip.textContent = work;
+      v.chip.hidden = !work;
+      v.chip.classList.toggle("is-idle", m.state === "idle-alive");
     }
     if (changed(L, "host", m.host)) {
       v.host.textContent = m.host;
@@ -754,7 +772,6 @@ export function mountSidebar(
     fillElapsed(v);
     if (changed(L, "state", m.state)) {
       v.dot.dataset.state = m.state;
-      v.idle.hidden = m.state !== "idle-alive";
     }
     if (changed(L, "ring", m.ring)) {
       if (m.ring) v.dot.dataset.ring = m.ring;
@@ -903,7 +920,7 @@ export function mountSidebar(
       if (!v) {
         const el = mk(doc, "button", "ow-rail__item");
         el.setAttribute("type", "button");
-        const letter = mk(doc, "span", "ow-rail__letter");
+        const letter = mk(doc, "span");
         const state = mk(doc, "span", "ow-rail__state");
         el.append(letter, state);
         const made: RailView = { el, last: {}, id: s.id, letter, state };
@@ -912,7 +929,8 @@ export function mountSidebar(
       }
       v.id = s.id;
       if (changed(v.last, "l", s.letter)) v.letter.textContent = s.letter;
-      if (changed(v.last, "sq", s.square)) v.letter.style.setProperty("--ow-square", s.square);
+      const square = s.asking ? "var(--ow-ask)" : s.square;
+      if (changed(v.last, "sq", square)) v.el.style.setProperty("--ow-square", square);
       // 허가 대기는 점 자리를 결재 색으로 칠한다 (HANDOFF 4.2)
       const st = s.asking ? "ask" : s.state;
       if (changed(v.last, "st", st)) v.state.dataset.state = st;
@@ -1001,8 +1019,23 @@ export function mountSidebar(
       lastList = list;
     }
     root.dataset.scale = list.scale === "Large" ? "large" : "small";
-    brandSub.textContent =
-      list.scale === "Large" ? phrases.app.brandSub : phrases.app.brandSubSmall;
+    brandSub.textContent = `${phrases.app.brand} · ${list.scale === "Large" ? "대기업" : "중소기업"}`;
+    let offices = 0;
+    let working = 0;
+    let asking = 0;
+    for (const office of list.offices) {
+      const active = office.teams.filter((team) => team.phase !== "Off");
+      if (active.length) offices++;
+      for (const team of active) {
+        working += 1 + team.others;
+        asking += team.askingCount;
+      }
+    }
+    [offices, working, asking].forEach((value, i) => {
+      kpiValues[i].textContent = String(value);
+    });
+    kpiValues[2].classList.toggle("is-ask", asking > 0);
+    kpiLabels[0].textContent = list.scale === "Large" ? P.kpiOffices : P.kpiFloors;
     const plan: Plan =
       list.offices.length === 0
         ? { items: [{ t: "empty", key: "empty" }], selectables: [] }

@@ -269,8 +269,6 @@
 .ow-rail__item { position: relative; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font: 700 11px var(--ow-font-sans); background: var(--ow-square); }
 .ow-rail__item.is-off { opacity: 0.5; }
 .ow-rail__item[aria-current="true"] { box-shadow: 0 0 0 2px var(--ow-panel), 0 0 0 3.5px var(--ow-ink); }
-/* ponytail: .ow-rail__letter 는 0.1.0 레일(36px 안 20px 타일). 앱 T81 이 .ow-rail__item 으로 옮기면 지운다 */
-.ow-rail__letter { width: 20px; height: 20px; border-radius: 5px; color: #fff; font: 700 11px/20px var(--ow-font-sans); text-align: center; background: var(--ow-square); }
 .ow-rail__state { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ow-panel); background: var(--ow-dot-color, var(--ow-off)); }
 
 /* ---------- 가운데 ---------- */

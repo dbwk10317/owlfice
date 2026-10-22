@@ -327,6 +327,7 @@
 .ow-card__actions { position: absolute; top: 10px; right: 10px; display: none; gap: 4px; } /* 호버 때만: 직원 상세 */
 .ow-card:hover .ow-card__actions, .ow-card:focus-within .ow-card__actions { display: flex; }
 .ow-card__head { display: flex; gap: 10px; align-items: flex-start; }
+.ow-card__open { display: block; width: 100%; text-align: left; border-radius: var(--ow-radius-md); }
 .ow-avatar { width: 44px; height: 44px; border-radius: var(--ow-radius-xl); display: flex; align-items: flex-end; justify-content: center; flex: none; overflow: hidden; background: var(--ow-avatar-bg, var(--ow-fill)); }
 .ow-avatar canvas, .ow-avatar img { width: 40px; height: 44px; image-rendering: pixelated; }
 .ow-avatar--xl { width: 80px; height: 88px; border-radius: var(--ow-radius-2xl); } /* 직원 상세 4× */
@@ -341,13 +342,9 @@
 .ow-ctx__bar { width: 44px; height: 4px; border-radius: 2px; background: var(--ow-line-soft); overflow: hidden; } /* 컨텍스트 막대 */
 .ow-ctx__bar i { display: block; height: 100%; border-radius: 2px; background: var(--ow-ink-3); }
 .ow-ctx.is-high .ow-ctx__bar i { background: var(--ow-over-a); }
-/* ponytail: 아래 .ow-ctx i 5칸 눈금은 0.1.0. 앱 T83 이 막대로 옮기면 지운다 */
-.ow-ctx i { width: 5px; height: 4px; border-radius: 1px; background: var(--ow-line); display: block; }
-.ow-ctx i.is-on { background: var(--ow-ink-3); }
-.ow-ctx.is-high i.is-on { background: var(--ow-over-a); }
 .ow-ctx b { font: 500 10px var(--ow-font-mono); color: var(--ow-ink-3); }
 .ow-ctx.is-high b { color: var(--ow-ask); }
-.ow-status { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: var(--ow-radius-sm); font-size: 12px; font-weight: 500; background: var(--ow-fill); color: #27272A; align-self: flex-start; }
+.ow-status { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: var(--ow-radius-sm); font-size: 12px; font-weight: 500; background: var(--ow-fill); color: var(--ow-ink-2b); align-self: flex-start; }
 .ow-status.is-estimate { background: var(--ow-surface); border: 1px dashed var(--ow-ink-4); }
 .ow-status.is-bad { background: var(--ow-bad-bg); color: var(--ow-bad-ink); }
 .ow-status.is-ask { background: var(--ow-ask-bg); color: var(--ow-ask-ink); }

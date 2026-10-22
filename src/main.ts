@@ -13,6 +13,7 @@ import { mountPanel } from "./sidebar-right.ts";
 import { showLoading, type LoadingSheet } from "./loading.ts";
 import { openEmployeeDetail } from "./popup-employee.ts";
 import { openSessionDetail } from "./popup-session.ts";
+import { detailErrorText } from "./popup-modal.ts";
 import { openSettings, saveSettings } from "./popup-settings.ts";
 import { showScale } from "./scale.ts";
 import phrases from "../design/handoff/phrases.ko.json";
@@ -131,6 +132,28 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     onEmployee: (teamId, agentId, opener) => {
       const officeId = store.state.selectedId;
       if (officeId) openEmployee(officeId, teamId, agentId, opener);
+    },
+    onSession: (teamId, opener) => {
+      const officeId = store.state.selectedId;
+      if (officeId)
+        openSessionDetail(
+          { invoke, live },
+          {
+            officeId,
+            teamId,
+            name: popupNames(store.state.list, officeId, teamId).teamLabel,
+          },
+          opener,
+        );
+    },
+    onSource: async (teamId) => {
+      const officeId = store.state.selectedId;
+      if (!officeId) return;
+      try {
+        await invoke<void>("open_path", { target: { kind: "SourceFolder", officeId, teamId } });
+      } catch (error) {
+        throw new Error(detailErrorText(error));
+      }
     },
   });
   const sidebar = mountSidebar(side, store, requestSelect, {

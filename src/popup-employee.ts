@@ -7,7 +7,7 @@ import fileSvg from "../design/handoff/icons/file.svg?raw";
 import terminalSvg from "../design/handoff/icons/terminal.svg?raw";
 import { detailErrorText, hms, openModal, smallIcon, type LiveEmployee } from "./popup-modal.ts";
 import type { Invoke } from "./scale.ts";
-import { CTX_CELLS, ROLE_LABEL, ROOM_LABEL, contextMeter, h, setRich } from "./sidebar-right.ts";
+import { ROLE_LABEL, ROOM_LABEL, contextMeter, h, setRich } from "./sidebar-right.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { rankLabel } from "./ticker.ts";
 import { setAvatar } from "./avatar.ts";
@@ -226,7 +226,9 @@ export function openEmployeeDetail(
       const meter = contextMeter(emp.contextUsed, emp.contextWindow);
       if (meter) {
         const ctx = h(doc, "span", `ow-ctx${meter.high ? " is-high" : ""}`);
-        for (let i = 0; i < CTX_CELLS; i++) ctx.append(h(doc, "i", i < meter.lit ? "is-on" : ""));
+        const fill = h(doc, "i");
+        fill.style.width = `${meter.pct}%`;
+        ctx.append(h(doc, "span", "ow-ctx__bar", fill));
         ctx.append(h(doc, "b", "", meter.text));
         const c = chip("");
         c.title = meter.label;

@@ -5,6 +5,7 @@ import { createStore } from "./store.ts";
 import { act, emp, iso, office, team } from "./test-office.ts";
 import type { OfficeDto, OfficeListDto } from "./types/ipc.ts";
 import { setAvatar } from "./avatar.ts";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("./avatar.ts", () => ({ setAvatar: vi.fn() }));
 
@@ -72,6 +73,8 @@ function setup(
   const push = (o: OfficeDto) => store.applyOfficeState(o);
   return { store, root, panel, vp, q, cards, ids, push, onDrawerChange };
 }
+
+const openButton = (card: HTMLElement) => card.querySelector<HTMLButtonElement>(".ow-card__open")!;
 
 const nodeCount = (el: Element): number => el.querySelectorAll("*").length + el.childNodes.length;
 
@@ -374,19 +377,19 @@ test("평균이 없으면 막대가 없다", () => {
   expect(s.q<HTMLElement>(".ow-progress")!.hidden).toBe(true);
 });
 
-test("컨텍스트 눈금: 켜진 칸, 80% 이상 주황, 창 크기를 모르면 ?", () => {
+test("컨텍스트 막대: 사용률 너비, 80% 이상 주황, 창 크기를 모르면 ?", () => {
   const ctx = (used: number | null, win: number | null) =>
     office("o", 1, [team("t", [emp("boss", { contextUsed: used, contextWindow: win })])]);
-  const lit = (s: ReturnType<typeof setup>) => s.root.querySelectorAll(".ow-ctx i.is-on").length;
+  const width = (s: ReturnType<typeof setup>) => s.q<HTMLElement>(".ow-ctx__bar i")!.style.width;
   let s = setup(ctx(62_000, 100_000));
-  expect(lit(s)).toBe(3);
+  expect(width(s)).toBe("62%");
   expect(s.q(".ow-ctx")!.classList.contains("is-high")).toBe(false);
   expect(s.q(".ow-ctx b")!.textContent).toBe("62%");
   s = setup(ctx(90_000, 100_000));
-  expect(lit(s)).toBe(5);
+  expect(width(s)).toBe("90%");
   expect(s.q(".ow-ctx")!.classList.contains("is-high")).toBe(true);
   s = setup(ctx(100_000, null));
-  expect(lit(s)).toBe(3);
+  expect(width(s)).toBe("50%");
   expect(s.q(".ow-ctx b")!.textContent).toBe("50%?");
 });
 
@@ -555,15 +558,15 @@ test("재정렬해도 초점은 그 카드에 남는다", () => {
     ]);
   const s = setup(o(1, 1, 2));
   const a = s.cards().find((c) => c.dataset.agentId === "a")!;
-  a.focus();
+  openButton(a).focus();
   s.push(o(2, 5, 2));
   expect(s.ids()).toEqual(["boss", "a", "b"]);
-  expect(document.activeElement).toBe(a);
+  expect(document.activeElement).toBe(openButton(a));
 });
 
 test("카드에서 위아래 화살표는 이웃 카드로 초점을 옮긴다", () => {
   const s = setup(office("o", 1, [team("t", [emp("boss"), emp("a"), emp("b")])]));
-  const [boss, a, b] = s.cards();
+  const [boss, a, b] = s.cards().map(openButton);
   const key = (el: HTMLElement, k: string) =>
     el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
   boss.focus();
@@ -601,10 +604,10 @@ test("카드를 누르면 (teamId, agentId) 와 그 카드로 직원 상세를 �
   // 같은 agentId 가 두 팀에 있어도 카드마다 자기 팀으로 부른다
   const cards = s.cards();
   expect(cards).toHaveLength(4);
-  cards[3].click();
-  expect(onEmployee).toHaveBeenLastCalledWith("t2", "a", cards[3]);
-  cards[0].click();
-  expect(onEmployee).toHaveBeenLastCalledWith("t1", "boss", cards[0]);
+  openButton(cards[3]).click();
+  expect(onEmployee).toHaveBeenLastCalledWith("t2", "a", openButton(cards[3]));
+  openButton(cards[0]).click();
+  expect(onEmployee).toHaveBeenLastCalledWith("t1", "boss", openButton(cards[0]));
 
   s.panel.highlight("t2", "a");
   expect(cards[3].classList.contains("is-highlight")).toBe(true);
@@ -613,7 +616,7 @@ test("카드를 누르면 (teamId, agentId) 와 그 카드로 직원 상세를 �
   expect(cards[3].classList.contains("is-highlight")).toBe(false);
 });
 
-test("퇴근 서브는 '퇴근 n' 묶음에 접히고, 펼치면 60% 카드, 재출근하면 보통 자리로, 카드 클릭은 직원 상세", () => {
+test("퇴근 서브는 '퇴근 n' 묶음에 접히고, 펼치면 퇴근 카드, 재출근하면 보통 자리로, 카드 클릭은 직원 상세", () => {
   const off = iso(14, 30);
   const o = (seq: number, back = false) =>
     office("o", seq, [
@@ -638,7 +641,7 @@ test("퇴근 서브는 '퇴근 n' 묶음에 접히고, 펼치면 60% 카드, 재
   expect(["a", "b", "c"].map((id) => card(id).hidden)).toEqual([true, true, true]);
   expect(card("p").hidden).toBe(false);
 
-  // (b) 펼침. 60% 클래스. 다시 그려도 안 접힘
+  // (b) 펼침. 퇴근 클래스. 다시 그려도 안 접힘
   btn().click();
   expect(btn().getAttribute("aria-expanded")).toBe("true");
   expect(["a", "b", "c"].map((id) => card(id).hidden)).toEqual([false, false, false]);
@@ -647,12 +650,239 @@ test("퇴근 서브는 '퇴근 n' 묶음에 접히고, 펼치면 60% 카드, 재
   expect(card("a").hidden).toBe(false);
 
   // (d) 카드 클릭은 직원 상세
-  card("a").click();
-  expect(onEmployee).toHaveBeenLastCalledWith("t", "a", card("a"));
+  openButton(card("a")).click();
+  expect(onEmployee).toHaveBeenLastCalledWith("t", "a", openButton(card("a")));
 
   // (c) b 재출근: 묶음에서 나와 보통 자리, 머리글 개수 2
   s.push(o(3, true));
   expect(s.ids()).toEqual(["boss", "b", "p", "a", "c"]);
   expect(card("b").classList.contains("is-departed")).toBe(false);
   expect(btn().querySelector(".ow-count")?.textContent).toBe("2");
+});
+
+test("카드는 article이고 머리줄·상세·결재 버튼은 중첩하지 않으며 Tab과 Enter가 실제 버튼을 실행한다", async () => {
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  const onEmployee = vi.fn();
+  const onSession = vi.fn();
+  const onSource = vi.fn().mockResolvedValue(undefined);
+  const s = setup(
+    office("o", 1, [
+      team("t", [
+        emp("boss"),
+        emp("a", {
+          activity: act({ room: "Door" }),
+        }),
+      ]),
+    ]),
+    "Large",
+    undefined,
+    { onEmployee, onSession, onSource },
+  );
+  const [boss, waiting] = s.cards();
+  expect(waiting.tagName).toBe("ARTICLE");
+  expect(s.root.querySelector("button button")).toBeNull();
+  expect(openButton(boss).tabIndex).toBe(0);
+  expect(openButton(waiting).tabIndex).toBe(-1);
+  openButton(boss).focus();
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(openButton(waiting));
+  expect(openButton(boss).tabIndex).toBe(-1);
+  await user.keyboard("{Enter}");
+  expect(onEmployee).toHaveBeenCalledExactlyOnceWith("t", "a", openButton(waiting));
+  await user.tab();
+  const detail = waiting.querySelector<HTMLButtonElement>(".ow-card__actions")!;
+  expect(document.activeElement).toBe(detail);
+  await user.keyboard("{Enter}");
+  expect(onEmployee).toHaveBeenLastCalledWith("t", "a", detail);
+  await user.tab();
+  const approval = waiting.querySelector<HTMLButtonElement>(".ow-card__approval")!;
+  expect(document.activeElement).toBe(approval);
+  await user.keyboard("{Enter}");
+  expect(onSession).toHaveBeenCalledExactlyOnceWith("t", approval);
+  await user.tab();
+  expect(document.activeElement).toBe(waiting.querySelector(".ow-card__source"));
+  await user.keyboard("{Enter}");
+  expect(onSource).toHaveBeenCalledExactlyOnceWith("t");
+  expect(onEmployee).toHaveBeenCalledTimes(2);
+});
+
+test("허가 대기는 경과·질문과 두 동작을 표시하고 원본 열기 실패 후 버튼을 복구한다", async () => {
+  const onSource = vi.fn().mockRejectedValue(new Error("탐색기를 열지 못했어요."));
+  const s = setup(
+    office("o", 1, [
+      team("t", [
+        emp("boss", {
+          activity: act({
+            room: "Door",
+            since: iso(14, 30),
+            sentence: "결재판 들고 문 앞 대기: 「이 명령을 실행할까요?」",
+          }),
+          lastSay: "이전 발언",
+        }),
+      ]),
+    ]),
+    "Large",
+    undefined,
+    { onSource },
+  );
+  expect(s.cards()[0].classList.contains("is-ask")).toBe(true);
+  expect(s.q(".ow-status")!.classList.contains("is-ask")).toBe(true);
+  expect(s.q(".ow-status__label")!.textContent).toBe("허가 대기 · 2분째");
+  expect(s.q(".ow-quote")!.textContent).toBe("“이 명령을 실행할까요?”");
+  expect(s.q(".ow-pin")!.getAttribute("aria-label")).toBe("결재·응답 대기");
+  vi.advanceTimersByTime(60_000);
+  expect(s.q(".ow-status__label")!.textContent).toBe("허가 대기 · 3분째");
+  const source = s.q<HTMLButtonElement>(".ow-card__source")!;
+  source.click();
+  expect(source.disabled).toBe(true);
+  await Promise.resolve();
+  expect(source.disabled).toBe(false);
+  expect(s.q(".ow-card__error")!.textContent).toContain("탐색기를 열지 못했어요.");
+  expect(s.q(".ow-card__error")!.hidden).toBe(false);
+  s.push(office("o", 2, [team("t", [emp("boss", { activity: act({ room: "Outside" }) })])]));
+  expect(s.cards()[0].classList.contains("is-ask")).toBe(false);
+  expect(s.q(".ow-status")!.classList.contains("is-away")).toBe(true);
+  expect(s.q(".ow-card__ask-actions")!.hidden).toBe(true);
+});
+
+test("최근 행적은 세 줄 타임라인이며 확정 실패·반려 접두어만 빨갛게 표시한다", () => {
+  const recent = [
+    act({ sentence: "사고: `cargo test` 실패" }),
+    act({ sentence: "반려됨: `rm` 안 됩니다" }),
+    act({ sentence: "`사고: 반려됨:` 글자 검색" }),
+    act({ sentence: "네 번째" }),
+  ];
+  const s = setup(office("o", 1, [team("t", [emp("boss", { recent })])]));
+  const rows = [...s.root.querySelectorAll(".ow-trail__item:not([hidden])")];
+  expect(rows).toHaveLength(3);
+  expect(rows.map((r) => r.classList.contains("is-bad"))).toEqual([true, true, false]);
+  s.push(
+    office("o", 2, [
+      team("t", [
+        emp("boss", {
+          recent: [
+            act({ sentence: "사고: `cargo test` 실패", confidence: "Inferred" }),
+            act({ sentence: "반려됨: `rm` 안 됩니다", confidence: "Inferred" }),
+          ],
+        }),
+      ]),
+    ]),
+  );
+  expect(s.root.querySelector(".ow-trail__item.is-bad:not([hidden])")).toBeNull();
+  expect(s.q(".ow-trail__item.is-last")!.textContent).toContain("반려됨:");
+});
+
+test("Door 결재 카드가 팀 퇴근·개별 퇴근으로 바뀌면 같은 DOM의 결재 표시와 버튼을 없앤다", () => {
+  const dto = (seq: number, off = false, departed = false) =>
+    office("o", seq, [
+      team(
+        "t",
+        [
+          emp("boss", { activity: act({ room: "Door" }) }),
+          emp("sub", {
+            activity: act({ room: "Door" }),
+            departedAt: departed ? NOW.toISOString() : null,
+          }),
+        ],
+        { phase: off ? "Off" : "Working" },
+      ),
+    ]);
+  const s = setup(dto(1));
+  const [boss, sub] = s.cards();
+  const checkOff = (card: HTMLElement) => {
+    expect(card.classList.contains("is-ask")).toBe(false);
+    expect(card.querySelector(".ow-status")!.classList.contains("is-ask")).toBe(false);
+    expect(card.querySelector<HTMLElement>(".ow-card__ask-actions")!.hidden).toBe(true);
+    expect(card.querySelector(".ow-status__label")!.textContent).not.toContain("허가 대기");
+    expect(card.querySelector<HTMLElement>(".ow-pin")!.dataset.state).toBe("off");
+  };
+  expect(boss.classList.contains("is-ask")).toBe(true);
+  expect(sub.classList.contains("is-ask")).toBe(true);
+  s.push(dto(2, false, true));
+  expect(s.cards()[1]).toBe(sub);
+  checkOff(sub);
+  expect(boss.classList.contains("is-ask")).toBe(true);
+  s.push(dto(3, true, true));
+  expect(s.cards()[0]).toBe(boss);
+  checkOff(boss);
+  checkOff(sub);
+  vi.advanceTimersByTime(1000);
+  checkOff(boss);
+  checkOff(sub);
+  s.push(dto(4));
+  expect(boss.classList.contains("is-ask")).toBe(true);
+  expect(sub.querySelector(".ow-status__label")!.textContent).toContain("허가 대기");
+});
+
+test("이름순도 부장·퇴근 묶음을 유지하고 기본순으로 돌아와도 같은 DOM과 액션 초점을 재사용한다", () => {
+  const members = [
+    emp("boss", { name: "하부장" }),
+    emp("z", { name: "차대리", activity: act({ since: iso(14, 31) }) }),
+    emp("a", { name: "가사원", activity: act({ room: "Pantry" }) }),
+    emp("gone", { name: "나사원", departedAt: iso(14, 10) }),
+  ];
+  const s = setup(office("o", 1, [team("t", members)]));
+  const original = new Map(s.cards().map((c) => [c.dataset.agentId, c]));
+  const sort = s.q<HTMLButtonElement>('[aria-label^="정렬 바꾸기"]')!;
+  sort.click();
+  expect(s.ids()).toEqual(["boss", "a", "z", "gone"]);
+  expect(sort.getAttribute("aria-pressed")).toBe("true");
+  expect(s.cards()[3].hidden).toBe(true);
+  const action = original.get("z")!.querySelector<HTMLButtonElement>(".ow-card__actions")!;
+  action.focus();
+  s.push(office("o", 2, [team("t", members)]));
+  expect(document.activeElement).toBe(action);
+  sort.click();
+  expect(s.ids()).toEqual(["boss", "z", "a", "gone"]);
+  expect(sort.getAttribute("aria-pressed")).toBe("false");
+  for (const c of s.cards()) expect(c).toBe(original.get(c.dataset.agentId));
+});
+
+test("부장 금색칩·아바타 바깥 핀·실적 굵기와 압축형 경계의 숨김을 실제 스타일로 확인한다", async () => {
+  const { readFileSync } = await vi.importActual<{
+    readFileSync: (path: string, encoding: "utf8") => string;
+  }>("node:fs");
+  const style = document.createElement("style");
+  style.textContent =
+    readFileSync("design/handoff/tokens.css", "utf8") +
+    readFileSync("src/styles/panel.css", "utf8");
+  document.head.append(style);
+  try {
+    const s = setup(
+      office("o", 1, [
+        team("t", [
+          emp("boss", {
+            rank: "Bujang",
+            contextUsed: 62_000,
+            contextWindow: 100_000,
+            lastSay: "발언",
+            recent: [act({ sentence: "행적" })],
+          }),
+          emp("idle", { activity: act({ room: "Pantry" }), departedAt: iso(14, 0) }),
+        ]),
+      ]),
+      "Small",
+    );
+    expect(s.q(".ow-card__rank")!.classList.contains("is-boss")).toBe(true);
+    expect(s.q(".ow-avatar")!.contains(s.q(".ow-pin"))).toBe(false);
+    expect(s.q(".ow-pin")!.parentElement).toBe(s.q(".ow-avatar")!.parentElement);
+    expect(s.q(".ow-stats__n")!.tagName).toBe("B");
+    expect(getComputedStyle(s.q(".ow-ctx__bar")!).width).toBe("44px");
+    expect(getComputedStyle(s.q(".ow-ctx__bar")!).height).toBe("4px");
+    expect(getComputedStyle(s.q(".ow-teamhead b")!).whiteSpace).toBe("nowrap");
+    const idle = s.cards()[1];
+    expect(idle.classList.contains("is-idle")).toBe(true);
+    expect(getComputedStyle(idle).opacity).not.toBe("0.6");
+    s.vp.set(1280, 639);
+    expect(s.cards()[0].classList.contains("is-compact")).toBe(true);
+    expect(getComputedStyle(s.cards()[0]).padding).toBe("9px 12px");
+    expect(getComputedStyle(s.q(".ow-avatar")!).width).toBe("36px");
+    for (const cls of [".ow-trail", ".ow-stats", ".ow-quote"])
+      expect(getComputedStyle(s.q(cls)!).display).toBe("none");
+    s.vp.set(1280, 640);
+    expect(s.cards()[0].classList.contains("is-compact")).toBe(false);
+    expect(getComputedStyle(s.q(".ow-trail")!).display).toBe("flex");
+  } finally {
+    style.remove();
+  }
 });

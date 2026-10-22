@@ -11,6 +11,8 @@ import iconIncident from "../design/handoff/icons/incident-count.svg?raw";
 import iconMcp from "../design/handoff/icons/mcp.svg?raw";
 import iconTerminal from "../design/handoff/icons/terminal.svg?raw";
 import iconWeb from "../design/handoff/icons/web.svg?raw";
+import iconDetail from "../design/handoff/icons/chevron-right.svg?raw";
+import iconSort from "../design/handoff/icons/sort.svg?raw";
 import roomAway from "../design/handoff/icons/room-away.svg?raw";
 import roomBoss from "../design/handoff/icons/room-boss.svg?raw";
 import roomBuild from "../design/handoff/icons/room-build.svg?raw";
@@ -46,7 +48,6 @@ const TOAST_MS = 3000;
 const NEW_MS = 300;
 const HIGHLIGHT_MS = 2000;
 const QUOTE_MAX = 60;
-export const CTX_CELLS = 5;
 const CTX_DEFAULT_WINDOW = 200_000;
 const TEAM_COLORS = 6;
 
@@ -128,8 +129,10 @@ export interface PanelOptions {
   viewport?: Viewport;
   /** 드로어가 열리고 닫힐 때 (머리말 버튼의 aria-expanded 용) */
   onDrawerChange?: (open: boolean) => void;
-  /** 카드를 눌렀을 때 (직원 상세를 연다). opener 는 닫을 때 초점이 돌아갈 카드 */
+  /** 카드를 눌렀을 때 (직원 상세를 연다). opener 는 닫을 때 초점이 돌아갈 버튼 */
   onEmployee?: (teamId: string, agentId: string, opener: HTMLElement) => void;
+  onSession?: (teamId: string, opener: HTMLElement) => void;
+  onSource?: (teamId: string) => Promise<void>;
 }
 
 export interface PanelHandle {
@@ -178,7 +181,7 @@ export function setRich(node: HTMLElement, text: string): void {
 }
 
 /**
- * 컨텍스트 눈금 재료: 켜진 칸 = round(사용률/20). 창 크기를 모르면 20만 토큰으로 어림하고 "?" (docs/CONTRACTS.md C3).
+ * 컨텍스트 막대 재료. 창 크기를 모르면 20만 토큰으로 어림하고 "?" (docs/CONTRACTS.md C3).
  * 쓴 양을 모르면 null
  */
 export function contextMeter(used: number | null, windowSize: number | null) {
@@ -187,7 +190,6 @@ export function contextMeter(used: number | null, windowSize: number | null) {
   const pct = Math.min(100, Math.round((used / (windowSize || CTX_DEFAULT_WINDOW)) * 100));
   return {
     pct,
-    lit: Math.round(pct / 20),
     high: pct >= 80,
     /** "75%" 또는 창 크기를 모르면 "75%?" */
     text: `${pct}%${unknown ? "?" : ""}`,
@@ -208,11 +210,13 @@ function roomLabel(room: Room, small: boolean): string {
 }
 
 /** 부장 맨 위, 그 아래 마지막 사건이 최근인 순, 탕비실은 맨 아래 (docs/CONTRACTS.md C3). 부장은 team.employees[0] */
-function orderEmployees(team: TeamDto): EmployeeDto[] {
+function orderEmployees(team: TeamDto, byName: boolean): EmployeeDto[] {
   const [boss, ...rest] = team.employees;
   const idle = (e: EmployeeDto) => (e.activity.room === "Pantry" ? 1 : 0);
   const at = (e: EmployeeDto) => Date.parse(e.activity.since) || 0;
-  rest.sort((a, b) => idle(a) - idle(b) || at(b) - at(a));
+  rest.sort((a, b) =>
+    byName ? a.name.localeCompare(b.name, "ko") : idle(a) - idle(b) || at(b) - at(a),
+  );
   return boss ? [boss, ...rest] : rest;
 }
 
@@ -243,18 +247,23 @@ function createGroup(doc: Document, onToggle: () => void): GroupEntry {
 // ---- 카드 ----
 
 interface CardEntry {
-  el: HTMLButtonElement;
+  el: HTMLElement;
+  open: HTMLButtonElement;
+  detail: HTMLButtonElement;
+  approval: HTMLButtonElement;
+  source: HTMLButtonElement;
   last: Map<string, string>;
   timers: Map<string, ReturnType<typeof setTimeout>>;
   ref: {
     avatar: HTMLElement;
+    pin: HTMLElement;
     name: HTMLElement;
     rank: HTMLElement;
     reject: HTMLElement;
     sub: HTMLElement;
     model: HTMLElement;
     ctx: HTMLElement;
-    ctxCells: HTMLElement[];
+    ctxBar: HTMLElement;
     ctxText: HTMLElement;
     status: HTMLElement;
     statusIcon: HTMLElement;
@@ -268,6 +277,8 @@ interface CardEntry {
     trail: { row: HTMLElement; time: HTMLElement; text: HTMLElement }[];
     stats: HTMLElement[];
     quote: HTMLElement;
+    askActions: HTMLElement;
+    error: HTMLElement;
   };
   sentence: string;
   /** sentence 의 {elapsed} 를 프론트가 채우나 (Activity.elapsed) */
@@ -275,15 +286,30 @@ interface CardEntry {
   sinceMs: number;
   /** 진행 막대용 평균 소요(초). 없으면 막대를 숨긴다 */
   expected: number;
+  asking: boolean;
 }
 
 function createCard(doc: Document, agentId: string): CardEntry {
-  const el = h(doc, "button", "ow-card");
-  el.type = "button";
+  const el = h(doc, "article", "ow-card");
   el.dataset.agentId = agentId;
+  const open = h(doc, "button", "ow-card__open");
+  open.type = "button";
+  open.tabIndex = -1;
+  const detail = h(
+    doc,
+    "button",
+    "ow-iconbtn ow-iconbtn--sm ow-card__actions",
+    icon(doc, iconDetail),
+  );
+  detail.type = "button";
+  detail.setAttribute("aria-label", phrases.card.detail);
+  detail.tabIndex = -1;
 
   const avatar = h(doc, "span", "ow-avatar");
   avatar.setAttribute("aria-hidden", "true");
+  const pin = h(doc, "span", "ow-pin");
+  pin.setAttribute("role", "img");
+  const avatarWrap = h(doc, "span", "ow-card__avatar", avatar, pin);
   const name = h(doc, "span", "ow-card__name");
   const rank = h(doc, "span", "ow-card__rank");
   const reject = icon(doc, iconApproval);
@@ -303,9 +329,9 @@ function createCard(doc: Document, agentId: string): CardEntry {
   );
 
   const model = h(doc, "span", "ow-model");
-  const ctxCells = Array.from({ length: CTX_CELLS }, () => h(doc, "i"));
+  const ctxBar = h(doc, "i");
   const ctxText = h(doc, "b");
-  const ctx = h(doc, "span", "ow-ctx", ...ctxCells, ctxText);
+  const ctx = h(doc, "span", "ow-ctx", h(doc, "span", "ow-ctx__bar", ctxBar), ctxText);
   ctx.setAttribute("role", "img");
   const meta = h(doc, "span", "ow-card__meta", model, ctx);
 
@@ -331,41 +357,60 @@ function createCard(doc: Document, agentId: string): CardEntry {
   const trail = Array.from({ length: 3 }, () => {
     const time = h(doc, "span", "ow-trail__time");
     const text = h(doc, "span", "ow-trail__text");
-    return { row: h(doc, "span", "ow-trail__row", time, text), time, text };
+    return { row: h(doc, "li", "ow-trail__item ow-trail__row", time, text), time, text };
   });
 
   const stats = STATS.map((s) => {
-    const n = h(doc, "span", "ow-stats__n");
+    const n = h(doc, "b", "ow-stats__n");
     const cell = h(doc, "span", "", icon(doc, s.icon), n);
     cell.title = s.title;
     cell.setAttribute("role", "img");
     return cell;
   });
   const quote = h(doc, "span", "ow-quote");
+  const approval = h(doc, "button", "ow-card__approval", phrases.card.openApproval);
+  const source = h(doc, "button", "ow-card__source", phrases.card.openSource);
+  for (const b of [approval, source]) {
+    b.type = "button";
+    b.tabIndex = -1;
+  }
+  const askActions = h(doc, "div", "ow-card__ask-actions", approval, source);
+  const error = h(doc, "p", "ow-card__error");
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  open.append(h(doc, "span", "ow-card__head", avatarWrap, id, meta));
 
   el.append(
-    h(doc, "span", "ow-card__head", avatar, id, meta),
+    open,
+    detail,
     status,
     now,
     progress,
-    h(doc, "span", "ow-trail", ...trail.map((t) => t.row)),
+    h(doc, "ol", "ow-trail", ...trail.map((t) => t.row)),
     h(doc, "span", "ow-stats", ...stats),
     quote,
+    askActions,
+    error,
   );
 
   return {
     el,
+    open,
+    detail,
+    approval,
+    source,
     last: new Map(),
     timers: new Map(),
     ref: {
       avatar,
+      pin,
       name,
       rank,
       reject,
       sub,
       model,
       ctx,
-      ctxCells,
+      ctxBar,
       ctxText,
       status,
       statusIcon,
@@ -379,11 +424,14 @@ function createCard(doc: Document, agentId: string): CardEntry {
       trail,
       stats,
       quote,
+      askActions,
+      error,
     },
     sentence: "",
     elapsed: false,
     sinceMs: NaN,
     expected: 0,
+    asking: false,
   };
 }
 
@@ -414,7 +462,31 @@ function updateCard(
   setAvatar(r.avatar, e, building);
   const act: Activity = e.activity;
   c.el.classList.toggle("is-boss", isBoss);
-  c.el.classList.toggle("is-idle", act.room === "Pantry" || off);
+  c.el.classList.toggle("is-idle", act.room === "Pantry" || off || e.departedAt !== null);
+  r.rank.classList.toggle("is-boss", isBoss);
+  const state =
+    off || e.departedAt !== null
+      ? "off"
+      : act.room === "Incident"
+        ? "incident"
+        : act.room === "Door" || act.pose === "Pace"
+          ? "waiting"
+          : act.room === "Pantry" || act.pose === "Sleep"
+            ? "sleepy"
+            : "working";
+  const stateLabel = {
+    off: phrases.sidebar.stateOff,
+    incident: phrases.sidebar.stateIncident,
+    waiting: phrases.sidebar.stateWaiting,
+    sleepy: phrases.sidebar.stateSleepy,
+    working: phrases.sidebar.stateWorking,
+  }[state];
+  r.pin.dataset.state = state;
+  r.pin.setAttribute("aria-label", stateLabel);
+  c.open.setAttribute(
+    "aria-label",
+    `${e.name} ${rankLabel(e.rank)} · ${stateLabel} · ${phrases.card.detail}`,
+  );
 
   setText(c, "name", r.name, e.name);
   setText(c, "rank", r.rank, rankLabel(e.rank));
@@ -441,7 +513,7 @@ function updateCard(
   const meter = contextMeter(e.contextUsed, e.contextWindow);
   if (changed(c, "ctx", meter?.text ?? "")) {
     r.ctx.hidden = !meter;
-    r.ctxCells.forEach((cell, i) => cell.classList.toggle("is-on", i < (meter?.lit ?? 0)));
+    r.ctxBar.style.width = `${meter?.pct ?? 0}%`;
     r.ctx.classList.toggle("is-high", !!meter?.high);
     r.ctxText.textContent = meter?.text ?? "";
     r.ctx.setAttribute("aria-label", meter?.label ?? "");
@@ -450,14 +522,19 @@ function updateCard(
 
   // 상태 칩: 추정이면 점선 + "추정", 허가 대기(출입문)는 결재판
   const estimate = act.confidence === "Inferred";
-  const ask = act.room === "Door";
-  const roomKey = `${act.room}|${small}`;
+  const ask = act.room === "Door" && !off && e.departedAt === null;
+  c.asking = ask;
+  c.el.classList.toggle("is-ask", ask);
+  r.askActions.hidden = !ask;
+  const roomKey = `${act.room}|${small}|${ask}`;
   if (changed(c, "room", roomKey)) {
+    c.last.delete("askingFor");
     r.statusIcon.innerHTML = "";
     r.statusIcon.append(icon(c.el.ownerDocument, ask ? iconApproval : ROOM_ICON[act.room]));
     r.statusLabel.textContent = roomLabel(act.room, small);
     r.status.classList.toggle("is-bad", act.room === "Incident");
     r.status.classList.toggle("is-ask", ask);
+    r.status.classList.toggle("is-away", act.room === "Outside");
   }
   if (changed(c, "est", String(estimate))) {
     r.status.classList.toggle("is-estimate", estimate);
@@ -475,10 +552,18 @@ function updateCard(
   const trail = e.recent.filter((a) => a.sentence !== act.sentence || a.since !== act.since);
   r.trail.forEach((t, i) => {
     const a = trail[i];
-    const key = a ? `${a.since}|${a.sentence}` : "";
+    const key = a ? `${a.since}|${a.sentence}|${a.room}|${a.confidence}` : "";
+    t.row.classList.toggle("is-last", i === Math.min(trail.length, 3) - 1);
     if (!changed(c, `trail${i}`, key)) return;
     t.row.hidden = !a;
     if (!a) return;
+    t.row.classList.toggle(
+      "is-bad",
+      a.confidence === "Confirmed" &&
+        (a.room === "Incident" ||
+          a.sentence.startsWith("사고: ") ||
+          a.sentence.startsWith("반려됨: ")),
+    );
     const at = Date.parse(a.since);
     t.time.textContent = Number.isNaN(at) ? "" : hhmm(at);
     setRich(t.text, a.sentence);
@@ -491,7 +576,11 @@ function updateCard(
     r.stats[i].setAttribute("aria-label", `${s.title} ${value}`);
   });
 
-  const say = e.lastSay === null ? "" : e.lastSay;
+  const questionPrefix = "결재판 들고 문 앞 대기: 「";
+  const say =
+    ask && !estimate && act.sentence.startsWith(questionPrefix) && act.sentence.endsWith("」")
+      ? act.sentence.slice(questionPrefix.length, -1)
+      : (e.lastSay ?? "");
   if (changed(c, "say", say)) {
     r.quote.hidden = say === "";
     const chars = Array.from(say);
@@ -504,6 +593,15 @@ function updateCard(
 function tickCard(c: CardEntry, nowMs: number): void {
   const r = c.ref;
   const sec = Number.isNaN(c.sinceMs) ? null : Math.max(0, Math.floor((nowMs - c.sinceMs) / 1000));
+  if (c.asking)
+    setText(
+      c,
+      "askingFor",
+      r.statusLabel,
+      sec === null
+        ? phrases.sidebar.asking
+        : fill(phrases.card.askingFor, { elapsed: durationText(Math.max(60, sec), false) }),
+    );
   setRichCached(c, "now", r.nowText, fillElapsed(c.sentence, sec, c.elapsed));
   if (c.expected === 0 || sec === null) {
     if (changed(c, "prog", "off")) r.progress.hidden = true;
@@ -594,7 +692,11 @@ export function mountPanel(
   closeBtn.type = "button";
   closeBtn.setAttribute("aria-label", phrases.header.panelClose);
   closeBtn.append(icon(doc, iconClose));
-  const head = h(doc, "div", "ow-panel__head", title, count, officeName, closeBtn);
+  const sortBtn = h(doc, "button", "ow-iconbtn ow-iconbtn--sm", icon(doc, iconSort));
+  sortBtn.type = "button";
+  sortBtn.setAttribute("aria-pressed", "false");
+  sortBtn.setAttribute("aria-label", `${phrases.card.sort}: ${phrases.card.sortDefault}`);
+  const head = h(doc, "div", "ow-panel__head", title, count, officeName, sortBtn, closeBtn);
 
   const toasts = h(doc, "div", "ow-panel__toasts");
   toasts.setAttribute("role", "status");
@@ -629,6 +731,16 @@ export function mountPanel(
   let compact = false;
   let narrow = false;
   let drawerOpen = false;
+  let byName = false;
+  sortBtn.addEventListener("click", () => {
+    byName = !byName;
+    sortBtn.setAttribute("aria-pressed", String(byName));
+    sortBtn.setAttribute(
+      "aria-label",
+      `${phrases.card.sort}: ${byName ? phrases.card.sortName : phrases.card.sortDefault}`,
+    );
+    render();
+  });
 
   // ---- 연출 ----
 
@@ -758,13 +870,29 @@ export function mountPanel(
       // 상사(parent)는 같은 팀 안의 agent_id 다
       const byId = new Map(t.employees.map((e) => [e.agentId, e]));
       const departed: HTMLElement[] = [];
-      orderEmployees(t).forEach((e, i) => {
+      orderEmployees(t, byName).forEach((e, i) => {
         const key = empKey(t.teamId, e.agentId);
         let c = cards.get(key);
         if (!c) {
           cards.set(key, (c = createCard(doc, e.agentId)));
           const card = c;
-          card.el.addEventListener("click", () => opts.onEmployee?.(t.teamId, e.agentId, card.el));
+          for (const button of [card.open, card.detail])
+            button.addEventListener("click", () => opts.onEmployee?.(t.teamId, e.agentId, button));
+          card.approval.disabled = !opts.onSession;
+          card.source.disabled = !opts.onSource;
+          card.approval.addEventListener("click", () => opts.onSession?.(t.teamId, card.approval));
+          card.source.addEventListener("click", async () => {
+            card.source.disabled = true;
+            card.ref.error.hidden = true;
+            try {
+              await opts.onSource?.(t.teamId);
+            } catch (error) {
+              card.ref.error.textContent = String(error);
+              card.ref.error.hidden = false;
+            } finally {
+              card.source.disabled = false;
+            }
+          });
           c.el.classList.toggle("is-compact", compact);
           if (!quiet) fresh.push({ c, e });
         }
@@ -821,6 +949,7 @@ export function mountPanel(
     });
     if (focused instanceof HTMLElement && list.contains(focused) && doc.activeElement !== focused)
       focused.focus({ preventScroll: true });
+    rove();
     if (pendingTeam) {
       heads.get(pendingTeam.teamId)?.el.scrollIntoView({ block: "nearest" });
       pendingTeam = null;
@@ -888,9 +1017,28 @@ export function mountPanel(
   }
 
   closeBtn.addEventListener("click", () => setDrawer(false));
+  function rove(target?: HTMLElement): void {
+    const visible = [...list.querySelectorAll<HTMLElement>(".ow-card")].filter((c) => !c.hidden);
+    const focusedCard = doc.activeElement?.closest<HTMLElement>(".ow-card");
+    const chosen =
+      target ??
+      (focusedCard && visible.includes(focusedCard) ? focusedCard : undefined) ??
+      visible.find((c) => c.querySelector<HTMLButtonElement>(".ow-card__open")?.tabIndex === 0) ??
+      visible[0];
+    for (const c of cards.values()) {
+      const index = c.el === chosen ? 0 : -1;
+      for (const b of [c.open, c.detail, c.approval, c.source]) b.tabIndex = index;
+    }
+    if (focusedCard && list.contains(focusedCard) && focusedCard.hidden)
+      chosen?.querySelector<HTMLButtonElement>(".ow-card__open")?.focus();
+  }
+  list.addEventListener("focusin", (ev) => {
+    const card = (ev.target as HTMLElement).closest<HTMLElement>(".ow-card");
+    if (card && !card.hidden) rove(card);
+  });
   list.addEventListener("keydown", (ev) => {
     if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
-    const all = [...list.querySelectorAll<HTMLElement>(".ow-card")].filter((card) => !card.hidden);
+    const all = [...list.querySelectorAll<HTMLElement>(".ow-card:not([hidden]) .ow-card__open")];
     const at = all.findIndex((c) => c === doc.activeElement);
     const next = all[at + (ev.key === "ArrowDown" ? 1 : -1)];
     if (at < 0 || !next) return;

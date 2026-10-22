@@ -59,13 +59,27 @@
   animation: ow-toast-in var(--ow-dur-2) var(--ow-ease);
 }
 
-/* 카드는 button 이라 안쪽은 span 이다. 줄 단위는 여기서 정한다 */
+.ow-card__avatar {
+  position: relative;
+  flex: none;
+}
 .ow-card__id {
   flex: 1;
   min-width: 0;
   display: block;
 }
-.ow-card__line,
+.ow-card__line {
+  display: flex;
+  align-items: center;
+}
+.ow-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-card__rank {
+  flex: none;
+}
 .ow-card__sub {
   display: block;
 }
@@ -93,11 +107,14 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.ow-trail__row {
-  display: block;
+.ow-trail__text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ow-trail__item.is-last::after {
+  display: none;
 }
 .ow-quote {
   overflow: hidden;
@@ -110,12 +127,59 @@
   white-space: nowrap;
   min-width: 0;
 }
+.ow-card__ask-actions {
+  display: flex;
+  gap: 6px;
+}
+.ow-card__approval,
+.ow-card__source {
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius-md);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ow-card__approval {
+  background: var(--ow-ask);
+  border-color: var(--ow-ask);
+  color: var(--ow-surface);
+}
+.ow-card__ask-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ow-card__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ow-bad-ink);
+  overflow-wrap: anywhere;
+}
 
-/* 압축형: 행적 1줄, 실적과 발언 숨김 (높이 640 미만) */
+/* 압축형은 이름·직급과 방을 첫 줄에 두고 세부 이력을 접는다. */
+.ow-card.is-compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.ow-card.is-compact .ow-card__open {
+  grid-column: 1;
+  min-width: 0;
+}
+.ow-card.is-compact .ow-status {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+.ow-card.is-compact .ow-now,
+.ow-card.is-compact .ow-progress,
+.ow-card.is-compact .ow-card__ask-actions,
+.ow-card.is-compact .ow-card__error {
+  grid-column: 1 / -1;
+}
 .ow-card.is-compact .ow-stats,
 .ow-card.is-compact .ow-quote,
 .ow-card.is-compact .ow-card__sub,
-.ow-card.is-compact .ow-trail__row:nth-child(n + 2) {
+.ow-card.is-compact .ow-card__meta,
+.ow-card.is-compact .ow-trail {
   display: none;
 }
 
@@ -161,9 +225,4 @@
   .ow-panel__toast {
     animation: none;
   }
-}
-
-/* 퇴근 묶음 안 카드 (design/HANDOFF.md 4.5) */
-.ow-card.is-departed {
-  opacity: 0.6;
 }

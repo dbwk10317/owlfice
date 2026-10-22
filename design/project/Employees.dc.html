@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>직원 확장 · 종 × 직급 × 담당 × 소지품</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.mut{color:#71717A}
+.lbl{font-size:11px;font-weight:600;color:#71717A;display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.lbl code{font-family:'IBM Plex Mono',monospace;font-weight:400;color:#71717A}
+.sheet{background:#fff;border:1px solid #E4E4E7;border-radius:12px;padding:14px;display:inline-flex;flex-direction:column;gap:8px;box-shadow:0 1px 2px rgba(24,24,27,.04)}
+.ax{display:flex;font-size:11px;color:#71717A;font-family:'IBM Plex Mono',monospace}
+.pc{background:#fff;border:1px solid #E4E4E7;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(24,24,27,.04)}
+.pc h3{margin:0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+.pc h3 .tag{margin-left:auto;font-size:10px;font-weight:600;border-radius:4px;padding:0 6px;line-height:17px;background:#F4F4F5;color:#52525B}
+.pc h3 .tag.new{background:#ECFDF3;color:#166534}
+.pc .sig{font-size:11px;color:#71717A;font-family:'IBM Plex Mono',monospace}
+.pc ul{margin:0;padding:0 0 0 14px;font-size:12px;color:#3F3F46;line-height:1.55}
+.pc li b{font-weight:600;color:#18181B}
+.tile{border-radius:12px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;flex:none;position:relative}
+.t44{width:44px;height:44px}.t44 img{width:40px;height:44px}
+.t80{width:80px;height:88px;border-radius:16px}.t80 img{width:80px;height:88px}
+.avw{position:relative;display:inline-block}
+.pin{position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center}
+.pin i{width:8px;height:8px;border-radius:50%;display:block}
+.pin.ry{box-shadow:inset 0 0 0 2px #EAB308}.pin.rr{box-shadow:inset 0 0 0 2px #EF4444}.pin.rd{border:1.5px dashed #71717A}
+.g{background:#16A34A}.y{background:#CA8A04}.r{background:#DC2626}.k{background:#A1A1AA}
+.cap{font-size:11px;color:#52525B;text-align:center;margin-top:6px;white-space:nowrap}
+.em{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid #2A1E1A;background:#fff;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:#2A1E1A;box-shadow:2px 2px 0 rgba(42,30,26,.2)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{text-align:left;font-size:11px;font-weight:600;color:#71717A;padding:4px 8px;border-bottom:1px solid #E4E4E7}
+td{padding:5px 8px;border-bottom:1px solid #F0F0F1;vertical-align:top;color:#3F3F46}
+td b{font-weight:600;color:#18181B}
+td.m{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#52525B;white-space:nowrap}
+</style>
+</helmet>
+<div class="ow" style="width: 1440px; height: 1120px; background: #FAFAFA; padding: 36px 40px; display: flex; flex-direction: column; gap: 20px">
+  <div style="display: flex; align-items: baseline; gap: 14px">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">직원 확장안</h1>
+    <span class="mut" style="font-size: 13px">기본형 20 × 담당 5 × 제조사 3은 그대로. 담당 4종, 소지품 7종, 근속 표식, 감정 표식, 자세 5종을 더한다.</span>
+  </div>
+
+  <div style="display: flex; gap: 24px">
+    <div>
+      <p class="lbl">기본형 20 · 종 5 × 직급 4 <code>sprites/preview/owls-20.png</code></p>
+      <div class="sheet">
+        <div class="ax" style="padding-left: 0; gap: 0"><span style="width: 72px; text-align: center">부장</span><span style="width: 72px; text-align: center">과장</span><span style="width: 72px; text-align: center">대리</span><span style="width: 72px; text-align: center">사원</span></div>
+        <img class="px" src="/_blob/9157c0634c8aff17dc95f41ad14e0334" alt="올빼미 기본형 20종" style="width: 288px; height: 420px">
+        <span class="mut" style="font-size: 11px">세로: 수리부엉이 · 칡부엉이 · 금눈쇠올빼미 · 가면올빼미 · 소쩍새. 직원 종은 agent_id 해시로.</span>
+      </div>
+    </div>
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+      <div>
+        <p class="lbl">자세 13종 · 기존 <code>sprites/preview/poses.png</code></p>
+        <div class="sheet" style="display: flex; width: 100%">
+          <img class="px" src="/_blob/3bd1132bfea22e21efe9c8deac14d2fc" alt="올빼미 자세 시트" style="width: 864px; height: 252px">
+          <span class="mut" style="font-size: 11px">idle · walk · sit · type · read · sleep · jump · scratch · panic · cheer · clap · crouch · carry. 프레임 16×24, 발 기준점 (8, 23).</span>
+        </div>
+      </div>
+      <div>
+        <p class="lbl">카드 아바타 v2 · 타일 바탕 3안 + 상태 핀</p>
+        <div class="sheet" style="display: flex; width: 100%; flex-direction: row; gap: 28px; align-items: flex-end">
+          <div style="display: flex; gap: 18px; align-items: flex-end">
+            <div><span class="avw"><span class="tile t44" style="background: #FBE8DD"><img class="px" src="/_blob/a91962890418fcb37132b959a5f5ce10" alt=""></span><span class="pin"><i class="g"></i></span></span><div class="cap">제조사 tint<br>(기존)</div></div>
+            <div><span class="avw"><span class="tile t44" style="background: #D5EDED"><img class="px" src="/_blob/a91962890418fcb37132b959a5f5ce10" alt=""></span><span class="pin"><i class="g"></i></span></span><div class="cap">팀 색 tint<br>(중소기업)</div></div>
+            <div><span class="avw"><span class="tile t44" style="background: #F4F4F5; box-shadow: inset 0 0 0 1px #E4E4E7"><img class="px" src="/_blob/a91962890418fcb37132b959a5f5ce10" alt=""></span><span class="pin"><i class="g"></i></span></span><div class="cap">중립 회색<br>(야근 모드)</div></div>
+          </div>
+          <div style="width: 1px; height: 60px; background: #E4E4E7"></div>
+          <div style="display: flex; gap: 18px; align-items: flex-end">
+            <div><span class="avw"><span class="tile t44" style="background: #FBE8DD"><img class="px" src="/_blob/d640d4ad5cedd16b879cee85be1a531c" alt=""></span><span class="pin ry"><i class="g"></i></span></span><div class="cap">빌드·테스트</div></div>
+            <div><span class="avw"><span class="tile t44" style="background: #FBE8DD"><img class="px" src="/_blob/d640d4ad5cedd16b879cee85be1a531c" alt=""></span><span class="pin rr"><i class="r"></i></span></span><div class="cap">실패 · 장애</div></div>
+            <div><span class="avw"><span class="tile t44" style="background: #FBE8DD"><img class="px" src="/_blob/d640d4ad5cedd16b879cee85be1a531c" alt=""></span><span class="pin rd"><i class="g"></i></span></span><div class="cap">통신 지연</div></div>
+            <div><span class="avw"><span class="tile t44" style="background: #FBE8DD"><img class="px" src="/_blob/d640d4ad5cedd16b879cee85be1a531c" alt=""></span><span class="pin"><i class="y"></i></span></span><div class="cap">졸음</div></div>
+            <div><span class="avw"><span class="tile t44" style="background: #FBE8DD; opacity: .55"><img class="px" src="/_blob/d640d4ad5cedd16b879cee85be1a531c" alt=""></span><span class="pin"><i class="k"></i></span></span><div class="cap">퇴근</div></div>
+          </div>
+          <div style="width: 1px; height: 60px; background: #E4E4E7"></div>
+          <div style="display: flex; gap: 18px; align-items: flex-end">
+            <div><span class="tile t80" style="background: #FBE8DD"><img class="px" src="/_blob/e24bb170f26f18fc206cbc50e9402e51" alt=""></span><div class="cap">상세 4× · 80×88</div></div>
+            <div><span class="tile t80" style="background: #EFE4F7"><img class="px" src="/_blob/dd57033f030e380309499734c3b56340" alt=""></span><div class="cap">사장님 · 보라 바탕</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
+    <div class="pc"><h3>담당 레이어 +4<span class="tag new">새로</span></h3><span class="sig">subagent_type · 지시문 키워드</span><ul><li><b>보안</b> 검은 선글라스 (security-review, 권한 조사)</li><li><b>데이터</b> 목에 건 작은 차트 카드 (SQL·csv·분석)</li><li><b>디자이너</b> 베레모 + 붓 (css·figma·design)</li><li><b>수습</b> 노란 명찰 (담당 불명 → 명찰로 대체)</li></ul></div>
+    <div class="pc"><h3>소지품 +7<span class="tag new">새로</span></h3><span class="sig">office.json held_*</span><ul><li><b>메달</b> 테스트 연속 통과 3회 (1시간 유지)</li><li><b>안전모</b> 장애 상황실 입장 중</li><li><b>서류 가방</b> 퇴근 걷기</li><li><b>손전등</b> 소등 상태에서 재출근</li><li><b>담요</b> 10분 이상 sleep</li><li><b>헤드폰</b> 백그라운드 명령 돌리는 중</li><li><b>두루마리</b> 계획(plan) 들고 회의실로</li></ul></div>
+    <div class="pc"><h3>근속 표식 · 옷이 변한다<span class="tag new">새로</span></h3><span class="sig">session age (확인됨)</span><ul><li><b>1시간</b> 넥타이 느슨 (부장), 소매 걷음 (전원)</li><li><b>3시간</b> 책상 커피 2잔, 눈 밑 1px 그림자</li><li><b>6시간</b> 어깨에 수건, 말풍선 "퇴근하고 싶다"</li><li>레이어 <span class="mono">wear/<단계>/</span>를 outfit 위에 겹친다</li></ul></div>
+    <div class="pc"><h3>감정 표식 · 머리 위 1칸<span class="tag new">새로</span></h3><span class="sig">DOM 오버레이 .ow-emote, 1.2초</span>
+      <div style="display: flex; gap: 10px; align-items: center; padding: 4px 0 2px">
+        <span class="em">!</span><span class="em">?</span><span class="em">♪</span><span class="em">…</span><span class="em" style="color: #DC2626">✕</span><span class="em" style="color: #16A34A">✓</span>
+      </div>
+      <ul><li><b>!</b> 사고 · <b>?</b> 허가 대기 · <b>♪</b> 테스트 통과 · <b>…</b> 응답 대기</li><li><b>✕</b> 반려 · <b>✓</b> 승인. 말풍선과 같은 틀, 글자 1개</li><li>말풍선이 있으면 감정 표식은 생략</li></ul></div>
+  </div>
+
+  <div style="display: flex; gap: 24px; flex: 1; min-height: 0">
+    <div class="pc" style="flex: 1; min-width: 0">
+      <h3>자세 +5 · 목표 수치<span class="tag new">새로</span></h3>
+      <table>
+        <thead><tr><th>자세</th><th>방향·프레임</th><th>fps</th><th>계기</th><th>길이</th></tr></thead>
+        <tbody>
+          <tr><td><b>think</b> 턱 괴기</td><td class="m">f 2</td><td class="m">1</td><td>응답 생성 중 (thinking 이벤트, 확인됨)</td><td>생성 끝날 때까지</td></tr>
+          <tr><td><b>highfive</b> 하이파이브</td><td class="m">f 1 (2인)</td><td class="m">0</td><td>같은 팀 둘이 테스트 전부 통과</td><td>1초</td></tr>
+          <tr><td><b>stretch</b> 기지개</td><td class="m">f 2</td><td class="m">2</td><td>근속 1시간마다</td><td>1.5초</td></tr>
+          <tr><td><b>drink</b> 커피 마시기</td><td class="m">f 2</td><td class="m">2</td><td>응답 대기 중 30초마다</td><td>1초</td></tr>
+          <tr><td><b>phone</b> 수화기 들기</td><td class="m">f 1</td><td class="m">0</td><td>사장님 메시지 도착 (인터폰과 같이)</td><td>1초</td></tr>
+        </tbody>
+      </table>
+      <span class="mut" style="font-size: 11px">종 5 × 자세 5 × 방향 = 약 60프레임. 생성기 `owlfice_art.py`에 자세를 추가하고 다시 만든다. 손그림 교체는 그대로 미정.</span>
+    </div>
+    <div class="pc" style="width: 440px; flex: none">
+      <h3>이름 · 직급 규칙 (바뀌지 않음)<span class="tag">기존</span></h3>
+      <ul>
+        <li>이름은 agent_id 해시로 한글 2글자, 같은 사무실 안에서 겹치지 않게</li>
+        <li>직급: 세션 주인 부장 · 깊이 1 과장/대리 · 깊이 2 이상 사원 (CONTRACTS C2)</li>
+        <li>사장님은 설정 이름, 흰올빼미 1명뿐</li>
+        <li>직원 이름은 로컬에 저장, 재출근해도 같은 이름 (확인됨)</li>
+      </ul>
+      <span class="mut" style="font-size: 11px">확장안은 이 규칙 위에 레이어만 더한다. 해시 → 종 배정이 바뀌면 기존 직원 얼굴이 바뀌므로 종 수는 5로 둔다.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

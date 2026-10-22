@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "../design/handoff/tokens.css";
 import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 이 필요해 가장 먼저 부른다
 import { firstOffice } from "./first-office.ts";
@@ -155,12 +156,16 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     bandSlot: () => side.querySelector<HTMLElement>(".ow-side-band"),
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
+    setScale: (scale) => office?.setScale(scale),
+    stage,
+    centerCanvas: () => office?.centerCanvas(),
+    toggleMaximize: () => getCurrentWindow().toggleMaximize(),
   });
   const emptyOffice = mountEmptyOffice(stage, store, { invoke, onSettings: showSettings, sheet });
   mountOffice(stage, store, {
     sound,
     bossName: settings.bossName,
-    onScale: (n) => header?.setScale(n),
+    onScale: (n, maxFit) => header?.setScale(n, maxFit),
     onEmployee: (officeId, teamId, agentId) => {
       panel.highlight(teamId, agentId);
       openEmployee(officeId, teamId, agentId);

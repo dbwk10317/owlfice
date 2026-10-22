@@ -1,6 +1,5 @@
 // 사내 방송 티커 (docs/CONTRACTS.md C3, HANDOFF 4.5). 직원 행적(recent)에서 새로 생긴 줄을 사건으로 모아 시간순으로 흘린다.
 import phrases from "../design/handoff/phrases.ko.json";
-import { reducedMotion } from "./loading.ts";
 import { fill, hhmm } from "./text.ts";
 import type { OfficeDto, Rank, TeamDto } from "./types/ipc.ts";
 
@@ -124,6 +123,8 @@ export function createTicker(doc: Document, onPick: (teamId: string, agentId: st
   view.append(track);
   root.append(label, view);
 
+  const motion = doc.defaultView?.matchMedia?.("(prefers-reduced-motion: reduce)");
+  let events: readonly TickerEvent[] = [];
   let shown: string | null = null;
   let hovered = false;
   let focused = false;
@@ -175,8 +176,9 @@ export function createTicker(doc: Document, onPick: (teamId: string, agentId: st
     return b;
   }
 
-  function setEvents(events: readonly TickerEvent[]): void {
-    const sig = events.map((e) => e.key).join("\n");
+  function render(): void {
+    const reduced = motion?.matches ?? false;
+    const sig = `${reduced}\n${events.map((e) => e.key).join("\n")}`;
     if (sig === shown) return;
     shown = sig;
     track.textContent = "";
@@ -191,7 +193,7 @@ export function createTicker(doc: Document, onPick: (teamId: string, agentId: st
       return;
     }
     // 움직임 줄이기: 최신 항목 하나를 정지 표시 (HANDOFF 7절)
-    if (reducedMotion()) {
+    if (reduced) {
       track.classList.remove("is-flowing");
       track.append(item(events[events.length - 1], false));
       return;
@@ -215,6 +217,17 @@ export function createTicker(doc: Document, onPick: (teamId: string, agentId: st
     if (half > 0) track.style.animationDuration = `${half / speed}s`;
   }
 
-  setEvents([]);
-  return { el: root, setEvents, remeasure: measure };
+  function setEvents(next: readonly TickerEvent[]): void {
+    events = next;
+    render();
+  }
+
+  motion?.addEventListener("change", render);
+  render();
+  return {
+    el: root,
+    setEvents,
+    remeasure: measure,
+    destroy: () => motion?.removeEventListener("change", render),
+  };
 }

@@ -532,6 +532,7 @@ export async function mountOffice(
     labels = Object.entries(fp.rooms).map(([k, room]) => {
       const el = document.createElement("button");
       el.type = "button";
+      el.tabIndex = -1;
       el.className = "ow-roomlabel ow-canvas-pick";
       el.textContent = (kind === "small" && k === "boss" ? names.bossSmall : names[k]) ?? room.name;
       overlay.append(el);
@@ -544,6 +545,7 @@ export async function mountOffice(
       .map((p) => {
         const el = document.createElement("button");
         el.type = "button";
+        el.tabIndex = -1;
         el.className = "ow-prop-pick ow-canvas-pick";
         el.setAttribute(
           "aria-label",

@@ -112,7 +112,7 @@
 ### T97 자세 +5 (과장 · 중) — T96 뒤
 
 - 범위: `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`preview/poses.png`, `src/office/actors.ts`·`anim-queue.ts`(+test), HANDOFF 6.4절 표.
-- 할 일: think(기존 침묵 기반 `Pose::Think` 의 발생·종료 조건 그대로, 프레임 2장만 새로, 추정 꼬리표 유지), highfive(`Cue::Stamp{agent, at, confirmedPass}`·직원별 `Cue::Compaction{agent, at}` 둘이 10초 안, 2인), stretch(`hiredAt` 뒤 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지). 2절 우선순위를 지킨다.
+- 할 일: think(기존 침묵 기반 `Pose::Think` 의 발생·종료 조건 그대로, 프레임 2장만 새로, 추정 꼬리표 유지), highfive(같은 팀의 서로 다른 두 직원의 확정 통과 `Cue::Stamp{agent, at, confirmedPass}`가 10초 안, 2인; 압축 `Compaction`은 T95 방문 신호), stretch(`hiredAt` 뒤 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지). 2절 우선순위를 지킨다.
 - 완료 기준: 자세마다 replay 테스트 + 우선순위 테스트(허가 대기 중 stretch 금지, 장애 중 drink 금지), 프레임 규격 6.4절, 미리보기 갱신.
 
 ### T98 담당 +3 · 소지품 +7 (과장 · 중) — T97 뒤

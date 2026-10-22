@@ -21,7 +21,7 @@
 2. 빌드 머신 환경변수. `.env` 파일은 안 된다 (확인됨).
    - `TAURI_SIGNING_PRIVATE_KEY` = 키 파일 경로 또는 내용
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = 비밀번호
-3. 검증용 공개 저장소 하나 (또는 이 저장소에 `updater-test` 용 별도 릴리스를 올릴 권한). B 절.
+3. 검증용 **별도** 공개 저장소 하나 (`<검증 저장소>`, 예: `dbwk10317/owlfice-updater-test`). 같은 저장소에 테스트 릴리스를 올리면 그것이 Latest 로 잡혀 정식 `releases/latest/download/` 경로가 바뀔 수 있다 (`gh release create` 는 `--latest` 로 따로 제어하지만, 실수 여지를 없애려 저장소를 나눈다). B 절.
 
 ## 결정
 
@@ -69,7 +69,7 @@
 
 - 범위: `tools/release_manifest.py`(새 파일), `tools/release_check.py`(새 파일), `docs/BUILD.md` 릴리스 행, `README.md`(설치 파일 링크 파일명). `build-gnu.sh` 는 손대지 않는다 (미확인: GNU 빌드에서 `.sig` 가 나오는지. 실측 뒤 틀리면 BUILD.md 폴백 절에 한 줄).
 - 할 일:
-  - `tools/release_manifest.py <버전> <setup.exe 경로>` → 옆의 `.sig` 를 읽어 `latest.json` 을 표준 출력 또는 지정 경로에 쓴다. 표준 라이브러리만. 형식:
+  - `tools/release_manifest.py <버전> <setup.exe 경로> [--repo <owner/name>]` → 옆의 `.sig` 를 읽어 `latest.json` 을 표준 출력 또는 지정 경로에 쓴다. 표준 라이브러리만. `--repo` 기본값은 `dbwk10317/owlfice`, T82-1 검증 때는 `<검증 저장소>` 를 준다 (주소는 그 저장소의 태그 고정 URL 이 된다). 형식:
     ```json
     {
       "version": "0.2.1",
@@ -86,7 +86,7 @@
     `version` 은 `v` 없는 semver, `url` 은 `latest` 가 아니라 **태그 고정** 주소.
   - `tools/release_check.py <버전>` → `tauri.conf.json`·`package.json`·`Cargo.toml` 의 버전, 설치 파일명, `latest.json` 의 `version`·`url`, README 링크 파일명, 현재 HEAD 에 태그 `v<버전>` 이 있는지를 한 번에 검사하고 하나라도 다르면 실패.
   - docs/BUILD.md 릴리스 행을 이렇게 바꾼다 (한 사실 한 곳: 환경변수 이름은 여기만):
-    1. README 설치 링크의 파일명을 `Owlfice_<버전>_x64-setup.exe` 로 바꾸고 버전을 올린 커밋을 만든다 (`releases/latest/download/<파일명>` 은 파일명이 고정이라 새 릴리스에 옛 파일명이 없으면 404 가 난다).
+    1. README 설치 링크의 파일명을 `Owlfice_<버전>_x64-setup.exe` 로 바꾸고 `tauri.conf.json`·`package.json`·`Cargo.toml`(+lock) 버전을 올린 커밋을 만든다 (`PLAN_0.2.0.md` T101. `releases/latest/download/<파일명>` 은 파일명이 고정이라 새 릴리스에 옛 파일명이 없으면 404 가 난다).
     2. 통합 브랜치를 main 에 합친 뒤 **검증한 그 커밋**에 `git tag -a v<버전> -m "<버전>"` 을 붙이고 `git push origin v<버전>`. (`gh release create` 는 태그가 없으면 기본 브랜치 끝에 태그를 만들어 바이너리와 소스가 어긋날 수 있다. 확인됨: https://cli.github.com/manual/gh_release_create )
     3. `TAURI_SIGNING_PRIVATE_KEY`(·`_PASSWORD`) 를 둔 셸에서 그 커밋을 체크아웃하고 `npm run tauri build`
     4. `python tools/release_manifest.py <버전> src-tauri/target/release/bundle/nsis/Owlfice_<버전>_x64-setup.exe > latest.json` (임시 폴더에)
@@ -98,18 +98,20 @@
 
 ### T82 출시 전 검증 → 정식 출시 → 실전 확인 (메인 + 사용자)
 
-1. **출시 전 검증 (0.2.0 정식 릴리스 전).** 검증용 endpoint 와 버전을 덮어쓰는 JSON 을 임시 폴더에 둔다: `{"version":"0.2.0-test.1","plugins":{"updater":{"endpoints":["https://github.com/<검증 저장소>/releases/latest/download/latest.json"]}}}`. `npm run tauri build -- --config <경로>` 로 **0.2.0-test.1 과 0.2.0-test.2** 두 설치본을 만든다. test.2 와 그 `latest.json` 을 검증 저장소의 정식 릴리스로 올리고, test.1 을 설치해 본다.
+1. **T82-1 출시 전 검증 (0.2.0 정식 릴리스 전).** 검증용 endpoint 와 버전을 덮어쓰는 JSON 을 임시 폴더에 둔다: `{"version":"0.2.0-test.1","plugins":{"updater":{"endpoints":["https://github.com/<검증 저장소>/releases/latest/download/latest.json"]}}}`. `npm run tauri build -- --config <경로>` 로 **0.2.0-test.1 과 0.2.0-test.2** 두 설치본을 만든다 (`latest.json` 은 `release_manifest.py 0.2.0-test.2 … --repo <검증 저장소>`). test.2 와 그 `latest.json` 을 검증 저장소의 정식 릴리스로 올린다.
+   - **매번 test.1 에서 시작한다.** Tauri 는 현재보다 높은 버전만 업데이트로 보므로(확인됨: https://v2.tauri.app/plugin/updater/#allowing-downgrades ), test.2 가 깔린 뒤에는 어떤 결함도 검사에 걸리지 않는다. 아래 경로 하나를 마칠 때마다 test.2 를 지우고 test.1 을 다시 설치한다. 실패 경로는 **정상 `latest.json` 에 결함 하나만** 넣는다.
    - 성공 경로: 시작 토스트 → 설정 "새 버전 확인" → 설치 → 앱이 종료·재시작 → 설정의 현재 버전이 test.2, 규모·회사 이름·사장님 이름·직접 지정 경로가 남아 있다.
-   - 잘못된 서명: `latest.json` 의 `signature` 를 한 글자 바꿔 올리면 설치가 거부되고 문구가 뜬다.
-   - 다운로드 실패: `url` 을 없는 파일로 바꾸면 실패 문구가 뜨고 앱은 계속 돈다.
-   - 오프라인: 네트워크를 끄고 시작하면 조용히 넘어간다.
-   - 중복 설치: 설치 중 설정 팝업을 닫고 다시 열어도 한 번만 진행된다.
+   - 잘못된 서명 (test.1 재설치 뒤): 정상 `latest.json` 의 `signature` 를 한 글자 바꿔 올리면 설치가 거부되고 문구가 뜬다.
+   - 다운로드 실패 (test.1 재설치 뒤): 정상 `latest.json` 의 `url` 을 없는 파일로 바꾸면 실패 문구가 뜨고 앱은 계속 돈다.
+   - 오프라인 (test.1): 네트워크를 끄고 시작하면 조용히 넘어간다.
+   - 중복 설치 (test.1, 정상 manifest): 설치 중 설정 팝업을 닫고 다시 열어도 한 번만 진행된다.
    - CSP: 위 과정에서 webview 콘솔에 CSP 차단이 없으면 "CSP 는 안 바꾼다"의 (미확인) 을 뗀다.
-2. 통과하면 T101 과 T81 절차로 **0.2.0 정식 릴리스**. 사용자가 0.1.1 위에 설치 파일을 직접 덮어 깐다.
-3. **실전 확인.** 작은 수정으로 0.2.1 을 T81 절차로 릴리스 → 설치된 0.2.0 이 시작 토스트 또는 설정에서 0.2.1 을 찾아 설치 → 재시작 후 현재 버전 0.2.1, 사용자 데이터 유지.
+   - 끝나면 검증 저장소의 릴리스는 지운다.
+2. **T82-2 정식 출시.** T82-1 통과 → `PLAN_0.2.0.md` T101(버전 셋·README·스크린샷 확정 커밋) → T81 절차 1–6 으로 **0.2.0 정식 릴리스**. 사용자가 0.1.1 위에 설치 파일을 직접 덮어 깐다.
+3. **T82-3 실전 확인.** 작은 수정으로 0.2.1 을 T81 절차로 릴리스 → 설치된 0.2.0 이 시작 토스트 또는 설정에서 0.2.1 을 찾아 설치 → 재시작 후 현재 버전 0.2.1, 사용자 데이터 유지.
 4. 실패하면 AGENTS.md 6절대로 원인부터. 흔한 원인: `signature` 에 경로를 넣음, 공개 키 불일치, 릴리스가 prerelease, `pub_date` 형식, README 파일명 불일치(404).
 5. 통과하면 이 문서와 `PLAN_0.2.0.md` 를 지우고 BUILD.md 의 **(미확인)** 표시를 뗀다.
 
 ## 순서
 
-0 (키·검증 저장소) → T79 → (T80 ‖ T81, 같은 파일을 안 만지므로 동시 가능) → T82-1 출시 전 검증 → T101 → 0.2.0 릴리스 → T82-3.
+0 (키·검증 저장소) → T79 → (T80 ‖ T81, 같은 파일을 안 만지므로 동시 가능) → T82-1 출시 전 검증 → T101 버전·문서 확정 → T82-2 정식 출시 → T82-3 실전 확인 → 두 PLAN 삭제. `PLAN_0.2.0.md` 4절과 같은 순서다.

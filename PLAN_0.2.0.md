@@ -26,21 +26,21 @@
 | ✕ 반려 표식 | `ToolOutcome::Rejected` | 확인 | 있음 | — |
 | ! 사고 | 사고 사건 (`incident-count`) | 확인 | 있음 | — |
 | ? 허가 대기 | `PermissionRequest` | 확인 | 있음 | — |
-| … 응답 대기 | `waiting_user_since` | 확인 | 있음 | — |
-| 커피 잔 (팀장석) | 직원 **입사 뒤** 경과 | 확인 | 직원 `since` | — (팀 세션 나이가 아니라 직원 입사 시각. 방금 들어온 서브가 팀 나이를 받지 않게) |
+| … 응답 대기 | `waiting_user_since` (발화·시간 조건으로 추정, `Confidence::Inferred`) | **추정** | 있음 | — (점선 표식) |
+| 커피 잔 (팀장석) | `EmployeeDto.hiredAt` 뒤 경과 | 확인 | `hired_at` | — (팀 세션 나이도, 활동이 바뀔 때마다 달라지는 `activity.since` 도 아니다) |
 | 서류 더미 (개발실) | 수정 파일 고유 수 | 확인 | `counters.edit` 는 횟수 | `EmployeeDto.unique_edits: u32` |
 | 모니터 2대 | 병렬 호출 | 확인 | `parallel` | — |
 | 상자 쌓임 (출고장) | 오늘 커밋 수 | 확인 | 커밋 사건 | 팀 날짜별 누계 `commits_today` |
-| 책상 램프 | 야근 모드 (크롬 토글) | 확인 | T90 | — |
+| 책상 램프 | 시각 20–06시 = 조명 `night` 판정 (`props.night`) | 확인 | 있음 (22시 기준, T91 이 20시로) | — (크롬 야근 토글과 무관. 2절 시간표) |
 | 회의실 | `EnterPlanMode` 도구 호출 ~ `ExitPlanMode`(허가 질문, `plan:true`) 승인·거부 | 확인 | `ExitPlanMode` 만 허가로 처리, `EnterPlanMode` 는 미처리 | 직원 상태 `planning: bool` + 파서에 `EnterPlanMode` 도구 종류 |
 | 자료실 | `ContextCompaction` 사건 | 확인 | 있음 | 상태가 아니라 **일회성 방문 연출**(4초)로. 상태 모델 변경 없음 |
 | 경비실 | `ToolOutcome::Rejected` (허가 거부) | 확인 | 있음 | 일회성 방문 연출(3초). 훅 차단은 세션 파일에서 확인되지 않음 → **넣지 않는다** |
 | 옥상 | S58 "대기 중"(30분 조용, 프로세스 생존) | 추정 | `TeamPhase` dim | 옥상은 **탕비실 쉬는 자리가 찼을 때의 둘째 자리**로만. "응답 대기 30분"은 현재 전이(3분 졸음 → `waiting_user_since` 해제 → 30분 dim/off)와 겹쳐 쓰지 않는다 |
-| think 자세 | `EventKind::Thinking` | **추정** (종료 신호 없음 → 다음 사건까지) | 있음 (`Pose::Think`) | 종료 조건을 "다음 사건 또는 30초"로 고정하고 추정 꼬리표 |
+| think 자세 | 침묵(응답 없음) 시간 — 기존 `Pose::Think` 의 발생·종료 조건 그대로 | **추정** | 있음 (`Pose::Think`, 침묵 기반) | 없음. `EventKind::Thinking` 은 자세 상태를 만들지 않으므로 쓰지 않는다. T97 은 프레임만 새로 그린다 |
 
 ## 2. 상태 우선순위와 시간표 (T92 가 확정하고 HANDOFF 5절·6.2절로)
 
-- **직원 자리·자세 우선순위** (위가 이긴다): 퇴근 > 장애 상황실 > 허가 대기(출입문) > 계획 모드(회의실) > 명령·테스트·빌드(해당 방) > 작업(좌석) > 일회성 방문(자료실·경비실·출고장·외근) > 졸음(탕비실·옥상). 새 자세(think·stretch·drink·phone·highfive)는 허가 대기·장애·퇴근 자세를 **덮지 않는다**; 일회성 연출은 더 높은 상태가 오면 즉시 끊고 복귀한다.
+- **직원 자리·자세 우선순위** (위가 이긴다. 현재 코드의 "사장님 손이 필요한 상태가 먼저" 순서를 유지한다, `classify.rs` 장애 처리 주석): 퇴근 > 허가 대기(출입문) > 진행 중 도구(명령·테스트·빌드·출고장·외근·거래처 미팅: 실제 활동이지 연출이 아니다) > 장애 상황실(부장) > 계획 모드(회의실) > 작업(좌석) > 일회성 방문 연출(자료실·경비실) > 졸음(탕비실·옥상). 장애는 자리와 별개로 카드 `is-bad`·경광등·상황실 타일로 **항상 같이** 보인다 (허가를 기다리는 직원이 장애 중이라도 출입문에 있다). 새 자세(think·stretch·drink·phone·highfive)는 허가 대기·장애·퇴근 자세를 **덮지 않는다**; 일회성 연출은 더 높은 상태가 오면 즉시 끊고 복귀한다.
 - **사무실 전환·창 복귀** 때 지난 감정 표식·일회성 방문·자세를 재생하지 않는다 (현재 시각 기준으로 상태만 그린다, C10).
 - **시간표** (OS 로컬 시계. 모두 한 표에서 나온다. T90·T91 이 같이 쓴다):
 
@@ -50,8 +50,8 @@
 | 17–20 | 저녁 | `evening #F6E6C4` (새로) | 꺼짐 | 주간 |
 | 20–06 | 밤 | `night #F2DEAD` + 램프 비네트 | 켜짐 | 야근 (자동이면) |
 
-  기존 `night: 22–06시` 와 창문 저녁 `17–22시` 는 이 표로 바꾼다 (`floorplan.json` `lightTints.rule`, 창문 상태 전환 시각). `dim`(S58)·`off`(퇴근)는 시각과 무관하게 위 조명을 덮는다 (`renderer.ts` `lightOf` 순서 off > dim > night/evening 유지). 수동 야근 토글은 크롬만 바꾸고 조명은 바꾸지 않는다.
-- **근속 표식 기준**: 직원 `since`(입사) 뒤 경과. 팀 세션 나이가 아니다.
+  기존 `night: 22–06시` 와 창문 저녁 `17–22시` 는 이 표로 바꾼다 (`floorplan.json` `lightTints.rule`, 창문 상태 전환 시각). `dim`(S58)·`off`(퇴근)는 시각과 무관하게 위 조명을 덮는다 (`renderer.ts` `lightOf` 순서 off > dim > night/evening 유지). 수동 야근 토글은 크롬만 바꾸고 조명·책상 램프는 바꾸지 않는다 (램프는 조명 `night` 을 따른다).
+- **근속 표식 기준**: `EmployeeDto.hiredAt`(입사) 뒤 경과. 팀 세션 나이도 `activity.since` 도 아니다. 커피 잔·stretch 도 같다.
 - **테스트 경계**: 06·17·20·22시 앞뒤 1분, 절전 복귀(시계가 한 번에 건너뜀) 후 1틱에 맞는 단계로 간다.
 
 ## 3. 티켓
@@ -108,7 +108,7 @@
 
 ### T91 조명 시간표 (대리 · 하) — T92 뒤
 
-- 범위: `design/sprites/floorplan.json`(`lightTints` + `rule`, 창문 전환 시각), `design/tools/owlfice_art.py`(참조 렌더), `src/office/floorplan.ts`(`LightName` 에 `evening`), `src/office/renderer.ts`(+test), `design/assets/office-claude-evening.png`(새 참조), HANDOFF 6.2절 7번과 5절 창문 행.
+- 범위: `src-tauri/src/office/classify.rs`(+test; `props.night` 의 `!(6..22)` 를 20시 기준으로 — 밤 판정은 여기다), `src/office/props.ts`(+test; `windowState` 17–20 dusk / 20–06 night), `design/sprites/floorplan.json`(`lightTints` + `rule`), `design/tools/owlfice_art.py`(참조 렌더), `src/office/floorplan.ts`(`LightName` 에 `evening`), `src/office/renderer.ts`(+test; `evening` 을 프론트 시계로 따로 판정하면 Rust 의 밤 판정과 어긋나므로 **`TeamDto` 에 `daylight: "day"|"evening"|"night"` 하나를 두고 창문·조명·램프가 모두 그것을 읽는다** — 이 필드는 T91 이 추가한다, `src-tauri/src/ipc.rs` 와 IPC 타입 재생성 포함), `design/assets/office-claude-evening.png`(새 참조), HANDOFF 6.2절 7번과 5절 창문 행.
 - 할 일: 2절 시간표대로. 저녁 `#F6E6C4`, 야근 20시부터, 램프 비네트 레이어(`overlay`).
 - 완료 기준: 참조 렌더 비교에 저녁 1장 추가 통과, 17·20·06시 경계 테스트.
 
@@ -120,8 +120,8 @@
 
 ### T93 파서·상태·DTO 확장 (과장 · 중) — T92 뒤
 
-- 범위: `src-tauri/src/parse/claude.rs`·`codex.rs`(`EnterPlanMode` 도구 종류), `src-tauri/src/parse/mod.rs`(`ToolKind`), `src-tauri/src/office/classify.rs`(`planning`, `pass_streak`·`medal_until`, 팀 날짜별 누계, `Cue::Stamp{agent_id}`, `approves` 낱말 경계), `src-tauri/src/office/mod.rs`(`Cue`), `src-tauri/src/office/work.rs`(T98 담당 규칙은 여기가 아니라 T98), `src-tauri/src/ipc.rs`(`EmployeeDto.unique_reads`·`unique_edits`·`medal`·`planning`, `TeamDto.tests_today`·`commits_today`), IPC 타입 재생성, `src/types/*`, `fixtures/claude/*`(새 시나리오: 계획 모드, 연속 통과 3회, 거부, 컴팩션), `src-tauri/tests/*`.
-- 완료 기준: 새 상태·누계마다 fixture replay 테스트 1개 + **재구성 불변식 테스트** (같은 fixture 를 처음부터 다시 읽어도 `pass_streak`·`medal_until`·누계·`planning` 이 같다, C10), 날짜가 바뀌면 누계가 0 이 되는 테스트, `cargo test`·clippy 녹색. 프론트는 손대지 않는다.
+- 범위: `src-tauri/src/parse/claude.rs`·`codex.rs`(`EnterPlanMode` 도구 종류), `src-tauri/src/parse/mod.rs`(`ToolKind`), `src-tauri/src/office/classify.rs`(`planning`, `pass_streak`·`medal_until`, 팀 날짜별 누계, `Cue::Stamp{agent_id}`, `approves` 낱말 경계; 테스트는 같은 파일의 `#[cfg(test)]`), `src-tauri/src/office/mod.rs`(`Cue`), `src-tauri/src/ipc.rs`(`EmployeeDto.unique_reads`·`unique_edits`·`medal`·`planning`, `TeamDto.tests_today`·`commits_today`), IPC 타입 재생성 → `src/types/*`, 그리고 **타입 변경으로 깨지는 프론트 사용처만**: `src/test-office.ts`(테스트 데이터 생성기), `src/office/actors.test.ts`(`Stamp` cue 생성), `dev/*.ts`(개발 시나리오의 DTO 리터럴), `src/types/*` 를 쓰는 다른 테스트. `fixtures/claude/*`(새 시나리오: 계획 모드, 연속 통과 3회, 거부, 컴팩션).
+- 완료 기준: 새 상태·누계마다 fixture replay 테스트 1개 + **재구성 불변식 테스트** (같은 fixture 를 처음부터 다시 읽어도 `pass_streak`·`medal_until`·누계·`planning` 이 같다, C10), 날짜가 바뀌면 누계가 0 이 되는 테스트, `cargo test`·clippy·`npm run check`·`npm test` 모두 녹색. **화면 기능은 바꾸지 않는다** — 프론트 수정은 새 필드를 채우는 생성기·테스트 데이터·개발 시나리오와 타입 검사 통과에 필요한 것까지만.
 
 ### T94 소품 확장 1차 (과장 · 중) — T93 뒤
 
@@ -143,19 +143,19 @@
 ### T96 감정 표식 · 근속 표식 (과장 · 중) — T93 뒤
 
 - 범위: `src/office/canvas-tooltip.ts` 또는 새 `src/office/emote.ts`(+test), `src/office/actors.ts`, `design/tools/owlfice_art.py` + `design/sprites/owls.json`·`owls.png`·`preview/*.png`(근속 `wear/<단계>/` 레이어), `design/assets/office-*.png`, HANDOFF 4.4·5·6.4절.
-- 할 일: 감정 표식 6종(1절 표의 확인/추정 그대로, 1.2초, 말풍선 있으면 생략), 근속 표식 3단계(직원 입사 뒤 1h·3h·6h).
-- 완료 기준: 표식마다 replay 테스트 + **사무실 전환·창 복귀 때 지난 표식을 재생하지 않는 테스트**, 근속 레이어가 직원 `since` 로 바뀌는 테스트, 참조 렌더 갱신.
+- 할 일: 감정 표식 6종(1절 표의 확인/추정 그대로, 1.2초, 말풍선 있으면 생략), 근속 표식 3단계(`hiredAt` 뒤 1h·3h·6h).
+- 완료 기준: 표식마다 replay 테스트 + **사무실 전환·창 복귀 때 지난 표식을 재생하지 않는 테스트**, 근속 레이어가 `hiredAt` 으로 바뀌는 테스트(같은 팀에 방금 들어온 서브는 0단계), 참조 렌더 갱신.
 
 ### T97 자세 +5 (과장 · 중) — T96 뒤
 
 - 범위: `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`preview/poses.png`, `src/office/actors.ts`·`anim-queue.ts`(+test), HANDOFF 6.4절 표.
-- 할 일: think(`EventKind::Thinking` 부터 다음 사건 또는 30초, 추정), highfive(`Cue::Stamp{agent_id}` 둘이 10초 안, 2인), stretch(입사 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지). 2절 우선순위를 지킨다.
+- 할 일: think(기존 침묵 기반 `Pose::Think` 의 발생·종료 조건 그대로, 프레임 2장만 새로, 추정 꼬리표 유지), highfive(`Cue::Stamp{agent_id}` 둘이 10초 안, 2인), stretch(`hiredAt` 뒤 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지). 2절 우선순위를 지킨다.
 - 완료 기준: 자세마다 replay 테스트 + 우선순위 테스트(허가 대기 중 stretch 금지, 장애 중 drink 금지), 프레임 규격 6.4절, 미리보기 갱신.
 
 ### T98 담당 +3 · 소지품 +7 (과장 · 중) — T97 뒤
 
-- 범위: `src-tauri/src/office/work.rs`(+test; 담당 판정은 여기다), `src-tauri/src/office/mod.rs`(`Role`), `src-tauri/src/ipc.rs`(`Role` 값 추가, `EmployeeDto.items`), IPC 타입 재생성, `src/types/*`, `src/avatar.ts`, `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`office.*`(`held_*`), `design/handoff/phrases.ko.json` roles, HANDOFF 6.4절.
-- 담당 규칙: **기존 파일 경로·확장자 규칙이 1차**다. 분류 범주에 보안(`auth/`·`security/`·`*.pem`·`*.policy`·권한 설정 파일), 데이터(`*.sql`·`*.csv`·`*.parquet`·`*.ipynb`), 디자이너(`*.css`·`*.scss`·`*.fig`·`design/`)를 더한다. 수습(고유 파일 5개 미만)은 이미 있다 → 신규는 3종. `subagent_type`(`SubagentSpawn` 에 있을 때만)은 **5개 미만일 때 수습 대신 쓰는 보조 규칙**이고, 없으면 수습. 지시문 본문은 보지 않는다.
+- 범위: `src-tauri/src/office/work.rs`(+test; 담당 판정은 여기다), `src-tauri/src/office/mod.rs`(`Role`), `src-tauri/src/ipc.rs`(`Role` 값 추가, `EmployeeDto.items`), IPC 타입 재생성, `src/types/*`, `src/sidebar-right.ts`(`ROLE_LABEL: Record<Role, string>` — 값을 더하지 않으면 타입 오류), `src/avatar.ts`, `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`office.*`(`held_*`), `design/handoff/phrases.ko.json` roles, HANDOFF 6.4절.
+- 담당 규칙: **기존 파일 경로·확장자 규칙 그대로**, 범주만 더한다 — 보안(`auth/`·`security/`·`*.pem`·`*.policy`·권한 설정 파일), 데이터(`*.sql`·`*.csv`·`*.parquet`·`*.ipynb`), 디자이너(`*.css`·`*.scss`·`*.fig`·`design/`). 수습(고유 파일 5개 미만)은 이미 있다 → 신규는 3종. `subagent_type` 보조 규칙은 **넣지 않는다**: `SubagentSpawn` 사건에 그 값이 없고(파서가 보존하지 않음) 이번 범위에 파서 변경이 없다. 지시문 본문도 보지 않는다.
 - 소지품: 메달(`medal`), 안전모(장애 상황실), 서류 가방(퇴근 걷기), 손전등(`off` 조명에서 재출근), 담요(sleep 10분), 헤드폰(백그라운드 명령), 두루마리(`planning`, T95 뒤).
 - 완료 기준: 담당 판정 단위 테스트(범주별 경로 → 담당, 보조 규칙, 재구성 뒤 같음), 소지품마다 replay 테스트, 카드 아바타 20×22 자르기가 새 레이어에서 깨지지 않음.
 
@@ -173,20 +173,20 @@
 
 ### T101 스크린샷 · 버전 · README (메인 + 사용자) — 릴리스 직전
 
-- `docs/images/office.png`·`employee.png` 재촬영(합성 데이터, 주간 1장 + 야근 1장 추가), `README.md` 캡션과 **설치 파일 링크 파일명을 0.2.0 으로** (`latest/download/Owlfice_0.2.0_x64-setup.exe`. 파일명이 고정이라 릴리스마다 바꿔야 한다. `PLAN_update.md` T81 절차 4번). `tauri.conf.json`·`package.json` 0.2.0.
-- 릴리스는 `PLAN_update.md` T81 절차. 이 문서와 `PLAN_update.md` 삭제는 T82(실전 검증) 뒤.
+- T82-1 출시 전 검증이 통과한 뒤에 한다. `docs/images/office.png`·`employee.png` 재촬영(합성 데이터, 주간 1장 + 야근 1장 추가), `README.md` 캡션과 **설치 파일 링크 파일명을 0.2.0 으로** (`latest/download/Owlfice_0.2.0_x64-setup.exe`. 파일명이 고정이라 릴리스마다 바꿔야 한다. `PLAN_update.md` T81 절차 1번). `tauri.conf.json`·`package.json`·`src-tauri/Cargo.toml`(+`Cargo.lock`) 0.2.0 — T81 의 `release_check.py` 가 셋을 같이 본다.
+- 릴리스 자체는 T82-2 (`PLAN_update.md`). 이 문서와 `PLAN_update.md` 삭제는 T82-3 뒤.
 
 ## 4. 순서
 
-T83 → T92(메인) → T93 → (T84 ‖ T85 ‖ T88) → T86 → T87 → T89 → T90 → T91 → T94 → T95 → T96 → T97 → T98 → T99 → T100 → `PLAN_update.md` T79 → (T80 ‖ T81) → T101 → T82 → 두 PLAN 삭제.
+T83 → T92(메인) → T93 → (T84 ‖ T85 ‖ T88) → T86 → T87 → T89 → T90 → T91 → T94 → T95 → T96 → T97 → T98 → T99 → T100 → `PLAN_update.md` T79 → (T80 ‖ T81) → T82-1 출시 전 검증 → T101 버전·문서 확정 → T82-2 정식 출시 → T82-3 실전 확인 → 두 PLAN 삭제.
 
 - 쓰는 서브는 같은 파일에 둘을 두지 않는다 (AGENTS.md 3절). T84·T85·T88 은 파일이 겹치지 않아 동시 가능.
 - T94–T99 는 모두 `owlfice_art.py` 와 스프라이트 시트를 고치므로 하나씩. 생성기를 고칠 때마다 `python design/tools/owlfice_art.py` 가 끝까지 돌고 겹침·누락 검사를 통과해야 한다.
-- IPC 타입을 바꾸는 티켓(T85·T90·T93·T98)은 `OWLFICE_WRITE_TYPES=1 cargo test ts_bindings` 를 돌리고 생성 파일을 같이 커밋한다.
+- IPC 타입을 바꾸는 티켓(T85·T90·T91·T93·T98)은 `OWLFICE_WRITE_TYPES=1 cargo test ts_bindings` 를 돌리고 생성 파일을 같이 커밋한다.
 
 ## 5. 디자인 측 완료 (이 브랜치, 2026-10-22)
 
 - `design/project/`: v2 19장 + `canvas.json` (캔버스와 같은 파일). 0.1.0 의 `Main`·`MainSmb`·`Components` 는 v2 `Main`·`MainNight`·`Cards`/`Sidebar`/`Header`/`Tokens` 로 대체.
 - `design/handoff/tokens.css`: v2 토큰·컴포넌트 규칙·`[data-theme="night"]` 블록. 앱이 아직 쓰는 0.1.0 규칙(`.ow-ctx i`, `.ow-rail__letter`)은 ponytail 주석 → T86·T84 가 지운다. 탕비실 카드는 opacity 대신 글자 색으로 흐리게 (대비 4.5:1).
 - `design/handoff/phrases.ko.json` 키 19개, `design/handoff/icons/` 4개, `design/HANDOFF.md` 0·1·2.1·3·4·7·12절과 4.8절.
-- 리뷰(2026-10-22) 반영: 1·2절 표, T86 카드 구조, T92·T93 선행, 범위 파일 보강, 시간표, T99 음력 표, T97 think 추정. 받지 않은 것: 없음. 다만 "훅 차단 → 경비실"과 "PR 머지 색"은 신호가 없어 뺐다.
+- 리뷰 1차(2026-10-22) 반영: 1·2절 표, T86 카드 구조, T92·T93 선행, 범위 파일 보강, 시간표, T99 음력 표. 리뷰 2차 반영: 우선순위를 코드와 같게(허가 대기·진행 중 도구 > 장애), 출고장·외근은 실제 활동, `hiredAt`·응답 대기 추정·think 침묵 기반, T91 에 Rust 밤 판정과 `windowState` + `daylight` 필드, T93 프론트 사용처 허용, T98 보조 규칙 삭제와 `ROLE_LABEL`, 출시 순서 T82-1 → T101 → T82-2 → T82-3. 받지 않은 것: 없음. "훅 차단 → 경비실"과 "PR 머지 색"은 신호가 없어 뺐다.

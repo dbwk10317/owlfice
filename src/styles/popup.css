@@ -488,13 +488,20 @@
 }
 .ow-emp__link {
   display: inline-flex;
+  max-width: 100%;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.ow-emp__linklabel {
+  flex: none;
+  white-space: nowrap;
+}
 .ow-emp__linkfile {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--ow-ink-3);
   text-decoration: none;
 }
@@ -502,4 +509,37 @@
 .ow-modal .ow-btn:not(.ow-modal__foot .ow-btn) {
   height: 28px;
   padding-inline: 11px;
+}
+
+@media (max-width: 719px) {
+  .ow-emp {
+    flex-direction: column;
+  }
+  .ow-emp__main {
+    flex: none;
+  }
+  .ow-emp__aside {
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--ow-line);
+  }
+  .ow-pop__head--emp {
+    display: grid;
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+  .ow-pop__head--emp .ow-pop__actions {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+  .ow-pop__head--emp .ow-pop__headmain {
+    overflow-wrap: anywhere;
+  }
+  .ow-pop__head--emp .ow-chip {
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    min-height: 24px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }

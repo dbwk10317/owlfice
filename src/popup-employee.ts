@@ -180,7 +180,7 @@ export function openEmployeeDetail(
     for (const e of got) list.append(eventRow(e));
     events += got.length;
     last = got.length ? got[got.length - 1] : reset ? null : last;
-    countEl.textContent = events <= PAGE ? fill(D.timelineCount, { n: events }) : String(events);
+    countEl.textContent = fill(D.timelineCount, { n: events });
     // 50개를 채워 받았을 때만 더 있을 수 있다
     moreBtn.hidden = got.length < PAGE;
     moreBtn.disabled = false;
@@ -399,7 +399,7 @@ export function openEmployeeDetail(
     btn.setAttribute("type", "button");
     btn.append(
       smallIcon(doc, externalSvg),
-      D.openRaw,
+      h(doc, "span", "ow-emp__linklabel", D.openRaw),
       h(doc, "span", "ow-mono ow-emp__linkfile", file),
     );
     const err = h(doc, "p", "ow-pop__error");

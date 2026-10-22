@@ -226,7 +226,7 @@
 
   "employeeDetail": {
     "meta": "입사 {joined} · 근속 {elapsed} · 상사 {parent} · {office}",
-    "instruction": "받은 지시", "timeline": "타임라인", "timelineCount": "50개 중 {n}개", "more": "더 보기", "moreStep": "50개씩",
+    "instruction": "받은 지시", "timeline": "타임라인", "timelineCount": "{n}개", "more": "더 보기", "moreStep": "50개씩",
     "input": "입력", "result": "결과", "cut": "가운데 {size} 생략 · 앞뒤 2KB만 표시", "openRaw": "원본 열기",
     "summary": "실적 요약", "readFiles": "읽은 파일", "editedFiles": "수정한 파일", "commands": "실행한 명령", "times": "{n}회",
     "running": "진행 중 · {sec}초", "started": "백그라운드 시작", "ok": "성공", "fail": "실패", "rejected": "반려", "failTests": "실패 · 합격 {pass} / 반려 {fail}", "unknown": "결과 확인 불가"

@@ -117,8 +117,8 @@
 
 ### T98 담당 +3 · 소지품 +7 (과장 · 중) — T97 뒤
 
-- 범위: `src-tauri/src/office/work.rs`(+test; 담당 판정은 여기다), `src-tauri/src/office/mod.rs`(`Role`), `src-tauri/src/ipc.rs`(`Role` 값 추가, `EmployeeDto.items`), IPC 타입 재생성, `src/types/*`, `src/sidebar-right.ts`(`ROLE_LABEL: Record<Role, string>` — 값을 더하지 않으면 타입 오류), `src/avatar.ts`, `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`office.*`(`held_*`), `design/handoff/phrases.ko.json` roles, HANDOFF 6.4절.
-- 담당 규칙: **기존 파일 경로·확장자 규칙 그대로**, 범주만 더한다 — 보안(`auth/`·`security/`·`*.pem`·`*.policy`·권한 설정 파일), 데이터(`*.sql`·`*.csv`·`*.parquet`·`*.ipynb`), 디자이너(`*.css`·`*.scss`·`*.fig`·`design/`). 수습(고유 파일 5개 미만)은 이미 있다 → 신규는 3종. `subagent_type` 보조 규칙은 **넣지 않는다**: `SubagentSpawn` 사건에 그 값이 없고(파서가 보존하지 않음) 이번 범위에 파서 변경이 없다. 지시문 본문도 보지 않는다.
+- 범위: `src-tauri/src/office/work.rs`(Role·담당 판정), `office/mod.rs`·`classify.rs`·`tests.rs`(담요 시간 경계), `src-tauri/src/ipc.rs`(+test, `EmployeeDto.items`), IPC 타입 재생성, `src/types/*`, `src/sidebar-right.ts`(`ROLE_LABEL`), `src/avatar.ts`(+test), `src/office/actors.ts`·`anim-queue.ts`(+test), DTO 생성기·개발 화면의 기본값, `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`office.*`·`preview/*`, `design/handoff/phrases.ko.json` roles, HANDOFF 6.4절. 착용 소품은 자세에 맞는 owl 레이어, 손 소품은 기존 `held_*`를 쓴다.
+- 담당 규칙: **기존 파일 경로·확장자 규칙 그대로**, 범주만 더한다 — 보안(`auth/`·`security/`·`*.pem`·`*.policy`·`permissions.json/toml/yaml/yml`·`src-tauri/capabilities/*.json`), 데이터(`*.sql`·`*.csv`·`*.parquet`·`*.ipynb`), 디자이너(`*.css`·`*.scss`·`*.fig`·`design/`). 명시적인 권한 설정 파일 포함은 사용자 결정이다. 기존 CI·QA·Dockerfile 우선순위와 동률 순서는 유지하고 새 범주는 기존 범주 뒤에 붙인다. 수습(고유 파일 5개 미만)은 이미 있다 → 신규는 3종. `subagent_type` 보조 규칙은 **넣지 않는다**: `SubagentSpawn` 사건에 그 값이 없고(파서가 보존하지 않음) 이번 범위에 파서 변경이 없다. 지시문 본문도 보지 않는다.
 - 소지품: 메달(`medal`), 안전모(장애 상황실), 서류 가방(퇴근 걷기), 손전등(`off` 조명에서 재출근), 담요(sleep 10분), 헤드폰(백그라운드 명령), 두루마리(`planning`, T95 뒤).
 - 완료 기준: 담당 판정 단위 테스트(범주별 경로 → 담당, 보조 규칙, 재구성 뒤 같음), 소지품마다 replay 테스트, 카드 아바타 20×22 자르기가 새 레이어에서 깨지지 않음.
 

@@ -170,8 +170,6 @@ struct Tracked {
     missing: u8,
     /// 서브 파일 옆 meta.json 을 마지막 Scan 에서 봤나
     has_meta: bool,
-    /// 읽기 실패를 이미 알렸나. 실패가 이어져도 한 번만 남긴다
-    failed: bool,
     /// 이 파일에서 지금까지 읽은 줄의 최대 ts. 실행 중 병합의 정렬 키 (docs/CONTRACTS.md C4 순서)
     max_ts: Option<DateTime<Utc>>,
     /// 핸들을 닫았을 때의 세대. 다시 열 때 잇는다
@@ -204,6 +202,8 @@ pub struct HostLoop {
     pub host: Host,
     pub sites: Vec<Site>,
     files: BTreeMap<PathBuf, Tracked>,
+    /// 아직 리더가 없는 새 서브도 실패를 보존해야 정상 파일 하나의 복구로 경고가 사라지지 않는다
+    read_failures: BTreeMap<PathBuf, TeamKey>,
     world: Arc<Mutex<OfficeWorld>>,
     clock: Arc<dyn Clock>,
     pub heartbeat: Arc<Heartbeat>,
@@ -252,6 +252,7 @@ impl HostLoop {
             host,
             sites,
             files: BTreeMap::new(),
+            read_failures: BTreeMap::new(),
             world,
             clock,
             heartbeat: Arc::new(Heartbeat::default()),
@@ -438,6 +439,12 @@ impl HostLoop {
         drop(world);
         self.files
             .retain(|path, tracked| !removed_path(tracked.key.vendor, path));
+        let failed: BTreeSet<_> = self.read_failures.values().cloned().collect();
+        self.read_failures
+            .retain(|path, key| !removed_path(key.vendor, path));
+        for key in failed {
+            self.sync_read_failed(&key);
+        }
         self.registry_roots.retain(|home, _| {
             self.sites.iter().any(|site| {
                 site.vendor == Vendor::Claude
@@ -533,6 +540,8 @@ impl HostLoop {
         let mut batch: Vec<(PathBuf, Pending)> = Vec::new();
         let mut reset = BTreeSet::new();
         let wsl = self.is_wsl();
+        // 삭제 대기 파일은 옛 핸들만 읽힐 수 있다. 재구성 실패는 다시 열기에 성공해야 해제한다
+        let rebuilding = self.rebuild_due.contains_key(key);
         for p in paths {
             let Some(t) = self.files.get_mut(p) else {
                 continue;
@@ -554,23 +563,29 @@ impl HostLoop {
                     if pending.dropped_lines > 0 {
                         crate::oplog!("64MB 넘는 줄 버림 {}", p.display());
                     }
-                    t.failed = false;
+                    if !rebuilding {
+                        self.read_failures.remove(p);
+                    }
                     batch.push((p.clone(), pending));
                 }
-                Ok(None) => t.failed = false,
+                Ok(None) => {
+                    if !rebuilding {
+                        self.read_failures.remove(p);
+                    }
+                }
                 Err(e) => {
                     if wsl {
                         self.on_wsl_error(key, p, &e, now, path_ok, &reset);
                         return;
                     }
                     // 로컬 파일 하나의 실패로 팀 전체를 멈추지 않는다. 다음 폴링에 다시 본다
-                    if !t.failed {
-                        t.failed = true;
+                    if self.read_failures.insert(p.clone(), key.clone()).is_none() {
                         crate::oplog!("읽기 실패 {}: {e}", p.display());
                     }
                 }
             }
         }
+        self.sync_read_failed(key);
         // 멈췄던 I/O 의 결과는 버리고 commit 하지 않는다. 재개한 첫 틱이 같은 구간을 다시 읽는다 (docs/CONTRACTS.md C6 감시자).
         // 파서에 넣기 전에 본다. 넣고 버리면 파서가 같은 줄을 두 번 본다. 이미 본 Reset 은 재구성에 싣는다
         if self.suspect() {
@@ -821,11 +836,17 @@ impl HostLoop {
                 self.defer_rebuild(key, quiet || !reset.is_empty(), &reset);
             }
         }
+        self.sync_read_failed(key);
+    }
+
+    fn sync_read_failed(&self, key: &TeamKey) {
+        let failed = self.read_failures.values().any(|k| k == key);
+        self.lock_world().set_read_failed(key, failed);
     }
 
     /// 팀의 파일을 모두 처음부터 다시 읽어 만든다 (새 세션, Reset. docs/CONTRACTS.md C4 재구성 규칙).
     /// `new` 는 이번에 처음 찾은 파일, `reset` 은 Reset 을 본 파일이다 (세대를 하나 올린다).
-    /// 서브 파일 하나가 안 열리면 그 파일만 "못 봄"으로 빼고 나머지로 만든다. 메인이 안 열리면 기존 상태를 둔다.
+    /// 기존 팀의 파일을 못 읽으면 기록을 잃지 않도록 교체를 보류한다. 새 팀은 읽힌 서브만으로 만들고 실패는 보존한다.
     /// 방금 시작된 새 파일이면 출근 cue 를 내고 미대응 재료를 센다. 늦게 발견한 옛 파일은 세지 않는다 (재시작마다 다시 세지 않게)
     fn rebuild_team(
         &mut self,
@@ -840,6 +861,12 @@ impl HostLoop {
             .iter()
             .filter(|(_, t)| &t.key == key)
             .map(|(p, _)| p.clone())
+            .chain(
+                self.read_failures
+                    .iter()
+                    .filter(|(_, k)| *k == key)
+                    .map(|(p, _)| p.clone()),
+            )
             .chain(new.iter().cloned())
             .collect();
         // 메인 파일이 먼저다 (docs/CONTRACTS.md C4 순서)
@@ -848,6 +875,7 @@ impl HostLoop {
         if paths.is_empty() {
             return Ok(());
         }
+        let exists = self.lock_world().teams.contains_key(key);
         // 하나라도 실패하면 기존 상태를 건드리지 않도록 새 리더는 끝에 한 번에 바꾼다
         let mut fresh = Vec::new();
         let mut unseen = Vec::new();
@@ -869,16 +897,27 @@ impl HostLoop {
                 Ok((t, events, unhandled))
             });
             let (mut t, events, unhandled) = match read {
-                Ok(r) => r,
-                Err(e) if is_subagent(path) && !self.is_wsl() => {
-                    crate::oplog_once!("서브 파일 열기 실패, 빼고 재구성 {}: {e}", path.display());
-                    unseen.push(path.clone());
-                    continue;
+                Ok(r) => {
+                    self.read_failures.remove(path);
+                    r
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    if !self.is_wsl() {
+                        self.read_failures.insert(path.clone(), key.clone());
+                        if !exists && is_subagent(path) {
+                            crate::oplog_once!(
+                                "서브 파일 열기 실패, 빼고 재구성 {}: {e}",
+                                path.display()
+                            );
+                            unseen.push(path.clone());
+                            continue;
+                        }
+                    }
+                    return Err(e);
+                }
             };
             // 이미 팀에 든 파일은 Reset 으로 내용이 바뀌어도 빼지 않는다. 새로 찾은 파일만 가린다
-            if new.contains(path) && t.parser.side() {
+            if !self.files.contains_key(path) && t.parser.side() {
                 self.side.insert(path.clone());
                 continue;
             }
@@ -889,7 +928,7 @@ impl HostLoop {
             t.has_meta = is_subagent(path) && path.with_extension("meta.json").is_file();
             t.max_ts = events.iter().filter_map(|e| e.ts).max();
             last_ts = last_ts.max(t.max_ts);
-            if new.contains(path) && self.just_started(path, &events, now) {
+            if !self.files.contains_key(path) && self.just_started(path, &events, now) {
                 arrived.push(path.clone());
                 heard.extend(events.iter().cloned());
                 heard_unhandled.extend(unhandled);
@@ -900,7 +939,6 @@ impl HostLoop {
             files.push(events);
             fresh.push((path.clone(), t));
         }
-        let exists = self.lock_world().teams.contains_key(key);
         // 시각 있는 레코드가 하나도 없으면 아직 시작 전이다. 지금 만들면 시작 시각이 1970년이 되고
         // 무재해·피자가 그때부터 센다. 새 팀은 등록하지 않아 다음 Scan 이 다시 찾고,
         // 기존 팀은 리더만 바꿔(Reset 반복을 막는다) 상태는 그대로 두고 다음 append 부터 적용한다
@@ -1135,6 +1173,7 @@ impl HostLoop {
 
         for key in &gone_teams {
             self.files.retain(|_, t| &t.key != key);
+            self.read_failures.retain(|_, k| k != key);
             self.rebuild_due.remove(key);
             self.gone.remove(key);
             self.lock_world().remove_team(key);
@@ -1148,6 +1187,15 @@ impl HostLoop {
                 self.files.remove(&path);
                 self.retire(&key, &path, now);
             }
+        }
+        let failed: BTreeSet<_> = self.read_failures.values().cloned().collect();
+        self.read_failures.retain(|path, _| {
+            self.files.contains_key(path)
+                || seen.contains(path)
+                || !ok_roots.iter().any(|root| path.starts_with(root))
+        });
+        for key in failed {
+            self.sync_read_failed(&key);
         }
         // meta.json 만 없으면 퇴장만 한다. 리더를 놓으면 다음 Scan 이 남은 jsonl 을 새 파일로 다시 집는다
         for path in meta_gone {
@@ -1571,7 +1619,6 @@ fn open(
         last_read,
         missing: 0,
         has_meta: false,
-        failed: false,
         max_ts: None,
         generation,
         stale: false,
@@ -3103,6 +3150,7 @@ mod tests {
         e.at(now + secs(2));
         h.tick();
         assert!(h.heartbeat.suspect.load(Ordering::Relaxed));
+        assert!(e.w().read_failed_teams.is_empty());
         drop(lock);
         probe_now(&h, &sites);
         e.at(now + secs(30));
@@ -3434,7 +3482,185 @@ mod tests {
         );
     }
 
-    /// 안 열리는 서브 파일만 빼고 재구성하고, 메인을 다시 못 여는 동안에도 기존 리더는 계속 읽는다
+    #[test]
+    fn local_read_failures_preserve_records_until_every_file_recovers() {
+        let e = env();
+        let root = e.dir("projects");
+        let p1 = root.join("p1");
+        copy_dir(&fixture("claude/sync-subagent"), &p1);
+        let main = p1.join(format!("{SYNC}.jsonl"));
+        let sub = p1
+            .join(SYNC)
+            .join("subagents")
+            .join(format!("agent-{SYNC_SUB}.jsonl"));
+        let now = t0() + secs(300);
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        h.scan(now);
+        let key = e.key(SYNC);
+        let before = e.team(SYNC);
+        let initial_seq = e.w().list_seq;
+        append(&main, &[user_line(SYNC, now, "메인 계속")]);
+        append(
+            &sub,
+            &[rec(
+                SYNC,
+                Some(SYNC_SUB),
+                now,
+                "user",
+                serde_json::json!("서브 계속"),
+            )],
+        );
+        let main_lock = fs::File::open(&main).unwrap();
+        let sub_lock = fs::File::open(&sub).unwrap();
+        main_lock.lock().unwrap();
+        sub_lock.lock().unwrap();
+        h.poll_team(&key, &[main.clone(), sub.clone()], now, false);
+        assert!(e.w().read_failed_teams.contains(&key));
+        assert!(e.w().list_seq > initial_seq);
+        assert_eq!(e.team(SYNC), before);
+
+        drop(main_lock);
+        h.poll_team(&key, std::slice::from_ref(&main), now + secs(1), false);
+        assert_eq!(e.team(SYNC).props.boss_visit.as_deref(), Some("메인 계속"));
+        assert!(
+            e.w().read_failed_teams.contains(&key),
+            "서브 실패가 남아 있다"
+        );
+        let before_rebuild = e.team(SYNC);
+        h.try_rebuild(&key, now + secs(1), &BTreeSet::new(), &BTreeSet::new());
+        assert_eq!(
+            e.team(SYNC),
+            before_rebuild,
+            "실패한 서브의 기록도 보존한다"
+        );
+        assert!(e.w().read_failed_teams.contains(&key));
+
+        drop(sub_lock);
+        let failed_seq = e.w().list_seq;
+        h.try_rebuild(&key, now + secs(2), &BTreeSet::new(), &BTreeSet::new());
+        assert!(!e.w().read_failed_teams.contains(&key));
+        assert!(e.w().list_seq > failed_seq);
+        let recovered = e.team(SYNC);
+        assert_eq!(recovered.employees.len(), before.employees.len());
+        let old_sub = before.employees.iter().find(|e| e.id == SYNC_SUB).unwrap();
+        let new_sub = recovered
+            .employees
+            .iter()
+            .find(|e| e.id == SYNC_SUB)
+            .unwrap();
+        assert!(new_sub.record.timeline.len() > old_sub.record.timeline.len());
+    }
+
+    #[test]
+    fn first_read_failure_creates_no_fake_team_and_keeps_unread_sub_warning() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let e = env();
+        let root = e.dir("projects");
+        let p1 = root.join("p1");
+        copy_dir(&fixture("claude/sync-subagent"), &p1);
+        let main = p1.join(format!("{SYNC}.jsonl"));
+        let sub = p1
+            .join(SYNC)
+            .join("subagents")
+            .join(format!("agent-{SYNC_SUB}.jsonl"));
+        let now = t0() + secs(300);
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        let main_lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&main)
+            .unwrap();
+        let sub_lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&sub)
+            .unwrap();
+        h.scan(now);
+        assert!(e.w().teams.is_empty());
+        assert!(e.w().read_failed_teams.is_empty());
+        drop(main_lock);
+        h.scan(now + secs(3));
+        let key = e.key(SYNC);
+        assert!(e.w().read_failed_teams.contains(&key));
+        assert!(!h.files.contains_key(&sub));
+        h.poll_team(&key, std::slice::from_ref(&main), now + secs(4), false);
+        assert!(e.w().read_failed_teams.contains(&key));
+        drop(sub_lock);
+        h.scan(now + secs(6));
+        assert!(!e.w().read_failed_teams.contains(&key));
+        assert!(h.files.contains_key(&sub));
+        append(
+            &main,
+            &[
+                "{broken json".into(),
+                rec(
+                    SYNC,
+                    None,
+                    now + secs(7),
+                    "assistant",
+                    serde_json::json!([{
+                        "type": "tool_use", "id": "unknown", "name": "FutureTool", "input": {}
+                    }]),
+                ),
+            ],
+        );
+        h.poll_team(&key, std::slice::from_ref(&main), now + secs(8), false);
+        assert!(!e.w().read_failed_teams.contains(&key));
+    }
+
+    #[test]
+    fn failed_files_are_forgotten_when_sub_team_or_manual_root_is_removed() {
+        let e = env();
+        let root = e.dir("projects");
+        let p1 = root.join("p1");
+        copy_dir(&fixture("claude/sync-subagent"), &p1);
+        let main = p1.join(format!("{SYNC}.jsonl"));
+        let sub = p1
+            .join(SYNC)
+            .join("subagents")
+            .join(format!("agent-{SYNC_SUB}.jsonl"));
+        let now = t0() + secs(300);
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        h.scan(now);
+        let key = e.key(SYNC);
+        let lock = fs::File::open(&sub).unwrap();
+        lock.lock().unwrap();
+        h.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new());
+        assert!(e.w().read_failed_teams.contains(&key));
+        drop(lock);
+        fs::remove_file(&sub).unwrap();
+        fs::remove_file(sub.with_extension("meta.json")).unwrap();
+        h.scan(now + secs(3));
+        assert!(!e.w().read_failed_teams.contains(&key));
+        assert!(e.w().teams.contains_key(&key));
+
+        let lock = fs::File::open(&main).unwrap();
+        lock.lock().unwrap();
+        h.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new());
+        assert!(e.w().read_failed_teams.contains(&key));
+        drop(lock);
+        fs::remove_file(&main).unwrap();
+        h.scan(now + secs(6));
+        h.scan(now + secs(9));
+        assert!(!e.w().teams.contains_key(&key));
+        assert!(!e.w().read_failed_teams.contains(&key));
+        assert!(h.read_failures.is_empty());
+
+        append(&main, &[user_line(SYNC, now, "새로 읽음")]);
+        h.scan(now + secs(12));
+        let lock = fs::File::open(&main).unwrap();
+        lock.lock().unwrap();
+        h.try_rebuild(&key, now, &BTreeSet::new(), &BTreeSet::new());
+        assert!(e.w().read_failed_teams.contains(&key));
+        h.sites.clear();
+        h.remove_manual_roots(vec![(Vendor::Claude, root)]);
+        assert!(!e.w().teams.contains_key(&key));
+        assert!(!e.w().read_failed_teams.contains(&key));
+        assert!(h.read_failures.is_empty());
+        drop(lock);
+    }
+
+    /// 서브를 다시 못 여는 동안에도 메인의 기존 리더는 계속 읽는다
     #[test]
     fn unopenable_file_does_not_freeze_the_team() {
         use std::os::windows::fs::OpenOptionsExt;
@@ -3488,6 +3714,8 @@ mod tests {
         e.at(now + secs(9));
         h.tick();
         assert!(h.rebuild_due.contains_key(&e.key(SYNC)));
+        let key = e.key(SYNC);
+        assert!(e.w().read_failed_teams.contains(&key));
         append(
             &sub,
             &[rec(

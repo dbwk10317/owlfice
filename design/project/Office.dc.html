@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>사무실 확장 · 조명 · 소품 · 계절</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.45}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s{width:14px;height:14px}
+.mut{color:#71717A}
+.lbl{font-size:11px;font-weight:600;color:#71717A;display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.lbl code{font-family:'IBM Plex Mono',monospace;font-weight:400;color:#71717A}
+.shot{position:relative;width:390px;height:240px;border-radius:10px;overflow:hidden;background:#F1F1EE;border:1px solid #E4E4E7;flex:none}
+.shot img{width:390px;height:240px}
+.shot .tint{position:absolute;inset:0;mix-blend-mode:multiply;pointer-events:none}
+.shot .cap{position:absolute;left:10px;bottom:8px;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.9);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;color:#18181B}
+.shot .cap i{width:10px;height:10px;border-radius:3px;display:block;border:1px solid rgba(24,24,27,.15)}
+.pc{background:#fff;border:1px solid #E4E4E7;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(24,24,27,.04)}
+.pc h3{margin:0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+.pc h3 .tag{margin-left:auto;font-size:10px;font-weight:600;border-radius:4px;padding:0 6px;line-height:17px;background:#F4F4F5;color:#52525B}
+.pc h3 .tag.new{background:#ECFDF3;color:#166534}
+.pc .sig{font-size:11px;color:#71717A;font-family:'IBM Plex Mono',monospace}
+.pc ul{margin:0;padding:0 0 0 14px;font-size:12px;color:#3F3F46;line-height:1.55}
+.pc li b{font-weight:600;color:#18181B}
+.row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.sw{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.sw i{display:block;width:100%;height:44px;border-radius:8px;border:1px solid rgba(24,24,27,.08)}
+.sw span{font-size:11px;color:#52525B}
+.sw span b{display:block;font-weight:600;color:#18181B;font-size:12px}
+</style>
+</helmet>
+<div class="ow" style="width: 1760px; height: 1000px; background: #FAFAFA; padding: 36px 40px; display: flex; flex-direction: column; gap: 22px">
+  <div style="display: flex; align-items: baseline; gap: 14px">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">사무실 확장안</h1>
+    <span class="mut" style="font-size: 13px">조명 4단계 · 방 10개의 소품 확장 · 새 방 4개 · 테마. 모두 세션 파일에서 확인되는 신호에만 묶는다 (CONTRACTS C13).</span>
+  </div>
+
+  <div>
+    <p class="lbl">조명 4단계 · 같은 장면에 곱하기 색만 바꾼다 <code>floorplan.lightTints</code></p>
+    <div style="display: flex; gap: 24px">
+      <div class="shot"><img class="px" src="/_blob/02b034dc76fb34ecc546ba8557b42bb0" alt="주간 사무실"><span class="cap"><i style="background: #FFFFFF"></i>주간 · 09–17시 · #FFFFFF</span></div>
+      <div class="shot"><img class="px" src="/_blob/02b034dc76fb34ecc546ba8557b42bb0" alt="저녁 사무실"><div class="tint" style="background: #F6E6C4"></div><span class="cap"><i style="background: #F6E6C4"></i>저녁 · 17–20시 · #F6E6C4 (새로)</span></div>
+      <div class="shot"><img class="px" src="/_blob/02b034dc76fb34ecc546ba8557b42bb0" alt="야근 사무실"><div class="tint" style="background: #F2DEAD"></div><div class="tint" style="background: radial-gradient(ellipse 60% 60% at 70% 55%, transparent 30%, rgba(60,50,40,.55) 100%); mix-blend-mode: normal"></div><span class="cap"><i style="background: #F2DEAD"></i>야근 · 20시 이후 · #F2DEAD + 비네트</span></div>
+      <div class="shot"><img class="px" src="/_blob/02b034dc76fb34ecc546ba8557b42bb0" alt="소등 사무실"><div class="tint" style="background: #6E6E82"></div><span class="cap"><i style="background: #6E6E82"></i>소등 · 모두 퇴근 · #6E6E82</span></div>
+    </div>
+    <p class="mut" style="font-size: 12px; margin: 8px 0 0">저녁 단계를 하나 더 두어 시간이 흐르는 느낌을 준다. 창문 컨테이너는 그대로 제외하고, 야근에는 책상 램프 주변만 밝게 남기는 비네트 레이어(`overlay`)를 얹는다. 기준 시각은 OS 로컬 시계 (확인됨).</p>
+  </div>
+
+  <div style="display: flex; gap: 24px; flex: 1; min-height: 0">
+    <div style="flex: 1; min-width: 0">
+      <p class="lbl">방별 소품 확장 · 신호 → 소품</p>
+      <div class="row">
+        <div class="pc"><h3>팀장석<span class="tag">기존</span></h3><span class="sig">turn count · session age · context%</span><ul><li><b>책상 램프</b> 야근 모드에 켜짐</li><li><b>커피 잔 쌓임</b> 근속 1h마다 1잔, 최대 4</li><li><b>명패 금속화</b> 세션 3h 이상</li><li>화분 성장(컨텍스트)은 그대로</li></ul></div>
+        <div class="pc"><h3>개발실<span class="tag">기존</span></h3><span class="sig">Edit/Write 횟수 · parallel calls</span><ul><li><b>모니터 2대</b> 병렬 호출 중인 직원</li><li><b>책상 위 서류 더미</b> 수정 파일 10개마다 1단</li><li><b>파티션 포스트잇</b> 할 일(TodoWrite) 개수</li><li><b>키보드 LED</b> type 자세에서만</li></ul></div>
+        <div class="pc"><h3>소스 서고<span class="tag">기존</span></h3><span class="sig">Read/Grep/Glob · 파일 수</span><ul><li><b>책장 채움</b> 읽은 파일 수 비례 (0·25·50·100)</li><li><b>사다리</b> 1000줄 넘는 파일 열람</li><li><b>사서 데스크 램프</b> 검색 중</li></ul></div>
+        <div class="pc"><h3>빌드실 · 테스트실<span class="tag">기존</span></h3><span class="sig">Bash · exit code · duration</span><ul><li><b>서버 랙 LED 색</b> 성공 초록 / 실패 빨강 / 진행 노랑</li><li><b>환풍기</b> 평균 2배 초과</li><li><b>합격 도장 벽</b> 연속 통과 n회 → 트로피</li><li><b>CI 전광판</b> 오늘 성공/실패 수</li></ul></div>
+        <div class="pc"><h3>리뷰실<span class="tag">기존</span></h3><span class="sig">코드 리뷰 문구 · 지적 수</span><ul><li><b>빨간 포스트잇</b> 지적마다 (기존)</li><li><b>초록 포스트잇</b> 승인 문구</li><li><b>리뷰 소파 사람 수</b> 리뷰 중 직원 수</li></ul></div>
+        <div class="pc"><h3>거래처 미팅실<span class="tag">기존</span></h3><span class="sig">MCP 서버 이름 · 스킬 이름</span><ul><li><b>명함 꽂이</b> 오늘 쓴 MCP 서버 수</li><li><b>화상회의 화면 로고 글자</b> 서버 이름 (BitmapText)</li><li><b>스킬 매뉴얼 책 색</b> 스킬별 해시 색</li></ul></div>
+        <div class="pc"><h3>출고장<span class="tag">기존</span></h3><span class="sig">git commit · push · PR</span><ul><li><b>상자 쌓임</b> 오늘 커밋 수</li><li><b>트럭 색</b> PR 열림 파랑 / 머지 초록</li><li><b>반송 상자</b> push 실패 (기존)</li><li><b>불꽃놀이</b> 릴리스 (기존)</li></ul></div>
+        <div class="pc"><h3>장애 상황실 · 탕비실<span class="tag">기존</span></h3><span class="sig">error events · idle time</span><ul><li><b>경광등 회전</b> 장애 진행 (기존)</li><li><b>화이트보드 글자 수</b> 사고 누적</li><li><b>탕비실 TV 게임 화면</b> 쉬는 직원 수</li><li><b>피자 상자</b> 야근 2h마다 1단</li></ul></div>
+        <div class="pc" style="border-color: #86EFAC"><h3>회의실<span class="tag new">새 방</span></h3><span class="sig">plan mode · EnterPlanMode/ExitPlanMode</span><ul><li>부장이 <b>화이트보드 앞</b>에 서서 계획 작성</li><li>계획 승인되면 <b>박수</b> 후 복귀</li><li>카드: "계획 세우는 중"</li></ul></div>
+        <div class="pc" style="border-color: #86EFAC"><h3>자료실<span class="tag new">새 방</span></h3><span class="sig">compaction · summary 이벤트</span><ul><li>직원이 <b>서류를 파쇄기</b>에 넣는 연출</li><li>컨텍스트 막대가 줄어드는 순간과 동기화</li><li>카드: "서류 정리 중 (컨텍스트 정리)"</li></ul></div>
+        <div class="pc" style="border-color: #86EFAC"><h3>경비실<span class="tag new">새 방</span></h3><span class="sig">permission denied · hook block</span><ul><li>출입문 옆 <b>경비 창구</b>. 거부되면 직원이 멈춰 서서 결재판을 든다</li><li>훅이 막으면 <b>차단봉</b> 내려감</li><li>카드: "출입 거부 · 훅"</li></ul></div>
+        <div class="pc" style="border-color: #86EFAC"><h3>옥상 휴게 공간<span class="tag new">새 방</span></h3><span class="sig">사용자 응답 대기 30분 이상</span><ul><li>벽 위 <b>옥상 조각</b>이 보이고 직원이 올라가 <b>자판기 커피</b></li><li>탕비실이 꽉 찰 때의 둘째 쉬는 자리</li><li>추정 꼬리표 그대로</li></ul></div>
+      </div>
+    </div>
+
+    <div style="width: 390px; flex: none; display: flex; flex-direction: column; gap: 18px">
+      <div>
+        <p class="lbl">테마 · 벽 색 3종 + 팀 색 파티션</p>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+          <div class="sw"><i style="background: #F2C9A8"></i><span><b>Claude</b>살구 벽</span></div>
+          <div class="sw"><i style="background: #E6E6E8"></i><span><b>Codex</b>회색 벽</span></div>
+          <div class="sw"><i style="background: #C9D8F5"></i><span><b>Gemini</b>하늘 벽</span></div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-top: 10px">
+          <i style="display: block; height: 22px; border-radius: 5px; background: #349696"></i>
+          <i style="display: block; height: 22px; border-radius: 5px; background: #8062BE"></i>
+          <i style="display: block; height: 22px; border-radius: 5px; background: #E2705C"></i>
+          <i style="display: block; height: 22px; border-radius: 5px; background: #D6A028"></i>
+          <i style="display: block; height: 22px; border-radius: 5px; background: #4682C8"></i>
+          <i style="display: block; height: 22px; border-radius: 5px; background: #966E50"></i>
+        </div>
+        <p class="mut" style="font-size: 12px; margin: 8px 0 0">중소기업 파티션은 팀 색 곱하기 (기존). 대기업도 <b style="color: #18181B; font-weight: 600">동 색</b>을 파티션에 곱해 사이드바 색과 잇는다.</p>
+      </div>
+      <div>
+        <p class="lbl">계절 · 창밖과 소품만 바꾼다 (OS 날짜, 확인됨)</p>
+        <div class="pc">
+          <ul>
+            <li><b>창밖 하늘</b> 시각별 4색 + 계절별 색조 (봄 분홍 나무 · 여름 진한 초록 · 가을 주황 · 겨울 눈)</li>
+            <li><b>12월</b> 입구 작은 트리, 책상 위 양말 1개. <b>설·추석</b> 벽 등 1개</li>
+            <li><b>비·눈</b>은 날씨 데이터가 없으므로 넣지 않는다 (미확인 → 제외)</li>
+            <li>스프라이트는 `office.json`에 `season/<이름>` 상태로만 추가, 평면도는 그대로</li>
+          </ul>
+        </div>
+      </div>
+      <div>
+        <p class="lbl">참조 · 테마별 현재 렌더</p>
+        <div style="display: flex; gap: 10px">
+          <div class="shot" style="width: 185px; height: 114px"><img class="px" src="/_blob/390fc1bdc337dc50824647e109e6359c" alt="Gemini 주간" style="width: 185px; height: 114px"></div>
+          <div class="shot" style="width: 185px; height: 114px"><img class="px" src="/_blob/eccedf29db3f5cfa301d6ad3f546aa63" alt="Codex 야근 중소기업" style="width: 185px; height: 114px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

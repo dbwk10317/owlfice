@@ -1,7 +1,8 @@
 // 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV·미팅실·리뷰실·장애 상황실·외근 팻말 (HANDOFF 5, 6.5, 6.6, docs/CONTRACTS.md C3·C8).
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
 import { BitmapFont, BitmapText, Graphics, type Sprite, type Spritesheet } from "pixi.js";
-import type { CueDto, EmployeeDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
+import type { CueDto, Daylight, EmployeeDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
+import holidays from "../../design/sprites/holidays.json";
 import { reducedMotion } from "../loading.ts";
 import {
   gridToScreen,
@@ -13,6 +14,7 @@ import {
   type Seat,
 } from "./floorplan.ts";
 import { seated } from "./actors.ts";
+import { lightOf } from "./renderer.ts";
 import {
   DOOR_OPEN_MS,
   FIREWORKS_MS,
@@ -26,11 +28,11 @@ import {
 import type { Scene } from "./renderer.ts";
 import { placeSprite, tintedTexture } from "./sprites.ts";
 
-type PropsTarget = Pick<Scene, "wall" | "world" | "driven">;
+type PropsTarget = Pick<Scene, "wall" | "world" | "overlay" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
 export const DRIVEN_PROP =
-  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|dev_part_\d|interphone|mug_\d|duck_\d|boss_mon_\d_\d|rack_\d|terminal|game_tv|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table)$/;
+  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|dev_part_\d|interphone|mug_\d|duck_\d|(?:boss|dev)_mon_\d_\d|bookshelf|rack_\d|terminal|game_tv|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table|shredder)$/;
 
 /** 부장 자세로 정해지는 책상 소품 (HANDOFF 5절): 응답 대기 김, 러버덕 집어 듦, 결재 대기 화면보호기 */
 export interface BossFx {
@@ -58,14 +60,12 @@ export interface LabFx {
   slow: boolean;
   /** 테스트실에 직원이 있다: 테스트 기계 가동 */
   test: boolean;
-  /** 출고장에 있는 직원 수: 포장된 상자 */
-  boxes: number;
 }
 
 // 빌드실·테스트실·출고장은 사무실이 하나뿐인 공용 방이라 어느 팀이든 일하면 켠다 (팀별로 가르는 bossFx 와 다른 이유)
 // 백엔드 Room 하나가 셸 명령과 빌드를 같이 담아(DTO 로 가를 수 없다) 빌드 중에도 랙이 깜빡인다
 export function labFx(office: OfficeDto | null): LabFx {
-  const fx: LabFx = { shell: false, slow: false, test: false, boxes: 0 };
+  const fx: LabFx = { shell: false, slow: false, test: false };
   for (const team of office?.teams ?? []) {
     if (team.phase === "Off") continue;
     for (const { activity: a } of team.employees) {
@@ -73,7 +73,6 @@ export function labFx(office: OfficeDto | null): LabFx {
         fx.shell = true;
         fx.slow ||= a.pose === "Squat";
       } else if (a.room === "Test") fx.test = true;
-      else if (a.room === "Shipping") fx.boxes++;
     }
   }
   return fx;
@@ -255,9 +254,8 @@ export function safeMinutes(since: string, nowMs: number): number {
   return Math.min(9999, Math.max(0, Math.floor((nowMs - t) / 60_000)));
 }
 
-/** 현지 시각 06–17 day, 17–22 dusk, 22–06 night */
-export const windowState = (hour: number): string =>
-  hour >= 6 && hour < 17 ? "day" : hour >= 17 && hour < 22 ? "dusk" : "night";
+export const windowState = (daylight: Daylight): string =>
+  daylight === "evening" ? "dusk" : daylight;
 
 export type NoteColor = "yellow" | "pink" | "blue" | "green";
 
@@ -296,8 +294,8 @@ const FIREWORKS_AT = { gx: 2.5, gy: 12.5, z: 34 };
 const TRUCK_FROM = { gx: 1.5, gy: 16.6 };
 const TRUCK_TO_GY = 22;
 // 회의 탁자 위 (탁자 높이 z=9): 명함과 펼친 매뉴얼
-const CARD_AT = { gx: 19.2, gy: 14.0, z: 9 };
-const MANUAL_AT = { gx: 20.6, gy: 14.0, z: 9 };
+const CARD_AT = { gx: 21.4, gy: 14.0, z: 9 };
+const MANUAL_AT = { gx: 22.5, gy: 14.0, z: 9 };
 // 미팅실 화면의 밝은 띠 중심과 폭 (meeting_screen 소품 위치 기준 1× px)
 const BAND = { x: 10, y: -5, w: 18 };
 // 사다리는 사규 액자 아래 벽에 기대 놓는다 (액자 위치에서의 격자 차이). 액자 옆 화분(부장 책상)에 가리지 않게 화분 오른쪽
@@ -306,7 +304,7 @@ const LADDER_AT = { dgx: 0.85, dgy: 0.3 };
 const FX_DEPTH = 80;
 
 // 피자 상자는 탁자 위 한 곳에 쌓이고 상자마다 0.01 씩 앞으로 (render_scene)
-const PIZZA_DEPTH = 26.21;
+const PIZZA_DEPTH = 24.61;
 // 종이·피자는 월드의 평면도 소품과 겹쳐도 같은 depth 면 뒤에 오게 순번을 크게
 const LOOSE_SEQ = 5000;
 
@@ -320,6 +318,7 @@ interface PropMeta {
   digitOrigin?: [number, number];
   digitStep?: [number, number];
   maxDigits?: number;
+  progressSlots?: Record<"coffee" | "papers" | "lamp", [number, number]>;
 }
 
 type Frames = Record<string, { anchorPx: [number, number] } | undefined>;
@@ -390,7 +389,7 @@ export class PropsLayer {
   private game = false;
   /** 분갈이 중이라 비워 둔 화분: 끝나는 시각과, 끝나면 보여야 하는지(중소기업은 팀장석이 비면 없다) */
   private readonly repots = new Map<string, { until: number; on: boolean }>();
-  private lab: LabFx = { shell: false, slow: false, test: false, boxes: 0 };
+  private lab: LabFx = { shell: false, slow: false, test: false };
   private readonly effects = new Map<string, Fx>();
   private pendingTitle: { title: string; at: number } | null = null;
 
@@ -400,6 +399,7 @@ export class PropsLayer {
     private readonly kind: Kind,
     private readonly target: PropsTarget,
     private readonly label: ScreenLabel | null = null,
+    private readonly season = true,
   ) {
     this.meta = (
       sheet.data as unknown as { owlfice: { props: Record<string, PropMeta> } }
@@ -422,6 +422,9 @@ export class PropsLayer {
 
   /** 김·화면보호기·벨은 프레임이 바뀌어서 매 프레임 불린다. 상태는 update 가 정한 것을 쓴다 */
   tick(nowMs: number): void {
+    // 움직임 줄이기: 반복 프레임은 첫 장에 멈춘다
+    const still = reducedMotion();
+    const f = (fps: number) => (still ? 0 : blink(nowMs, fps));
     if (this.pendingTitle && (nowMs >= this.pendingTitle.at || reducedMotion())) {
       const { title } = this.pendingTitle;
       this.pendingTitle = null;
@@ -429,17 +432,14 @@ export class PropsLayer {
     }
     this.bossSeats.forEach((seat, i) => {
       const fx = this.fx[i];
-      if (seat.mug) this.state(seat.mug, fx?.steam ? `steam_${blink(nowMs, MUG_FPS)}` : undefined);
+      if (seat.mug) this.state(seat.mug, fx?.steam ? `steam_${f(MUG_FPS)}` : undefined);
       const duck = seat.duck && this.target.driven.get(seat.duck);
       if (duck) duck.visible = !fx?.duck;
       for (const m of seat.monitors ?? [])
-        this.state(m, fx?.saver ? `saver_${blink(nowMs, SAVER_FPS)}` : undefined);
+        this.state(m, fx?.saver ? `saver_${f(SAVER_FPS)}` : undefined);
     });
-    this.state("interphone", nowMs < this.ringUntil ? `ring_${blink(nowMs, RING_FPS)}` : undefined);
+    this.state("interphone", nowMs < this.ringUntil ? `ring_${f(RING_FPS)}` : undefined);
     this.state("door", nowMs < this.doorUntil ? "open" : undefined);
-    // 움직임 줄이기: 반복 프레임은 첫 장에 멈춘다
-    const still = reducedMotion();
-    const f = (fps: number) => (still ? 0 : blink(nowMs, fps));
     for (const id of ["rack_0", "rack_1"])
       this.state(id, this.lab.shell ? `led_${f(RACK_FPS)}` : undefined);
     this.state("game_tv", this.game ? `game_${f(GAME_FPS)}` : undefined);
@@ -506,6 +506,8 @@ export class PropsLayer {
 
   /** 사무실 전환: 지난 사무실에서 진행 중인 효과를 지운다 */
   reset(): void {
+    this.ringUntil = this.doorUntil = 0;
+    this.archiveVisit(false);
     this.pendingTitle = null;
     for (const [id, r] of this.repots) {
       const sprite = this.target.driven.get(id);
@@ -605,6 +607,7 @@ export class PropsLayer {
   }
 
   private updateBoxes(n: number): void {
+    // ponytail: 출고장 빈 바닥 세 자리까지만 그린다, 출고장을 넓히면 표시 상한을 늘린다.
     const k = Math.min(BOX_SLOTS.length, n);
     if (!this.changed("boxes", String(k))) return;
     this.replace(
@@ -629,7 +632,9 @@ export class PropsLayer {
     }
     this.updateStats(shared?.stats);
     this.state("ci_light", shared ? shared.light.toLowerCase() : undefined);
-    this.state("window", windowState(new Date(nowMs).getHours()));
+    const daylight = windowState(office?.teams[0]?.daylight ?? "day");
+    this.state("window", daylight);
+    if (this.season) this.updateSeason(nowMs, daylight);
     this.state("trash", shared ? trashState(shared.trash) : undefined);
     const ramen = this.target.driven.get("ramen");
     if (ramen) ramen.visible = shared?.night ?? false;
@@ -644,9 +649,9 @@ export class PropsLayer {
     this.updateMagnets(office);
     this.game = gameOn(office, this.kind);
     this.lab = labFx(office);
-    this.updateBoxes(this.lab.boxes);
+    this.updateProgress(office, nowMs);
     this.state("terminal", this.lab.shell ? "on" : undefined);
-    this.state("test_board", shared?.test ? shared.test.toLowerCase() : undefined);
+    this.state("test_board", office ? "counts" : undefined);
     this.showTicket(office);
     this.updateRooms(office);
     // 대기업은 팀 하나가 팀장석 하나, 중소기업은 팀장석 번호가 deskSlot
@@ -656,6 +661,171 @@ export class PropsLayer {
       ),
     );
     this.tick(nowMs);
+  }
+
+  private updateSeason(nowMs: number, daylight: string): void {
+    const date = new Date(nowMs);
+    const month = date.getMonth() + 1;
+    const day = `${String(month).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const season =
+      month >= 3 && month <= 5
+        ? "spring"
+        : month >= 6 && month <= 8
+          ? "summer"
+          : month >= 9 && month <= 11
+            ? "autumn"
+            : "winter";
+    const window = this.target.driven.get("window");
+    const size = this.pl.get("window")?.sprite;
+    if (window) window.texture = this.sheet.textures[`season/${size}_${season}_${daylight}`];
+    const year = date.getFullYear();
+    // ponytail: 날짜표 밖 연도는 명절만 생략, 날짜표를 갱신할 때 늘린다.
+    const holiday = (
+      holidays.dates as Record<string, { seollal: string; chuseok: string } | undefined>
+    )[year];
+    const lantern = holiday?.seollal === day || holiday?.chuseok === day;
+    if (!this.changed("season", `${month === 12}/${lantern}`)) return;
+    const parts: Sprite[] = [];
+    if (month === 12) {
+      const tree = this.fxSprite("season/tree", 0.8, 15.5, 0);
+      tree.zIndex = zIndexOf(16.3, LOOSE_SEQ);
+      parts.push(tree);
+      const desk = this.pl.get(this.bossSeats[0].desk)!;
+      const meta = this.meta[desk.sprite];
+      const p = gridToScreen(desk.gx + 0.65, desk.gy + meta.footprint![1] - 0.15, meta.height);
+      const stocking = placeSprite(this.sheet, "season/stocking", Math.round(p.x), Math.round(p.y));
+      stocking.zIndex = zIndexOf(desk.depth + 0.01, LOOSE_SEQ);
+      this.target.world.addChild(stocking);
+      parts.push(stocking);
+    }
+    if (lantern) {
+      const p = gridToScreen(11.4, 0);
+      const s = placeSprite(this.sheet, "season/lantern", Math.round(p.x), Math.round(p.y));
+      this.target.wall.addChild(s);
+      parts.push(s);
+    }
+    this.replace("season", parts);
+  }
+
+  private updateProgress(office: OfficeDto | null, nowMs: number): void {
+    const teams = office?.teams ?? [];
+    const reads = teams.reduce(
+      (n, t) => n + t.employees.reduce((s, e) => s + (e.uniqueReads ?? 0), 0),
+      0,
+    );
+    this.state(
+      "bookshelf",
+      office
+        ? reads >= 100
+          ? "s3"
+          : reads >= 50
+            ? "s2"
+            : reads >= 25
+              ? "s1"
+              : "empty"
+        : undefined,
+    );
+    this.updateBoxes(teams.reduce((n, t) => n + (t.commitsToday ?? 0), 0));
+    const pr = teams.some((t) => t.props.pr != null);
+    if (this.changed("pr", String(pr))) {
+      const truck = pr ? this.fxSprite("truck/pr", TRUCK_FROM.gx + 2, TRUCK_FROM.gy, 0) : null;
+      if (truck) truck.zIndex = zIndexOf(FX_DEPTH, LOOSE_SEQ);
+      this.replace("pr", truck ? [truck] : []);
+    }
+    this.updateTestCounts(office);
+
+    // 자리 비움 중에도 누적 소품은 그 직원의 책상에 남는다.
+    const occupants = new Map(
+      [...seated(this.fp, this.kind, office)].map((s) => [s.spot?.desk, s]),
+    );
+    for (const seat of Object.values(this.fp.layouts[this.kind].seats).flat()) {
+      const occupant = occupants.get(seat.desk);
+      const emp = occupant?.emp;
+      for (const [i, id] of (seat.monitors ?? []).entries()) {
+        const monitor = this.target.driven.get(id);
+        if (monitor) monitor.visible = !office || i === 0 || (emp?.pendingCount ?? 0) > 1;
+      }
+      const pl = this.pl.get(seat.desk);
+      const meta = pl && this.meta[pl.sprite];
+      if (!pl || !meta?.progressSlots || !meta.footprint) continue;
+      const age = emp ? Math.floor((nowMs - Date.parse(emp.hiredAt)) / 3_600_000) : 0;
+      const coffee = Number.isFinite(age) ? Math.min(4, Math.max(0, age)) : 0;
+      // ponytail: 작은 책상에서 서류는 네 단까지만 보인다, 책상 아트가 넓어지면 표시 상한을 늘린다.
+      const papers = Math.min(4, Math.floor((emp?.uniqueEdits ?? 0) / 10));
+      const night = !!emp && lightOf(office) === "night";
+      const missingMonitors = emp
+        ? Math.max(0, ((emp.pendingCount ?? 0) > 1 ? 2 : 1) - (seat.monitors?.length ?? 0))
+        : 0;
+      const signature = [coffee, papers, !!emp, night, missingMonitors].join();
+      if (!this.changed(`desk:${seat.desk}`, signature)) continue;
+      const glow = night
+        ? this.fxSprite(
+            "glow_lamp/default",
+            pl.gx + meta.progressSlots.lamp[0],
+            pl.gy + meta.progressSlots.lamp[1],
+            meta.height ?? 0,
+          )
+        : null;
+      if (glow) this.target.overlay.addChild(glow);
+      this.replace(`lamp:${seat.desk}`, glow ? [glow] : []);
+      const parts: Sprite[] = [];
+      for (const [name, key] of [
+        ["coffee", coffee ? `coffee_stack/s${coffee}` : null],
+        ["papers", papers ? `paper_stack/s${papers}` : null],
+        ["lamp", emp ? `desk_lamp/${night ? "on" : "off"}` : null],
+      ] as const) {
+        if (!key) continue;
+        const [dx, dy] = meta.progressSlots[name];
+        parts.push(this.fxSprite(key, pl.gx + dx, pl.gy + dy, meta.height ?? 0));
+      }
+      for (let i = 0; i < missingMonitors; i++) {
+        const index = (seat.monitors?.length ?? 0) + i;
+        parts.push(
+          this.fxSprite(
+            "monitor_sm/off",
+            pl.gx + 0.05 + index * 0.65,
+            pl.gy + 0.05,
+            meta.height ?? 0,
+          ),
+        );
+      }
+      parts.forEach((s, i) => {
+        s.zIndex = zIndexOf(pl.depth + 0.03, LOOSE_SEQ + i);
+      });
+      this.replace(`desk:${seat.desk}`, parts);
+    }
+  }
+
+  private updateTestCounts(office: OfficeDto | null): void {
+    const totals = office
+      ? ["passed", "failed"].map((key) =>
+          office.teams.reduce((n, t) => n + (t.testsToday?.[key as "passed" | "failed"] ?? 0), 0),
+        )
+      : [];
+    if (!this.changed("testsToday", totals.join())) return;
+    const board = this.pl.get("test_board");
+    const parts: (Sprite | Graphics)[] = [];
+    if (board && office) {
+      // ponytail: 기존 게시판 폭에는 두 자리와 초과 표시만 들어간다, 게시판을 넓히면 전체 숫자를 표시한다.
+      totals.forEach((n, row) => {
+        const x = board.x + 3;
+        const y = board.y - 29 + row * 8;
+        const color = row === 0 ? 0x369a60 : 0xdc5149;
+        parts.push(new Graphics().rect(x, y + 1, 2, 3).fill(color));
+        const text = String(Math.min(99, n));
+        for (const [i, ch] of text.split("").entries())
+          parts.push(placeSprite(this.sheet, `digit/${ch}`, x + 4 + i * 4, y + 2 + i * 2));
+        if (n > 99)
+          parts.push(
+            new Graphics()
+              .rect(x + 12, y + 5, 3, 1)
+              .rect(x + 13, y + 4, 1, 3)
+              .fill(color),
+          );
+      });
+      for (const part of parts) this.target.wall.addChild(part);
+    }
+    this.replace("testsToday", parts);
   }
 
   private updatePartitions(office: OfficeDto | null): void {
@@ -927,6 +1097,10 @@ export class PropsLayer {
         return s;
       }),
     );
+  }
+
+  archiveVisit(active: boolean): void {
+    this.state("shredder", active ? "shred" : "idle");
   }
 
   private updatePizza(pizza: number): void {

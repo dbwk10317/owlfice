@@ -5,6 +5,8 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-toggle-maximize",
+    "updater:default"
   ]
 }

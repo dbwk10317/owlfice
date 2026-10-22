@@ -1,7 +1,16 @@
-// 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 세 겹 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
+// 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 겹친 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
-import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
+import type {
+  Bubble,
+  CueDto,
+  EmployeeDto,
+  Item,
+  OfficeDto,
+  Pose,
+  Room,
+  TeamDto,
+} from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
 import { empKey } from "../ticker.ts";
@@ -31,6 +40,7 @@ const BADGE_OFFSET: [number, number] = [14, 6];
 /** 자리 초과 "+n" 은 그 자리 직원 머리 기준 (HANDOFF 4.4) */
 const CROWD_OFFSET: [number, number] = [14, -6];
 const BUBBLE_MS = 4000;
+const EMOTE_MS = 1200;
 /** 사장님 말풍선은 30자에서 자른다 (HANDOFF 5절) */
 const BOSS_TEXT_MAX = 30;
 /** 사장님이 부장 좌석에서 떨어져 서는 거리 (gy 칸) */
@@ -95,8 +105,7 @@ const SEAT_LOOK: Record<Exclude<Pose, "Pace">, Look> = {
   Sit: SIT,
   Type: { pose: "type", dir: "f" },
   Read: { pose: "read", dir: "f" },
-  // 창 쪽으로 돌아앉음
-  Think: { pose: "idle", dir: "b" },
+  Think: { pose: "think", dir: "f" },
   Duck: { pose: "carry", dir: "f", held: "duck" },
   Squat: { pose: "crouch", dir: "f" },
   Sleep: { pose: "sleep", dir: "f" },
@@ -109,6 +118,7 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
   Test: { at: ["test"], look: IDLE },
   Review: { at: ["review_sofa"], look: SIT },
   Meeting: { at: ["meeting"], look: IDLE },
+  Conference: { at: ["conference"], look: { pose: "read", dir: "f" } },
   Shipping: { at: ["shipping"], look: { pose: "carry", dir: "f", held: "box_carry" } },
   Door: { at: ["door_wait", "door"], look: { pose: "carry", dir: "f", held: "clipboard" } },
   // 서브 종료 (HANDOFF 5절): 첫째 콘솔, 둘째 안마의자, 그다음은 탕비실에 서 있는다
@@ -144,6 +154,7 @@ const SIT_ON: Record<string, string> = {
   review_sofa: "review_seat",
   pantry_sofa: "sofa",
   pantry_massage: "massage_chair",
+  roof: "roof_bench",
 };
 
 interface Spot {
@@ -182,7 +193,8 @@ function standSpots(fp: Floorplan, kind: Kind, rule: Rule & { at: string[] }): S
   const placements = fp.layouts[kind].placements;
   return rule.at.flatMap((name) =>
     (fp.stands[name] ?? []).map(([gx, gy, z = 0], i) => {
-      const on = SIT_ON[name] && placements.find((p) => p.id === SIT_ON[name]);
+      const on =
+        SIT_ON[name] && (name !== "roof" || z > 0) && placements.find((p) => p.id === SIT_ON[name]);
       return {
         id: `${name}_${i}`,
         gx,
@@ -233,6 +245,7 @@ export function layoutActors(
   kind: Kind,
   office: OfficeDto,
   crowd = new Map<string, number>(),
+  visits = new Map<string, "archive" | "security">(),
 ): Placed[] {
   const used = new Set<string>();
   const out: Placed[] = [];
@@ -245,7 +258,22 @@ export function layoutActors(
       if (boss && kind === "small" && team.deskSlot === null) return;
       // 퇴근한 서브는 캔버스에서 빠진다. 보이던 액터는 sync 가 출구까지 걷게 한 뒤 숨긴다 (HANDOFF 5절)
       if (emp.departedAt !== null) return;
-      const rule = placeRule(emp.activity.room, emp.activity.pose, boss);
+      const visit = visits.get(empKey(team.teamId, emp.agentId));
+      const rule = visit
+        ? {
+            at: [visit],
+            look: {
+              pose: "carry",
+              dir: "f",
+              held: visit === "security" ? "clipboard" : "folder",
+            } as Look,
+          }
+        : team.idleAlive && emp.activity.room === "Pantry" && emp.activity.pose === "Sleep"
+          ? {
+              at: ["pantry_sofa", "pantry_massage", "pantry_console", "pantry", "roof"],
+              look: SEAT_LOOK.Sleep,
+            }
+          : placeRule(emp.activity.room, emp.activity.pose, boss);
       if (!rule) return;
       let spots: Spot[];
       let start: number;
@@ -263,7 +291,10 @@ export function layoutActors(
       while (k < spots.length && used.has(spots[k].id)) k++;
       if (
         k === spots.length &&
-        ((rule.at === "seat" && !boss) || rule.at === ROOM_RULE.Pantry?.at)
+        ((rule.at === "seat" && !boss) ||
+          emp.activity.room === "Pantry" ||
+          emp.activity.room === "Conference" ||
+          !!visit)
       ) {
         const last = spots[spots.length - 1].id;
         crowd.set(last, (crowd.get(last) ?? 0) + 1);
@@ -409,12 +440,14 @@ interface Body {
   /** actors 맵 키 (empKey) */
   key: string;
   root: Container;
-  /** body, outfit, role. 아틀라스가 없으면 비어 있다 */
+  /** body, outfit, wear, role, item. 아틀라스가 없으면 비어 있다 */
   layers: Sprite[];
   held: Sprite | null;
   heldName: string | undefined;
   species: string;
   outfit: string;
+  wear: number;
+  items: Item[];
   role: string | null;
   look: Look;
   spot: string;
@@ -443,6 +476,8 @@ interface Actor extends Body {
   emp: EmployeeDto;
   /** 말풍선 사건 시각(ms). 4초가 지나면 update 가 숨긴다 */
   bubbleAt: number;
+  emote: HTMLElement | null;
+  emoteUntil: number;
 }
 
 /** 사장님 방문: 문에서 걸어와 `leaveAt` 에 퇴장한다 (HANDOFF 5절) */
@@ -468,6 +503,44 @@ function targetOf(p: Placed): Target {
   };
 }
 
+function canRoomVisit(team: TeamDto, emp: EmployeeDto, room: "archive" | "security"): boolean {
+  return (
+    team.phase !== "Off" &&
+    emp.departedAt === null &&
+    emp.pendingCount === 0 &&
+    emp.activity.room !== "Door" &&
+    emp.activity.room !== "Outside" &&
+    emp.activity.pose !== "Pace" &&
+    team.incident === null &&
+    (room === "security" || (!emp.planning && !emp.rejected))
+  );
+}
+
+type Decoration = "stretch" | "drink" | "phone" | "highfive";
+
+function canDecorate(team: TeamDto, emp: EmployeeDto, pose: Decoration): boolean {
+  if (
+    team.phase === "Off" ||
+    team.incident !== null ||
+    emp.pendingCount > 0 ||
+    emp.rejected ||
+    emp.retiredAt !== null ||
+    emp.departedAt !== null ||
+    emp.planning ||
+    emp.meeting !== null ||
+    (emp.activity.room !== "Dev" && emp.activity.room !== "TeamLead")
+  )
+    return false;
+  return pose === "drink"
+    ? emp.activity.pose === "Pace"
+    : ["Sit", "Think", "Duck"].includes(emp.activity.pose);
+}
+
+function timerBoundary(source: string, now: number, period: number): number {
+  const since = Date.parse(source);
+  return Number.isFinite(since) ? Math.max(0, Math.floor((now - since) / period)) : 0;
+}
+
 export class ActorLayer {
   private actors = new Map<string, Actor>();
   private world: Container | null = null;
@@ -480,6 +553,18 @@ export class ActorLayer {
   private nametagText: HTMLElement;
   private lastOffice: OfficeDto | null = null;
   private visitors: Visitor[] = [];
+  private roomVisits = new Map<string, { room: "archive" | "security"; until: number }>();
+  private decorations = new Map<string, { kind: Decoration; until: number }>();
+  private clocks = new Map<
+    string,
+    { stretch: number; hired: string; drink: number; since: string }
+  >();
+  private pass = new Map<string, Extract<CueDto, { kind: "Stamp" }>>();
+  private passSeenAt = new Map<string, number>();
+  private pair: { keys: string[]; until: number } | null = null;
+  private layoutKind: Kind = "large";
+  /** 실제 허용된 자료실 방문에만 파쇄기 소품을 켠다. */
+  onArchiveVisit: ((active: boolean) => void) | null = null;
   /** 자리 초과 "+n" 배지. 키는 마지막 자리 id, x·y 는 1× 캔버스 좌표 */
   private crowds = new Map<string, { el: HTMLElement; x: number; y: number }>();
   /** 사장님이 오면 인터폰이 울린다 (소품 층이 건다) */
@@ -535,12 +620,27 @@ export class ActorLayer {
     now: number,
     opts: { instant?: boolean; earlier?: CueDto[] } = {},
   ): Placed[] {
+    this.layoutKind = kind;
     // 목록만 바뀌어도 같은 스냅샷으로 다시 불린다. 그때 cue 를 또 재생하지 않는다
     const fresh = office !== this.lastOffice;
+    const switched = !!this.lastOffice && office?.officeId !== this.lastOffice.officeId;
     if (office?.officeId !== this.lastOffice?.officeId || (fresh && office?.rebuilt))
       this.highlight = null;
+    const previous = this.lastOffice;
     this.lastOffice = office;
     const instant = opts.instant || (fresh && !!office?.rebuilt);
+    const quiet = !!instant || switched || reducedMotion();
+    if (switched) this.passSeenAt.clear();
+    if (this.pair && now >= this.pair.until) this.pair = null;
+    if (quiet) {
+      for (const key of this.decorations.keys()) this.actors.get(key)?.track.cancelDecoration(now);
+      this.decorations.clear();
+      this.pass.clear();
+      this.pair = null;
+    }
+    const canEmote = fresh && !!previous && !instant && !switched && !reducedMotion();
+    if (!canEmote && (instant || switched || reducedMotion()))
+      for (const a of this.actors.values()) this.clearEmote(a);
     const cuesOf = new Map<string, CueDto[]>();
     const visits: CueDto[] = [];
     const stamps: Extract<CueDto, { kind: "Stamp" }>[] = [];
@@ -557,8 +657,56 @@ export class ActorLayer {
       else if (c.kind === "FrameSwap") frames.push(c);
       else playCue(c, undefined, now);
     }
+    const stopped = new Set<string>();
+    const started = new Set<string>();
+    for (const [key, visit] of this.roomVisits) {
+      const team = office?.teams.find((t) =>
+        t.employees.some((e) => empKey(t.teamId, e.agentId) === key),
+      );
+      const emp = team?.employees.find((e) => empKey(team.teamId, e.agentId) === key);
+      if (
+        instant ||
+        switched ||
+        now >= visit.until ||
+        !team ||
+        !emp ||
+        !canRoomVisit(team, emp, visit.room)
+      ) {
+        this.roomVisits.delete(key);
+        stopped.add(key);
+      }
+    }
+    if (!instant && !switched && !reducedMotion())
+      for (const [key, cues] of cuesOf) {
+        const team = office?.teams.find((t) =>
+          t.employees.some((e) => empKey(t.teamId, e.agentId) === key),
+        );
+        const emp = team?.employees.find((e) => empKey(team.teamId, e.agentId) === key);
+        const cue = [...cues].reverse().find((c) => c.kind === "Reject" || c.kind === "Compaction");
+        if (!team || !emp || !cue) continue;
+        const room = cue.kind === "Reject" ? "security" : "archive";
+        if (canRoomVisit(team, emp, room)) {
+          // 경비실은 이동을 포함한 전체 3초라 반려 유지 4초를 넘어 예약되지 않는다.
+          this.roomVisits.set(key, { room, until: now + (room === "security" ? 3000 : 4000) });
+          started.add(key);
+        }
+      }
     const crowd = new Map<string, number>();
-    const placed = office ? layoutActors(this.fp, kind, office, crowd) : [];
+    const visitsAt = new Map([...this.roomVisits].map(([key, v]) => [key, v.room]));
+    const placed = office ? layoutActors(this.fp, kind, office, crowd, visitsAt) : [];
+    for (const [key, d] of this.decorations) {
+      const p = placed.find((p) => empKey(p.team.teamId, p.emp.agentId) === key);
+      if (
+        !p ||
+        !canDecorate(p.team, p.emp, d.kind) ||
+        visitsAt.has(key) ||
+        this.actors.get(key)?.spot !== p.spot
+      )
+        this.cancelDecoration(key, now, placed);
+    }
+    this.onArchiveVisit?.(
+      placed.some((p) => visitsAt.get(empKey(p.team.teamId, p.emp.agentId)) === "archive"),
+    );
     const away = new Set(
       office?.teams.flatMap((t) =>
         t.phase === "Off"
@@ -577,7 +725,9 @@ export class ActorLayer {
         a.zz?.remove();
         a.badge?.remove();
         a.bubble?.remove();
+        this.clearEmote(a);
         this.actors.delete(key);
+        this.clocks.delete(key);
         if (this.hovered === key) this.hover(null);
       }
     const shown = new Set<string>();
@@ -587,7 +737,10 @@ export class ActorLayer {
       const old = this.actors.get(key);
       const a = old ?? this.create(p.team.teamId, p.emp, key, now);
       shown.add(key);
+      const before = old?.spot ? old.emp : null;
       a.emp = p.emp;
+      a.items = p.emp.items;
+      if (quiet || !old?.spot || !this.clocks.has(key)) this.recordClock(a, now);
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
       a.role = p.emp.role === "Trainee" ? null : p.emp.role.toLowerCase();
@@ -603,7 +756,9 @@ export class ActorLayer {
         (cues.some((c) => c.kind === "Rehire") && !old?.root.visible);
       const target = targetOf(p);
       // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (docs/CONTRACTS.md C10)
-      if (instant || (!old && !entering)) a.track.reset(target, now);
+      if (started.has(key) && old) a.track.visit(target, now);
+      else if (stopped.has(key)) a.track.reset(target, now);
+      else if (instant || (!old && !entering)) a.track.reset(target, now);
       // 테스트실에 있던 직원이 합격 도장 때 만세를 부르고 나서 자리로 돌아간다 (추정 도장은 합격을 보증하지 않는다)
       if (
         old &&
@@ -616,8 +771,20 @@ export class ActorLayer {
       const back = a.away && !entering && !instant && !reducedMotion();
       a.away = false;
       if (back) this.onDoor?.(now);
+      const flashlight =
+        entering &&
+        fresh &&
+        !!previous &&
+        !quiet &&
+        previous.teams.every((t) => t.phase === "Off") &&
+        !target.look.held;
       if (entering || (old && !instant))
-        a.track.retarget(target, now, entering, back ? "envelope" : undefined);
+        a.track.retarget(
+          target,
+          now,
+          entering,
+          back ? "envelope" : flashlight ? "flashlight" : undefined,
+        );
       for (const c of cues) {
         // 반려는 지나간 일이라 조용한 재구성에서는 다시 보이지 않는다
         if (c.kind === "Reject" && instant) continue;
@@ -626,12 +793,38 @@ export class ActorLayer {
       }
       this.setBadge(a);
       this.setBubble(a, now);
+      if (a.bubble) this.clearEmote(a);
+      else if (canEmote && before) this.setEmote(a, before, cues, now);
       if (!a.root.parent && this.world) this.world.addChild(a.root);
     });
     for (const a of this.actors.values())
       if (!shown.has(a.key)) {
-        if (instant) a.track.reset(HIDDEN, now);
-        else a.track.retarget(HIDDEN, now);
+        if (instant || stopped.has(a.key) || this.roomVisits.has(a.key)) a.track.reset(HIDDEN, now);
+        else {
+          const owner = office?.teams.find((t) =>
+            t.employees.some((e) => empKey(t.teamId, e.agentId) === a.key),
+          );
+          const employee = owner?.employees.find((e) => empKey(owner.teamId, e.agentId) === a.key);
+          const before = previous?.teams.find((t) => t.teamId === owner?.teamId);
+          const oldEmployee = before?.employees.find((e) => e.agentId === employee?.agentId);
+          const leaving =
+            fresh &&
+            !!previous &&
+            !quiet &&
+            !!owner &&
+            !!employee &&
+            ((owner.phase === "Off" && before?.phase !== "Off") ||
+              (employee.departedAt !== null && oldEmployee?.departedAt === null));
+          const held =
+            a.look.held &&
+            ["clipboard", "folder", "box_carry", "envelope", "duck"].includes(a.look.held)
+              ? a.look.held
+              : leaving
+                ? "briefcase"
+                : undefined;
+          a.track.retarget(HIDDEN, now, false, held);
+        }
+        a.items = [];
         a.away = away.has(a.key);
         for (const c of cuesOf.get(a.key) ?? []) playCue(c, a.track, now);
         a.zz?.remove();
@@ -640,7 +833,9 @@ export class ActorLayer {
         a.badge = null;
         a.bubble?.remove();
         a.bubble = null;
+        this.clearEmote(a);
         a.spot = "";
+        this.recordClock(a, now);
         if (this.hovered === a.key) this.hover(null);
       }
     this.setCrowds(crowd, placed);
@@ -652,6 +847,15 @@ export class ActorLayer {
     // 부장 큐가 새 자리로 정해진 뒤에 펄쩍을 얹는다
     if (office && !instant)
       for (const c of visits) if (c.kind === "BossVisit") this.visit(c, office, kind, now);
+    if (fresh)
+      this.highfives(
+        quiet
+          ? [...(opts.earlier ?? []), ...(office?.cues ?? [])].filter((c) => c.kind === "Stamp")
+          : stamps,
+        placed,
+        now,
+        !!previous && !quiet,
+      );
     // 제목 변경: 새 자리가 정해진 뒤 한 명이 액자까지 갔다 온다. 움직임 줄이기면 액자 글자(상태)만
     // 액자는 하나(공유 frame_title)라 한 sync 에 여럿이 와도 마지막 것만 연출한다
     // ponytail: 직원 큐가 나중에 reset 되면(MAX_STEPS·instant·숨김 복귀) 사다리만 4초 남는다, 거슬리면 사다리를 직원 큐에 묶는다
@@ -660,6 +864,107 @@ export class ActorLayer {
     this.update(now);
     this.placeOverlay();
     return placed;
+  }
+
+  private cancelDecoration(key: string, now: number, placed?: Placed[]): void {
+    const keys = this.pair?.keys.includes(key) ? this.pair.keys : [key];
+    if (keys.length === 2) this.pair = null;
+    for (const k of keys) {
+      if (this.decorations.delete(k)) {
+        const p = placed?.find((p) => empKey(p.team.teamId, p.emp.agentId) === k);
+        this.actors
+          .get(k)
+          ?.track.cancelDecoration(now, placed ? (p ? targetOf(p) : HIDDEN) : undefined);
+      }
+    }
+  }
+
+  private recordClock(a: Actor, now: number): void {
+    this.clocks.set(a.key, {
+      stretch: timerBoundary(a.emp.hiredAt, now, 3_600_000),
+      hired: a.emp.hiredAt,
+      drink: timerBoundary(a.emp.activity.since, now, 30_000),
+      since: a.emp.activity.since,
+    });
+  }
+
+  private timedPose(a: Actor, now: number): void {
+    const before = this.clocks.get(a.key);
+    this.recordClock(a, now);
+    const clock = this.clocks.get(a.key)!;
+    if (
+      !before ||
+      !a.spot ||
+      reducedMotion() ||
+      this.decorations.has(a.key) ||
+      this.roomVisits.has(a.key)
+    )
+      return;
+    const owner = this.lastOffice?.teams.find((t) =>
+      t.employees.some((e) => empKey(t.teamId, e.agentId) === a.key),
+    );
+    if (!owner || this.visitors.some((v) => v.teamId === owner.teamId)) return;
+    const kind =
+      before.hired === clock.hired &&
+      clock.stretch > before.stretch &&
+      canDecorate(owner, a.emp, "stretch")
+        ? "stretch"
+        : before.since === clock.since &&
+            clock.drink > before.drink &&
+            canDecorate(owner, a.emp, "drink")
+          ? "drink"
+          : null;
+    if (!kind) return;
+    const until = a.track.pose({ pose: kind, dir: "f" }, kind === "stretch" ? 1500 : 1000, now);
+    this.decorations.set(a.key, { kind, until });
+  }
+
+  private highfives(
+    stamps: Extract<CueDto, { kind: "Stamp" }>[],
+    placed: Placed[],
+    now: number,
+    allowed: boolean,
+  ): void {
+    for (const c of stamps) {
+      const at = Date.parse(c.at);
+      if (!c.confirmedPass || c.estimated || !Number.isFinite(at)) continue;
+      const key = empKey(c.teamId, c.agent);
+      if (at <= (this.passSeenAt.get(key) ?? -Infinity)) continue;
+      this.passSeenAt.set(key, at);
+      if (!allowed) continue;
+      const prev = this.pass.get(c.teamId);
+      if (
+        !prev ||
+        prev.agent === c.agent ||
+        Math.abs(Date.parse(c.at) - Date.parse(prev.at)) > 10_000
+      ) {
+        this.pass.set(c.teamId, c);
+        continue;
+      }
+      // 한 쌍은 허용 여부와 관계없이 소비한다. 공유 장소가 비어도 밀린 짝을 재생하지 않는다.
+      this.pass.delete(c.teamId);
+      if (this.pair) continue;
+      const keys = [empKey(c.teamId, prev.agent), empKey(c.teamId, c.agent)];
+      const people = keys.map((key) =>
+        placed.find((p) => empKey(p.team.teamId, p.emp.agentId) === key),
+      );
+      if (
+        people.some((p) => !p || !canDecorate(p.team, p.emp, "highfive")) ||
+        keys.some((key) => this.roomVisits.has(key) || this.decorations.has(key)) ||
+        this.visitors.some((v) => v.teamId === c.teamId)
+      )
+        continue;
+      const actors = keys.map((key) => this.actors.get(key)!);
+      const to = [
+        { gx: 13, gy: 10.6, z: 0 },
+        { gx: 13.6, gy: 10, z: 0 },
+      ];
+      const go = Math.max(...actors.map((a, i) => a.track.meetingWalkMs(to[i], now)));
+      const ends = actors.map((a, i) => a.track.highfive(to[i], go, i === 1, now));
+      const until = Math.max(...ends);
+      this.pair = { keys, until };
+      for (const key of keys) this.decorations.set(key, { kind: "highfive", until });
+    }
   }
 
   /** 제목 변경 (S39): 그 팀에서 제 자리에 앉은 직원 중 제목 해시로 한 명을 골라 액자 앞 사다리로 보낸다 */
@@ -681,10 +986,23 @@ export class ActorLayer {
   }
 
   update(now: number): void {
+    if ([...this.roomVisits.values()].some((v) => now >= v.until)) {
+      this.sync(this.lastOffice, this.layoutKind, now);
+      return;
+    }
     let moved = false;
+    if (reducedMotion()) {
+      for (const key of this.decorations.keys()) this.cancelDecoration(key, now);
+      this.pass.clear();
+      this.pair = null;
+    }
+    for (const [key, d] of this.decorations) if (now >= d.until) this.decorations.delete(key);
+    if (this.pair && now >= this.pair.until) this.pair = null;
     for (const a of this.actors.values()) {
+      this.timedPose(a, now);
       moved = this.draw(a, now) || moved;
       this.placeSweat(a, now);
+      if (now >= a.emoteUntil || reducedMotion() || !a.root.visible) this.clearEmote(a);
     }
     for (const v of this.visitors) {
       if (!v.leaving && now >= v.leaveAt) {
@@ -745,6 +1063,19 @@ export class ActorLayer {
   /** 한 몸을 지금 모습으로 그린다. 오버레이를 다시 놓아야 하면 true */
   private draw(a: Body, now: number): boolean {
     const s = a.track.update(now);
+    if (s.look.held === "briefcase") {
+      const owner = this.lastOffice?.teams.find((t) =>
+        t.employees.some((e) => empKey(t.teamId, e.agentId) === a.key),
+      );
+      const emp = owner?.employees.find((e) => e.agentId === a.id);
+      if (owner?.phase !== "Off" && emp?.departedAt == null)
+        s.look = { ...s.look, held: undefined };
+    }
+    if ("emp" in a && !s.look.held && ["idle", "read", "walk"].includes(s.look.pose)) {
+      const emp = (a as Actor).emp;
+      if (a.items.includes("Scroll") && emp.planning && emp.activity.room === "Conference")
+        s.look = { ...s.look, held: "scroll" };
+    }
     if (!s.at) {
       if (a.root.visible && this.hovered === a.key) this.hover(null);
       a.root.visible = false;
@@ -765,7 +1096,6 @@ export class ActorLayer {
     if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir) a.animStart = now;
     if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir || s.look.held !== a.look.held) {
       a.look = s.look;
-      this.setHeld(a);
       this.setZz(a);
       moved = true;
     }
@@ -774,13 +1104,20 @@ export class ActorLayer {
     const pose = this.owls.meta.poses[a.look.pose];
     const n = pose?.dirs[a.look.dir] ?? 1;
     let frame = 0;
-    if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
-    else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
-      // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
-      if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
-      frame = now >= a.nextBlink ? 1 : 0;
+    if (!reducedMotion()) {
+      if (pose && pose.fps > 0) frame = Math.floor(((now - a.animStart) * pose.fps) / 1000) % n;
+      else if (a.look.pose === "idle" && a.look.dir === "f" && n > 1) {
+        // f 1번은 3~5초마다 150ms 눈 깜빡임 (HANDOFF 6.4)
+        if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
+        frame = now >= a.nextBlink ? 1 : 0;
+      }
+    }
+    if ("emp" in a) {
+      const hours = (now - Date.parse((a as Actor).emp.hiredAt)) / 3_600_000;
+      a.wear = hours >= 6 ? 3 : hours >= 3 ? 2 : hours >= 1 ? 1 : 0;
     }
     this.setFrame(a, frame);
+    this.setHeld(a, frame);
     return moved;
   }
 
@@ -792,6 +1129,7 @@ export class ActorLayer {
       if (a.zz) this.put(a.zz, h.x + ZZ_OFFSET[0], h.y + ZZ_OFFSET[1]);
       if (a.badge) this.put(a.badge, h.x + BADGE_OFFSET[0], h.y + BADGE_OFFSET[1]);
       if (a.bubble) this.put(a.bubble, h.x, h.y);
+      if ("emote" in a && a.emote) this.put(a.emote as HTMLElement, h.x, h.y);
     }
     for (const c of this.crowds.values()) this.put(c.el, c.x, c.y);
     const a = this.hovered ? this.actors.get(this.hovered) : undefined;
@@ -823,7 +1161,8 @@ export class ActorLayer {
     if (!a) return;
     const act = a.emp.activity;
     // {elapsed} 는 백엔드가 둔 자리일 때만 채운다. 에이전트가 쓴 글 속 같은 글자는 그대로 둔다
-    const text = fillElapsed(act.sentence, (now - Date.parse(act.since)) / 1000, act.elapsed);
+    const activity = fillElapsed(act.sentence, (now - Date.parse(act.since)) / 1000, act.elapsed);
+    const text = a.spot.startsWith("roof_") ? `옥상 휴식 (추정) · ${activity}` : activity;
     if (this.nametagText.textContent !== text) this.nametagText.textContent = text;
   }
 
@@ -838,7 +1177,7 @@ export class ActorLayer {
       if (this.hovered === key) this.hover(null);
     });
     b.root.on("pointertap", () => this.onPick?.(teamId, id));
-    const a: Actor = Object.assign(b, { emp, bubbleAt: 0 });
+    const a: Actor = Object.assign(b, { emp, bubbleAt: 0, emote: null, emoteUntil: 0 });
     this.actors.set(key, a);
     return a;
   }
@@ -848,7 +1187,7 @@ export class ActorLayer {
     const layers: Sprite[] = [];
     if (this.owls) {
       const [ax, ay] = this.owls.meta.anchor;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 8; i++) {
         const s = new Sprite();
         s.anchor.set(0);
         s.pivot.set(ax, ay);
@@ -865,6 +1204,8 @@ export class ActorLayer {
       heldName: undefined,
       species: "",
       outfit: "",
+      wear: 0,
+      items: [],
       role: null,
       look: IDLE,
       spot: "",
@@ -909,7 +1250,19 @@ export class ActorLayer {
     // 같은 팀에 또 오면 앞 사장님은 없던 것으로
     for (const v of this.visitors.filter((v) => v.teamId === c.teamId)) this.dropVisitor(v);
     this.onRing?.(now, c);
-    this.actors.get(empKey(c.teamId, lead.agentId))?.track.pose(JUMP, JUMP_MS, now);
+    const key = empKey(c.teamId, lead.agentId);
+    const actor = this.actors.get(key);
+    if (
+      actor &&
+      !reducedMotion() &&
+      !this.roomVisits.has(key) &&
+      canDecorate(team, lead, "phone")
+    ) {
+      this.cancelDecoration(key, now);
+      actor.track.pose(JUMP, JUMP_MS, now);
+      const until = actor.track.pose({ pose: "phone", dir: "f" }, 1000, now);
+      this.decorations.set(key, { kind: "phone", until });
+    }
     // 그 부장 좌석 앞(화면 아래쪽)에서 부장을 마주 본다
     const to = { gx: seat.gx, gy: seat.gy + VISIT_FRONT, z: 0 };
     const id = `boss-visit:${c.teamId}`;
@@ -1015,7 +1368,18 @@ export class ActorLayer {
 
   private setFrame(a: Body, frame: number): void {
     if (!this.owls) return;
-    const keys = owlFrameKeys(this.owls.textures, a.species, a.outfit, a.role, a.look, frame);
+    const outfit = a.wear ? `${a.outfit}-worn` : a.outfit;
+    const keys = owlFrameKeys(this.owls.textures, a.species, outfit, a.role, a.look, frame);
+    const wear = `wear/${a.wear}/${a.look.pose}_${a.look.dir}_${frame}`;
+    keys.splice(2, 0, a.wear && this.owls.textures[wear] ? wear : null);
+    for (const item of ["Medal", "Blanket", "Headphones", "Helmet"] as const) {
+      const shown =
+        a.items.includes(item) &&
+        !(item === "Medal" && a.items.includes("Blanket")) &&
+        !(item === "Headphones" && a.items.includes("Helmet"));
+      const key = `item/${item.toLowerCase()}/${a.look.pose}_${a.look.dir}_${frame}`;
+      keys.push(shown && this.owls.textures[key] ? key : null);
+    }
     keys.forEach((k, i) => {
       const s = a.layers[i];
       s.visible = k !== null;
@@ -1023,23 +1387,22 @@ export class ActorLayer {
     });
   }
 
-  private setHeld(a: Body): void {
+  private setHeld(a: Body, frame: number): void {
     const name = this.owls ? a.look.held : undefined;
-    if (name === a.heldName) return;
-    a.held?.destroy();
-    a.held = null;
-    a.heldName = name;
-    if (!name || !this.owls) return;
-    const anchor = this.owls.meta.anchors[`${a.look.pose}_${a.look.dir}_0`];
+    if (name !== a.heldName) {
+      a.held?.destroy();
+      a.held = null;
+      a.heldName = name;
+      if (name) {
+        a.held = placeSprite(this.office, `held_${name}/default`, 0, 0);
+        a.root.addChild(a.held);
+      }
+    }
+    if (!a.held || !this.owls) return;
+    const anchor = this.owls.meta.anchors[`${a.look.pose}_${a.look.dir}_${frame}`];
     if (!anchor) return;
     const [ax, ay] = this.owls.meta.anchor;
-    a.held = placeSprite(
-      this.office,
-      `held_${name}/default`,
-      anchor.hand[0] - ax,
-      anchor.hand[1] - ay,
-    );
-    a.root.addChild(a.held);
+    a.held.position.set(anchor.hand[0] - ax, anchor.hand[1] - ay);
   }
 
   private setZz(a: Body): void {
@@ -1117,6 +1480,42 @@ export class ActorLayer {
     a.bubble.classList.toggle("is-incident", b?.say.kind === "Incident");
     a.bubble.classList.toggle("is-ask", act.room === "Door");
     a.bubble.textContent = text;
+  }
+
+  private clearEmote(a: Actor): void {
+    a.emote?.remove();
+    a.emote = null;
+    a.emoteUntil = 0;
+  }
+
+  private setEmote(a: Actor, before: EmployeeDto, cues: CueDto[], now: number): void {
+    const cue = [...cues]
+      .reverse()
+      .find(
+        (c) => c.kind === "Reject" || c.kind === "Shake" || (c.kind === "Stamp" && c.confirmedPass),
+      );
+    let text: string | null = null;
+    let inferred = false;
+    if (cue) text = cue.kind === "Reject" ? "✕" : cue.kind === "Shake" ? "!" : "♪";
+    else if (a.emp.activity.room === "Door" && before.activity.room !== "Door") {
+      text = "?";
+      inferred = a.emp.activity.confidence === "Inferred";
+    } else if (a.emp.activity.pose === "Pace" && before.activity.pose !== "Pace") {
+      text = "…";
+      inferred = true;
+    } else if (a.emp.review?.approved && before.review?.approved === false) {
+      text = "✓";
+      inferred = true;
+    }
+    if (!text) return;
+    this.clearEmote(a);
+    a.emote = this.overlay.ownerDocument.createElement("div");
+    a.emote.className = "ow-bubble ow-emote";
+    a.emote.classList.toggle("is-estimate", inferred);
+    a.emote.setAttribute("aria-hidden", "true");
+    a.emote.textContent = text;
+    a.emoteUntil = now + EMOTE_MS;
+    this.overlay.insertBefore(a.emote, this.nametag);
   }
 
   private head(a: Body): { x: number; y: number } {

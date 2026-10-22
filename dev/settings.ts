@@ -7,7 +7,7 @@ import { openSettings, saveSettings } from "../src/popup-settings.ts";
 import type { Invoke } from "../src/scale.ts";
 import { mountSidebar } from "../src/sidebar-left.ts";
 import { mountPanel } from "../src/sidebar-right.ts";
-import { createStore } from "../src/store.ts";
+import { createStore, createUpdateStore } from "../src/store.ts";
 import { act, emp, office, team } from "../src/test-office.ts";
 import type { OfficeDto, OfficeListDto, SettingsDto } from "../src/types/ipc.ts";
 
@@ -18,9 +18,35 @@ let settings: SettingsDto = {
   bossName: null,
   manualPaths: [],
   sound: false,
+  nightMode: "auto",
   osNotifications: true,
   rawDiagnostics: false,
 };
+// 합성 진행은 버튼으로 한 단계씩 보내 검수 중에도 표시를 유지한다.
+let advanceUpdate: (() => void) | undefined;
+const updates = createUpdateStore({
+  getVersion: async () => "0.2.0",
+  check: async () => ({
+    version: "0.2.1",
+    downloadAndInstall: (progress) =>
+      new Promise<void>((resolve) => {
+        progress?.({ event: "Started", data: { contentLength: 1024 } });
+        advanceUpdate = () => {
+          progress?.({ event: "Progress", data: { chunkLength: 512 } });
+          advanceUpdate = () => {
+            progress?.({ event: "Progress", data: { chunkLength: 512 } });
+            progress?.({ event: "Finished" });
+            advanceUpdate = () => {
+              advanceUpdate = undefined;
+              resolve();
+            };
+          };
+        };
+      }),
+    close: async () => {},
+  }),
+});
+window.addEventListener("beforeunload", () => updates.destroy(), { once: true });
 let failSave = false;
 let failCopy = false;
 let failGet = false;
@@ -90,9 +116,12 @@ function list(selectedId: string | null): OfficeListDto {
             folder: "sample",
             others: 0,
             started: new Date().toISOString(),
+            lastActivity: new Date().toISOString(),
+            readFailed: false,
             phase: "Working",
             dot: "Working",
             asking: false,
+            askingCount: 0,
             border: "Plain",
             delayed: false,
             hostBadge: null,
@@ -128,6 +157,7 @@ const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>): P
       throw new Error("검증용 디스크 저장 실패 (메모리에는 반영됨)");
     }
   } else if (cmd === "get_diagnostics") result = "합성 진단: <home>\\.claude\\projects";
+  else if (cmd === "get_log_folder") result = "C:\\samples\\Owlfice\\logs";
   else get("status").textContent = `호출 확인: ${cmd}`;
   return result as T;
 };
@@ -144,6 +174,7 @@ const open = (opener: HTMLElement) =>
       invoke,
       onSettings: applySettings,
       writeClipboard,
+      updates,
       onError(message) {
         get("status").textContent = message;
       },
@@ -165,10 +196,11 @@ const header = mountHeader(get("app"), get("header"), store, {
   togglePanel: () => panel.toggleDrawer(),
   setRoomLabels: (on) => canvas?.setRoomLabels(on),
   onSound: (sound) => saveSettings({ invoke, onSettings: applySettings }, { sound }),
+  onNightMode: (nightMode) => saveSettings({ invoke, onSettings: applySettings }, { nightMode }),
 });
 function applySettings(next: SettingsDto): void {
   sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
-  header.setSettings(next.companyName, next.sound ?? false);
+  header.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
   canvas?.setBossName(next.bossName);
   get("status").textContent =
     `회사: ${next.companyName ?? "Owlfice"} · 사장님: ${next.bossName ?? "사장님"} · 소리: ${next.sound} · OS 알림: ${next.osNotifications} · 원문 진단: ${next.rawDiagnostics}`;
@@ -183,6 +215,7 @@ mountOffice(get("stage"), store, { onScale: (n) => header.setScale(n) }).then(
     get("status").textContent = `캔버스 로드 실패: ${String(error)}`;
   },
 );
+get("update-progress").addEventListener("click", () => advanceUpdate?.());
 get("open").addEventListener("click", () => open(get("open")));
 get("fail-save").addEventListener("click", () => {
   failSave = true;

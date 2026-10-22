@@ -1,10 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
 import "../design/handoff/tokens.css";
 import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 이 필요해 가장 먼저 부른다
 import { firstOffice } from "./first-office.ts";
 import { mountEmptyOffice } from "./empty-office.ts";
-import { mountHeader } from "./header.ts";
+import { applyNightMode, mountHeader } from "./header.ts";
 import { mountOffice, type OfficeHandle } from "./office/renderer.ts";
 import { OfficeSound } from "./office/sound.ts";
 import { emptyState, mountSidebar, popupNames } from "./sidebar-left.ts";
@@ -12,10 +15,11 @@ import { mountPanel } from "./sidebar-right.ts";
 import { showLoading, type LoadingSheet } from "./loading.ts";
 import { openEmployeeDetail } from "./popup-employee.ts";
 import { openSessionDetail } from "./popup-session.ts";
+import { detailErrorText } from "./popup-modal.ts";
 import { openSettings, saveSettings } from "./popup-settings.ts";
 import { showScale } from "./scale.ts";
 import phrases from "../design/handoff/phrases.ko.json";
-import { createStore } from "./store.ts";
+import { createStore, createUpdateStore } from "./store.ts";
 import type {
   EmployeeDto,
   OfficeDto,
@@ -26,6 +30,8 @@ import type {
 } from "./types/ipc.ts";
 
 const store = createStore<OfficeListDto, OfficeDto>();
+const updates = createUpdateStore({ getVersion, check });
+window.addEventListener("beforeunload", () => updates.destroy(), { once: true });
 
 // 사이드바 클릭과 첫 사무실 자동 선택이 같은 경로로 부른다
 function requestSelect(officeId: string, requestId: number): void {
@@ -75,6 +81,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
   const main = el("div", "ow-main");
   const headerEl = el("header");
   const stage = el("div", "ow-stage");
+  stage.append(el("div", "ow-stage__floor"));
   const selectionError = el("p", "ow-selection-error");
   selectionError.setAttribute("role", "alert");
   selectionError.hidden = true;
@@ -114,7 +121,11 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     opener?: HTMLElement,
   ): void =>
     openEmployeeDetail(
-      { invoke, live },
+      {
+        invoke,
+        live,
+        isTeamOff: (id) => store.state.office?.teams.find((t) => t.teamId === id)?.phase === "Off",
+      },
       {
         officeId,
         teamId,
@@ -130,6 +141,28 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     onEmployee: (teamId, agentId, opener) => {
       const officeId = store.state.selectedId;
       if (officeId) openEmployee(officeId, teamId, agentId, opener);
+    },
+    onSession: (teamId, opener) => {
+      const officeId = store.state.selectedId;
+      if (officeId)
+        openSessionDetail(
+          { invoke, live },
+          {
+            officeId,
+            teamId,
+            name: popupNames(store.state.list, officeId, teamId).teamLabel,
+          },
+          opener,
+        );
+    },
+    onSource: async (teamId) => {
+      const officeId = store.state.selectedId;
+      if (!officeId) return;
+      try {
+        await invoke<void>("open_path", { target: { kind: "SourceFolder", officeId, teamId } });
+      } catch (error) {
+        throw new Error(detailErrorText(error));
+      }
     },
   });
   const sidebar = mountSidebar(side, store, requestSelect, {
@@ -148,6 +181,8 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
   header = mountHeader(app, headerEl, store, {
     companyName,
     sound: settings.sound ?? false,
+    nightMode: settings.nightMode ?? "auto",
+    onNightMode: (nightMode) => saveSettings({ invoke, onSettings: applySettings }, { nightMode }),
     onSound: (on) => {
       soundGesture(on);
       return saveSettings({ invoke, onSettings: applySettings }, { sound: on });
@@ -155,12 +190,32 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     bandSlot: () => side.querySelector<HTMLElement>(".ow-side-band"),
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels: (on) => office?.setRoomLabels(on),
+    setScale: (scale) => office?.setScale(scale),
+    stage,
+    centerCanvas: () => office?.centerCanvas(),
+    toggleMaximize: () => getCurrentWindow().toggleMaximize(),
   });
   const emptyOffice = mountEmptyOffice(stage, store, { invoke, onSettings: showSettings, sheet });
+  let updateStarted = false;
+  const stopUpdateStart = store.subscribe(checkAfterOffice);
+  function checkAfterOffice(): void {
+    const { list, office: selected } = store.state;
+    if (updateStarted || !office || !list || (!selected && list.offices.length > 0)) return;
+    updateStarted = true;
+    stopUpdateStart();
+    // 렌더러의 첫 프레임 다음에 확인해 시작 화면을 네트워크 응답으로 늦추지 않는다.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        void updates.check(true).then((version) => {
+          if (version) sidebar.notifyUpdate(version);
+        });
+      }),
+    );
+  }
   mountOffice(stage, store, {
     sound,
     bossName: settings.bossName,
-    onScale: (n) => header?.setScale(n),
+    onScale: (n, maxFit) => header?.setScale(n, maxFit),
     onEmployee: (officeId, teamId, agentId) => {
       panel.highlight(teamId, agentId);
       openEmployee(officeId, teamId, agentId);
@@ -177,6 +232,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
       pendingTeam = null;
       o.setRoomLabels(header?.roomLabels() ?? true);
       o.setBossName(settings.bossName);
+      checkAfterOffice();
     },
     (e) => {
       console.error("사무실 캔버스", e);
@@ -191,6 +247,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     openSettings(
       {
         invoke,
+        updates,
         onSettings: applySettings,
         onSoundGesture: soundGesture,
         onError(message) {
@@ -205,7 +262,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     settings = next;
     sound.setEnabled(next.sound ?? false);
     sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
-    header?.setSettings(next.companyName, next.sound ?? false);
+    header?.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
     office?.setBossName(next.bossName);
   }
 }
@@ -213,6 +270,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
 async function start(): Promise<void> {
   // 규모를 아직 안 골랐으면(첫 실행, 손상된 설정) 고를 때까지 진행하지 않는다. 그다음 로딩 화면 (docs/CONTRACTS.md C4)
   let settings = await invoke<SettingsDto>("get_settings");
+  applyNightMode(document, settings.nightMode ?? "auto");
   const root = document.body.appendChild(document.createElement("div"));
   const sheet = await loadSheet();
   if (!settings.scale) {

@@ -283,3 +283,28 @@ test("Esc 로 닫으면 연 버튼으로 초점이 돌아가고, 닫은 뒤 늦�
   await flush();
   expect(s.q(".ow-kv")).toBeNull();
 });
+
+test("공통 20px 여백에서도 세션 사건은 grid이고 바닥 버튼은 36px을 유지한다", async () => {
+  const { readFileSync } = await vi.importActual<{
+    readFileSync: (path: string, encoding: "utf8") => string;
+  }>("node:fs");
+  const style = document.createElement("style");
+  style.textContent =
+    readFileSync("design/handoff/tokens.css", "utf8") +
+    readFileSync("src/styles/popup.css", "utf8");
+  document.head.append(style);
+  try {
+    const s = setup();
+    await flush();
+    const css = (selector: string) => getComputedStyle(s.q(selector)!);
+    expect(css(".ow-pop__timeline .ow-tl").display).toBe("grid");
+    expect(css(".ow-pop__timeline .ow-tl").gridTemplateColumns).toBe(
+      "64px 24px 92px minmax(0, 1fr) auto",
+    );
+    expect(css(".ow-pop__head").paddingLeft).toBe("20px");
+    expect(css(".ow-pop__body").paddingLeft).toBe("20px");
+    expect(css(".ow-modal__foot .ow-btn").height).toBe("36px");
+  } finally {
+    style.remove();
+  }
+});

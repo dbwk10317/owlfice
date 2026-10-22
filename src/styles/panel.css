@@ -10,6 +10,8 @@
   height: 48px;
 }
 .ow-panel__title {
+  flex: none;
+  white-space: nowrap;
   margin: 0;
   font-size: 14px;
   font-weight: 600;
@@ -19,6 +21,7 @@
   font-size: 11.5px;
 }
 .ow-panel__office {
+  min-width: 0;
   margin-left: auto;
   font-size: 12px;
   color: var(--ow-ink-3);
@@ -50,7 +53,8 @@
   pointer-events: none;
 }
 .ow-panel__toast {
-  background: #fff;
+  background: var(--ow-surface);
+  color: var(--ow-ink);
   border-radius: var(--ow-radius-md);
   box-shadow: var(--ow-shadow-pop);
   padding: 8px 12px;
@@ -59,13 +63,27 @@
   animation: ow-toast-in var(--ow-dur-2) var(--ow-ease);
 }
 
-/* 카드는 button 이라 안쪽은 span 이다. 줄 단위는 여기서 정한다 */
+.ow-card__avatar {
+  position: relative;
+  flex: none;
+}
 .ow-card__id {
   flex: 1;
   min-width: 0;
   display: block;
 }
-.ow-card__line,
+.ow-card__line {
+  display: flex;
+  align-items: center;
+}
+.ow-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ow-card__rank {
+  flex: none;
+}
 .ow-card__sub {
   display: block;
 }
@@ -82,7 +100,7 @@
   height: 14px;
 }
 .ow-model {
-  max-width: 110px;
+  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -93,11 +111,14 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.ow-trail__row {
-  display: block;
+.ow-trail__text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ow-trail__item.is-last::after {
+  display: none;
 }
 .ow-quote {
   overflow: hidden;
@@ -110,16 +131,68 @@
   white-space: nowrap;
   min-width: 0;
 }
+.ow-card__ask-actions {
+  display: flex;
+  gap: 6px;
+}
+.ow-card__approval,
+.ow-card__source {
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius-md);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ow-card__approval {
+  background: var(--ow-ask);
+  border-color: var(--ow-ask);
+  color: var(--ow-surface);
+}
+.ow-card__ask-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ow-card__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ow-bad-ink);
+  overflow-wrap: anywhere;
+}
 
-/* 압축형: 행적 1줄, 실적과 발언 숨김 (높이 640 미만) */
+/* 압축형은 이름·직급과 방을 첫 줄에 두고 세부 이력을 접는다. */
+.ow-card.is-compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.ow-card.is-compact .ow-card__open {
+  grid-column: 1;
+  min-width: 0;
+}
+.ow-card.is-compact .ow-status {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+.ow-card.is-compact .ow-now,
+.ow-card.is-compact .ow-progress,
+.ow-card.is-compact .ow-card__ask-actions,
+.ow-card.is-compact .ow-card__error {
+  grid-column: 1 / -1;
+}
 .ow-card.is-compact .ow-stats,
 .ow-card.is-compact .ow-quote,
 .ow-card.is-compact .ow-card__sub,
-.ow-card.is-compact .ow-trail__row:nth-child(n + 2) {
+.ow-card.is-compact .ow-card__meta,
+.ow-card.is-compact .ow-trail {
   display: none;
 }
 
-/* 티커: 목록을 두 번 이어 붙여 -50% 만큼 흐르면 이음매가 없다. 간격은 항목 오른쪽 여백으로 (gap 이면 반이 어긋난다). tokens.css 의 `.ow-app button { margin: 0 }` 에 지지 않게 선택자를 한 단계 더 쓴다 */
+/* 티커: 목록을 두 번 이어 붙여 -50% 만큼 흐르면 이음매가 없다. 간격은 항목 오른쪽 여백으로 (gap 이면 반이 어긋난다). */
+.ow-ticker__label {
+  position: relative;
+  z-index: 1;
+  box-shadow: 8px 0 8px var(--ow-surface);
+}
 .ow-ticker__view {
   flex: 1;
   min-width: 0;
@@ -128,20 +201,22 @@
 .ow-ticker__track {
   gap: 0;
 }
-.ow-ticker__track .ow-ticker__item {
-  font: inherit;
-  color: inherit;
+.ow-ticker__item {
   margin-right: 24px;
   white-space: nowrap;
 }
-.ow-ticker__track .ow-ticker__item:hover {
-  color: var(--ow-ink);
+.ow-ticker__item:focus-visible {
+  background: var(--ow-fill);
 }
-.ow-ticker__time {
-  color: var(--ow-ink-3);
+.ow-ticker__quiet {
+  background: var(--ow-fill);
+  color: var(--ow-ink-2);
 }
 .ow-ticker__track.is-flowing {
   animation: ow-tick 48s linear infinite;
+}
+.ow-ticker__track.is-flowing.is-paused {
+  animation-play-state: paused;
 }
 @keyframes ow-tick {
   to {
@@ -154,9 +229,4 @@
   .ow-panel__toast {
     animation: none;
   }
-}
-
-/* 퇴근 묶음 안 카드 (design/HANDOFF.md 4.5) */
-.ow-card.is-departed {
-  opacity: 0.6;
 }

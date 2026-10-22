@@ -6,16 +6,28 @@ import panelSvg from "../design/handoff/icons/panel.svg?raw";
 import roomLabelsSvg from "../design/handoff/icons/room-labels.svg?raw";
 import soundOnSvg from "../design/handoff/icons/sound-on.svg?raw";
 import soundOffSvg from "../design/handoff/icons/sound-off.svg?raw";
+import approvalSvg from "../design/handoff/icons/approval.svg?raw";
+import chevronSvg from "../design/handoff/icons/chevron-down.svg?raw";
+import centerSvg from "../design/handoff/icons/center.svg?raw";
+import fullscreenSvg from "../design/handoff/icons/fullscreen.svg?raw";
 import { BUILDING_PRODUCT, DOT_STATE, FLOOR_PRODUCT, ringOf, WORK_TYPES } from "./sidebar-left.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { windowViewport, type Viewport } from "./sidebar-right.ts";
-import type { OfficeDto, OfficeListDto, TeamSummaryDto } from "./types/ipc.ts";
+import type { NightMode, OfficeDto, OfficeListDto, TeamSummaryDto } from "./types/ipc.ts";
 
 const H = phrases.header;
 const TICK_MS = 30_000;
 
+export function applyNightMode(doc: Document, mode: NightMode, now = Date.now()): boolean {
+  const hour = new Date(now).getHours();
+  const night = mode === "on" || (mode === "auto" && (hour >= 20 || hour < 6));
+  if (night) doc.documentElement.dataset.theme = "night";
+  else delete doc.documentElement.dataset.theme;
+  return night;
+}
+
 type Layout = "wide" | "drawer" | "rail" | "select";
-/** 3.2 표의 너비 구간. 사이드바(900/720)와 현황판(900) 경계가 같다 */
+/** 2.2 표의 너비 구간. 사이드바(900/720)와 현황판(900) 경계가 같다 */
 export function layoutOf(width: number): Layout {
   return width >= 1100 ? "wide" : width >= 900 ? "drawer" : width >= 720 ? "rail" : "select";
 }
@@ -36,16 +48,23 @@ export interface HeaderOptions {
   bandSlot?(): HTMLElement | null;
   togglePanel(): void;
   setRoomLabels(on: boolean): void;
+  setScale?(scale: number): void;
+  stage?: HTMLElement;
+  centerCanvas?(): void;
+  toggleMaximize?(): Promise<void>;
   /** 사무실을 안 골랐을 때 제목 "{company} 본사" 의 이름. 없으면 기본 이름 */
   companyName?: string;
   sound?: boolean;
   onSound?: (on: boolean) => Promise<void>;
+  nightMode?: NightMode;
+  onNightMode?: (mode: NightMode) => Promise<void>;
+  now?: () => number;
 }
 export interface HeaderHandle {
   roomLabels(): boolean;
-  setScale(scale: number): void;
+  setScale(scale: number, maxFit?: number): void;
   setDrawerOpen(open: boolean): void;
-  setSettings(companyName: string | null, sound: boolean): void;
+  setSettings(companyName: string | null, sound: boolean, nightMode?: NightMode): void;
 }
 
 type El = HTMLElement;
@@ -83,23 +102,30 @@ export function mountHeader(
   header.classList.add("ow-header");
   let hq = fill(H.hq, { company: opts.companyName ?? phrases.app.brand });
   let soundOn = opts.sound ?? false;
+  let nightMode = opts.nightMode ?? "auto";
+  const now = opts.now ?? Date.now;
 
   const square = mk(doc, "span", "ow-header__square");
   const title = mk(doc, "h1", "ow-header__title");
   const sub = mk(doc, "span", "ow-header__sub ow-header__wide");
   const slash = mk(doc, "span", "ow-header__sub ow-header__wide", "/");
   const session = mk(doc, "span", "ow-header__session ow-header__full");
-  const status = mk(doc, "span", "ow-chip ow-header__wide");
+  const status = mk(doc, "span", "ow-chip ow-header__state ow-header__wide");
   const statusDot = mk(doc, "span", "ow-dot");
   const statusNight = mk(doc, "span", "ow-icon ow-icon--sm");
   statusNight.setAttribute("aria-hidden", "true");
   statusNight.innerHTML = nightSvg;
   const statusText = mk(doc, "span", "ow-header__status");
   status.append(statusDot, statusNight, statusText);
+  const asking = mk(doc, "span", "ow-chip is-ask ow-header__asking ow-header__wide");
+  const askingIcon = mk(doc, "span", "ow-icon ow-icon--sm");
+  askingIcon.setAttribute("aria-hidden", "true");
+  askingIcon.innerHTML = approvalSvg;
+  const askingText = mk(doc, "span");
+  asking.append(askingIcon, askingText);
   const work = mk(doc, "span", "ow-chip ow-header__work");
   const divider = mk(doc, "span", "ow-header__divider ow-header__wide");
   const labels = iconBtn(doc, roomLabelsSvg, H.roomLabels);
-  labels.classList.add("ow-header__wide");
   labels.setAttribute("aria-pressed", "true");
   const sound = iconBtn(doc, soundOn ? soundOnSvg : soundOffSvg, soundOn ? H.soundOff : H.soundOn);
   sound.setAttribute("aria-pressed", String(soundOn));
@@ -119,15 +145,112 @@ export function mountHeader(
       sound.disabled = false;
     }
   });
-  const scale = mk(doc, "span", "ow-chip ow-header__scale ow-header__full", "1×");
+  const nightToggle = iconBtn(doc, nightSvg, H.nightOn);
+  nightToggle.disabled = !opts.onNightMode;
+  nightToggle.addEventListener("click", async () => {
+    nightToggle.disabled = true;
+    soundError.hidden = true;
+    render();
+    try {
+      await opts.onNightMode?.(doc.documentElement.dataset.theme === "night" ? "off" : "on");
+    } catch (e) {
+      soundError.textContent = String(e);
+      soundError.hidden = false;
+    } finally {
+      nightToggle.disabled = false;
+    }
+  });
+  const segment = mk(doc, "div", "ow-segment ow-header__wide");
+  segment.append(labels, sound, nightToggle);
+  const zoom = mk(doc, "div", "ow-header__zoom ow-header__full");
+  const scale = iconBtn(doc, chevronSvg, H.scale);
+  scale.className = "ow-chip is-line is-zoom ow-header__scale";
+  const scaleText = mk(doc, "span", "", "1×");
+  scale.prepend(scaleText);
   scale.title = H.scale;
+  scale.disabled = !opts.setScale;
+  scale.setAttribute("aria-haspopup", "menu");
+  scale.setAttribute("aria-expanded", "false");
+  const menu = mk(doc, "div", "ow-header__scale-menu");
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", H.scale);
+  menu.hidden = true;
+  const choices = [1, 2, 3].map((n) => {
+    const b = doc.createElement("button");
+    b.type = "button";
+    b.textContent = `${n}×`;
+    b.setAttribute("role", "menuitemradio");
+    b.setAttribute("aria-checked", String(n === 1));
+    b.disabled = n > 1;
+    b.addEventListener("click", () => {
+      opts.setScale?.(n);
+      closeMenu();
+      scale.focus();
+    });
+    menu.append(b);
+    return b;
+  });
+  function closeMenu(): void {
+    menu.hidden = true;
+    scale.setAttribute("aria-expanded", "false");
+  }
+  scale.addEventListener("click", () => {
+    if (!menu.hidden) return closeMenu();
+    menu.hidden = false;
+    scale.setAttribute("aria-expanded", "true");
+    (choices.find((b) => b.getAttribute("aria-checked") === "true") ?? choices[0]).focus();
+  });
+  zoom.addEventListener("keydown", (e) => {
+    if (menu.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeMenu();
+      scale.focus();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const enabled = choices.filter((b) => !b.disabled);
+      const at = enabled.indexOf(doc.activeElement as HTMLButtonElement);
+      enabled[(at + (e.key === "ArrowDown" ? 1 : enabled.length - 1)) % enabled.length].focus();
+    }
+  });
+  zoom.addEventListener("focusout", (e) => {
+    if (!zoom.contains(e.relatedTarget as Node | null)) closeMenu();
+  });
+  doc.addEventListener("pointerdown", (e) => {
+    if (!zoom.contains(e.target as Node)) closeMenu();
+  });
+  zoom.append(scale, menu);
+  if (opts.stage) {
+    const tools = mk(doc, "div", "ow-stage__tools");
+    const center = iconBtn(doc, centerSvg, H.center);
+    const maximize = iconBtn(doc, fullscreenSvg, H.fullscreen);
+    center.classList.add("ow-iconbtn--raised");
+    maximize.classList.add("ow-iconbtn--raised");
+    center.disabled = !opts.centerCanvas;
+    maximize.disabled = !opts.toggleMaximize;
+    center.addEventListener("click", () => opts.centerCanvas?.());
+    maximize.addEventListener("click", async () => {
+      maximize.disabled = true;
+      soundError.hidden = true;
+      try {
+        await opts.toggleMaximize?.();
+      } catch (e) {
+        soundError.textContent = String(e);
+        soundError.hidden = false;
+      } finally {
+        maximize.disabled = false;
+      }
+    });
+    tools.append(center, maximize);
+    opts.stage.append(tools);
+  }
   const panelBtn = iconBtn(doc, panelSvg, H.panelOpen);
   panelBtn.classList.add("ow-iconbtn--solid", "ow-header__panel");
   panelBtn.setAttribute("aria-expanded", "false");
   const spacer = mk(doc, "span", "ow-header__spacer");
   header.append(
-    square, title, sub, slash, session, status, work, spacer,
-    divider, labels, sound, scale, panelBtn,
+    square, title, sub, slash, session, status, asking, work, spacer,
+    divider, segment, zoom, panelBtn,
   ); // prettier-ignore
 
   let roomLabelsOn = true;
@@ -165,7 +288,10 @@ export function mountHeader(
     setText(session, sessionTitle);
     slash.hidden = session.hidden = !sessionTitle;
 
-    const t = Date.now();
+    const t = now();
+    const nightTheme = applyNightMode(doc, nightMode, t);
+    nightToggle.setAttribute("aria-pressed", String(nightTheme));
+    nightToggle.setAttribute("aria-label", nightTheme ? H.nightOff : H.nightOn);
     const night = !!office?.shared.night;
     const off = !sel || sel.phase === "Off" || live.length === 0;
     statusDot.hidden = night;
@@ -186,7 +312,12 @@ export function mountHeader(
             : "";
     }
     status.hidden = !statusMsg;
+    status.classList.toggle("is-night", !off && night);
+    status.classList.toggle("is-live", !off && !night);
     setText(statusText, statusMsg);
+    const askingCount = live.reduce((sum, t) => sum + t.askingCount, 0);
+    asking.hidden = askingCount === 0;
+    setText(askingText, fill(H.askingCount, { n: askingCount }));
 
     const wt = live[0]?.workType;
     work.hidden = !wt;
@@ -200,6 +331,7 @@ export function mountHeader(
     app.dataset.layout = layout;
     header.hidden = layout === "select";
     header.classList.toggle("ow-header--strip", layout === "rail");
+    if (layout === "rail" || layout === "select") closeMenu();
     panelBtn.hidden = layout === "wide";
     const home = (layout === "select" && opts.bandSlot?.()) || header;
     if (panelBtn.parentElement !== home) home.append(panelBtn);
@@ -208,20 +340,30 @@ export function mountHeader(
   store.subscribe(render);
   view.subscribe(onResize);
   setInterval(render, TICK_MS);
+  doc.addEventListener("visibilitychange", () => {
+    if (!doc.hidden) render();
+  });
   onResize();
   render();
 
   return {
-    setSettings(companyName, on) {
+    setSettings(companyName, on, mode = nightMode) {
       hq = fill(H.hq, { company: companyName || phrases.app.brand });
       soundOn = on;
+      nightMode = mode;
       sound.setAttribute("aria-pressed", String(on));
       sound.setAttribute("aria-label", on ? H.soundOff : H.soundOn);
       sound.firstElementChild!.innerHTML = on ? soundOnSvg : soundOffSvg;
       render();
     },
     roomLabels: () => roomLabelsOn,
-    setScale: (n) => setText(scale, `${n}×`),
+    setScale: (n, maxFit = n) => {
+      setText(scaleText, `${n}×`);
+      choices.forEach((b, i) => {
+        b.disabled = i > 0 && i + 1 > maxFit;
+        b.setAttribute("aria-checked", String(i + 1 === n));
+      });
+    },
     setDrawerOpen(open) {
       panelBtn.setAttribute("aria-expanded", String(open));
       panelBtn.setAttribute("aria-label", open ? H.panelClose : H.panelOpen);

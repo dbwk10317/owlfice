@@ -1,6 +1,7 @@
 // 개발용 직원 액터 확인 페이지 (npm run dev 에서 /dev/actors.html). 앱 빌드에 들어가지 않는다.
 import { mountOffice } from "../src/office/renderer.ts";
-import { office as testOffice, team as testTeam } from "../src/test-office.ts";
+import { mountPanel } from "../src/sidebar-right.ts";
+import { act as testAct, office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type {
   EmployeeDto,
   OfficeDto,
@@ -45,6 +46,14 @@ function emp(
     },
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },
+    uniqueReads: 0,
+    pendingCount: 0,
+    uniqueEdits: 0,
+    planning: false,
+    rejected: false,
+    medal: false,
+    items: [],
+    buildTestBorder: "Plain",
     lastSay: null,
     hiredAt: since,
     retiredAt: null,
@@ -110,7 +119,18 @@ const LARGE: OfficeDto = {
   cues: [],
   teams: [
     team("t1", "A", 0, [
-      emp("L-boss", "김부장", "Bujang", "Backend", "TeamLead", "Type", "보고서 작성 중"),
+      emp("L-boss", "김부장", "Bujang", "Backend", "TeamLead", "Type", "보고서 작성 중", {
+        model: "opus",
+        contextUsed: 124_000,
+        contextWindow: 200_000,
+        recent: [
+          testAct({ sentence: "`main.ts` 열람", since }),
+          testAct({ sentence: "사고: `npm test` 실패", since }),
+          testAct({ sentence: "반려됨: `rm` 안 됩니다", since }),
+        ],
+        counters: { read: 12, edit: 3, shell: 5, outside: 2, meeting: 1, errors: 1 },
+        lastSay: "합성 카드의 행적과 실적을 확인합니다.",
+      }),
       // 말풍선은 4초만 뜬다. 다시 보려면 페이지를 새로 고친다
       emp("L-dev0", "이대리", "Daeri", "Frontend", "Dev", "Type", "app.ts 수정 중", {
         seat: 0,
@@ -161,9 +181,18 @@ const LARGE: OfficeDto = {
         "거래처 figma와 get_file 건으로 미팅 중",
       ),
       emp("L-ship", "임사원", "Sawon", "Backend", "Shipping", "Sit", "출고 포장 중"),
-      emp("L-door", "강대리", "Daeri", "Writer", "Door", "Sit", "결재판 들고 문 앞 대기", {
-        bubble: { at: nowIso(), say: { kind: "PlanApproval" } },
-      }),
+      emp(
+        "L-door",
+        "강대리",
+        "Daeri",
+        "Writer",
+        "Door",
+        "Sit",
+        "결재판 들고 문 앞 대기: 「합성 문서를 수정할까요?」",
+        {
+          bubble: { at: nowIso(), say: { kind: "PlanApproval" } },
+        },
+      ),
       emp("L-inc", "조사원", "Sawon", "DevOps", "Incident", "Sit", "장애 상황실 소집"),
       emp("L-pantry", "신대리", "Daeri", "Backend", "Pantry", "Sit", "탕비실에서 게임 중인 듯", {
         retiredAt: since,
@@ -265,10 +294,24 @@ function storeOf(office: OfficeDto) {
   return { state: { list, selectedId: office.officeId, office }, subscribe: () => () => {} };
 }
 
-Promise.all([
-  mountOffice(document.getElementById("large")!, storeOf(LARGE)),
-  mountOffice(document.getElementById("small")!, storeOf(SMALL)),
-]).catch((e) => {
+function mountSample(id: string, dto: OfficeDto, height: number) {
+  const stage = document.getElementById(id)!;
+  const shell = document.createElement("div");
+  shell.className = "ow-app";
+  Object.assign(shell.style, { width: "1444px", height: `${height}px`, marginBottom: "24px" });
+  stage.before(shell);
+  stage.style.height = "100%";
+  const panel = document.createElement("div");
+  panel.style.display = "flex";
+  shell.append(stage, panel);
+  const store = storeOf(dto);
+  mountPanel(panel, store, {
+    viewport: { size: () => ({ w: 1444, h: height }), subscribe: () => () => {} },
+  });
+  return mountOffice(stage, store);
+}
+
+Promise.all([mountSample("large", LARGE, 680), mountSample("small", SMALL, 620)]).catch((e) => {
   document.body.append(`실패: ${e}`);
   console.error(e);
 });

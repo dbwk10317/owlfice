@@ -1,11 +1,18 @@
 // 개발용 소품 상태 비교 페이지 (npm run dev 에서 /dev/props.html). 앱 빌드에 들어가지 않는다.
 // 바뀐 소품 상태를 PropsLayer 로 그려 tools/props_ref.py 가 만든 참조와 견준다.
 import { Rectangle, type Spritesheet } from "pixi.js";
-import { CANVAS_H, CANVAS_W, hexToRgb, type Kind, type Theme } from "../src/office/floorplan.ts";
+import {
+  CANVAS_H,
+  CANVAS_W,
+  hexToRgb,
+  type Kind,
+  type LightName,
+  type Theme,
+} from "../src/office/floorplan.ts";
 import { PropsLayer } from "../src/office/props.ts";
 import { buildScene, createOfficeApp } from "../src/office/renderer.ts";
 import { loadOfficeAssets } from "../src/office/sprites.ts";
-import { office as testOffice, team as testTeam } from "../src/test-office.ts";
+import { emp as testEmp, office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type { OfficeDto, TeamDto, TodoItem } from "../src/types/ipc.ts";
 
 import { compare, loadRef, show, unpremultiply } from "./ref.ts";
@@ -19,8 +26,28 @@ declare global {
 const todo = (status: TodoItem["status"], n: number): TodoItem[] =>
   Array.from({ length: n }, () => ({ content: "x", status }));
 const team = (deskSlot: number, plant: number | null, building: string): TeamDto => {
-  const t = testTeam(`t${deskSlot}`, [], { building });
-  return { ...t, deskSlot, props: { ...t.props, plant } };
+  const t = testTeam(`t${deskSlot}`, [], {
+    building,
+    daylight: building === "C" ? "night" : "evening",
+  });
+  t.deskSlot = deskSlot;
+  t.props.plant = plant;
+  if (deskSlot === 0) {
+    const night = building === "C";
+    t.employees = [
+      testEmp("boss", {
+        hiredAt: since(NOW(night ? 23 : 18), night ? 240 : 120),
+        uniqueReads: night ? 100 : 50,
+        uniqueEdits: 20,
+        pendingCount: 2,
+      }),
+    ];
+    t.testsToday = { passed: night ? 105 : 12, failed: night ? 7 : 2 };
+    t.commitsToday = 2;
+    t.props.pr = [1, "https://example.invalid/pull/1"];
+    t.props.night = night;
+  }
+  return t;
 };
 const office = (shared: Partial<OfficeDto["shared"]>, teams: TeamDto[]): OfficeDto => {
   const o = testOffice("props-reference", 0, teams);
@@ -33,7 +60,7 @@ interface Case {
   ref: string;
   kind: Kind;
   theme: Theme;
-  lit: boolean;
+  lit: LightName | null;
   office: OfficeDto | null;
   now: number;
 }
@@ -44,7 +71,7 @@ const CASES: Case[] = [
     ref: "large-claude",
     kind: "large",
     theme: "claude",
-    lit: false,
+    lit: null,
     office: null,
     now: NOW(12),
   },
@@ -52,7 +79,7 @@ const CASES: Case[] = [
     ref: "props-large-claude",
     kind: "large",
     theme: "claude",
-    lit: false,
+    lit: null,
     now: NOW(18),
     office: office(
       {
@@ -71,7 +98,7 @@ const CASES: Case[] = [
     ref: "props-small-codex-night",
     kind: "small",
     theme: "codex",
-    lit: true,
+    lit: "night",
     now: NOW(23),
     office: office(
       {
@@ -87,6 +114,7 @@ const CASES: Case[] = [
     ),
   },
 ];
+CASES.push({ ...CASES[1], ref: "props-large-claude-evening", lit: "evening" });
 
 /** TV 화면 평행사변형(office.json props.tv.screen). 점 한 픽셀 여유를 둔다. 참조에 TV 선이 없어 견주지 않는다 */
 function tvScreenTest(x0: number, y0: number, sheet: Spritesheet) {
@@ -112,11 +140,14 @@ async function main(): Promise<void> {
   const result: Record<string, number> = {};
   for (const c of CASES) {
     const scene = buildScene(assets, c.kind, c.theme, false);
-    new PropsLayer(assets.floorplan, assets.sheet, c.kind, scene).update(c.office, c.now);
+    new PropsLayer(assets.floorplan, assets.sheet, c.kind, scene, null, false).update(
+      c.office,
+      c.now,
+    );
     const tv = assets.floorplan.layouts[c.kind].placements.find((p) => p.id === "tv")!;
     const inTvScreen = tvScreenTest(tv.x, tv.y, assets.sheet);
     if (c.lit) {
-      const [r, g, b] = hexToRgb(assets.floorplan.lightTints.night);
+      const [r, g, b] = hexToRgb(assets.floorplan.lightTints[c.lit]);
       for (const l of scene.lit) l.tint = (r << 16) | (g << 8) | b;
     }
     app.stage.addChild(scene.root);

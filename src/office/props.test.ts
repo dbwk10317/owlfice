@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { BitmapText, Sprite, Texture, type Spritesheet } from "pixi.js";
+import { BitmapText, Graphics, Sprite, Texture, type Spritesheet } from "pixi.js";
 import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
@@ -74,9 +74,9 @@ function office(shared: Partial<OfficeDto["shared"]> = {}, teams: TeamDto[] = []
   } as unknown as OfficeDto;
 }
 
-function layer(kind: Kind = "large") {
+function layer(kind: Kind = "large", season = false) {
   const scene = buildScene(assets, kind, "claude", false);
-  return { scene, props: new PropsLayer(fp, sheet, kind, scene) };
+  return { scene, props: new PropsLayer(fp, sheet, kind, scene, null, season) };
 }
 
 const withFrame = (children: unknown[], frame: string) =>
@@ -293,25 +293,25 @@ test("피자: 개수만큼 쌓고 8개에서 멈춘다", () => {
   expect(boxes()).toHaveLength(8);
 });
 
-test("창밖: 06·17·22시 경계, 컵라면은 야근일 때만", () => {
-  expect([5, 6, 16, 17, 21, 22, 23, 0].map(windowState)).toEqual([
-    "night",
-    "day",
+test("창밖은 DTO 시간대를 쓰고 프론트 시계나 실내 조명 덮어쓰기와 독립이다", () => {
+  expect([windowState("day"), windowState("evening"), windowState("night")]).toEqual([
     "day",
     "dusk",
-    "dusk",
-    "night",
-    "night",
     "night",
   ]);
   const { scene, props } = layer();
   const win = scene.driven.get("window")!;
-  props.update(office(), at(17));
+  const t = testTeam("a", [], { daylight: "evening" });
+  const o = testOffice("a", 1, [t]);
+  props.update(o, at(12));
   expect(frameOf(win)).toBe("window_l/dusk");
-  props.update(office({ night: false }), at(22));
+  t.daylight = "night";
+  t.phase = "Off";
+  props.update(o, at(12));
   expect(frameOf(win)).toBe("window_l/night");
   expect(scene.driven.get("ramen")!.visible).toBe(false);
-  props.update(office({ night: true }), at(22));
+  o.shared.night = true;
+  props.update(o, at(12));
   expect(scene.driven.get("ramen")!.visible).toBe(true);
   // 중소기업 창은 xl
   const small = layer("small");
@@ -321,15 +321,18 @@ test("창밖: 06·17·22시 경계, 컵라면은 야근일 때만", () => {
 
 test("TV: 값이 있는 팀 수만큼 점, 같은 값이면 그대로", () => {
   const { scene, props } = layer();
-  const count = () => scene.wall.children.length;
-  const base = count();
+  const dots = () =>
+    scene.wall.children.filter(
+      (c) =>
+        c instanceof Graphics && c.getLocalBounds().width === 1 && c.getLocalBounds().height === 1,
+    );
   props.update(office({}, [team(0, 0.5), team(1, null), team(2, 2)]), NOW);
-  expect(count()).toBe(base + 1);
-  const g = scene.wall.children[base];
+  expect(dots()).toHaveLength(1);
+  const g = dots()[0];
   props.update(office({}, [team(0, 0.5), team(1, null), team(2, 2)]), NOW);
-  expect(scene.wall.children[base]).toBe(g);
+  expect(dots()[0]).toBe(g);
   props.update(null, NOW);
-  expect(count()).toBe(base + 1);
+  expect(dots()).toHaveLength(0);
 });
 
 test("같은 값이면 스프라이트를 다시 만들지 않고, 바뀐 소품만 새로 만든다", () => {
@@ -536,10 +539,10 @@ test("움직임 줄이기: 반복 프레임은 첫 장에 멈춘다", () =>
     }
   }));
 
-test("출고장에 있는 직원마다 포장된 상자가 하나씩, 슬롯 수까지", () => {
+test("출고장 상자는 오늘 확정 커밋 합이며 퇴근 기록도 포함하고 세 자리까지", () => {
   const { scene, props } = layer();
   const n = (k: number) =>
-    crew(...Array.from({ length: k }, (_, i) => emp("Shipping", "Sit", `e${i}`)));
+    testOffice("a", 1, [testTeam("a", [], { commitsToday: k, phase: "Off" })]);
   const boxes = (o: OfficeDto) => {
     props.update(o, NOW);
     return count(scene, "box_taped/default");
@@ -554,7 +557,16 @@ test("출고장에 있는 직원마다 포장된 상자가 하나씩, 슬롯 수
 const jobsOf = (a: number, b: number) =>
   crew({ ...emp("Dev"), jobs: a }, { ...emp("Dev", "Sit", "f"), jobs: b });
 const stampCue = (passed: number, failed: number, estimated = false) =>
-  ({ teamId: "t", kind: "Stamp", passed, failed, estimated }) as const;
+  ({
+    teamId: "t",
+    kind: "Stamp",
+    confirmedPass: !estimated && failed === 0,
+    agent: "e",
+    at: new Date(NOW).toISOString(),
+    passed,
+    failed,
+    estimated,
+  }) as const;
 
 test("작업표: 어느 직원이든 백그라운드 명령이 있으면 보이고, 장면을 다시 지어도 스냅샷으로 같다", () => {
   const { scene, props } = layer();
@@ -573,32 +585,63 @@ test("작업표: 어느 직원이든 백그라운드 명령이 있으면 보이�
   expect(ticket()).toBe(false);
 });
 
-test("결과판: 공유 test 를 따르고 없으면 평면도 기본. 사무실을 옮겨도 스냅샷 그대로", () => {
+test("전광판은 모든 팀의 오늘 확정 실행 누계이며 마지막 결과·cue와 독립이다", () => {
   const { scene, props } = layer();
-  const base = fp.layouts.large.placements.find((p) => p.id === "test_board")!;
-  props.update(office(), NOW);
-  expect(tex(scene, "test_board")).toBe(base.sprite + "/" + base.state);
-  props.update(office({ test: "Fail" }), NOW);
-  expect(tex(scene, "test_board")).toBe("test_board/fail");
-  props.update(office({ test: "Pass" }), NOW);
-  expect(tex(scene, "test_board")).toBe("test_board/pass");
+  const o = testOffice("a", 1, [
+    testTeam("a", [], { testsToday: { passed: 3, failed: 1 } }),
+    testTeam("off", [], { phase: "Off", testsToday: { passed: 4, failed: 2 } }),
+  ]);
+  const digitFrames = () =>
+    scene.wall.children.filter((c) => c instanceof Sprite).map((s) => frameOf(s));
+  // 통계 벽보 숫자와 혼동하지 않도록 기본 stats를 0으로 유지한다.
+  props.update(o, NOW);
+  expect(tex(scene, "test_board")).toBe("test_board/counts");
+  expect(digitFrames()).toEqual(expect.arrayContaining(["digit/7", "digit/3"]));
+  o.shared.test = "Fail";
+  props.cue(stampCue(300, 20, true), NOW);
+  props.update(o, NOW);
+  expect(digitFrames()).toEqual(expect.arrayContaining(["digit/7", "digit/3"]));
+  o.teams[0].testsToday = { passed: 100, failed: 0 };
+  props.update(o, NOW);
+  expect(digitFrames().filter((f) => f === "digit/9")).toHaveLength(2);
+  expect(o.teams[0].testsToday.passed).toBe(100);
   props.reset();
-  props.update(office({ test: "Pass" }), NOW + 10);
-  expect(tex(scene, "test_board")).toBe("test_board/pass");
-  // 도장 cue 는 결과판을 바꾸지 않는다
-  props.cue(stampCue(1, 1), NOW + 20);
-  expect(tex(scene, "test_board")).toBe("test_board/pass");
-  props.update(office({ test: null }), NOW + 30);
-  expect(tex(scene, "test_board")).toBe(base.sprite + "/" + base.state);
+  props.update(testOffice("b", 1, []), NOW);
+  expect(digitFrames()).not.toContain("digit/9");
+  props.update(o, NOW);
+  expect(digitFrames().filter((f) => f === "digit/9")).toHaveLength(2);
+  props.update(null, NOW);
+  expect(digitFrames().filter((f) => f?.startsWith("digit/"))).toEqual([]);
 });
 
 test("reset: 사무실을 옮기면 진행 중인 효과가 사라진다", () => {
   const { scene, props } = layer();
-  props.cue({ teamId: "t", kind: "Stamp", passed: 1, failed: 1, estimated: false }, NOW);
+  props.cue(
+    {
+      teamId: "t",
+      kind: "Stamp",
+      confirmedPass: false,
+      agent: "e",
+      at: new Date(NOW).toISOString(),
+      passed: 1,
+      failed: 1,
+      estimated: false,
+    },
+    NOW,
+  );
   props.cue({ teamId: "t", kind: "Truck" }, NOW);
+  props.ring(NOW);
+  props.openDoor(NOW);
+  expect(tex(scene, "interphone")).toMatch(/^interphone\/ring_[01]$/);
+  expect(tex(scene, "door")).toBe("door/open");
   props.reset();
   props.update(office(), NOW + 10);
   expect(count(scene, "stamp_fail/default") + count(scene, "truck/drive_0")).toBe(0);
+  expect(tex(scene, "interphone")).toBe("interphone/idle");
+  expect(tex(scene, "door")).toBe("door/closed");
+  props.tick(NOW + 500);
+  expect(tex(scene, "interphone")).toBe("interphone/idle");
+  expect(tex(scene, "door")).toBe("door/closed");
 });
 
 test("Stamp: 전부 통과 / 일부 실패 / 추정 각각의 도장, 2초 뒤 사라진다", () => {
@@ -1000,3 +1043,292 @@ test("ladder: 시작 시각 전엔 숨어 있다가 LADDER_MS 동안 사규 액�
   props.tick(NOW + 1000 + LADDER_MS);
   expect(ladder()).toBeUndefined();
 });
+
+test("종이컵은 직원 입사 시각, 서류는 고유 수정 수로 경계마다 바뀌고 퇴근하면 책상을 비운다", () => {
+  const { scene, props } = layer();
+  const boss = testEmp("boss", { hiredAt: ago(120) });
+  const sub = testEmp("sub", { hiredAt: ago(59), seat: 0, uniqueEdits: 9 });
+  const o = testOffice("a", 1, [testTeam("a", [boss, sub])]);
+  props.update(o, NOW);
+  expect(count(scene, "coffee_stack/s2")).toBe(1);
+  expect(count(scene, "coffee_stack/s1")).toBe(0);
+  expect(count(scene, "paper_stack/s1")).toBe(0);
+  sub.activity.since = ago(600);
+  sub.uniqueEdits = 10;
+  props.update(o, NOW + 60_000);
+  expect(count(scene, "coffee_stack/s1")).toBe(1);
+  expect(count(scene, "paper_stack/s1")).toBe(1);
+  sub.uniqueEdits = 20;
+  props.update(o, NOW + 60_000);
+  expect(count(scene, "paper_stack/s1")).toBe(0);
+  expect(count(scene, "paper_stack/s2")).toBe(1);
+  sub.uniqueEdits = 120;
+  props.update(o, NOW + 6 * 3_600_000);
+  expect(count(scene, "coffee_stack/s4")).toBe(2);
+  expect(count(scene, "paper_stack/s4")).toBe(1);
+  expect(sub.uniqueEdits).toBe(120);
+  o.teams[0].phase = "Off";
+  props.update(o, NOW);
+  expect(count(scene, "coffee_stack/s4")).toBe(0);
+  expect(count(scene, "paper_stack/s4")).toBe(0);
+});
+
+test("책장은 퇴근 직원까지 고유 읽기 수를 합하며 호출 횟수를 대신 쓰지 않는다", () => {
+  const { scene, props } = layer();
+  const main = testEmp("boss", { uniqueReads: 24 });
+  const old = testEmp("old", { uniqueReads: 0, retiredAt: ago(1) });
+  const o = testOffice("a", 1, [testTeam("a", [main]), testTeam("off", [old], { phase: "Off" })]);
+  const stages = [0, 1, 26, 76].map((n) => {
+    old.uniqueReads = n;
+    props.update(o, NOW);
+    return tex(scene, "bookshelf");
+  });
+  expect(stages).toEqual(["bookshelf/empty", "bookshelf/s1", "bookshelf/s2", "bookshelf/s3"]);
+  old.uniqueReads = 0;
+  props.update(o, NOW);
+  expect(tex(scene, "bookshelf")).toBe("bookshelf/empty");
+});
+
+test("모니터는 실제 진행 호출 2개부터 늘고 배지·백그라운드·질문 문장과 무관하다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind);
+    const boss = testEmp("boss", { hiredAt: ago(0) });
+    const sub = testEmp("sub", { hiredAt: ago(0), seat: 0 });
+    const o = testOffice("a", 1, [testTeam("a", [boss, sub], { deskSlot: 0 })]);
+    const second = () =>
+      kind === "large"
+        ? scene.driven.get("boss_mon_0_1")!.visible
+        : sprites(scene, "monitor_sm/off").filter((s) => ![...scene.driven.values()].includes(s))
+            .length === 1;
+    boss.jobs = 3;
+    boss.activity.extra = 4;
+    props.update(o, NOW);
+    expect(second()).toBe(false);
+    boss.pendingCount = 2;
+    boss.activity.pose = "Pace";
+    sub.pendingCount = 2;
+    props.update(o, NOW);
+    expect(second()).toBe(true);
+    expect(scene.driven.get("dev_mon_0_1")!.visible).toBe(true);
+    boss.pendingCount = 1;
+    sub.pendingCount = 0;
+    props.update(o, NOW);
+    expect(second()).toBe(false);
+    expect(scene.driven.get("dev_mon_0_1")!.visible).toBe(false);
+  }
+});
+
+test("야근 램프와 PR 주차 트럭은 상태로 복원되고 출하 cue가 주차 상태를 지우지 않는다", () => {
+  const a = layer("small");
+  const t = testTeam(
+    "a",
+    [testEmp("boss", { hiredAt: ago(180), uniqueEdits: 30, pendingCount: 2 })],
+    { deskSlot: 0, commitsToday: 2 },
+  );
+  t.props.night = true;
+  t.daylight = "night";
+  t.props.pr = [1, "https://example.invalid/pr/1"];
+  const o = testOffice("a", 1, [t]);
+  const state = (scene: Built) =>
+    scene.world.children
+      .filter((c): c is Sprite => c instanceof Sprite && c.visible)
+      .map((s) => [frameOf(s), s.x, s.y, s.zIndex]);
+  a.props.update(o, NOW);
+  expect(count(a.scene, "desk_lamp/on")).toBe(1);
+  expect(count(a.scene, "truck/pr")).toBe(1);
+  const original = state(a.scene);
+  a.props.cue({ teamId: "a", kind: "Truck" }, NOW, o);
+  a.props.tick(NOW + TRUCK_MS);
+  expect(state(a.scene)).toEqual(original);
+  a.props.reset();
+  a.props.update(testOffice("b", 1, []), NOW);
+  expect(count(a.scene, "truck/pr")).toBe(0);
+  a.props.update(o, NOW);
+  expect(state(a.scene)).toEqual(original);
+  const b = layer("small");
+  b.props.update(o, NOW);
+  expect(state(b.scene)).toEqual(original);
+  t.props.pr = null;
+  t.props.night = false;
+  t.daylight = "day";
+  a.props.update(o, NOW);
+  expect(count(a.scene, "desk_lamp/on")).toBe(0);
+  expect(count(a.scene, "desk_lamp/off")).toBe(1);
+  expect(count(a.scene, "truck/pr")).toBe(0);
+});
+
+test("램프와 비네트는 실제 night 조명에서 활성 직원의 모든 책상에 켜지고 dim·off가 우선한다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind);
+    const t = testTeam("a", [testEmp("boss"), testEmp("sub", { seat: 0 })], { deskSlot: 0 });
+    const o = testOffice("a", 1, [t]);
+    const lamps = () => count(scene, "desk_lamp/on");
+    const glows = () => withFrame(scene.overlay.children, "glow_lamp/default").length;
+    for (const daylight of ["day", "evening", "night"] as const) {
+      t.daylight = daylight;
+      props.update(o, NOW);
+      expect([lamps(), glows()]).toEqual(daylight === "night" ? [2, 2] : [0, 0]);
+      expect(frameOf(scene.driven.get("window")!)).toBe(
+        `window_${kind === "large" ? "l" : "xl"}/${windowState(daylight)}`,
+      );
+    }
+    t.idleAlive = true;
+    props.update(o, NOW);
+    expect([lamps(), glows()]).toEqual([0, 0]);
+    expect(frameOf(scene.driven.get("window")!)).toMatch(/night$/);
+    t.idleAlive = false;
+    props.update(o, NOW);
+    expect([lamps(), glows()]).toEqual([2, 2]);
+    t.phase = "Off";
+    props.update(o, NOW);
+    expect([lamps(), glows()]).toEqual([0, 0]);
+    props.reset();
+    expect(glows()).toBe(0);
+  }
+});
+
+test("자료실 파쇄기는 허용된 방문 동안만 켜지고 전환에서 꺼진다", () => {
+  const { scene, props } = layer();
+  const shredder = scene.driven.get("shredder")!;
+  expect(frameOf(shredder)).toBe("shredder/idle");
+  props.archiveVisit(true);
+  expect(frameOf(shredder)).toBe("shredder/shred");
+  props.archiveVisit(false);
+  expect(frameOf(shredder)).toBe("shredder/idle");
+  props.archiveVisit(true);
+  props.reset();
+  expect(frameOf(shredder)).toBe("shredder/idle");
+});
+
+test("계절 나무는 로컬 월로 바뀌고 기존 낮·저녁·밤 하늘 단계를 따른다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind, true);
+    const t = testTeam("a", [testEmp("boss")]);
+    const o = testOffice("a", 1, [t]);
+    for (const [month, season] of [
+      [1, "winter"],
+      [2, "winter"],
+      [3, "spring"],
+      [5, "spring"],
+      [6, "summer"],
+      [8, "summer"],
+      [9, "autumn"],
+      [11, "autumn"],
+      [12, "winter"],
+    ] as const) {
+      for (const daylight of ["day", "evening", "night"] as const) {
+        t.daylight = daylight;
+        props.update(o, new Date(2026, month - 1, 10, 12).getTime());
+        expect(tex(scene, "window")).toBe(
+          `season/window_${kind === "large" ? "l" : "xl"}_${season}_${windowState(daylight)}`,
+        );
+      }
+    }
+  }
+});
+
+test("12월 장식은 자정 갱신과 표 밖 연도에도 각 하나만 보인다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind, true);
+    const decorations = () => [count(scene, "season/tree"), count(scene, "season/stocking")];
+    props.update(null, new Date(2040, 10, 30, 23, 59).getTime());
+    expect(decorations()).toEqual([0, 0]);
+    props.update(null, new Date(2040, 11, 1, 0).getTime());
+    expect(decorations()).toEqual([1, 1]);
+    props.update(null, new Date(2040, 11, 20, 12).getTime());
+    expect(decorations()).toEqual([1, 1]);
+    props.update(null, new Date(2041, 0, 1, 0).getTime());
+    expect(decorations()).toEqual([0, 0]);
+    expect(tex(scene, "window")).toContain("winter_day");
+  }
+});
+
+test("설·추석 벽 등은 날짜표의 당일만 켜지고 자정에 사라진다", () => {
+  const { scene, props } = layer("large", true);
+  const lanterns = () => withFrame(scene.wall.children, "season/lantern").length;
+  const dates = [
+    [2026, "02-17", "09-25"],
+    [2027, "02-07", "09-15"],
+    [2028, "01-27", "10-03"],
+    [2029, "02-13", "09-22"],
+    [2030, "02-03", "09-12"],
+    [2031, "01-23", "10-01"],
+    [2032, "02-11", "09-19"],
+    [2033, "01-31", "09-08"],
+    [2034, "02-19", "09-27"],
+    [2035, "02-08", "09-16"],
+  ] as const;
+  for (const [year, ...days] of dates)
+    for (const day of days) {
+      const [month, date] = day.split("-").map(Number);
+      props.update(null, new Date(year, month - 1, date, 0, 0, -1).getTime());
+      expect(lanterns()).toBe(0);
+      props.update(null, new Date(year, month - 1, date, 0).getTime());
+      expect(lanterns()).toBe(1);
+      props.update(null, new Date(year, month - 1, date, 23, 59).getTime());
+      expect(lanterns()).toBe(1);
+      props.update(null, new Date(year, month - 1, date + 1, 0).getTime());
+      expect(lanterns()).toBe(0);
+    }
+  for (const year of [2025, 2036]) {
+    props.update(null, new Date(year, 1, 17, 12).getTime());
+    expect(lanterns()).toBe(0);
+    expect(tex(scene, "window")).toContain("winter_day");
+  }
+});
+
+test("season false는 계절·12월·명절에도 참조 장면을 유지한다", () => {
+  const { scene, props } = layer("small", false);
+  for (const now of [new Date(2026, 1, 17), new Date(2026, 5, 10), new Date(2026, 11, 10)]) {
+    props.update(null, now.getTime());
+    expect(tex(scene, "window")).toBe("window_xl/day");
+    expect(count(scene, "season/tree") + count(scene, "season/stocking")).toBe(0);
+    expect(withFrame(scene.wall.children, "season/lantern")).toHaveLength(0);
+  }
+});
+
+for (const pose of ["Think", "Pace"] as const)
+  test(`움직임 줄이기는 ${pose} 김·화면보호기·인터폰을 낮·밤 update 뒤에도 첫 장에 둔다`, () => {
+    let reduced = false;
+    vi.stubGlobal("matchMedia", () => ({ matches: reduced }));
+    const { scene, props } = layer();
+    const snapshot = (daylight: TeamDto["daylight"]) =>
+      testOffice("o", 1, [
+        testTeam(
+          "t",
+          [
+            testEmp("boss", {
+              activity: { ...testEmp("boss").activity, room: "TeamLead", pose },
+            }),
+          ],
+          { daylight },
+        ),
+      ]);
+    const active = () => (pose === "Think" ? tex(scene, "mug_0") : tex(scene, "boss_mon_0_0"));
+    const prefix = pose === "Think" ? "mug/steam_" : "monitor_lg/saver_";
+    try {
+      props.update(snapshot("day"), NOW);
+      props.ring(NOW);
+      props.tick(NOW + 625);
+      expect(active()).toBe(`${prefix}1`);
+      expect(tex(scene, "interphone")).toBe("interphone/ring_1");
+      reduced = true;
+      for (const dt of [626, 750, 875, 999]) {
+        props.tick(NOW + dt);
+        expect(active()).toBe(`${prefix}0`);
+        expect(tex(scene, "interphone")).toBe("interphone/ring_0");
+      }
+      for (const [i, daylight] of (["day", "night"] as const).entries()) {
+        const now = NOW + 2000 + i * 2000;
+        props.update(snapshot(daylight), now);
+        props.ring(now);
+        for (const dt of [0, 125, 375, 625, 999]) {
+          props.tick(now + dt);
+          expect(active()).toBe(`${prefix}0`);
+          expect(tex(scene, "interphone")).toBe("interphone/ring_0");
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });

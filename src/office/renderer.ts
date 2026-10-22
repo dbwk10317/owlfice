@@ -108,6 +108,7 @@ export interface Scene {
   lit: Container[];
   /** depth 로 정렬하는 월드. 직원 액터가 여기 들어간다 */
   world: Container;
+  overlay: Container;
   /** 평면도가 숨겨 둔 채 짓고 좌석 사용에 따라 켜는 소품 (임시·간이 책상, 쪽지) */
   toggled: Map<string, Sprite>;
   /** 소품 상태가 바꾸는 평면도 소품 (신호등, 창, 화분, 휴지통, 전광판, 컵라면) */
@@ -230,7 +231,17 @@ export function buildScene(
 
   const root = new Container();
   root.addChild(base, win, world, over);
-  return { root, lit: [base, world], world, toggled, driven, clickable, rooms, wall: base };
+  return {
+    root,
+    lit: [base, world],
+    world,
+    overlay: over,
+    toggled,
+    driven,
+    clickable,
+    rooms,
+    wall: base,
+  };
 }
 
 /**
@@ -275,15 +286,18 @@ const WHITE: Rgb = [255, 255, 255];
 
 /** 머리말이 부르는 것 */
 export interface OfficeHandle {
+  setScale(scale: number): void;
+  centerCanvas(): void;
   setRoomLabels(on: boolean): void;
   setBossName(name: string | null): void;
   highlightTeam(officeId: string, teamId: string): void;
 }
 export interface OfficeOptions {
+  season?: boolean;
   sound?: OfficeSound;
   bossName?: string | null;
-  /** 정수 배율(장치 픽셀 기준). 처음 한 번 현재 값으로 부르고, 바뀔 때마다 부른다 */
-  onScale?(scale: number): void;
+  /** 장치 픽셀 기준. 현재 배율 또는 최대맞춤 배율이 바뀔 때 알린다 */
+  onScale?(scale: number, maxFit: number): void;
   /** 직원을 눌렀을 때 (직원 상세 팝업). officeId 는 캔버스에 그려진 사무실이다: 전환 중엔 선택과 다를 수 있다 */
   onEmployee?: (officeId: string, teamId: string, agentId: string) => void;
   /** 사규 액자·팀장석을 눌렀을 때 (세션 상세 팝업) */
@@ -345,7 +359,9 @@ export async function mountOffice(
   let switchFade: Animation | undefined;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   reducedMotion.addEventListener("change", () => {
-    if (reducedMotion.matches) switchFade?.cancel();
+    switchFade?.cancel();
+    resumed = true;
+    dirty = true;
   });
   let suppressClick = false;
   actors.onPick = (teamId, agentId) => {
@@ -362,6 +378,7 @@ export async function mountOffice(
     props?.ring(now);
     opts.sound?.cue(cue);
   };
+  actors.onArchiveVisit = (active) => props?.archiveVisit(active);
   actors.onDoor = (now) => props?.openDoor(now);
   actors.onCue = (c, now, o) => {
     props?.cue(c, now, o);
@@ -379,6 +396,8 @@ export async function mountOffice(
   let avail = { w: CANVAS_W, h: CANVAS_H };
   const pan = { x: 0, y: 0, maxX: 0, maxY: 0 };
   let notifiedScale = 0; // 0 이라 첫 layout() 이 현재 값을 알린다
+  let notifiedMaxFit = 0;
+  let preferredScale: number | null = null;
 
   function showAt(text: string, x: number, y: number): void {
     const rect = wrap.getBoundingClientRect();
@@ -399,7 +418,7 @@ export async function mountOffice(
   let lightT = 1;
   function setLight(name: LightName | null, immediate: boolean): void {
     const to = name ? hexToRgb(fp.lightTints[name]) : WHITE;
-    if (to.every((v, i) => v === lightTo[i])) return;
+    if (!immediate && to.every((v, i) => v === lightTo[i])) return;
     lightFrom = immediate ? to : lightCur;
     lightTo = to;
     lightT = immediate ? 1 : 0;
@@ -461,7 +480,7 @@ export async function mountOffice(
         });
       }
       for (const [id, room] of next.rooms) room.on("pointertap", () => showRoom(id));
-      props = new PropsLayer(fp, assets.sheet, kind, next, screenLabel);
+      props = new PropsLayer(fp, assets.sheet, kind, next, screenLabel, opts.season ?? true);
       scene?.root.destroy({ children: true });
       scene = next;
       app.stage.addChild(scene.root);
@@ -478,7 +497,6 @@ export async function mountOffice(
       instant: switched || resumed,
       earlier: cues.take(office),
     });
-    resumed = false;
     const seated = seatProps(fp, kind, office);
     for (const [id, s] of scene?.toggled ?? []) s.visible = seated.has(id);
     shown = office;
@@ -487,7 +505,8 @@ export async function mountOffice(
     propsAt = Date.now();
     propsTeam = actors.focusedTeam(propsAt);
     props?.update(office, propsAt, propsTeam);
-    setLight(lightOf(office), switched);
+    setLight(lightOf(office), switched || resumed || reducedMotion.matches);
+    resumed = false;
     stepLight(0);
     if (switched) {
       switchFade?.cancel();
@@ -516,6 +535,7 @@ export async function mountOffice(
     labels = Object.entries(fp.rooms).map(([k, room]) => {
       const el = document.createElement("button");
       el.type = "button";
+      el.tabIndex = -1;
       el.className = "ow-roomlabel ow-canvas-pick";
       el.textContent = (kind === "small" && k === "boss" ? names.bossSmall : names[k]) ?? room.name;
       overlay.append(el);
@@ -528,6 +548,7 @@ export async function mountOffice(
       .map((p) => {
         const el = document.createElement("button");
         el.type = "button";
+        el.tabIndex = -1;
         el.className = "ow-prop-pick ow-canvas-pick";
         el.setAttribute(
           "aria-label",
@@ -574,13 +595,16 @@ export async function mountOffice(
   function layout(): void {
     tooltip.close();
     dpr = window.devicePixelRatio || 1;
-    fit = canvasScale(avail.w, avail.h, dpr);
+    const maxFit = window.innerWidth < 720 ? 1 : canvasScale(avail.w, avail.h, dpr).scale;
+    const scale = Math.min(preferredScale ?? maxFit, maxFit);
+    fit = canvasScale(CANVAS_W * scale, CANVAS_H * scale, dpr);
     if (app.renderer.width !== fit.backingW || app.renderer.height !== fit.backingH)
       app.renderer.resize(fit.backingW, fit.backingH);
     app.stage.scale.set(fit.scale);
-    if (fit.scale !== notifiedScale) {
+    if (fit.scale !== notifiedScale || maxFit !== notifiedMaxFit) {
       notifiedScale = fit.scale;
-      opts.onScale?.(fit.scale);
+      notifiedMaxFit = maxFit;
+      opts.onScale?.(fit.scale, maxFit);
     }
     for (const el of [wrap, app.canvas]) {
       el.style.width = `${fit.cssW}px`;
@@ -747,6 +771,12 @@ export async function mountOffice(
   measure();
   layout();
   return {
+    setScale: (scale) => {
+      if (!Number.isInteger(scale) || scale < 1 || scale > 3) return;
+      preferredScale = scale;
+      layout();
+    },
+    centerCanvas: () => movePan(0, 0),
     setRoomLabels: (on) => void (overlay.hidden = !on),
     setBossName: (name) => {
       bossName = name || phrases.ranks.boss;
@@ -768,13 +798,11 @@ export function canvasAria(office: OfficeDto | null, list: OfficeListDto): strin
   return fill(tpl, { office: name, n });
 }
 
-/**
- * 사무실 조명 (HANDOFF 5절): 모두 퇴근이면 off, 남은 팀이 모두 대기 중(S58)이면 dim, 야근이면 night.
- * HANDOFF 에 순서가 없어 off > dim > night 로 정했다
- */
+/** 퇴근·대기 조명이 시간표보다 우선한다 (HANDOFF 6.2). */
 export function lightOf(office: OfficeDto | null): LightName | null {
   const live = office?.teams.filter((t) => t.phase !== "Off") ?? [];
   if (live.length === 0) return "off";
   if (live.every((t) => t.idleAlive)) return "dim";
-  return office?.shared.night ? "night" : null;
+  const daylight = live[0].daylight;
+  return daylight === "day" ? null : daylight;
 }

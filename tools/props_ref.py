@@ -62,6 +62,7 @@ CASES = [
         (0, 9, 10, 12345),
     ),
 ]
+CASES.append(("props-large-claude-evening", *CASES[0][1:]))
 
 
 def stats_board_sprite(placement, stats):
@@ -124,10 +125,26 @@ def main():
                 visible=visible,
                 tints={f"dev_part_{i}": cubicle for i in range(6)},
                 night=night,
+                evening=name.endswith("evening"),
                 kanban=kanban,
                 safe=safe,
                 balls=balls,
                 pizza=pizza,
+                magnets=[(0, 0, "teal" if night else "red")],
+                progress={
+                    "desks": {
+                        "boss_desk_0": {
+                            "coffee": 4 if night else 2,
+                            "papers": 2,
+                            "monitors": 2,
+                            "night": night,
+                        },
+                    },
+                    "reads": 100 if night else 50,
+                    "commits": 2,
+                    "pr": True,
+                    "tests": [105, 7] if night else [12, 2],
+                },
             )
         finally:
             art.OFFICE["stats_board/default"] = original_board

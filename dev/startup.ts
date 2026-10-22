@@ -39,6 +39,7 @@ let settings: SettingsDto = {
   companyName: null,
   manualPaths: [],
   sound: false,
+  nightMode: "auto",
   osNotifications: true,
   bossName: null,
   rawDiagnostics: false,

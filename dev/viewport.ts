@@ -110,7 +110,7 @@ function inspect(): void {
         faces: [...doc.fonts].map((font) => ({ family: font.family, status: font.status })),
         scaleTitle: fonts("#sc-title, .sc-title"),
         loading: fonts(".ld"),
-        cardBody: fonts(".ow-card .ow-now__text, .ow-card .ow-trail__text, .ow-card .ow-quote"),
+        cardBody: fonts(".ow-card .ow-now__text, .ow-card .ow-trail__item, .ow-card .ow-quote"),
       },
       headerButtons: [...doc.querySelectorAll(".ow-header button")].map((el) => ({
         label: el.getAttribute("aria-label") ?? el.getAttribute("title") ?? el.textContent,

@@ -1,6 +1,6 @@
 [package]
 name = "owlfice"
-version = "0.1.1"
+version = "0.2.0"
 description = "AI 에이전트 세션을 픽셀아트 사무실로 보여주는 앱"
 edition = "2024"
 # 검증한 툴체인. 더 낮은 버전은 확인하지 않았다
@@ -53,3 +53,6 @@ opt-level = 3
 # 시작 작업 패닉을 오류 단계로 복구하기 위함
 panic = "unwind"
 strip = true
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

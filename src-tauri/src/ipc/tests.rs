@@ -90,6 +90,7 @@ fn call(started: DateTime<Utc>) -> PendingCall {
         },
         started,
         big_read: false,
+        question: None,
     }
 }
 
@@ -98,6 +99,93 @@ fn team(session: &str) -> Team {
     let mut t = Team::new(session, Product::ClaudeCli, t0());
     t.preregister(&format!("{session}-s"), None, None, None, 1, t0());
     t
+}
+
+#[test]
+fn daylight_dto_and_night_props_follow_local_boundaries_and_clock_jumps() {
+    let e = env(Scale::Large);
+    let mut w = lock(&e.world);
+    w.local = FixedOffset::east_opt(9 * 3600).unwrap();
+    let k = key("windows", Vendor::Claude, "daylight");
+    let at = |hour: i64, minute: i64| {
+        "2026-03-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+            + Duration::hours(hour - 9)
+            + Duration::minutes(minute)
+    };
+    for (hour, expected) in [
+        (6, Daylight::Day),
+        (17, Daylight::Evening),
+        (20, Daylight::Night),
+        (22, Daylight::Night),
+    ] {
+        for minute in [-1, 0, 1] {
+            let now = at(hour, minute);
+            let mut t = Team::new("daylight", Product::ClaudeCli, now);
+            t.employees[0].pending.push(call(now));
+            w.put_team(k.clone(), t, now, true);
+            w.tick(now, "windows");
+            let dto = office_dto(&w, &w.office_of(&k), false, Vec::new(), now).unwrap();
+            let expected = if minute < 0 {
+                match hour {
+                    6 => Daylight::Night,
+                    17 => Daylight::Day,
+                    20 => Daylight::Evening,
+                    _ => Daylight::Night,
+                }
+            } else {
+                expected
+            };
+            assert_eq!(dto.teams[0].daylight, expected, "{hour}:{minute}");
+            assert_eq!(dto.teams[0].props.night, expected == Daylight::Night);
+            assert_eq!(
+                serde_json::to_value(&dto.teams[0]).unwrap()["daylight"],
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+    }
+    let now = at(16, 59);
+    let mut t = Team::new("daylight", Product::ClaudeCli, now);
+    t.alive_in_registry = true;
+    t.employees[0].pending.push(call(now));
+    w.put_team(k.clone(), t, now, true);
+    for (now, expected) in [
+        (now, Daylight::Day),
+        (at(20, 1), Daylight::Night),
+        (at(30, 1), Daylight::Day),
+    ] {
+        w.tick(now, "windows");
+        let dto = office_dto(&w, &w.office_of(&k), false, Vec::new(), now).unwrap();
+        assert_eq!(dto.teams[0].daylight, expected);
+        assert_eq!(
+            dto.teams[0].props.night,
+            dto.teams[0].daylight == Daylight::Night
+        );
+    }
+}
+
+#[test]
+fn evening_boundary_publishes_state_without_night_prop_change() {
+    let e = env(Scale::Large);
+    let k = key("windows", Vendor::Claude, "daylight");
+    let now: DateTime<Utc> = "2026-03-02T16:59:00Z".parse().unwrap();
+    {
+        let mut w = lock(&e.world);
+        let mut t = Team::new("daylight", Product::ClaudeCli, now - Duration::hours(1));
+        t.alive_in_registry = true;
+        w.put_team(k.clone(), t, now, true);
+        w.tick(now, "windows");
+        let id = w.office_of(&k);
+        w.select(Some(id));
+    }
+    let mut sent = Sent::default();
+    let before = e.ipc.poll(&mut sent, now).1.unwrap();
+    let next = now + Duration::minutes(1);
+    lock(&e.world).tick(next, "windows");
+    let after = e.ipc.poll(&mut sent, next).1.expect("저녁 진입 상태 발행");
+    assert!(after.state_seq > before.state_seq);
+    assert_eq!(before.teams[0].daylight, Daylight::Day);
+    assert_eq!(after.teams[0].daylight, Daylight::Evening);
+    assert!(!before.teams[0].props.night && !after.teams[0].props.night);
 }
 
 #[test]
@@ -188,7 +276,56 @@ fn status_dot_legend() {
     assert_eq!((r.delayed, r.host_badge.as_deref()), (true, Some("WSL")));
 }
 
-/// 중소기업 층 점: 장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근. 결재판은 어느 팀이든
+#[test]
+fn asking_count_excludes_retired_and_off_and_updates_at_escalation_boundary() {
+    let now = t0() + Duration::minutes(1);
+    let w = world_with_hosts(Scale::Large, tempfile::tempdir().unwrap().path());
+    let k = key("windows", Vendor::Claude, "s");
+    let mut t = team("s");
+    t.preregister("s-retired", None, None, None, 1, t0());
+    t.employees[0].asking = Some("q".into());
+    let mut escalated = call(now - Duration::seconds(35));
+    escalated.summary.escalated = true;
+    t.employees[1].pending.push(escalated);
+    t.employees[2].asking = Some("old q".into());
+    t.employees[2].retired_at = Some(now - Duration::seconds(1));
+
+    let before = team_summary(&w, &k, &t, now - Duration::seconds(1));
+    assert_eq!((before.asking_count, before.asking), (1, true));
+    let at = team_summary(&w, &k, &t, now);
+    assert_eq!((at.asking_count, at.asking), (2, true));
+    t.phase = TeamPhase::Off;
+    let off = team_summary(&w, &k, &t, now);
+    assert_eq!((off.asking_count, off.asking), (0, false));
+}
+
+#[test]
+fn read_failure_and_recovery_publish_with_actual_last_activity() {
+    let e = env(Scale::Large);
+    let k = key("windows", Vendor::Claude, "s");
+    let mut t = team("s");
+    t.last_activity = t0() + Duration::minutes(4);
+    lock(&e.world).put_team(k.clone(), t, t0(), true);
+    let mut sent = Sent::default();
+    let (initial, _) = e.ipc.poll(&mut sent, t0());
+    let initial = initial.unwrap();
+    let row = &initial.offices[0].teams[0];
+    assert_eq!(row.last_activity, t0() + Duration::minutes(4));
+    assert!(!row.read_failed);
+    lock(&e.world).set_read_failed(&k, true);
+    let (failed, _) = e.ipc.poll(&mut sent, t0());
+    let failed = failed.unwrap();
+    assert!(failed.list_seq > initial.list_seq);
+    assert!(failed.offices[0].teams[0].read_failed);
+    lock(&e.world).set_read_failed(&k, false);
+    let (recovered, _) = e.ipc.poll(&mut sent, t0());
+    let recovered = recovered.unwrap();
+    assert!(recovered.list_seq > failed.list_seq);
+    assert!(!recovered.offices[0].teams[0].read_failed);
+    assert!(e.ipc.poll(&mut sent, t0()).0.is_none());
+}
+
+/// 중소기업 층 점: 장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근. 결재판은 근무 중인 어느 팀이든
 #[test]
 fn small_floor_dot_follows_most_urgent_team() {
     let e = env(Scale::Small);
@@ -231,14 +368,28 @@ fn small_floor_dot_follows_most_urgent_team() {
         assert_eq!(floor.dot, want, "{:?}", floor.teams);
         assert_eq!(
             (floor.floor, floor.label.as_str(), floor.building.as_deref()),
-            (Some(1), "1층 Claude", None)
+            (Some(1), "1층 Claude 사무실", None)
         );
     }
     let mut w = lock(&e.world);
     let k = key("windows", Vendor::Claude, "off");
     w.teams.get_mut(&k).unwrap().employees[0].asking = Some("q".into());
     drop(w);
-    assert!(e.ipc.snapshot(now).list.offices[0].asking);
+    assert!(!e.ipc.snapshot(now).list.offices[0].asking);
+
+    let mut w = lock(&e.world);
+    let k = key("windows", Vendor::Claude, "working");
+    w.teams.get_mut(&k).unwrap().employees[0].asking = Some("q".into());
+    drop(w);
+    let list = e.ipc.snapshot(now).list;
+    let floor = &list.offices[0];
+    assert!(floor.asking);
+    let working = floor
+        .teams
+        .iter()
+        .find(|t| t.team_id == team_id_str(&k))
+        .unwrap();
+    assert_eq!((working.asking_count, working.asking), (1, true));
 }
 
 fn fixture_dir(rel: &str) -> PathBuf {
@@ -344,7 +495,14 @@ fn wall_room_events_merge_by_time_team_agent_and_existing_order() {
             true,
         );
     }
-    let dto = office_dto(&w, &OfficeId::Vendor(Vendor::Claude), false, Vec::new()).unwrap();
+    let dto = office_dto(
+        &w,
+        &OfficeId::Vendor(Vendor::Claude),
+        false,
+        Vec::new(),
+        t0(),
+    )
+    .unwrap();
     assert_eq!(
         dto.room_recent.iter().map(|r| r.room).collect::<Vec<_>>(),
         [Room::TeamLead, Room::Dev, Room::Door]
@@ -377,7 +535,14 @@ fn wall_room_events_merge_by_time_team_agent_and_existing_order() {
         t.employees.reverse();
         t.desk_slot = t.desk_slot.map(|slot| 3 - slot);
     }
-    let reordered = office_dto(&w, &OfficeId::Vendor(Vendor::Claude), false, Vec::new()).unwrap();
+    let reordered = office_dto(
+        &w,
+        &OfficeId::Vendor(Vendor::Claude),
+        false,
+        Vec::new(),
+        t0(),
+    )
+    .unwrap();
     assert_eq!(dto.room_recent, reordered.room_recent);
 }
 
@@ -409,7 +574,7 @@ fn wall_stats_deduplicate_files_per_team_and_sum_command_counts() {
         w.put_team(key("windows", Vendor::Claude, &t.id), t, t0(), true);
     }
     let id = OfficeId::Vendor(Vendor::Claude);
-    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
     assert_eq!(
         dto.shared.stats,
         BoardStatsDto {
@@ -429,7 +594,7 @@ fn wall_stats_deduplicate_files_per_team_and_sum_command_counts() {
     a.commits = u32::MAX;
     a.turns = u32::MAX;
     Arc::make_mut(&mut a.employees[0].record).commands.items[0].1 = u32::MAX;
-    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
     assert_eq!(
         dto.shared.stats,
         BoardStatsDto {
@@ -452,7 +617,7 @@ fn employee_activity_is_carried_verbatim() {
         let mut w = lock(&e.world);
         w.put_team(k.clone(), t, now, true);
         let id = w.office_of(&k);
-        let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+        let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
         let team = &w.teams[&k];
         let json = serde_json::to_value(&dto).unwrap();
         for (i, emp) in team.employees.iter().enumerate() {
@@ -717,6 +882,7 @@ fn set_settings_company_name_alone() {
         company_name: Some("야근상사".into()),
         manual_paths: Some(Vec::new()),
         sound: Some(false),
+        night_mode: Some(NightMode::Auto),
         os_notifications: Some(true),
         boss_name: None,
         raw_diagnostics: Some(false),
@@ -827,7 +993,7 @@ fn settings_save_failure_keeps_all_changes_in_memory() {
     let book = SettingsBook::load(&file);
     let dto: SettingsDto = serde_json::from_value(serde_json::json!({
         "scale": "Small", "companyName": "회사", "bossName": "이름",
-        "sound": true, "osNotifications": false, "rawDiagnostics": true,
+        "sound": true, "nightMode": "on", "osNotifications": false, "rawDiagnostics": true,
         "manualPaths": [{"vendor": "Claude", "root": "D:/fixture/projects"}]
     }))
     .unwrap();
@@ -992,7 +1158,7 @@ fn shared_light_follows_latest_result() {
     w.put_team(a, red, now, true);
     w.put_team(b.clone(), green, now, true);
     let office = OfficeId::Vendor(Vendor::Claude);
-    let light = office_dto(&w, &office, false, Vec::new())
+    let light = office_dto(&w, &office, false, Vec::new(), t0())
         .unwrap()
         .shared
         .light;
@@ -1062,7 +1228,7 @@ fn employee_carries_jobs_meeting_and_review() {
         let ev = ev("a", secs, kind);
         w.apply(&k, std::slice::from_ref(&ev), t0());
         events.push(ev);
-        office_dto(w, &id, false, Vec::new()).unwrap().teams[0].employees[0].clone()
+        office_dto(w, &id, false, Vec::new(), t0()).unwrap().teams[0].employees[0].clone()
     };
     let shell = || ToolKind::Shell;
 
@@ -1134,10 +1300,36 @@ fn employee_carries_jobs_meeting_and_review() {
     assert_eq!(live.review, review(0, false));
 
     let rebuilt = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
-    let again = employee_dto(&rebuilt.employees[0]);
+    let again = employee_dto(&rebuilt.employees[0], rebuilt.last_activity);
     assert_eq!(
         (again.jobs, again.meeting, again.review),
         (live.jobs, live.meeting, live.review)
+    );
+}
+
+/// 문장이 질문·허가 대기로 바뀌어도 진행 호출 수를 보존하고 백그라운드는 합치지 않는다.
+#[test]
+fn employee_pending_count_survives_waiting_and_rebuild() {
+    let mut events = vec![
+        ev("a", 1, tool("bg", ToolKind::Shell, "npm run dev")),
+        ev("a", 2, done("bg", ToolOutcome::Started, None)),
+        ev("a", 3, tool("one", ToolKind::FileRead, "")),
+        ev("a", 4, tool("two", ToolKind::FileRead, "")),
+    ];
+    let mut team = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
+    team.employees[0].asking = Some("계속할까요?".into());
+    team.employees[0].pending[0].summary.escalated = true;
+    let dto = employee_dto(&team.employees[0], team.last_activity);
+    assert_eq!((dto.pending_count, dto.jobs), (2, 1));
+    events.push(ev("a", 5, done("one", ToolOutcome::Ok, None)));
+    let restored = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
+    let dto = employee_dto(&restored.employees[0], restored.last_activity);
+    assert_eq!((dto.pending_count, dto.jobs), (1, 1));
+    events.push(ev("a", 6, done("two", ToolOutcome::Ok, None)));
+    let restored = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
+    assert_eq!(
+        employee_dto(&restored.employees[0], restored.last_activity).pending_count,
+        0
     );
 }
 
@@ -1154,7 +1346,7 @@ fn test_board_follows_the_latest_test() {
     w.put_team(b.clone(), team("b"), t0(), true);
     let office = OfficeId::Vendor(Vendor::Claude);
     let shared = |w: &OfficeWorld| {
-        office_dto(w, &office, false, Vec::new())
+        office_dto(w, &office, false, Vec::new(), t0())
             .unwrap()
             .shared
             .test
@@ -1229,6 +1421,9 @@ fn idle_alive_turns_on_when_the_off_threshold_passes() {
     };
     let now = tick(5, 0);
     e.ipc.poll(&mut sent, now);
+    let now = tick(13, 0);
+    let blanket = e.ipc.poll(&mut sent, now).1.expect("담요 경계를 먼저 발행");
+    assert!(blanket.teams[0].employees[0].items.contains(&Item::Blanket));
     let now = tick(30, 0);
     assert!(e.ipc.poll(&mut sent, now).1.is_none(), "30분 정각은 아직");
 
@@ -1342,7 +1537,9 @@ fn bindings() -> String {
         CueDto,
         SelectResponseDto,
         TeamDto,
+        Daylight,
         EmployeeDto,
+        Item,
         Meeting,
         Review,
         SharedPropsDto,
@@ -1353,6 +1550,7 @@ fn bindings() -> String {
         Counters,
         TeamProps,
         TestVerdict,
+        TestCounts,
         Incident,
         Cue,
         Rank,
@@ -1364,6 +1562,7 @@ fn bindings() -> String {
         Light,
         Scale,
         SettingsDto,
+        NightMode,
         DiscoveryPathDto,
         DiscoveryStatus,
         ManualPath,
@@ -1422,18 +1621,200 @@ fn serialize_time() {
         w.put_team(k, t, now, true);
     }
     let id = OfficeId::Vendor(Vendor::Claude);
-    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
     let employees: usize = dto.teams.iter().map(|t| t.employees.len()).sum();
     let n = 2000;
     let start = Instant::now();
     let mut bytes = 0;
     for _ in 0..n {
-        let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+        let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
         bytes = serde_json::to_string(&dto).unwrap().len();
     }
     let avg = start.elapsed().as_secs_f64() * 1000.0 / f64::from(n);
     println!(
         "OfficeDto 만들기+직렬화 평균 {avg:.4}ms (팀 {}, 직원 {employees}, {bytes}바이트)",
         dto.teams.len()
+    );
+}
+
+#[test]
+fn extension_dtos_use_recorded_paths_counts_and_snapshot_medal_time() {
+    let e = env(Scale::Large);
+    let mut w = lock(&e.world);
+    let (plan_key, plan) = fixture_team("claude/planning-state");
+    let plan_time = plan.last_activity;
+    w.put_team(plan_key.clone(), plan, plan_time, true);
+    let id = w.office_of(&plan_key);
+    let dto = office_dto(&w, &id, true, Vec::new(), plan_time).unwrap();
+    let employee = &dto.teams[0].employees[0];
+    assert!(employee.planning);
+    assert_eq!((employee.unique_reads, employee.unique_edits), (1, 1));
+
+    let (test_key, tests) = fixture_team("claude/test-streak");
+    let end = tests.last_activity;
+    w.put_team(test_key.clone(), tests, end, true);
+    let id = w.office_of(&test_key);
+    let dto = office_dto(&w, &id, true, Vec::new(), end).unwrap();
+    assert_eq!(
+        dto.teams[0].tests_today,
+        TestCounts {
+            passed: 5,
+            failed: 1
+        }
+    );
+    assert_eq!(dto.teams[0].commits_today, 1);
+    assert!(dto.teams[0].employees[0].medal);
+    let expiry = t0() + Duration::seconds(312);
+    assert!(
+        office_dto(
+            &w,
+            &id,
+            true,
+            Vec::new(),
+            expiry - Duration::milliseconds(1)
+        )
+        .unwrap()
+        .teams[0]
+            .employees[0]
+            .medal
+    );
+    assert!(!office_dto(&w, &id, true, Vec::new(), expiry).unwrap().teams[0].employees[0].medal);
+    assert!(
+        !office_dto(&w, &id, true, Vec::new(), expiry + Duration::hours(1))
+            .unwrap()
+            .teams[0]
+            .employees[0]
+            .medal
+    );
+}
+
+#[test]
+fn employee_check_border_uses_own_calls_and_rebuilds() {
+    let other = |secs, kind| Event {
+        agent_id: "b".into(),
+        parent_agent: Some("a".into()),
+        ..ev("a", secs, kind)
+    };
+    let events = vec![
+        ev("a", 0, tool("test", ToolKind::Test, "cargo test")),
+        other(1, tool("build", ToolKind::Build, "cargo build")),
+        ev("a", 2, done("test", ToolOutcome::Err, None)),
+        other(3, done("build", ToolOutcome::Ok, None)),
+        ev("a", 4, tool("build", ToolKind::Build, "cargo build")),
+        ev("a", 5, tool("test", ToolKind::Test, "cargo test")),
+        ev("a", 6, done("build", ToolOutcome::Started, None)),
+        ev("a", 7, done("test", ToolOutcome::Ok, None)),
+        ev("a", 8, done("build", ToolOutcome::Unknown, None)),
+    ];
+    let mut team = Team::new("a", Product::ClaudeCli, t0());
+    for (i, event) in events.iter().enumerate() {
+        let now = event.ts.unwrap();
+        team.tick(now, utc(), &mut Vec::new());
+        team.apply(event, &mut Vec::new());
+        let current = employee_dto(&team.employees[0], now);
+        let expected = match i {
+            0..=1 | 4..=7 => Border::Running,
+            2..=3 => Border::Failed,
+            _ => Border::Plain,
+        };
+        assert_eq!(current.build_test_border, expected);
+        let json = serde_json::to_value(&current).unwrap();
+        assert_eq!(
+            json["buildTestBorder"],
+            serde_json::to_value(expected).unwrap()
+        );
+        if i >= 1 {
+            assert_eq!(
+                employee_dto(&team.employees[1], now).build_test_border,
+                if i < 3 {
+                    Border::Running
+                } else {
+                    Border::Plain
+                }
+            );
+        }
+        let rebuilt = rebuild(
+            "a",
+            Product::ClaudeCli,
+            &[],
+            vec![events[..=i].to_vec()],
+            utc(),
+        );
+        for (live, restored) in team.employees.iter().zip(&rebuilt.employees) {
+            assert_eq!(
+                employee_dto(live, now).build_test_border,
+                employee_dto(restored, now).build_test_border
+            );
+        }
+    }
+}
+
+#[test]
+fn rejection_dto_uses_hold_time_even_after_a_compaction_sentence() {
+    let mut team = Team::new("a", Product::ClaudeCli, t0());
+    let e = &mut team.employees[0];
+    e.rejected_at = Some(t0());
+    e.activity.sentence = "분갈이 중".into();
+    assert!(employee_dto(e, t0() + Duration::seconds(1)).rejected);
+    assert!(!employee_dto(e, t0() + Duration::seconds(4)).rejected);
+    e.activity.sentence = "반려: 옛 호출".into();
+    assert!(!employee_dto(e, t0() + Duration::seconds(5)).rejected);
+}
+
+#[test]
+fn blanket_boundary_publishes_once_and_off_removes_it() {
+    let e = env(Scale::Large);
+    let k = key("windows", Vendor::Claude, "blanket");
+    let at = |secs| t0() + Duration::seconds(secs);
+    {
+        let mut w = lock(&e.world);
+        w.put_team(k.clone(), team("blanket"), at(779), true);
+        let id = w.office_of(&k);
+        w.select(Some(id));
+    }
+    let mut sent = Sent::default();
+    let before = e.ipc.poll(&mut sent, at(779)).1.unwrap();
+    assert!(!before.teams[0].employees[0].items.contains(&Item::Blanket));
+    lock(&e.world).tick(at(780), "windows");
+    let after = e.ipc.poll(&mut sent, at(780)).1.expect("담요 경계 발행");
+    assert!(after.state_seq > before.state_seq);
+    assert!(after.teams[0].employees[0].items.contains(&Item::Blanket));
+    lock(&e.world).tick(at(781), "windows");
+    assert!(e.ipc.poll(&mut sent, at(781)).1.is_none());
+    lock(&e.world).tick(at(1801), "windows");
+    let off = e.ipc.poll(&mut sent, at(1801)).1.unwrap();
+    assert!(!off.teams[0].employees[0].items.contains(&Item::Blanket));
+}
+
+#[test]
+fn item_candidates_use_employee_state_and_medal_expiry() {
+    let mut t = team("items");
+    let e = &mut t.employees[0];
+    e.medal_until = Some(t0() + Duration::seconds(10));
+    e.activity.room = Room::Incident;
+    e.blanket = true;
+    e.background.push(call(t0()));
+    e.planning = true;
+    assert_eq!(
+        employee_dto(e, t0()).items,
+        [
+            Item::Medal,
+            Item::Helmet,
+            Item::Blanket,
+            Item::Headphones,
+            Item::Scroll
+        ]
+    );
+    assert!(
+        !employee_dto(e, t0() + Duration::seconds(10))
+            .items
+            .contains(&Item::Medal)
+    );
+    e.activity.room = Room::Door;
+    e.blanket = false;
+    e.background.clear();
+    assert_eq!(
+        employee_dto(e, t0() + Duration::seconds(10)).items,
+        [Item::Scroll]
     );
 }

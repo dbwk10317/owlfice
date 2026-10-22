@@ -206,6 +206,7 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             start(app.handle())?;
@@ -219,6 +220,7 @@ pub fn run() {
             ipc::rescan,
             ipc::get_discovery,
             ipc::get_diagnostics,
+            ipc::get_log_folder,
             ipc::open_log_folder,
             notification::set_window_hidden,
             ipc::get_employee_timeline,

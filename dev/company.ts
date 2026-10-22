@@ -1,6 +1,8 @@
+import "../design/handoff/tokens.css";
 import "../src/styles/app.css";
 import { mountHeader } from "../src/header.ts";
 import { mountOffice, type OfficeHandle } from "../src/office/renderer.ts";
+import { openSessionDetail } from "../src/popup-session.ts";
 import { openEmployeeDetail } from "../src/popup-employee.ts";
 import type { Invoke } from "../src/scale.ts";
 import { mountSidebar, popupNames } from "../src/sidebar-left.ts";
@@ -15,6 +17,7 @@ import type {
   OfficeListDto,
   OfficeSummaryDto,
   Scale,
+  SessionDetailDto,
   TeamDto,
 } from "../src/types/ipc.ts";
 
@@ -45,6 +48,7 @@ function makeTeam(id: string, name: string, slot: number): TeamDto {
 }
 const teams = [makeTeam("one", "한결", 0), makeTeam("two", "다온", 1)];
 let scale: Scale = "Small";
+let sidebarStates = false;
 let seq = 1;
 let selectRequest = 0;
 const store = createStore<OfficeListDto, OfficeDto>();
@@ -57,15 +61,16 @@ const status = document.getElementById("status")!;
 
 function summary(id: string, members: TeamDto[], floor: number): OfficeSummaryDto {
   const active = members.some((t) => t.phase !== "Off");
+  const asking = sidebarStates && members.some((t) => t.teamId === "one" && t.phase !== "Off");
   return {
     officeId: id,
     building: scale === "Large" ? "B" : null,
     floor,
     room: scale === "Large" ? floor + 100 : null,
-    label: scale === "Small" ? "Claude" : members[0].title,
+    label: scale === "Small" ? "1층 Claude 사무실" : `B동 ${floor + 100}호`,
     phase: active ? "Working" : "Off",
-    dot: active ? "Working" : "Off",
-    asking: false,
+    dot: active ? (sidebarStates ? (asking ? "Waiting" : "IdleAlive") : "Working") : "Off",
+    asking,
     border: "Plain",
     delayed: false,
     teams: members.map((t) => ({
@@ -75,12 +80,24 @@ function summary(id: string, members: TeamDto[], floor: number): OfficeSummaryDt
       folder: t.folder,
       others: 1,
       started: since,
+      lastActivity: sidebarStates
+        ? new Date(Date.now() - 35 * 60_000).toISOString()
+        : t.lastActivity,
+      readFailed: sidebarStates && t.teamId === "one",
       phase: t.phase,
-      dot: t.phase === "Off" ? "Off" : "Working",
-      asking: false,
+      dot:
+        t.phase === "Off"
+          ? "Off"
+          : sidebarStates
+            ? t.teamId === "one"
+              ? "Waiting"
+              : "IdleAlive"
+            : "Working",
+      asking: sidebarStates && t.teamId === "one" && t.phase !== "Off",
+      askingCount: sidebarStates && t.teamId === "one" && t.phase !== "Off" ? 2 : 0,
       border: "Plain",
       delayed: false,
-      hostBadge: null,
+      hostBadge: sidebarStates && t.teamId === "two" ? "WSL" : null,
       workType: t.workType,
     })),
   };
@@ -130,8 +147,9 @@ function openEmployee(
   teamId: string,
   agentId: string,
   opener?: HTMLElement,
+  sessionName?: string,
 ): void {
-  const selectedTeam = store.state.office?.teams.find((t) => t.teamId === teamId);
+  const selectedTeam = teams.find((t) => t.teamId === teamId);
   const employee = selectedTeam?.employees.find((e) => e.agentId === agentId);
   if (!selectedTeam || !employee) return;
   // README용 합성 기록이다. 파일 이름과 명령은 표시할 문자열이며 읽거나 실행하지 않는다.
@@ -177,12 +195,47 @@ function openEmployee(
   });
   const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     if (cmd === "open_path") throw new Error("합성 미리보기에서는 원본 파일을 열지 않습니다.");
+    if (cmd === "get_session_detail") {
+      if (args?.officeId !== officeId || args.teamId !== teamId)
+        throw new Error("합성 세션 정보가 일치하지 않습니다.");
+      const session: SessionDetailDto = {
+        sessionId: `synthetic-${teamId}`,
+        title: selectedTeam.title,
+        building: selectedTeam.building,
+        hostLabel: "Windows (합성)",
+        workType: selectedTeam.workType,
+        cwd: "C:/samples/owlfice",
+        gitBranch: "synthetic-preview",
+        model: detail.model,
+        started: selectedTeam.started,
+        lastActivity: selectedTeam.lastActivity,
+        turns: 3,
+        tokens: { input: 1200, output: 300 },
+        headcount: { bujang: 1, gwajang: 0, daeri: 1, sawon: 0 },
+        pr: null,
+        recent: events,
+        recentError: null,
+      };
+      return session as T;
+    }
     if (args?.officeId !== officeId || args.teamId !== teamId || args.agentId !== agentId)
       throw new Error("합성 직원 정보가 일치하지 않습니다.");
     if (cmd === "get_employee_detail") return detail as T;
     if (cmd === "get_employee_timeline") return (args.before === null ? events : []) as T;
     throw new Error(`합성 응답이 없는 명령: ${cmd}`);
   };
+  if (sessionName) {
+    openSessionDetail(
+      {
+        invoke,
+        live: (id, agent) =>
+          teams.find((t) => t.teamId === id)?.employees.find((e) => e.agentId === agent),
+      },
+      { officeId, teamId, name: sessionName },
+      opener,
+    );
+    return;
+  }
   openEmployeeDetail(
     {
       invoke,
@@ -224,6 +277,10 @@ mountSidebar(
   },
   {
     companyName,
+    onDetail: (officeId, teamId, name, opener) => {
+      const boss = teams.find((t) => t.teamId === teamId)?.employees[0];
+      if (boss) openEmployee(officeId, teamId, boss.agentId, opener, name);
+    },
     onTeam: (officeId, teamId) => {
       panel.showTeam(officeId, teamId);
       if (view) view.highlightTeam(officeId, teamId);
@@ -236,9 +293,12 @@ header = mountHeader(app, document.getElementById("header")!, store, {
   bandSlot: () => side.querySelector(".ow-side-band"),
   togglePanel: () => panel.toggleDrawer(),
   setRoomLabels: (on) => view?.setRoomLabels(on),
+  setScale: (scale) => view?.setScale(scale),
+  stage,
+  centerCanvas: () => view?.centerCanvas(),
 });
 await mountOffice(stage, store, {
-  onScale: (n) => header?.setScale(n),
+  onScale: (n, maxFit) => header?.setScale(n, maxFit),
   onEmployee: (officeId, teamId, agentId) => {
     panel.highlight(teamId, agentId);
     openEmployee(officeId, teamId, agentId);
@@ -291,5 +351,9 @@ document.getElementById("parallel")!.addEventListener("click", () => {
 document.getElementById("visit")!.addEventListener("click", () => {
   teams[1].props.bossVisit = "다온 팀의 수정 결과를 확인해 주세요";
   publish([{ teamId: "two", kind: "BossVisit", text: teams[1].props.bossVisit }]);
+});
+document.getElementById("sidebar-states")!.addEventListener("click", () => {
+  sidebarStates = !sidebarStates;
+  publish();
 });
 publish();

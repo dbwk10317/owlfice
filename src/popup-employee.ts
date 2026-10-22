@@ -7,7 +7,7 @@ import fileSvg from "../design/handoff/icons/file.svg?raw";
 import terminalSvg from "../design/handoff/icons/terminal.svg?raw";
 import { detailErrorText, hms, openModal, smallIcon, type LiveEmployee } from "./popup-modal.ts";
 import type { Invoke } from "./scale.ts";
-import { CTX_CELLS, ROLE_LABEL, ROOM_LABEL, contextMeter, h, setRich } from "./sidebar-right.ts";
+import { ROLE_LABEL, ROOM_ICON, ROOM_LABEL, contextMeter, h, setRich } from "./sidebar-right.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { rankLabel } from "./ticker.ts";
 import { setAvatar } from "./avatar.ts";
@@ -29,6 +29,7 @@ const PAGE = 50;
 export interface EmployeePopupDeps {
   invoke: Invoke;
   live: LiveEmployee;
+  isTeamOff?: (teamId: string) => boolean;
   doc?: Document;
   now?: () => number;
 }
@@ -62,17 +63,46 @@ export function openEmployeeDetail(
   const live = deps.live(teamId, agentId);
   const title = h(doc, "h1", "ow-pop__title ow-pop__title--lg", live?.name ?? "");
   title.id = "ed-title";
-  const rank = h(doc, "span", "ow-pop__rank", live ? rankLabel(live.rank) : "");
+  const rank = h(doc, "span", "ow-chip ow-pop__rank", live ? rankLabel(live.rank) : "");
+  const work = h(doc, "span", "ow-chip ow-emp__work");
+  work.hidden = true;
   const chips = h(doc, "div", "ow-pop__chips");
   const meta = h(doc, "div", "ow-pop__meta");
   const head = h(doc, "header", "ow-pop__head ow-pop__head--emp");
-  const avatar = h(doc, "div", "ow-avatar ow-avatar--lg");
+  const avatar = h(doc, "div", "ow-avatar ow-avatar--xl");
   avatar.setAttribute("aria-hidden", "true");
   if (live) setAvatar(avatar, live, ref.building);
+  const source = h(doc, "button", "ow-btn", smallIcon(doc, externalSvg), phrases.card.openSource);
+  source.type = "button";
+  const sourceError = h(doc, "p", "ow-pop__error");
+  sourceError.setAttribute("role", "alert");
+  sourceError.hidden = true;
+  source.addEventListener("click", async () => {
+    source.disabled = true;
+    sourceError.hidden = true;
+    try {
+      await deps.invoke("open_path", { target: { kind: "SourceFolder", officeId, teamId } });
+    } catch (e) {
+      if (!m.closed) {
+        sourceError.textContent = detailErrorText(e);
+        sourceError.hidden = false;
+      }
+    } finally {
+      source.disabled = false;
+    }
+  });
   head.append(
     avatar,
-    h(doc, "div", "ow-pop__headmain", h(doc, "div", "ow-pop__titlerow", title, rank), chips, meta),
-    m.closeBtn,
+    h(
+      doc,
+      "div",
+      "ow-pop__headmain",
+      h(doc, "div", "ow-pop__titlerow", title, rank, work),
+      chips,
+      meta,
+      sourceError,
+    ),
+    h(doc, "div", "ow-pop__actions", source, m.closeBtn),
   );
 
   const body = h(doc, "div", "ow-modal__body ow-pop__body ow-emp");
@@ -150,7 +180,7 @@ export function openEmployeeDetail(
     for (const e of got) list.append(eventRow(e));
     events += got.length;
     last = got.length ? got[got.length - 1] : reset ? null : last;
-    countEl.textContent = events <= PAGE ? fill(D.timelineCount, { n: events }) : String(events);
+    countEl.textContent = fill(D.timelineCount, { n: events });
     // 50개를 채워 받았을 때만 더 있을 수 있다
     moreBtn.hidden = got.length < PAGE;
     moreBtn.disabled = false;
@@ -179,6 +209,7 @@ export function openEmployeeDetail(
     setAvatar(avatar, dto, ref.building);
     title.textContent = dto.name;
     rank.textContent = rankLabel(dto.rank);
+    rank.classList.toggle("is-boss", dto.rank === "Bujang");
     fillHead(dto);
 
     const left = h(doc, "div", "ow-emp__main");
@@ -196,7 +227,7 @@ export function openEmployeeDetail(
     notice = h(doc, "p", "ow-pop__error");
     notice.setAttribute("role", "alert");
     notice.hidden = true;
-    list = h(doc, "div", "ow-emp__list");
+    list = h(doc, "div", "ow-tl");
     moreBtn = h(doc, "button", "ow-pop__more", D.more);
     moreBtn.setAttribute("type", "button");
     moreBtn.append(h(doc, "span", "ow-mono", D.moreStep));
@@ -222,11 +253,15 @@ export function openEmployeeDetail(
     chips.replaceChildren(chip(fill(phrases.card.role, { role: ROLE_LABEL[dto.role] })));
     chips.append(chip(dto.model ?? phrases.card.modelUnknown, "ow-mono"));
     if (emp) {
-      chips.append(chip(ROOM_LABEL[emp.activity.room]));
+      const room = chip(ROOM_LABEL[emp.activity.room]);
+      room.prepend(smallIcon(doc, ROOM_ICON[emp.activity.room]));
+      chips.append(room);
       const meter = contextMeter(emp.contextUsed, emp.contextWindow);
       if (meter) {
         const ctx = h(doc, "span", `ow-ctx${meter.high ? " is-high" : ""}`);
-        for (let i = 0; i < CTX_CELLS; i++) ctx.append(h(doc, "i", i < meter.lit ? "is-on" : ""));
+        const fill = h(doc, "i");
+        fill.style.width = `${meter.pct}%`;
+        ctx.append(h(doc, "span", "ow-ctx__bar", fill));
         ctx.append(h(doc, "b", "", meter.text));
         const c = chip("");
         c.title = meter.label;
@@ -236,6 +271,15 @@ export function openEmployeeDetail(
     }
     const hired = Date.parse(dto.hiredAt);
     const sec = Number.isNaN(hired) ? 0 : Math.max(0, Math.floor((now() - hired) / 1000));
+    const off = deps.isTeamOff?.(teamId) || (emp && emp.departedAt !== null);
+    const done = (emp ? emp.retiredAt : dto.retiredAt) !== null;
+    work.hidden = !off && !emp && !done;
+    work.classList.toggle("is-live", !off && !!emp && !done);
+    work.textContent = off
+      ? phrases.sidebar.stateOff
+      : done
+        ? phrases.card.done
+        : fill(phrases.header.working, { elapsed: durationText(sec, sec < 60) });
     // 상사가 없는(부장) 직원은 "상사 {parent}" 토막을 뺀다
     const text = D.meta
       .split(" · ")
@@ -258,25 +302,32 @@ export function openEmployeeDetail(
         h(
           doc,
           "div",
-          "ow-pop__block",
+          "ow-stat",
           h(
             doc,
             "div",
-            "ow-emp__sumhead",
+            "ow-stat__head",
             smallIcon(doc, svg),
             h(doc, "h2", "ow-pop__h2", label),
-            h(doc, "span", "ow-mono ow-pop__n", String(items.length)),
+            h(
+              doc,
+              "b",
+              "",
+              String(
+                items.reduce((sum, item) => sum + (typeof item === "string" ? 1 : item.times), 0),
+              ),
+            ),
           ),
           ...items.map((x) => {
             if (typeof x === "string") {
-              const li = h(doc, "div", "ow-emp__li", x);
+              const li = h(doc, "div", "ow-stat__row ow-emp__li", x);
               li.title = x;
               return li;
             }
             const li = h(
               doc,
               "div",
-              "ow-emp__li ow-emp__li--count",
+              "ow-stat__row ow-emp__li ow-emp__li--count",
               h(doc, "span", "ow-emp__item", x.item),
               h(doc, "span", "ow-emp__times", fill(D.times, { n: x.times })),
             );
@@ -293,30 +344,30 @@ export function openEmployeeDetail(
   }
 
   function result(e: EventDto): HTMLElement {
-    const span = h(doc, "span", "ow-ev__res");
+    const span = h(doc, "span", "ow-tl__result");
     const set = (cls: string, text: string) => {
       span.classList.add(cls);
       span.textContent = text;
     };
     switch (e.outcome) {
       case "Ok":
-        set("is-ok", D.ok);
+        set("ow-tl__ok", D.ok);
         break;
       case "Err":
         set(
-          "is-bad",
+          "ow-tl__bad",
           e.test ? fill(D.failTests, { pass: e.test.passed, fail: e.test.failed }) : D.fail,
         );
         break;
       case "Rejected":
-        set("is-bad", D.rejected);
+        set("ow-tl__bad", D.rejected);
         break;
       case "Started":
         // 타임라인은 Started 와 뒤의 Ok/Err 를 따로 남기는 이력이라 경과 시간을 붙이면 끝난 일도 진행 중으로 읽힌다
-        set("is-run", D.started);
+        set("ow-tl__run", D.started);
         break;
       case "Unknown":
-        set("is-dim", D.unknown);
+        set("ow-tl__unknown", D.unknown);
         break;
       default:
         break;
@@ -348,7 +399,7 @@ export function openEmployeeDetail(
     btn.setAttribute("type", "button");
     btn.append(
       smallIcon(doc, externalSvg),
-      D.openRaw,
+      h(doc, "span", "ow-emp__linklabel", D.openRaw),
       h(doc, "span", "ow-mono ow-emp__linkfile", file),
     );
     const err = h(doc, "p", "ow-pop__error");
@@ -377,27 +428,28 @@ export function openEmployeeDetail(
   }
 
   function eventRow(e: EventDto): HTMLElement {
-    const row = h(doc, "div", "ow-ev");
-    const headBtn = h(doc, "button", "ow-ev__head");
+    const row = h(doc, "div", "ow-tl__row");
+    const headBtn = h(doc, "button", "ow-tl__head");
     headBtn.setAttribute("type", "button");
     headBtn.setAttribute("aria-expanded", "false");
-    const sum = h(doc, "span", "ow-ev__sum");
+    const sum = h(doc, "span", "ow-tl__summary");
     setRich(sum, e.summary);
     const chev = smallIcon(doc, chevronSvg);
-    chev.classList.add("ow-ev__chev");
+    chev.classList.add("ow-tl__chev");
     headBtn.append(
-      h(doc, "span", "ow-ev__t", hms(e.ts)),
-      h(doc, "span", "ow-ev__tool", e.tool ?? KIND[e.kind]),
+      h(doc, "span", "ow-tl__time", hms(e.ts)),
+      h(doc, "span", "ow-tool", e.tool ?? KIND[e.kind]),
       sum,
       result(e),
       chev,
     );
-    const detail = h(doc, "div", "ow-ev__body");
+    const detail = h(doc, "div", "ow-tl__raw");
     detail.hidden = true;
     let built = false;
     headBtn.addEventListener("click", () => {
       const open = headBtn.getAttribute("aria-expanded") !== "true";
       headBtn.setAttribute("aria-expanded", String(open));
+      row.classList.toggle("is-open", open);
       detail.hidden = !open;
       if (open && !built) {
         built = true;

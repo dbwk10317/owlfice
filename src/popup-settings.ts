@@ -2,7 +2,8 @@ import phrases from "../design/handoff/phrases.ko.json";
 import { openModal } from "./popup-modal.ts";
 import { h } from "./sidebar-right.ts";
 import type { Invoke } from "./scale.ts";
-import type { SettingsDto } from "./types/ipc.ts";
+import type { NightMode, SettingsDto } from "./types/ipc.ts";
+import type { UpdateStore } from "./store.ts";
 
 const S = phrases.settings;
 
@@ -13,6 +14,7 @@ export interface SettingsDeps {
   onError?(message: string): void;
   doc?: Document;
   writeClipboard?(text: string): Promise<void>;
+  updates?: UpdateStore;
 }
 
 /** 디스크 저장 실패 때도 백엔드 메모리는 바뀌므로 다시 읽은 값으로 화면을 맞춘다. */
@@ -44,7 +46,8 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     modal.closeBtn,
   );
   const body = doc.createElement("fieldset");
-  body.className = "ow-modal__body ow-settings";
+  body.className = "ow-settings";
+  const scroll = h(doc, "div", "ow-modal__body", body);
   const error = h(doc, "p", "ow-pop__error");
   error.setAttribute("role", "alert");
   error.hidden = true;
@@ -53,7 +56,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
   const retry = button("다시 불러오기", () => void load());
   retry.hidden = true;
   const foot = h(doc, "footer", "ow-modal__foot ow-settings__foot", error, status, retry);
-  modal.modal.append(head, body, foot);
+  modal.modal.append(head, scroll, foot);
   let current: SettingsDto | null = null;
   let busy = false;
 
@@ -176,6 +179,25 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     );
   }
   const sound = section(S.screenSound);
+  const nightModes = h(doc, "div", "ow-seg");
+  nightModes.setAttribute("role", "group");
+  nightModes.setAttribute("aria-label", S.nightMode);
+  const nightChoices = (["auto", "on", "off"] as const).map((mode: NightMode) => {
+    const control = button(S.nightModes[mode], () => save({ nightMode: mode }));
+    control.className = "";
+    nightModes.append(control);
+    return { mode, control };
+  });
+  sound.append(
+    h(
+      doc,
+      "div",
+      "ow-settings__field",
+      S.nightMode,
+      nightModes,
+      h(doc, "small", "ow-settings__hint", S.nightModeHint),
+    ),
+  );
   toggle(sound, "sound", S.sound, S.soundHint);
   toggle(
     sound,
@@ -246,11 +268,67 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
         }
       }, "진단 정보를 복사했습니다."),
   );
+  const logPath = h(doc, "p", "ow-settings__log-path ow-mono", S.logFolderLoading);
+  logPath.setAttribute("aria-label", S.logFolder);
+  const logError = h(doc, "p", "ow-pop__error");
+  logError.id = "settings-log-error";
+  logError.setAttribute("role", "alert");
+  logError.hidden = true;
+  diag.append(
+    h(doc, "div", "ow-settings__field", S.logFolder, logPath),
+    h(doc, "p", "ow-settings__hint", S.logFolderHint),
+    logError,
+  );
   const open = button(
-    S.openUnhandled,
+    S.openLogFolder,
     () => void run(() => deps.invoke("open_log_folder"), "로그 폴더를 열었습니다."),
   );
   diag.append(h(doc, "div", "ow-settings__actions", copy, open));
+
+  if (deps.updates) {
+    const updates = deps.updates;
+    const update = section(S.update);
+    const version = h(doc, "p", "ow-settings__hint");
+    const result = h(doc, "p", "ow-settings__status");
+    result.setAttribute("role", "status");
+    const check = button(S.checkUpdate, () => void updates.check());
+    const install = button("", () => void updates.install());
+    update.append(version, result, h(doc, "div", "ow-settings__actions", check, install));
+    function renderUpdate(): void {
+      if (modal.closed) return;
+      const s = updates.state;
+      version.textContent = s.currentVersion
+        ? S.currentVersion.replace("{version}", s.currentVersion)
+        : s.versionFailed
+          ? S.versionError
+          : S.versionLoading;
+      check.disabled = ["checking", "downloading", "preparing", "installing"].includes(s.phase);
+      install.hidden = s.phase !== "available";
+      install.disabled = check.disabled;
+      install.textContent = S.installUpdate.replace("{version}", s.version ?? "");
+      result.textContent =
+        s.phase === "failed"
+          ? S.updateErrors[s.failure ?? "check"]
+          : s.phase === "available"
+            ? S.updateAvailable.replace("{version}", s.version ?? "")
+            : s.phase === "downloading"
+              ? s.total
+                ? S.updateProgress.replace(
+                    "{percent}",
+                    String(Math.min(100, Math.floor((s.downloaded / s.total) * 100))),
+                  )
+                : S.updateDownloaded.replace("{bytes}", s.downloaded.toLocaleString())
+              : S.updateStates[s.phase];
+      result.setAttribute("role", s.phase === "failed" ? "alert" : "status");
+    }
+    const unsubscribe = updates.subscribe(renderUpdate);
+    const close = modal.close.bind(modal);
+    modal.close = (restoreFocus) => {
+      unsubscribe();
+      close(restoreFocus);
+    };
+    renderUpdate();
+  }
 
   function render(): void {
     if (!current) return;
@@ -260,6 +338,10 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     small.setAttribute("aria-pressed", String(current.scale === "Small"));
     large.classList.toggle("is-primary", current.scale === "Large");
     small.classList.toggle("is-primary", current.scale === "Small");
+    for (const { mode, control } of nightChoices) {
+      const selected = mode === (current.nightMode ?? "auto");
+      control.setAttribute("aria-pressed", String(selected));
+    }
     for (const [key, el] of switches)
       el.setAttribute("aria-checked", String(current[key] ?? key === "osNotifications"));
     paths.replaceChildren(
@@ -300,4 +382,16 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     }
   }
   void load();
+  void (async () => {
+    try {
+      const path = await deps.invoke<string>("get_log_folder");
+      if (!modal.closed) logPath.textContent = path;
+    } catch (e) {
+      if (!modal.closed) {
+        logPath.textContent = "";
+        logError.textContent = `${S.logFolderError}: ${String(e)}`;
+        logError.hidden = false;
+      }
+    }
+  })();
 }

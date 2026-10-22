@@ -62,22 +62,28 @@ THEMES = {
 }
 TEAM_TINTS = [(52, 150, 150), (128, 98, 190), (226, 112, 92), (214, 160, 40), (70, 130, 200), (150, 110, 80)]
 NIGHT_TINT = (242, 222, 173)  # 곱하기. 창문 레이어에는 적용하지 않는다
+EVENING_TINT = (246, 230, 196)
 
 ROOMS = {  # key: (이름, gx0, gy0, gx1, gy1, 바닥 타일)
-    "library": ("소스 서고", 0, 0, 6, 5, "library"),
+    "library": ("소스 서고", 0, 0, 4, 5, "library"),
+    "archive": ("자료실", 4, 0, 6, 5, "archive"),
     "build": ("빌드실", 6, 0, 11, 5, "build"),
     "test": ("테스트실", 11, 0, 16, 5, "test"),
     "boss": ("팀장실", 16, 0, 24, 6, "boss"),
     "dev": ("개발실", 0, 5, 16, 11, "dev"),
     "review": ("리뷰실", 16, 6, 24, 9, "review"),
     "incident": ("장애 상황실", 16, 9, 24, 12, "incident"),
-    "meeting": ("거래처 미팅실", 16, 12, 24, 16, "meeting"),
-    "entrance": ("출입문 · 출고장", 0, 11, 5, 16, "entrance"),
-    "pantry": ("탕비실", 5, 11, 16, 16, "pantry"),
+    "conference": ("회의실", 16, 12, 20, 16, "conference"),
+    "meeting": ("거래처 미팅실", 20, 12, 24, 16, "meeting"),
+    "security": ("경비실", 0, 11, 5, 13, "security"),
+    "entrance": ("출입문 · 출고장", 0, 13, 5, 16, "entrance"),
+    "pantry": ("탕비실", 5, 11, 13, 16, "pantry"),
+    "roof": ("옥상", 13, 11, 16, 16, "roof"),
 }
 FLOOR = {"library": (196, 160, 120), "build": (184, 188, 194), "test": (204, 208, 212), "dev": (218, 211, 198),
          "review": (214, 196, 170), "incident_off": (112, 108, 104), "incident_on": (190, 128, 118),
          "meeting": (196, 210, 188), "entrance": (190, 182, 170), "pantry": (234, 226, 210)}
+FLOOR.update(archive=(174, 158, 136), conference=(186, 204, 218), security=(172, 182, 176), roof=(164, 176, 178))
 for _t, _v in THEMES.items():
     FLOOR["boss_" + _t] = _v["boss_carpet"]
 
@@ -198,7 +204,7 @@ SPECIES = {
                  c=(250, 250, 246))),
 }
 EMPLOYEE_SPECIES = ["eagle", "longeared", "little", "barn", "scops"]  # 흰올빼미는 사장님 전용
-BODY_PAL = dict(k=OUTLINE, p=(26, 26, 26), y=(232, 163, 58))
+BODY_PAL = dict(k=OUTLINE, p=(26, 26, 26), y=(232, 163, 58), m=(244, 236, 212), M=(110, 70, 42))
 
 TORSO = ["kdccccccccccdk", "kdccccccccccdk", "kdccccccccccdk", "kddccccccccddk", ".kdccccccccdk.",
          ".kdccccccccdk.", "..kkcccccckk..", "...kkkkkkkk..."]   # 템플릿 9~16행
@@ -214,6 +220,7 @@ WING_BLOBS = {   # 왼쪽 날개 모양 (템플릿 좌표, 몸통 기준). 오�
            (0, 6, "d"), (0, 7, "d"), (0, 8, "k")],
     "head": [(1, 1, "k"), (2, 1, "k"), (0, 2, "k"), (1, 2, "d"), (2, 2, "d"), (3, 2, "k"), (0, 3, "k"),
              (1, 3, "d"), (2, 3, "k"), (1, 4, "k")],
+    "chin": [(3, 9, "k"), (4, 8, "k"), (5, 8, "d"), (6, 8, "k"), (4, 9, "d"), (5, 9, "k"), (3, 10, "k")],
 }
 HEAD_BLOBS = {"up", "head"}   # 머리 기준으로 움직이는 날개
 
@@ -228,10 +235,15 @@ POSES = {
     "jump": dict(f=1, fps=0, loop=False, note="펄쩍 (사장님 등장). 0.4초"),
     "scratch": dict(f=2, fps=4, loop=True, note="머리 긁기 (반려, 같은 파일 3회 수정)"),
     "panic": dict(f=2, fps=6, loop=True, note="머리 쥐어뜯기 (장애 상황실)"),
-    "cheer": dict(f=1, fps=0, loop=False, note="만세·하이파이브 (테스트 전부 통과)"),
+    "cheer": dict(f=1, fps=0, loop=False, note="만세 (테스트 전부 통과)"),
     "clap": dict(f=2, fps=6, loop=True, note="손뼉 (서브에이전트 지시)"),
     "crouch": dict(f=1, fps=0, loop=False, note="쪼그려 앉기 (명령이 평균 2배 초과)"),
     "carry": dict(f=1, b=1, fps=0, loop=False, note="앞으로 들기 (결재판, 서류철, 러버덕, 상자)"),
+    "think": dict(f=2, fps=1, loop=True, note="턱 괴기. 기존 침묵 추정 자세"),
+    "highfive": dict(f=1, fps=0, loop=False, note="같은 팀 두 직원 확정 통과. 동시에 1초"),
+    "stretch": dict(f=2, fps=2, loop=True, note="근속 1시간 경계마다 기지개 1.5초"),
+    "drink": dict(f=2, fps=2, loop=True, note="응답 대기 30초 경계마다 커피 1초"),
+    "phone": dict(f=1, fps=0, loop=False, note="사장님 메시지. 펄쩍 뒤 수화기 1초"),
 }
 
 
@@ -267,6 +279,16 @@ def pose_geo(pose, dirn, f):
         g.update(crouch=True, hy=2)
     elif pose == "carry" and dirn == "f":
         g.update(wl=("fwd", 0), wr=("fwd", 0))
+    elif pose == "think":
+        g.update(wr=("chin", f), hy=f)
+    elif pose == "highfive":
+        g.update(wr=("up", 0))
+    elif pose == "stretch":
+        g.update(wl=("up", f), wr=("up", f), eyes="closed", hy=-f)
+    elif pose == "drink":
+        g.update(wr=("fwd", -2 * f))
+    elif pose == "phone":
+        g.update(wr=("head", 3))
     return g
 
 
@@ -335,6 +357,14 @@ def owl_body(sp, pose, dirn, f):
             pts.append(p)
         lowest = max(pts, key=lambda p: (p[1], -abs(p[0] - 6.5)))
         hands[side] = lowest
+    if pose == "drink":
+        y = 9 - 2 * f
+        for x, dy, ch in [(10, 0, "k"), (11, 0, "M"), (12, 0, "k"), (10, 1, "m"), (11, 1, "m"),
+                          (12, 1, "m"), (13, 1, "k"), (10, 2, "k"), (11, 2, "k"), (12, 2, "k")]:
+            cells[(x, y + dy)] = ch
+    elif pose == "phone":
+        for x, y in [(11, 4), (12, 4), (10, 5), (11, 5), (10, 6), (10, 7), (10, 8), (11, 8), (11, 9), (12, 9)]:
+            cells[(x, y)] = "k"
     g["hands"] = hands
     return cells, g
 
@@ -342,7 +372,7 @@ def owl_body(sp, pose, dirn, f):
 GLASSES_EYES = [(3, 4), (9, 10)]   # 모든 종의 눈 위치가 같다 (옷 레이어를 종과 무관하게 쓰기 위해)
 
 
-def owl_outfit(outfit, g, dirn, chest):
+def owl_outfit(outfit, g, dirn, chest, worn=False):
     """옷 레이어. outfit = '<rank>-<vendor>' | 'boss' | 'librarian'."""
     cells = {}
     if outfit == "boss":
@@ -363,7 +393,7 @@ def owl_outfit(outfit, g, dirn, chest):
 
     if dirn == "f":
         if rank in ("bujang", "boss"):
-            for yt in (10, 11, 12, 13):
+            for yt in ((11, 12, 13, 14) if worn and rank == "bujang" else (10, 11, 12, 13)):
                 T(6, yt, tie)
                 T(7, yt, tie)
         if rank == "gwajang":
@@ -398,9 +428,9 @@ def owl_outfit(outfit, g, dirn, chest):
         for yt in (9, 10, 11):
             y = torso_y(yt, g)
             c = sleeve
-            if rank == "daeri" and yt == 10:
+            if (rank == "daeri" or worn) and yt == 10:
                 c = (250, 250, 250)
-            if rank == "daeri" and yt == 11:
+            if (rank == "daeri" or worn) and yt == 11:
                 continue
             cells[(xs, y)] = c
     if rank == "boss":
@@ -409,6 +439,23 @@ def owl_outfit(outfit, g, dirn, chest):
             for x, ch in enumerate(row):
                 if ch != ".":
                     cells[(x, -1 + r + g["hy"])] = (244, 196, 48) if ch == "Y" else (210, 50, 60)
+    return cells
+
+
+def owl_wear(stage, g, dirn, chest):
+    cells = {}
+    for side, x in (("l", 1), ("r", 12)):
+        if g["w" + side][0] == "down" and not g["crouch"]:
+            cells[(x, torso_y(10, g))] = (250, 250, 250)
+    if stage >= 2 and dirn == "f":
+        for x0, x1 in GLASSES_EYES:
+            for x in range(x0, x1 + 1):
+                cells[(x, 7 + g["hy"])] = (106, 88, 98)
+    if stage >= 3:
+        for x, yt in ((3, 9), (4, 9), (3, 10), (4, 10), (3, 11), (4, 11), (3, 12)):
+            y = torso_y(yt, g)
+            if y is not None and (x, y) in chest:
+                cells[(x, y)] = (214, 224, 220) if x == 3 else (248, 248, 232)
     return cells
 
 
@@ -433,6 +480,30 @@ def owl_role(role, g, dirn, chest):
         hy = g["hy"]
         for x, y, c in [(11, 3, (60, 60, 60)), (12, 2, (60, 90, 200)), (13, 1, (60, 90, 200))]:
             cells[(x, y + hy)] = c
+    elif role == "security" and dirn == "f":
+        for x in range(2, 12):
+            cells[(x, 5 + g["hy"])] = (22, 24, 30)
+            if x not in (6, 7):
+                cells[(x, 6 + g["hy"])] = (22, 24, 30)
+        cells[(3, 5 + g["hy"])] = (94, 104, 118)
+        cells[(9, 5 + g["hy"])] = (94, 104, 118)
+    elif role == "data" and dirn == "f":
+        for x, yt in ((5, 9), (8, 9), (5, 10), (8, 10)):
+            T(x, yt, (70, 112, 150))
+        for yt in range(11, 14):
+            for x in range(5, 9):
+                T(x, yt, (242, 244, 232))
+        for x, yt in ((5, 12), (6, 11), (6, 12), (7, 13), (8, 12), (8, 13)):
+            T(x, yt, (56, 140, 152))
+    elif role == "designer":
+        for y, xs in ((-1, range(4, 10)), (0, range(3, 11)), (1, range(2, 12))):
+            for x in xs:
+                cells[(x, y + g["hy"])] = (74, 44, 94)
+        cells[(8, -2 + g["hy"])] = (50, 32, 64)
+        if dirn == "f" and g["wr"][0] == "down" and not g["crouch"]:
+            for yt in range(10, 15):
+                cells[(12, torso_y(yt, g))] = (152, 100, 54)
+            cells[(12, torso_y(9, g))] = (224, 112, 80)
     elif role in ("frontend", "qa") and g["wl"][0] == "down" and not g["crouch"] and dirn == "f":
         y0 = torso_y(12, g)
         if role == "frontend":
@@ -449,6 +520,38 @@ def owl_role(role, g, dirn, chest):
     return cells
 
 
+def owl_item(item, g, dirn, chest):
+    cells = {}
+    if item == "medal" and dirn == "f":
+        for x, yt, c in [(5, 9, (66, 112, 190)), (8, 9, (190, 60, 64)),
+                         (6, 10, (66, 112, 190)), (7, 10, (190, 60, 64)),
+                         (6, 11, (246, 200, 60)), (7, 11, (246, 200, 60)),
+                         (6, 12, (204, 142, 32)), (7, 12, (246, 200, 60))]:
+            y = torso_y(yt, g)
+            if y is not None and (x, y) in chest:
+                cells[(x, y)] = c
+    elif item == "blanket":
+        for (x, y) in chest:
+            cells[(x, y)] = (100, 140, 160) if (x + y) % 4 else (152, 184, 190)
+        for side, x in (("l", 1), ("r", 12)):
+            if g["w" + side][0] == "down" and not g["crouch"]:
+                for yt in range(9, 14):
+                    cells[(x, torso_y(yt, g))] = (100, 140, 160)
+    elif item == "headphones":
+        for x in range(2, 12):
+            cells[(x, g["hy"])] = (44, 48, 60)
+        for x in (1, 2, 11, 12):
+            for y in range(2, 7):
+                cells[(x, y + g["hy"])] = (44, 48, 60) if x in (1, 12) else (80, 104, 132)
+    elif item == "helmet":
+        for y, xs in ((-2, range(4, 10)), (-1, range(2, 12)), (0, range(1, 13)), (1, range(1, 13)), (2, range(0, 14))):
+            for x in xs:
+                cells[(x, y + g["hy"])] = (246, 194, 54) if y < 2 else (194, 138, 32)
+        for y in range(-1, 2):
+            cells[(7, y + g["hy"])] = (255, 224, 112)
+    return cells
+
+
 def cells_to_img(cells, lift, pal=None):
     img = Image.new("RGBA", (OWL_W, OWL_H), (0, 0, 0, 0))
     for (x, y), v in cells.items():
@@ -460,11 +563,11 @@ def cells_to_img(cells, lift, pal=None):
 
 
 OUTFITS = [f"{r}-{v}" for r in ("bujang", "gwajang", "daeri", "sawon") for v in THEMES] + ["boss", "librarian"]
-ROLES = ["backend", "frontend", "qa", "devops", "writer"]   # 수습(trainee)은 레이어 없음
+ROLES = ["backend", "frontend", "qa", "devops", "writer", "security", "data", "designer"]   # 수습(trainee)은 레이어 없음
 RANK_KO = {"bujang": "부장", "gwajang": "과장", "daeri": "대리", "sawon": "사원", "boss": "사장님",
            "librarian": "사서"}
 ROLE_KO = {"backend": "백엔드", "frontend": "프론트", "qa": "QA", "devops": "데브옵스", "writer": "테크라이터",
-           "trainee": "수습"}
+           "security": "보안", "data": "데이터", "designer": "디자이너", "trainee": "수습"}
 
 
 def pose_frames():
@@ -487,8 +590,15 @@ def build_owls():
         chest = {p for p, ch in cells.items() if ch == "c"}
         for of in OUTFITS:
             frames[f"outfit/{of}/{name}"] = cells_to_img(owl_outfit(of, g, dirn, chest), g["lift"])
+            if of not in ("boss", "librarian"):
+                # 투명한 근속 겹으로는 기존 소매·넥타이를 지울 수 없어 옷 생성기를 재사용한다.
+                frames[f"outfit/{of}-worn/{name}"] = cells_to_img(owl_outfit(of, g, dirn, chest, worn=True), g["lift"])
+        for stage in (1, 2, 3):
+            frames[f"wear/{stage}/{name}"] = cells_to_img(owl_wear(stage, g, dirn, chest), g["lift"])
         for role in ROLES:
             frames[f"role/{role}/{name}"] = cells_to_img(owl_role(role, g, dirn, chest), g["lift"])
+        for item in ("medal", "helmet", "blanket", "headphones"):
+            frames[f"item/{item}/{name}"] = cells_to_img(owl_item(item, g, dirn, chest), g["lift"])
         hx, hy = g["hands"]["r"]
         anchors[name] = dict(hand=[hx + TX, hy + TY - g["lift"]], head=[OWL_AX, 2 + g["hy"] + TY - g["lift"]])
     return frames, anchors
@@ -574,6 +684,52 @@ def Lw(p, a, b, z1, z2, fill, outline=None):  # 왼쪽 뒷벽 면 (gx=0)
     p.poly([(0, a, z1), (0, b, z1), (0, b, z2), (0, a, z2)], fill, outline)
 
 
+
+def build_seasons():
+    colors = {"spring": (225, 143, 169), "summer": (36, 113, 68),
+              "autumn": (218, 130, 53), "winter": (179, 198, 205)}
+    states = []
+    for size, length in (("window_l", 2.7), ("window_xl", 3.4)):
+        for season, color in colors.items():
+            for daylight in ("day", "dusk", "night"):
+                p = wall_r(length, 42)
+                p.img = OFFICE[f"{size}/{daylight}"]["img"].copy()
+                p.d = ImageDraw.Draw(p.img)
+                for u in (0.24, 0.76):
+                    x = length * u
+                    p.line((x, 0, 11), (x, 0, 21), (115, 91, 76))
+                    p.poly([(x - 0.24, 0, 15), (x - 0.30, 0, 20),
+                            (x - 0.12, 0, 25), (x + 0.12, 0, 26),
+                            (x + 0.30, 0, 21), (x + 0.24, 0, 16)], color)
+                frame = (250, 250, 248)
+                R(p, 0, length, 10, 40, None, frame)
+                p.line((length / 2, 0, 10), (length / 2, 0, 40), frame)
+                p.line((0, 0, 25), (length, 0, 25), frame)
+                state = f"{size}_{season}_{daylight}"
+                reg(f"season/{state}", p.result())
+                states.append(state)
+    p = Painter(0.6, 0.6, 19)
+    p.box(0.2, 0.2, 0.2, 0.2, 4, (125, 89, 57))
+    x, y = p.P(0.3, 0.3, 4)
+    p.d.polygon([(x - 6, y), (x, y - 14), (x + 6, y)], fill=(42, 113, 67))
+    for dx, dy, c in [(-2, -3, (237, 190, 72)), (2, -5, (203, 72, 65)), (0, -10, (237, 190, 72))]:
+        p.d.point((x + dx, y + dy), fill=c)
+    reg("season/tree", p.result())
+    p = Painter(0.3, 0.2, 7)
+    x, y = p.P(0, 0, 0)
+    p.d.polygon([(x, y - 7), (x + 3, y - 7), (x + 3, y - 2),
+                 (x + 5, y - 2), (x + 5, y), (x, y)], fill=(191, 65, 64))
+    p.d.line([(x, y - 7), (x + 3, y - 7)], fill=(250, 244, 222), width=2)
+    reg("season/stocking", p.result())
+    p = wall_r(0.65, 29)
+    p.line((0.3, 0, 26), (0.3, 0, 22), (111, 76, 51))
+    R(p, 0.05, 0.6, 13, 22, (217, 87, 62), (123, 65, 46))
+    p.line((0.3, 0, 14), (0.3, 0, 21), (245, 195, 92))
+    p.line((0.3, 0, 13), (0.3, 0, 10), (217, 153, 62))
+    reg("season/lantern", p.result())
+    prop("season", "fx", states + ["tree", "stocking", "lantern"], desc="계절 나무와 날짜 장식")
+
+
 def build_wall_items():
     # 창문
     for size, L in (("window_l", 2.7), ("window_xl", 3.4)):
@@ -609,7 +765,7 @@ def build_wall_items():
             p.poly([(-0.1, 0, z1), (L + 0.1, 0, z1), (L + 0.1, 0.25, z1), (-0.1, 0.25, z1)], (246, 246, 244), (190, 190, 190))
             reg(f"{size}/{st}", p.result())
         prop(size, "window", ["day", "dusk", "night"], (L, 0), 40,
-             desc="창문 (오른쪽 뒷벽). 06–17시 day, 17–22시 dusk, 22–06시 night. 야간 조명 색을 곱하지 않는 레이어")
+             desc="창문 (오른쪽 뒷벽). 06–17시 day, 17–20시 dusk, 20–06시 night. 조명 색을 곱하지 않는 레이어")
     # 칸반
     for size, L in (("kanban_l", 2.2), ("kanban_s", 1.8)):
         p = wall_r(L, 36)
@@ -684,7 +840,10 @@ def build_wall_items():
         x, y = p.P(1.4, 0, 21)
         p.d.rectangle([x - 2, y - 2, x + 2, y + 1], outline=c)
         reg(f"test_board/{st}", p.result())
-    prop("test_board", "wall_r", ["pass", "fail"], (1.8, 0), 32, desc="테스트 결과 게시판")
+    p = wall_r(1.8, 32)
+    R(p, 0, 1.8, 16, 32, (34, 40, 48), (160, 160, 160))
+    reg("test_board/counts", p.result())
+    prop("test_board", "wall_r", ["pass", "fail", "counts"], (1.8, 0), 32, desc="오늘 확정 테스트 합격·실패 실행 누계. 숫자는 코드가 덧그린다")
     p = wall_r(0.75, 44)
     R(p, 0, 0.75, 37, 44, (252, 252, 246), (170, 170, 160))
     p.line((0.1, 0, 41), (0.6, 0, 41), (200, 60, 50))
@@ -953,7 +1112,7 @@ def build_furniture():
     p.dot((0.5, 0.2, 2), (210, 60, 50))
     reg("pizza_box/default", p.result())
     prop("pizza_box", "floor", ["default"], (1.2, 0.45), 2,
-         desc="피자 상자. 활성 2시간부터 1시간마다 1개. 탁자 위 z=5, 상자마다 z+2", stack=dict(gx=10.15, gy=15.07, z0=5, dz=2, max=8))
+         desc="피자 상자. 활성 2시간부터 1시간마다 1개. 탁자 위 z=5, 상자마다 z+2", stack=dict(gx=8.45, gy=15.17, z0=5, dz=2, max=8))
     reg("ramen/default", (pix(["wwww", "rwwr", "rrrr", ".rr."], dict(w=(250, 250, 250), r=(210, 60, 50))), (2, 3)))
     prop("ramen", "floor", ["default"], (0.2, 0.2), 4, desc="컵라면. 야근 모드에만. 조리대 위 z=12")
     p = Painter(1.0, 1.2, 18)
@@ -1055,19 +1214,68 @@ def build_furniture():
             p.lq(0, 0, 2.6, 0.2, 0, 0.6, 2.0, 10, 14, (230, 236, 248))
         reg(f"meeting_screen/{st}", p.result())
     prop("meeting_screen", "floor", ["off", "on"], (2.6, 0.2), 20, desc="화상회의 화면. MCP 미팅 중 on, 밝은 띠에 거래처 상호를 코드가 쓴다")
-    p = Painter(4.2, 1.3, 9)
-    p.box(0, 0, 4.2, 1.3, 9, (210, 184, 140))
+    p = Painter(2.8, 1.3, 9)
+    p.box(0, 0, 2.8, 1.3, 9, (210, 184, 140))
     reg("meeting_table/default", p.result())
-    prop("meeting_table", "floor", ["default"], (4.2, 1.3), 9, desc="긴 회의 탁자")
-    p = Painter(0.6, 1.4, 22)
-    p.box(0, 0, 0.6, 1.4, 22, (150, 104, 66))
-    for k in range(6):
-        c = [(220, 80, 70), (80, 140, 220), (240, 200, 70), (80, 170, 110), (180, 100, 200), (240, 140, 60)][k]
-        for v in (6, 14):
-            x, y = p.P(0.6, 0.15 + k * 0.2, v)
+    prop("meeting_table", "floor", ["default"], (2.8, 1.3), 9, desc="긴 회의 탁자")
+    for st, n in (("empty", 0), ("s1", 4), ("s2", 8), ("s3", 12), ("default", 12)):
+        p = Painter(0.6, 1.4, 22)
+        p.box(0, 0, 0.6, 1.4, 22, (150, 104, 66))
+        for i in range(n):
+            k, row = i % 6, i // 6
+            c = [(220, 80, 70), (80, 140, 220), (240, 200, 70), (80, 170, 110), (180, 100, 200), (240, 140, 60)][k]
+            x, y = p.P(0.6, 0.15 + k * 0.2, 6 + row * 8)
             p.d.line([(x, y), (x, y - 4)], fill=c)
-    reg("bookshelf/default", p.result())
-    prop("bookshelf", "floor", ["default"], (0.6, 1.4), 22, desc="외주 매뉴얼 책꽂이")
+        reg(f"bookshelf/{st}", p.result())
+    prop("bookshelf", "floor", ["default", "empty", "s1", "s2", "s3"], (0.6, 1.4), 22,
+         desc="사무실 모든 직원의 고유 읽기 수 합계: 0–24 empty, 25–49 s1, 50–99 s2, 100 이상 s3")
+
+    # 새 방도 기존 투영과 상자 도구만 쓴다.
+    p = Painter(2.4, 1.0, 9)
+    p.box(0, 0, 2.4, 1.0, 9, (182, 160, 126))
+    reg("conference_table/default", p.result())
+    prop("conference_table", "floor", ["default"], (2.4, 1.0), 9, desc="계획 회의 탁자")
+    p = Painter(2.6, 0.2, 24)
+    p.box(0, 0, 2.6, 0.2, 24, (246, 246, 238))
+    for i, width in enumerate((1.8, 1.2, 1.5)):
+        p.line((0.3, 0.2, 18-i*5), (0.3+width, 0.2, 18-i*5), (62, 110, 148))
+    reg("conference_whiteboard/default", p.result())
+    prop("conference_whiteboard", "floor", ["default"], (2.6, 0.2), 24, desc="계획 회의 화이트보드")
+    for state in ("idle", "shred"):
+        p = Painter(0.9, 0.8, 15)
+        p.box(0, 0, 0.9, 0.8, 11, (78, 86, 90))
+        p.box(0.12, 0.2, 0.65, 0.12, 1, (28, 32, 34), z=11)
+        if state == "shred":
+            p.box(0.2, 0.22, 0.5, 0.03, 4, (246, 242, 220), z=11)
+            for i in range(4):
+                p.line((0.2+i*0.14, 0.82, 8), (0.2+i*0.14, 0.82, 3), (246, 242, 220))
+        reg(f"shredder/{state}", p.result())
+    prop("shredder", "floor", ["idle", "shred"], (0.9, 0.8), 15, desc="새 압축 방문 동안 종이를 파쇄")
+    p = Painter(1.8, 0.6, 17)
+    p.box(0, 0, 1.8, 0.6, 10, (116, 134, 126))
+    p.box(0, 0, 1.8, 0.1, 7, (192, 214, 218), z=10)
+    reg("security_window/default", p.result())
+    prop("security_window", "floor", ["default"], (1.8, 0.6), 17, desc="경비실 결재 창구")
+    p = Painter(0.25, 1.0, 12)
+    p.box(0, 0, 0.25, 0.25, 12, (94, 106, 106))
+    p.box(0, 0, 0.15, 1.0, 2, (230, 188, 64), z=9)
+    reg("security_barrier/default", p.result())
+    prop("security_barrier", "floor", ["default"], (0.25, 1.0), 12, desc="경비실 차단봉")
+    p = Painter(2.2, 0.7, 10)
+    p.box(0, 0.1, 2.2, 0.5, 4, (148, 114, 78))
+    p.box(0, 0, 2.2, 0.12, 10, (132, 102, 74))
+    reg("roof_bench/default", p.result())
+    prop("roof_bench", "floor", ["default"], (2.2, 0.7), 10, desc="옥상 휴식 벤치")
+    p = Painter(1.1, 0.9, 25)
+    p.box(0, 0, 1.1, 0.9, 25, (80, 122, 150))
+    p.box(0.12, 0.9, 0.62, 0.02, 12, (174, 206, 216), z=9)
+    p.box(0.8, 0.9, 0.14, 0.02, 3, (244, 212, 100), z=14)
+    reg("roof_vending/default", p.result())
+    prop("roof_vending", "floor", ["default"], (1.1, 0.9), 25, desc="옥상 음료 자판기")
+
+    for name in ("boss_desk_l", "boss_desk_s", "dev_desk", "folding_desk"):
+        w, d = PROPS[name]["footprint"]
+        PROPS[name]["progressSlots"] = dict(coffee=[w - 0.32, d - 0.28], papers=[0.1, d - 0.36], lamp=[w - 0.3, 0.02])
 
 
 def plant_sprite(size=0.6, wilted=False):
@@ -1096,6 +1304,9 @@ def build_fx():
         "envelope": (["kkkkk", "kwkwk", "kwwwk", "kkkkk"], dict(k=(150, 120, 80), w=(236, 214, 170)), (1, 1)),
         "box_carry": (["kkkkk", "kbbbk", "kbbbk", "kkkkk"], dict(k=(140, 100, 60), b=(206, 160, 104)), (1, 1)),
         "papers": (["wwww.", "wkkww", "wwwww", ".wwww"], dict(w=(250, 250, 248), k=(150, 150, 150)), (1, 1)),
+        "briefcase": ([".kkk.", "kkkkk", "kbbbk", "kbbbk", "kkkkk"], dict(k=(78, 58, 46), b=(132, 92, 56)), (1, 1)),
+        "flashlight": (["...yy", "kkkyy", ".kk.."], dict(k=(60, 64, 76), y=(255, 222, 114)), (1, 1)),
+        "scroll": (["kkkkkk", "kwwwwk", ".wwww.", ".wkkw.", ".wwww.", "kkkkkk"], dict(k=(152, 108, 54), w=(248, 230, 180)), (1, 1)),
         "swatch": (["rrr", "yyy", "bbb"], dict(r=(232, 80, 70), y=(250, 200, 60), b=(70, 130, 230)), (1, 1)),
     }
     for name, (rows, pal, anc) in held.items():
@@ -1108,6 +1319,34 @@ def build_fx():
     prop("mug", "floor", ["still", "steam_0", "steam_1"], (0.2, 0.2), 6, fps=3, desc="부장 머그컵. 응답 대기 중 김이 오른다. 책상 위 z=책상 높이")
     reg("duck_desk/default", sprite_from_pix(["..yy.", ".yyyo", "yyyy.", ".yyy."], dict(y=(250, 214, 60), o=(232, 120, 40)), 2, 3))
     prop("duck_desk", "floor", ["default"], (0.2, 0.2), 4, desc="책상 위 러버덕. 부장이 집어 들면 숨기고 held_duck")
+    for n in range(1, 5):
+        p = Painter(0.3, 0.3, 3 + n * 2)
+        for k in range(n):
+            p.box(0, 0, 0.22, 0.22, 3, (250, 246, 232), z=k * 2)
+            p.line((0, 0.22, k * 2 + 1), (0.22, 0.22, k * 2 + 1), (176, 121, 77))
+        reg(f"coffee_stack/s{n}", p.result())
+        p = Painter(0.45, 0.35, n * 2)
+        for k in range(n):
+            p.box(0, 0, 0.45, 0.35, 1, (250, 250, 244), z=k * 2)
+            p.line((0.1, 0.05, k * 2 + 1), (0.35, 0.05, k * 2 + 1), (150, 160, 172))
+        reg(f"paper_stack/s{n}", p.result())
+    prop("coffee_stack", "floor", [f"s{n}" for n in range(1, 5)], (0.3, 0.3), 11,
+         desc="입사 1시간마다 종이컵 한 잔, 최대 4잔. 책상 위")
+    prop("paper_stack", "floor", [f"s{n}" for n in range(1, 5)], (0.45, 0.35), 8,
+         desc="고유 수정 파일 10개마다 서류 한 단. 책상 위 최대 4단")
+    for st in ("off", "on"):
+        p = Painter(0.3, 0.3, 11)
+        p.box(0, 0, 0.3, 0.3, 1, (55, 65, 76))
+        p.line((0.15, 0.15, 1), (0.15, 0.15, 9), (65, 75, 86))
+        p.box(0, 0, 0.3, 0.3, 2, (255, 215, 110) if st == "on" else (90, 100, 110), z=9)
+        reg(f"desk_lamp/{st}", p.result())
+    prop("desk_lamp", "floor", ["off", "on"], (0.3, 0.3), 11, desc="직원 책상 야근 램프")
+    glow = Image.new("RGBA", (41, 23), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for inset, alpha in [(0, 12), (4, 20), (8, 28)]:
+        gd.ellipse((inset, inset // 2, 40 - inset, 22 - inset // 2), fill=(255, 217, 128, alpha))
+    reg("glow_lamp/default", (glow, (20, 14)))
+    prop("glow_lamp", "overlay", ["default"], desc="실제 야간 조명에서 활성 직원 책상 램프의 비네트")
     # 효과
     reg("sweat/0", sprite_from_pix([".b", "bb", "bb"], dict(b=(120, 190, 250)), 0, 2))
     reg("sweat/1", sprite_from_pix(["..", ".b", "bb"], dict(b=(120, 190, 250)), 0, 2))
@@ -1119,18 +1358,18 @@ def build_fx():
         img = pix(rows, dict(y=(250, 214, 60), r=(240, 90, 90)))
         reg(f"fireworks/{k}", (img.resize((14, 10), Image.NEAREST), (7, 10)))
     prop("fireworks", "fx", ["0", "1", "2"], fps=6, desc="릴리스 폭죽. 출고장 위, 0→1→2 한 번")
-    for k in (0, 1):
+    for st, k, cab in (("drive_0", 0, (220, 70, 60)), ("drive_1", 1, (220, 70, 60)), ("pr", 0, (55, 125, 220))):
         p = Painter(1.2, 3.1, 18)
         p.box(0, 0, 1.2, 2.2, 16, (240, 240, 236))
-        p.box(0, 2.2, 1.2, 0.9, 12, (220, 70, 60))
+        p.box(0, 2.2, 1.2, 0.9, 12, cab)
         p.lq(0, 2.2, 1.2, 0.9, 0, 0.15, 1.05, 6, 10, (150, 200, 230))
         for gy in (0.6, 2.6):
             x, y = p.P(1.2, gy, 0)
             p.d.rectangle([x - 1, y - 2, x + 1, y], fill=(30, 30, 30))
             p.d.point((x - 1 + k * 2, y - 1), fill=(160, 160, 160))
-        reg(f"truck/drive_{k}", p.result())
-    prop("truck", "fx", ["drive_0", "drive_1"], (1.2, 3.1), 18, fps=8,
-         desc="택배 트럭. push 성공 때 출고장 앞 바닥 밖 (gx 1.5, gy 16.6)에서 +gy 쪽으로 빠져나간다")
+        reg(f"truck/{st}", p.result())
+    prop("truck", "fx", ["drive_0", "drive_1", "pr"], (1.2, 3.1), 18, fps=8,
+         desc="push 성공 때 출발하는 트럭. PR 연결이 있으면 파란 pr 트럭 주차")
     p = Painter(0.5, 0.1, 9)
     p.box(0, 0, 0.5, 0.1, 8, (250, 248, 240))
     p.lq(0, 0, 0.5, 0.1, 0, 0.08, 0.42, 3, 6, (220, 80, 70))
@@ -1191,12 +1430,12 @@ def build_fx():
 # =====================================================================
 # 평면도
 # =====================================================================
-PARTITIONS = [(5.9, 0, 0.2, 3.6, 16), (10.9, 0, 0.2, 3.6, 16), (15.9, 0, 0.2, 4.0, 16),
-              (0, 4.9, 1.6, 0.2, 6), (3.2, 4.9, 4.5, 0.2, 6), (9.2, 4.9, 3.4, 0.2, 6), (14.2, 4.9, 1.7, 0.2, 6),
+PARTITIONS = [(3.9, 0, 0.2, 3.6, 16), (5.9, 0, 0.2, 3.6, 16), (10.9, 0, 0.2, 3.6, 16), (15.9, 0, 0.2, 4.0, 16),
+              (0, 4.9, 1.6, 0.2, 6), (3.2, 4.9, 1.0, 0.2, 6), (5.7, 4.9, 2.0, 0.2, 6), (9.2, 4.9, 3.4, 0.2, 6), (14.2, 4.9, 1.7, 0.2, 6),
               (16, 5.9, 1.4, 0.2, 6), (19.4, 5.9, 4.6, 0.2, 6), (15.9, 6.0, 0.2, 1.2, 6), (15.9, 8.6, 0.2, 2.4, 6),
-              (16, 8.9, 5, 0.2, 6), (22.4, 8.9, 1.6, 0.2, 6), (16, 11.9, 2, 0.2, 6), (19.4, 11.9, 4.6, 0.2, 6),
+              (16, 8.9, 5, 0.2, 6), (22.4, 8.9, 1.6, 0.2, 6), (16, 11.9, 1.2, 0.2, 6), (18.8, 11.9, 2.4, 0.2, 6), (22.8, 11.9, 1.2, 0.2, 6), (19.9, 12.0, 0.2, 4.0, 6),
               (15.9, 12.2, 0.2, 1.6, 6), (15.9, 15.0, 0.2, 1.0, 6), (0, 10.9, 1.0, 0.2, 6), (3, 10.9, 3.5, 0.2, 6),
-              (9, 10.9, 4.5, 0.2, 6), (4.9, 11.4, 0.2, 2.0, 6), (4.9, 15.0, 0.2, 1.0, 6)]
+              (9, 10.9, 4.5, 0.2, 6), (4.9, 11.0, 0.2, 0.4, 6), (4.9, 12.6, 0.2, 3.4, 6), (0, 12.9, 1.2, 0.2, 6), (2.8, 12.9, 2.2, 0.2, 6), (12.9, 11.0, 0.2, 0.4, 6), (12.9, 12.6, 0.2, 3.4, 6)]
 
 
 def build_wallsegs():
@@ -1227,7 +1466,7 @@ def build_layout(kind):
 
     # 벽 소품
     put("window", "window_xl" if smb else "window_l", 18.6 if smb else 19.2, 0, "day", layer="window",
-        drive="현지 시각: 06–17 day, 17–22 dusk, 22–06 night")
+        drive="Rust daylight: 06–17 day, 17–20 dusk, 20–06 night")
     put("kanban", "kanban_s" if smb else "kanban_l", 16.5 if smb else 16.6, 0, layer="wall", drive="하이라이트 팀(없으면 최근 팀)의 할 일 목록")
     put("rules_frame", "rules_frame", 22.3 if smb else 22.2, 0, layer="wall", drive="세션 제목")
     put("joke_sign", "joke_sign", 23.45, 0, layer="wall")
@@ -1238,9 +1477,9 @@ def build_layout(kind):
     put("job_ticket", "job_ticket", 7.85, 0, layer="wall", visible=False, drive="백그라운드 명령이 있을 때만")
     put("tv", "tv", 0, 6.3, "on", layer="wall", drive="팀별 컨텍스트 사용량 선")
     put("attendance", "attendance", 0, 11.1, layer="wall", drive="직원마다 자석 하나")
-    put("door", "door", 0, 12.6, "closed", layer="wall", drive="누가 드나드는 1초 동안 open")
+    put("door", "door", 0, 13.6, "closed", layer="wall", drive="누가 드나드는 1초 동안 open")
     put("stats_board", "stats_board", 0, 14.65, layer="wall")
-    put("doormat", "doormat", 0, 12.7, layer="decal")
+    put("doormat", "doormat", 0, 13.6, layer="decal")
     put("rug_review", "rug_review", 17.6, 6.7, layer="decal")
     # 칸막이
     for n, (gx, gy, w, d, h) in enumerate(PARTITIONS, 1):
@@ -1248,9 +1487,9 @@ def build_layout(kind):
     # 서고
     for k, gy in enumerate((0.4, 1.5, 2.6)):
         put(f"cabinet_side_{k}", "cabinet_side", 0.15, gy)
-    for k, gx in enumerate((1.4, 2.5, 3.6)):
+    for k, gx in enumerate((0.8, 1.85, 2.9)):
         put(f"cabinet_front_{k}", "cabinet_front", gx, 0.15, "closed", drive="서류철 꺼낼 때 그 직원과 가장 가까운 것 open" if k == 1 else None)
-    put("lib_desk", "lib_desk", 3.2, 3.0, depth=7.5)
+    put("lib_desk", "lib_desk", 2.2, 3.0, depth=6.5)
     # 빌드실
     put("rack_0", "rack", 6.4, 0.3, "led_0", drive="셸 명령 중 led_0/led_1 반복")
     put("rack_1", "rack", 7.7, 0.3, "led_0")
@@ -1296,13 +1535,13 @@ def build_layout(kind):
     put("coffee", "coffee_machine", 5.5, 11.4, "idle", z=12, depth=17.31)
     put("ramen", "ramen", 7.0, 11.6, z=12, depth=17.32, visible=False, drive="야근 모드")
     put("fridge", "fridge", 8.2, 11.25, depth=20.0)
-    put("tv_stand", "tv_stand", 12.4, 11.25, depth=24.7)
-    put("game_tv", "game_tv", 12.5, 11.3, "off", z=8, depth=24.71, drive="게임기 앞에 직원이 있으면 game")
-    put("sofa", "sofa_claude", 9.3, 13.4, depth=24.4, themed=True)
-    put("coffee_table", "coffee_table", 10.0, 15.0, depth=26.2)
-    put("massage_chair", "massage_chair", 14.3, 13.3, depth=28.2)
+    put("tv_stand", "tv_stand", 9.6, 11.25, depth=21.9)
+    put("game_tv", "game_tv", 9.7, 11.3, "off", z=8, depth=21.91, drive="게임기 앞에 직원이 있으면 game")
+    put("sofa", "sofa_claude", 7.6, 13.5, depth=22.8, themed=True)
+    put("coffee_table", "coffee_table", 8.3, 15.1, depth=24.6)
+    put("massage_chair", "massage_chair", 11.7, 13.3, depth=25.6)
     # 출입문 · 출고장
-    put("label_table", "label_table", 3.4, 12.0, depth=16.4)
+    put("label_table", "label_table", 3.4, 13.1, depth=17.5)
     put("box_0", "box_lg", 2.2, 14.4, depth=17.3)
     put("box_1", "box_md", 3.1, 14.6, depth=18.1)
     put("box_2", "box_sm", 2.35, 14.5, z=9, depth=17.31)
@@ -1320,10 +1559,17 @@ def build_layout(kind):
     put("incident_table", "incident_table", 18.4, 10.3, "off", depth=30.2)
     put("safety_board", "safety_board", 16.3, 8.6, depth=25.9, drive="무재해 분: 팀 중 최솟값")
     # 미팅실
-    put("meeting_screen", "meeting_screen", 18.0, 12.15, "off", depth=31.4)
-    put("meeting_table", "meeting_table", 17.6, 13.4, depth=33.75)
-    put("bookshelf", "bookshelf", 16.3, 14.5, depth=32.0)
+    put("meeting_screen", "meeting_screen", 20.6, 12.15, "off", depth=34.0)
+    put("meeting_table", "meeting_table", 20.6, 13.5, depth=36.15)
+    put("bookshelf", "bookshelf", 23.1, 14.3, depth=38.4)
     put("plant_meeting", "plant", 23.4, 15.4, "s4", depth=38.8)
+    put("conference_whiteboard", "conference_whiteboard", 16.4, 12.3)
+    put("conference_table", "conference_table", 16.7, 13.5)
+    put("shredder", "shredder", 4.3, 0.7, "idle")
+    put("security_window", "security_window", 1.0, 11.15)
+    put("security_barrier", "security_barrier", 4.1, 11.3)
+    put("roof_bench", "roof_bench", 13.2, 13.2, depth=28.0)
+    put("roof_vending", "roof_vending", 14.6, 11.2)
     # 오버레이
     put("glow_incident", "glow_incident", 16.0, 9.0, layer="overlay", visible=False, drive="장애 판정 중")
     return L
@@ -1356,26 +1602,29 @@ def seats(kind):
 
 
 STANDS = {
-    "library": [[2.2, 2.0], [1.5, 3.5], [4.7, 1.6]], "librarian": [[4.0, 2.75]],
+    "library": [[1.4, 1.7], [1.2, 3.5], [3.0, 2.0]], "librarian": [[2.8, 2.95]],
     "build_terminal": [[9.8, 3.7]], "build": [[8.2, 2.4], [7.0, 2.4]],
     "test": [[13.3, 2.75], [12.4, 2.8], [15.0, 3.9]],
     "review_sofa": [[18.8, 7.95], [19.8, 7.95], [20.8, 7.95]],
     "incident": [[19.6, 9.95], [21.8, 10.8], [22.8, 10.3], [17.4, 10.7], [18.2, 11.6], [21.0, 11.6]],
-    "meeting": [[18.4, 13.15], [19.6, 13.15], [20.8, 13.15], [18.6, 15.1], [20.2, 15.1]],
-    "pantry_console": [[13.3, 12.6]], "pantry_massage": [[14.8, 13.9, 6]], "pantry_sofa": [[10.3, 14.0, 4], [11.4, 14.0, 4]],
-    "pantry": [[6.6, 12.6], [7.4, 13.4]], "door": [[0.9, 13.5]], "door_wait": [[1.7, 12.4]], "shipping": [[2.9, 13.6], [3.8, 13.2]],
-    "boss_window": [[20.3, 1.3]], "boss_pace": [[18.9, 4.4], [21.6, 4.4]], "dev_center": [[6.6, 8.0]], "exit": [[0.2, 13.5]],
+    "meeting": [[20.9, 13.2], [22.4, 13.2], [20.9, 15.1], [22.4, 15.1], [23.6, 14.2]],
+    "pantry_console": [[10.5, 12.6]], "pantry_massage": [[12.2, 13.9, 6]], "pantry_sofa": [[8.6, 14.1, 4], [9.7, 14.1, 4]],
+    "pantry": [[5.9, 12.6], [6.4, 14.4]], "door": [[0.9, 14.1]], "door_wait": [[1.7, 13.6]], "shipping": [[2.9, 14.0], [3.8, 14.0]],
+    "boss_window": [[20.3, 1.3]], "boss_pace": [[18.9, 4.4], [21.6, 4.4]], "dev_center": [[6.6, 8.0]], "exit": [[0.2, 14.1]],
+    "conference": [[17.2, 13.2], [18.7, 13.2], [17.2, 15.1], [18.7, 15.1]],
+    "archive": [[5, 2], [5, 3.6]], "security": [[2.1, 11.8], [3.3, 11.8]],
+    "roof": [[13.8, 13.8, 4], [14.9, 13.8, 4], [14.7, 15.1]],
 }
-ENTRIES = {"library": [2.4, 5.0], "build": [8.45, 5.0], "test": [13.4, 5.0], "boss": [16.0, 4.9], "review": [16.0, 7.9],
-           "incident": [21.7, 9.0], "meeting": [16.0, 14.4], "pantry": [7.75, 11.0], "entrance": [2.0, 11.0], "dev": [13.5, 8.0]}
-LABELS = {"library": [1.5, 3.8], "build": [8.5, 3.6], "test": [12.6, 4.3], "boss": [21.0, 4.9], "dev": [12.0, 8.0],
-          "review": [21.6, 7.4], "incident": [21.0, 10.6], "meeting": [20.0, 14.9], "entrance": [2.2, 13.6], "pantry": [8.0, 14.5]}
+ENTRIES = {"library": [2, 5], "archive": [5, 5], "build": [8.45, 5], "test": [13.4, 5], "boss": [16, 4.9], "review": [16, 7.9],
+           "incident": [21.7, 9], "conference": [18, 12], "meeting": [22, 12], "pantry": [7.75, 11], "roof": [13, 12],
+           "security": [5, 12], "entrance": [2, 13], "dev": [13.5, 8]}
+LABELS = {"library": [177, 74], "archive": [228, 106], "build": [271, 138], "test": [337, 170], "boss": [405, 203], "dev": [250, 192], "review": [382, 235], "incident": [340, 267], "conference": [244, 267], "meeting": [294, 301], "security": [106, 140], "entrance": [51, 171], "pantry": [136, 201], "roof": [200, 233]}
 
 
 def floorplan_json():
     rooms = {}
     for k, (name, a, b, c, e, floor) in ROOMS.items():
-        lx, ly = rnd(iso(*LABELS[k]))
+        lx, ly = LABELS[k]
         rooms[k] = dict(name=name, rect=[a, b, c, e], floor=floor, label=[lx, ly], entry=ENTRIES[k])
     return dict(
         version=1,
@@ -1389,8 +1638,8 @@ def floorplan_json():
                         accent=hexc(v["accent"])) for t, v in THEMES.items()},
         teamTints=[hexc(c) for c in TEAM_TINTS],
         nightTint=hexc(NIGHT_TINT),
-        lightTints=dict(night=hexc(NIGHT_TINT), dim="#B4B4BE", off="#6E6E82",
-                        rule="곱하기 색. night: 22–06시 활성. dim: 30분 조용하지만 프로세스 살아 있음(S58). off: 퇴근(S36). "
+        lightTints=dict(evening=hexc(EVENING_TINT), night=hexc(NIGHT_TINT), dim="#B4B4BE", off="#6E6E82",
+                        rule="곱하기 색. evening: 17–20시, night: 20–06시. off > dim > 시간표. dim: 30분 조용하지만 프로세스 살아 있음(S58). off: 퇴근(S36). "
                              "창문 레이어에는 곱하지 않는다. 바뀔 때 1.5초에 걸쳐 보간"),
         fx=dict(cloud_lag=[8, 8], note="cloud_lag 는 캔버스 1x 좌표 (8,8)에 기준점. sweat 는 머리 기준점 + (6,-2)"),
         layouts={k: dict(placements=build_layout(k), seats=seats(k)) for k in ("large", "small")},
@@ -1418,9 +1667,18 @@ def place(canvas, key, x, y, flip=False, tint=None):
 
 def owl_keys(c):
     name = f"{c['pose']}_{c.get('dir', 'f')}_{c.get('frame', 0)}"
-    keys = [f"body/{c['species']}/{name}", f"outfit/{c['outfit']}/{name}"]
+    wear = c.get("wear", 0) if c["outfit"] not in ("boss", "librarian") else 0
+    outfit = c["outfit"] + ("-worn" if wear else "")
+    keys = [f"body/{c['species']}/{name}", f"outfit/{outfit}/{name}"]
+    if wear:
+        keys.append(f"wear/{wear}/{name}")
     if c.get("role", "trainee") != "trainee":
         keys.append(f"role/{c['role']}/{name}")
+    items = c.get("items", [])
+    for item in ("medal", "blanket", "headphones", "helmet"):
+        if item not in items or (item == "medal" and "blanket" in items) or (item == "headphones" and "helmet" in items):
+            continue
+        keys.append(f"item/{item}/{name}")
     return keys, name
 
 
@@ -1440,13 +1698,24 @@ def draw_owl(canvas, c):
 
 
 def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=False, incident=False,
-                 kanban=None, magnets=None, safe="0", tv=None, balls=0, pizza=0):
+                 kanban=None, magnets=None, safe="0", tv=None, balls=0, pizza=0, progress=None, evening=False):
     state, visible, tints = state or {}, visible or {}, tints or {}
     fp = FLOORPLAN["layouts"][kind]
+    if progress is not None:
+        state, visible = dict(state), dict(visible)
+        reads = progress.get("reads", 0)
+        state["bookshelf"] = "s3" if reads >= 100 else "s2" if reads >= 50 else "s1" if reads >= 25 else "empty"
+        state["test_board"] = "counts"
+        for seats in fp["seats"].values():
+            for seat in seats:
+                n = progress.get("desks", {}).get(seat["desk"], {}).get("monitors", 1)
+                for i, m in enumerate(seat.get("monitors", [])):
+                    visible[m] = i == 0 or n > 1
     base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     win = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     world = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    lamp_glows = []
     # 1. 벽과 바닥 판
     place(base, f"shell/{theme}/default", *rnd(iso(0, 0)))
     # 2. 바닥 타일
@@ -1493,6 +1762,17 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
             y = tvp["y"] + q["bl"][1] + u * (q["br"][1] - q["bl"][1]) + v * (q["tl"][1] - q["bl"][1])
             pts.append(rnd((x, y)))
         d.line(pts, fill=PROPS["tv"]["lineColors"][si])
+    if progress is not None:
+        board = next(p for p, _ in items if p["id"] == "test_board")
+        for row, n in enumerate(progress.get("tests", [0, 0])):
+            x, y = board["x"] + 3, board["y"] - 29 + row * 8
+            color = (54, 154, 96) if row == 0 else (220, 81, 73)
+            d.rectangle([x, y + 1, x + 1, y + 3], fill=color)
+            for i, ch in enumerate(str(min(99, n))):
+                place(base, f"digit/{ch}", x + 4 + i * 4, y + 2 + i * 2)
+            if n > 99:
+                d.rectangle([x + 12, y + 5, x + 14, y + 5], fill=color)
+                d.rectangle([x + 13, y + 4, x + 13, y + 6], fill=color)
     # 4. 깊이 정렬: 바닥 물건 + 직원
     drawn = []
     for pl, key in items:
@@ -1505,7 +1785,32 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
         drawn.append((gx + gy, len(drawn), ("ball", (gx, gy), None)))
     for k in range(pizza):
         st = PROPS["pizza_box"]["stack"]
-        drawn.append((26.21 + k * 0.01, len(drawn), ("pizza", (st["gx"], st["gy"], st["z0"] + st["dz"] * k), None)))
+        drawn.append((24.61 + k * 0.01, len(drawn), ("pizza", (st["gx"], st["gy"], st["z0"] + st["dz"] * k), None)))
+    if progress is not None:
+        placements = {p["id"]: p for p in fp["placements"]}
+        for seats in fp["seats"].values():
+            for seat in seats:
+                config = progress.get("desks", {}).get(seat["desk"])
+                if config is None:
+                    continue
+                pl = placements[seat["desk"]]
+                meta = PROPS[pl["sprite"]]
+                for name, key in (("coffee", f"coffee_stack/s{config.get('coffee', 0)}"),
+                                  ("papers", f"paper_stack/s{config.get('papers', 0)}"),
+                                  ("lamp", "desk_lamp/on" if night else "desk_lamp/off")):
+                    if key.endswith("s0"):
+                        continue
+                    dx, dy = meta["progressSlots"][name]
+                    drawn.append((pl["depth"] + 0.03, 5000 + len(drawn), ("dynamic", (pl["gx"] + dx, pl["gy"] + dy, meta["height"]), key)))
+                for i in range(len(seat.get("monitors", [])), config.get("monitors", 1)):
+                    drawn.append((pl["depth"] + 0.03, 5000 + len(drawn), ("dynamic", (pl["gx"] + 0.05 + i * 0.65, pl["gy"] + 0.05, meta["height"]), "monitor_sm/off")))
+                if night:
+                    dx, dy = meta["progressSlots"]["lamp"]
+                    lamp_glows.append(rnd(iso(pl["gx"] + dx, pl["gy"] + dy, meta["height"])))
+        for gx, gy in [(3.9, 14.6), (3.9, 15.4), (1.5, 15.3)][:min(3, progress.get("commits", 0))]:
+            drawn.append((gx + gy + 0.65, 5000 + len(drawn), ("dynamic", (gx, gy, 0), "box_taped/default")))
+        if progress.get("pr"):
+            drawn.append((80, 5000, ("dynamic", (3.5, 16.6, 0), "truck/pr")))
     owl_pos = {}
     for _, _, (kind_, obj, key) in sorted(drawn, key=lambda t: (t[0], t[1])):
         if kind_ == "prop":
@@ -1516,6 +1821,8 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
                 sx, sy = PROPS["safety_board"]["digitStep"]
                 for n, ch in enumerate(safe):
                     place(world, f"digit/{ch}", obj["x"] + ox + n * sx, obj["y"] + oy + n * sy)
+        elif kind_ == "dynamic":
+            place(world, key, *rnd(iso(*obj)))
         elif kind_ == "owl":
             owl_pos[obj["id"]] = draw_owl(world, obj)
         elif kind_ == "ball":
@@ -1525,9 +1832,12 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
     for pl, key in items:
         if pl["layer"] == "overlay":
             place(over, key, pl["x"], pl["y"])
-    if night:
-        base = tinted(base, NIGHT_TINT)
-        world = tinted(world, NIGHT_TINT)
+    for x, y in lamp_glows:
+        place(over, "glow_lamp/default", x, y)
+    if night or evening:
+        tint = NIGHT_TINT if night else EVENING_TINT
+        base = tinted(base, tint)
+        world = tinted(world, tint)
     out = base
     out.alpha_composite(win)
     out.alpha_composite(world)
@@ -1705,7 +2015,7 @@ def write_atlas(name, entries, animations, extra, max_w):
                      "size": {"w": sheet.width, "h": sheet.height}, "scale": "1"},
             "owlfice": extra}
     sheet.save(os.path.join(SPR, f"{name}.png"))
-    with open(os.path.join(SPR, f"{name}.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(SPR, f"{name}.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     return sheet, pos
 
@@ -1713,9 +2023,9 @@ def write_atlas(name, entries, animations, extra, max_w):
 # =====================================================================
 # 미리보기와 캔버스용 참조 렌더
 # =====================================================================
-def owl_composite(species, outfit, role="trainee", pose="idle", dirn="f", frame=0, held=None):
+def owl_composite(species, outfit, role="trainee", pose="idle", dirn="f", frame=0, held=None, wear=0):
     img = Image.new("RGBA", (OWL_W + 8, OWL_H), (0, 0, 0, 0))
-    draw_owl_local(img, dict(species=species, outfit=outfit, role=role, pose=pose, dir=dirn, frame=frame, held=held), 4 + OWL_AX, OWL_AY)
+    draw_owl_local(img, dict(species=species, outfit=outfit, role=role, pose=pose, dir=dirn, frame=frame, held=held, wear=wear), 4 + OWL_AX, OWL_AY)
     return img
 
 
@@ -1750,7 +2060,7 @@ def make_previews():
             labels.append(dict(species=SPECIES[sp]["name"], rank=RANK_KO[rank], role=ROLE_KO[roles[c]], vendor=THEMES[vendor]["label"]))
     sheet.save(os.path.join(PREV, "owls-20.png"))
     poses = [(p, "f", f) for p, d_, f in pose_frames() if d_ == "f"] + [(p, "b", f) for p, d_, f in pose_frames() if d_ == "b"]
-    strip = Image.new("RGBA", (24 * 12, 28 * 3), (0, 0, 0, 0))
+    strip = Image.new("RGBA", (24 * 12, 28 * ((len(poses) + 11) // 12)), (0, 0, 0, 0))
     for i, (pose, dirn, f) in enumerate(poses):
         held = "clipboard" if pose == "carry" else None
         img = owl_composite("eagle", "bujang-claude", "backend", pose, dirn, f, held)
@@ -1762,8 +2072,22 @@ def make_previews():
         for k in keys:
             place(layers, k, i * 24 + 4 + OWL_AX, 2 + OWL_AY)
     layers.save(os.path.join(PREV, "layers.png"))
-    with open(os.path.join(PREV, "owls-20.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(PREV, "owls-20.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(dict(cell=[cw, ch], cols=4, labels=labels, poses=[f"{p}_{d_}_{f_}" for p, d_, f_ in poses]), f, ensure_ascii=False, indent=1)
+    wear_sheet = Image.new("RGBA", (24 * 4, 28 * 4), (0, 0, 0, 0))
+    for row, outfit in enumerate(("bujang-claude", "gwajang-codex", "daeri-gemini", "sawon-claude")):
+        for stage in range(4):
+            wear_sheet.alpha_composite(owl_composite("barn", outfit, wear=stage), (stage * 24, row * 28 + 2))
+    wear_sheet.save(os.path.join(PREV, "wear.png"))
+    roles = Image.new("RGBA", (24 * 3, 28 * 5), (0, 0, 0, 0))
+    for row, sp in enumerate(EMPLOYEE_SPECIES):
+        for col, role in enumerate(("security", "data", "designer")):
+            roles.alpha_composite(owl_composite(sp, "bujang-claude", role), (col * 24, row * 28 + 2))
+    roles.save(os.path.join(PREV, "roles.png"))
+    items = Image.new("RGBA", (24 * 6, 28), (0, 0, 0, 0))
+    for col, equipped in enumerate((["medal"], ["helmet"], ["blanket"], ["headphones"], ["helmet", "headphones"], ["blanket", "medal"])):
+        draw_owl_local(items, dict(species="barn", outfit="bujang-claude", role="designer", pose="idle", items=equipped, wear=3), col * 24 + 4 + OWL_AX, OWL_AY)
+    items.save(os.path.join(PREV, "items.png"))
     # 소품 목록 (3배, 이름 표시)
     scale, pad, label_h = 3, 14, 18
     font = ImageFont.truetype("consola.ttf", 13) if os.path.exists(r"C:\Windows\Fonts\consola.ttf") else ImageFont.load_default()
@@ -1794,33 +2118,37 @@ def make_previews():
 def make_canvas_images():
     """캔버스 시안이 쓰는 그림. 모두 시트와 평면도로만 그린다."""
     hero_cast = [
-        dict(id="bujang", species="eagle", outfit="bujang-claude", role="backend", pose="carry", gx=20.9, gy=2.15, depth=23.0, held="duck"),
-        dict(id="gwajang", species="barn", outfit="gwajang-claude", role="backend", pose="idle", gx=13.3, gy=2.75),
-        dict(id="daeri", species="little", outfit="daeri-claude", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
-        dict(id="sawon1", species="scops", outfit="sawon-claude", role="trainee", pose="carry", gx=2.2, gy=2.0, held="folder"),
-        dict(id="sawon2", species="longeared", outfit="sawon-claude", role="qa", pose="idle", gx=13.3, gy=12.6),
-        dict(id="librarian", species="little", outfit="librarian", role="trainee", pose="idle", gx=4.0, gy=2.75, depth=6.7),
+        dict(id="bujang", wear=1, species="eagle", outfit="bujang-claude", role="backend", pose="carry", gx=20.9, gy=2.15, depth=23.0, held="duck"),
+        dict(id="gwajang", wear=2, species="barn", outfit="gwajang-claude", role="backend", pose="idle", gx=13.3, gy=2.75),
+        dict(id="daeri", wear=3, species="little", outfit="daeri-claude", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
+        dict(id="sawon1", species="scops", outfit="sawon-claude", role="trainee", pose="carry", gx=1.4, gy=1.7, held="folder"),
+        dict(id="sawon2", species="longeared", outfit="sawon-claude", role="qa", pose="idle", gx=10.5, gy=12.6),
+        dict(id="librarian", species="little", outfit="librarian", role="trainee", pose="idle", gx=2.8, gy=2.95, depth=5.75),
     ]
     kan = [(0, "yellow"), (1, "pink"), (2, "yellow"), (3, "blue"), (4, "yellow"), (6, "green"), (7, "green"), (8, "green")]
     mags = [(0, 0, "red"), (0, 1, "blue"), (0, 2, "green"), (0, 3, "yellow"), (3, 0, "gray")]
     tv1 = [[0.1, 0.18, 0.14, 0.3, 0.36, 0.46, 0.42, 0.56, 0.2, 0.26, 0.36, 0.42]]
-    img, pos_hero = render_scene("large", "claude", hero_cast,
-                                 state={"ci_light": "yellow", "cabinet_front_1": "open", "boss_mon_0_0": "code_0", "boss_mon_0_1": "read_0",
+    hero_args = dict(state={"ci_light": "yellow", "cabinet_front_1": "open", "boss_mon_0_0": "code_0", "boss_mon_0_1": "read_0",
                                         "dev_mon_0_0": "code_0", "dev_mon_0_1": "code_1", "plant_boss_0": "s3", "trash": "some",
                                         "mug_0": "steam_0", "test_machine": "run_0", "test_board": "pass"},
                                  visible={"duck_0": False}, tints={f"dev_part_{i}": THEMES["claude"]["cubicle"] for i in range(6)},
-                                 kanban=kan, magnets=mags, safe="37", tv=tv1, balls=2)
+                                 kanban=kan, magnets=mags, safe="37", tv=tv1, balls=2,
+                                 progress=dict(desks={"boss_desk_0": dict(coffee=2, papers=1, monitors=2)}, reads=50, commits=2, pr=True, tests=[12, 2]))
+    img, pos_hero = render_scene("large", "claude", hero_cast, **hero_args)
     img.save(os.path.join(CANVAS, "office-claude-day.png"))
+    evening_args = {**hero_args, "state": {**hero_args["state"], "window": "dusk"}}
+    evening, _ = render_scene("large", "claude", hero_cast, evening=True, **evening_args)
+    evening.save(os.path.join(CANVAS, "office-claude-evening.png"))
     T = TEAM_TINTS
     smb_cast = [
-        dict(id="bujangA", species="scops", outfit="bujang-codex", role="devops", pose="idle", gx=17.6, gy=4.1),
-        dict(id="bujangB", species="eagle", outfit="bujang-codex", role="frontend", pose="jump", gx=19.6, gy=2.2, depth=21.6),
-        dict(id="bujangC", species="longeared", outfit="bujang-codex", role="backend", pose="panic", gx=19.6, gy=9.95, depth=29.7),
+        dict(id="bujangA", wear=1, species="scops", outfit="bujang-codex", role="devops", pose="idle", gx=17.6, gy=4.1),
+        dict(id="bujangB", wear=2, species="eagle", outfit="bujang-codex", role="frontend", pose="jump", gx=19.6, gy=2.2, depth=21.6),
+        dict(id="bujangC", wear=3, species="longeared", outfit="bujang-codex", role="backend", pose="panic", gx=19.6, gy=9.95, depth=29.7),
         dict(id="subC1", species="barn", outfit="daeri-codex", role="qa", pose="idle", gx=21.8, gy=10.8),
         dict(id="subC2", species="little", outfit="sawon-codex", role="trainee", pose="idle", gx=22.8, gy=10.3),
         dict(id="subA1", species="little", outfit="daeri-codex", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
         dict(id="subB1", species="barn", outfit="gwajang-codex", role="backend", pose="read", gx=6.15, gy=6.25, depth=12.3),
-        dict(id="subA2", species="scops", outfit="sawon-codex", role="trainee", pose="sleep", gx=14.8, gy=13.9, z=6, depth=28.6),
+        dict(id="subA2", species="scops", outfit="sawon-codex", role="trainee", pose="sleep", gx=12.2, gy=13.9, z=6, depth=25.6),
         dict(id="boss", species="snowy", outfit="boss", role="trainee", pose="walk", dir="b", frame=1, gx=13.0, gy=8.2),
     ]
     tints = {f"dev_part_{i}": c for i, c in enumerate([T[0], T[1], T[2], T[2], THEMES["codex"]["cubicle"], THEMES["codex"]["cubicle"]])}
@@ -1833,7 +2161,8 @@ def make_canvas_images():
                                 visible={"ramen": True, "glow_incident": True, "plant_boss_0": True, "plant_boss_1": True, "plant_boss_2": True},
                                 tints=tints, kanban=kan[:6], magnets=mags + [(1, 0, "teal"), (1, 1, "violet")], safe="0",
                                 tv=[[0.1, 0.18, 0.14, 0.3, 0.36, 0.46, 0.42, 0.56, 0.2, 0.26, 0.36, 0.42],
-                                    [0.0, 0.06, 0.06, 0.12, 0.24, 0.24, 0.3, 0.36, 0.42, 0.42, 0.48, 0.6]], balls=5, pizza=2)
+                                    [0.0, 0.06, 0.06, 0.12, 0.24, 0.24, 0.3, 0.36, 0.42, 0.42, 0.48, 0.6]], balls=5, pizza=2,
+                                progress=dict(desks={"boss_desk_0": dict(coffee=4, papers=4, monitors=2, night=True)}, reads=100, commits=3, tests=[105, 7]))
     img.save(os.path.join(CANVAS, "office-codex-night-smb.png"))
     for t in ("codex", "gemini"):
         cast = [dict(id="bujang", species="eagle", outfit=f"bujang-{t}", role="backend", pose="idle", gx=20.9, gy=2.15, depth=23.0),
@@ -1842,7 +2171,8 @@ def make_canvas_images():
         img, _ = render_scene("large", t, cast, state={"ci_light": "green", "boss_mon_0_0": "code_0", "dev_mon_0_0": "code_0",
                                                         "dev_mon_0_1": "code_1", "dev_mon_3_0": "read_0", "plant_boss_0": "s1", "trash": "some"},
                               tints={f"dev_part_{i}": THEMES[t]["cubicle"] for i in range(6)}, kanban=kan[:5], magnets=mags[:3],
-                              safe="12", tv=tv1, balls=1)
+                              safe="12", tv=tv1, balls=1,
+                              progress=dict(desks={"boss_desk_0": dict(coffee=1, papers=2)}, reads=25, commits=1, tests=[3, 0]))
         img.save(os.path.join(CANVAS, f"office-{t}-day.png"))
     # 카드 아바타 (20×22, 2배로 40×44 표시)
     avatars = {
@@ -1862,7 +2192,7 @@ def make_canvas_images():
         av = Image.new("RGBA", (20, 22), (0, 0, 0, 0))
         av.alpha_composite(full.crop((0, 2, 16, 24)), (2, 0))
         av.save(os.path.join(CANVAS, f"avatar-{name}.png"))
-    with open(os.path.join(SPR, "preview", "positions.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(SPR, "preview", "positions.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(dict(hero=pos_hero, smb=pos_smb), f, ensure_ascii=False, indent=1)
     for name, im in (("building-loading", building(0.55, 3)), ("building-dark", building(0.0)), ("preview-large", preview_large()),
                      ("preview-small", preview_small()), ("logo", logo())):
@@ -1887,6 +2217,11 @@ def check(owl_sheet_pos, office_pos):
         n = sum(1 for k in OWLS if k.startswith(f"body/{sp}/"))
         if n != expected:
             errors.append(f"body/{sp}: 프레임 {n}개, 기대 {expected}개")
+    for i in range(COLS):
+        for j in range(ROWS):
+            matches = [k for k, (_, a, b, c, d, _) in ROOMS.items() if a <= i < c and b <= j < d]
+            if len(matches) != 1:
+                errors.append(f"바닥 ({i},{j}) 방 중복·누락: {matches}")
     for kind, lay in FLOORPLAN["layouts"].items():
         for pl in lay["placements"]:
             for st in PROPS[pl["sprite"]]["states"]:
@@ -1903,6 +2238,10 @@ def check(owl_sheet_pos, office_pos):
         hx, hy = OWL_META["anchors"][name]["hand"]
         if not (0 <= hx < OWL_W and 0 <= hy < OWL_H):
             errors.append(f"손 기준점 {name} 이 프레임 밖")
+    for role in ("security", "data", "designer"):
+        frame = OWLS[f"role/{role}/idle_f_0"]["img"]
+        if frame.crop((0, 2, 16, 24)).getbbox() is None or frame.crop((0, 0, 16, 2)).getbbox() is not None:
+            errors.append(f"role/{role}: 카드 자르기 안에 담당 그림이 온전히 들어오지 않음")
     assert not errors, "\n".join(errors)
     print(f"검사 통과: 올빼미 {len(OWLS)} 프레임, 사무실 {len(OFFICE)} 프레임, 소품 {len(PROPS)} 종")
 
@@ -1928,8 +2267,9 @@ def main():
         anims[g].sort(key=lambda s: int(s.rsplit("_", 1)[1]))
     owl_extra = dict(
         frame=[OWL_W, OWL_H], anchor=[OWL_AX, OWL_AY],
-        layers=["body", "outfit", "role", "held"],
-        layerRule="body → outfit → role 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
+        layers=["body", "outfit", "wear", "role", "item", "held"],
+        layerRule="body → outfit → wear → role → item 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
+        wear={"1": "1시간 · 소매 걷음·부장 넥타이 느슨", "2": "3시간 · 눈 밑 그림자 추가", "3": "6시간 · 어깨 수건 추가"},
         species={k: v["name"] for k, v in SPECIES.items()}, employeeSpecies=EMPLOYEE_SPECIES,
         speciesRule="직원 종 = EMPLOYEE_SPECIES[hash(agent_id) % 5]. 흰올빼미는 사장님 전용",
         outfits={o: (RANK_KO.get(o.split('-')[0]) + (' · ' + THEMES[o.split('-')[1]]['label'] if '-' in o else '')) for o in OUTFITS},
@@ -1946,6 +2286,7 @@ def main():
     build_furniture()
     build_fx()
     build_wallsegs()
+    build_seasons()
     office_anims = {}
     for k in OFFICE:
         name, st = k.split("/", 1)
@@ -1954,7 +2295,7 @@ def main():
     office_sheet, office_pos = write_atlas("office", OFFICE, {}, dict(props=PROPS), 2048)
     ui, ui_extra = build_ui()
     write_atlas("ui", ui, {}, ui_extra, 512)
-    with open(os.path.join(SPR, "floorplan.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(SPR, "floorplan.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(FLOORPLAN, f, ensure_ascii=False, indent=1)
     make_previews()
     make_canvas_images()

@@ -59,13 +59,15 @@ export function show(parent: HTMLElement, data: Uint8ClampedArray): void {
 
 /**
  * 참조(곧은 알파)를 미리 곱해 Pixi 출력(미리 곱한 알파)과 견준다. 불투명 픽셀은 opaqueTol(기본 0) 안,
- * 반투명은 그와 TOLERANCE 중 큰 값 안이어야 한다. skip 이 true 인 픽셀은 견주지 않는다.
+ * 반투명은 그와 TOLERANCE 중 큰 값 안이어야 한다. translucent는 합성 후 불투명해진 반투명 소품 자리다.
+ * skip 이 true 인 픽셀은 견주지 않는다.
  */
 export function compare(
   ref: Uint8ClampedArray,
   got: Uint8ClampedArray,
   opaqueTol = 0,
   skip?: (x: number, y: number) => boolean,
+  translucent?: (x: number, y: number) => boolean,
 ): { count: number; diff: Uint8ClampedArray } {
   const diff = new Uint8ClampedArray(ref.length);
   let count = 0;
@@ -75,8 +77,10 @@ export function compare(
       diff.set([ref[i], ref[i + 1], ref[i + 2], a / 4], i);
       continue;
     }
-    // ponytail: 반투명 소품(김·장애 빛) 자리 ±2 는 그 소품이 참조에 들어오는 T26 에서 마스크로
-    const tol = a === 255 ? opaqueTol : Math.max(TOLERANCE, opaqueTol);
+    const tol =
+      a !== 255 || translucent?.((i / 4) % CANVAS_W, Math.floor(i / 4 / CANVAS_W))
+        ? Math.max(TOLERANCE, opaqueTol)
+        : opaqueTol;
     let bad = false;
     for (let k = 0; k < 4; k++) {
       const want = k === 3 ? a : Math.round((ref[i + k] * a) / 255);

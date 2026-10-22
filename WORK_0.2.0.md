@@ -16,6 +16,6 @@
 - 공개 키는 정식 설정에 있다. 개인 키·DPAPI 비밀번호는 저장소 밖 `%USERPROFILE%/.tauri/`에 있으며 출력하거나 저장소에 넣지 않는다.
 - `%TEMP%/owlfice-updater-qa-current.txt`: test.1/test.2 설치·서명·실패·중복 방지·설정 보존 검증 자료. private 저장소 `dbwk10317/owlfice-updater-test`는 유지하되 시험 릴리스와 시험 설치 앱은 제거했다. 토큰은 앱에 넣지 않았다. 연결 실패는 PC 전체 네트워크를 끄지 않고 로컬 endpoint 중단으로 재현했다.
 - `%TEMP%/owlfice-readme-qa-current.txt`: 실제 0.2.0 앱의 합성 세션과 README PNG 원본·후보 manifest. `refresh.py`는 검수 앱을 종료한 뒤 실행한다. 야근 이미지는 실제 수동 야근 모드이며 조명 시각을 조작하지 않았다.
-- 화면 검수 범위는 `design/HANDOFF.md` 12절. 실제 OS 배율은 150%이며 DPR emulation과 구분한다. Windows 도구의 커서 접근 거부 뒤 추가 네이티브 입력은 중단했고 제품 WebView로 최종 화면을 확인했다.
+- 화면 검수 범위는 `design/HANDOFF.md` 12절. 실제 OS 배율은 150%이며 DPR emulation과 구분한다. 최종 0.2.0 실행 파일에서 Windows 키보드·마우스로 설정 Tab 순환·스크롤, 설정·직원 상세의 Esc 닫기·포커스 복귀, 야근 모드, 타임라인 펼침을 확인했다. 로그 폴더 열기는 표시한 경로와 같은 탐색기 폴더를 열었다.
 
 임시 정리: 메인이 잘못 지정한 `D:/workspace/owlfice-wt/t91-daylight/src-tauri/t91-target` 빌드 폴더 삭제가 자동 승인 검토에서 정책상 거부됐다. 커밋에는 포함하지 않았으며 재시도하지 않는다.

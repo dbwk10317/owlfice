@@ -11,48 +11,13 @@
 - 야근 모드 자동 켜짐 기본값: **20시–06시 자동** (사용자가 달리 말하면 바꾼다. 설정에서 끌 수 있다).
 - 브랜치: 통합 `v0.2.0`, 워크트리 `D:/workspace/owlfice-wt/v0.2.0`. 티켓 브랜치는 여기서 따고 여기로 합친다. main 병합·push 는 사용자 지시 때.
 
-## 1. 신호 지원표 (T92 가 확정하고 HANDOFF 5절로 옮긴다)
+## 1. 신호 지원표
 
-확장안의 연출마다 **세션 파일의 신호 → 뜻 → 확인/추정 → 보존할 상태 → DTO → 연출 → fixture** 를 적는다. 아래는 현재 코드(`src-tauri/src/parse/mod.rs`, `office/classify.rs`, `office/work.rs`, `ipc.rs`)와 대조한 초안이다. "없음" 칸이 있는 행은 T93 이 먼저 만든다.
+신호·확인/추정·보존할 상태·DTO·연출·fixture의 대응은 `design/HANDOFF.md` 5.2절로 옮겼다. T92 검토 전 미결정 항목과 현재 작업 위치는 루트 `WORK_0.2.0.md`를 본다.
 
-| 연출 | 신호 | 확인/추정 | 지금 있는 것 | 없는 것 (T93) |
-|---|---|---|---|---|
-| 트럭 색 (출고장) | `PrLinked{number,url}` | 확인 | PR 연결 여부 | PR 열림/머지 상태는 세션 파일에 없다 → **"PR 연결됨 = 파란 트럭"만**. 머지 색은 넣지 않는다 |
-| 빌드실 전광판 | 마지막 로컬 빌드·테스트 결과 (`TestVerdict`) | 확인 | 마지막 결과 | "오늘 CI 성공/실패"는 신호가 없다 → **"오늘 로컬 테스트 합격 n / 반려 n 누계"** 로 바꾼다. 팀 상태에 날짜별 누계 2개 추가 + `TeamDto` |
-| 책장 채움 (소스 서고) | `Read` 고유 파일 수 | 확인 | 상세 조회의 `files_read` 만 | `EmployeeDto.unique_reads: u32` (실시간 `counters.read` 는 검색·git 조회도 세므로 쓰지 않는다) |
-| 메달 (소지품) | 테스트 전부 통과 연속 3회 | 확인 | 없음 | 직원 상태에 `pass_streak: u32`, `medal_until: Option<DateTime>` (사건에서 재구성되므로 재시작 뒤 같아야 한다, C10) + `EmployeeDto.medal: bool` |
-| 하이파이브 (자세) | 같은 팀 둘이 각각 테스트 통과 10초 안 | 확인 | `Cue::Stamp` 에 직원 ID 없음 | `Cue::Stamp { agent_id, .. }` + 팀 상태 `last_pass: Vec<(agent_id, ts)>` |
-| ✓ 승인 표식 | `approves()` 문구 판정 | **추정** (낱말 경계를 안 봐 "미승인"도 승인) | 판정 함수 | T93 이 낱말 경계를 본 뒤에도 **추정**으로 표시 (점선) |
-| ✕ 반려 표식 | `ToolOutcome::Rejected` | 확인 | 있음 | — |
-| ! 사고 | 사고 사건 (`incident-count`) | 확인 | 있음 | — |
-| ? 허가 대기 | `PermissionRequest` | 확인 | 있음 | — |
-| … 응답 대기 | `waiting_user_since` (발화·시간 조건으로 추정, `Confidence::Inferred`) | **추정** | 있음 | — (점선 표식) |
-| 커피 잔 (팀장석) | `EmployeeDto.hiredAt` 뒤 경과 | 확인 | `hired_at` | — (팀 세션 나이도, 활동이 바뀔 때마다 달라지는 `activity.since` 도 아니다) |
-| 서류 더미 (개발실) | 수정 파일 고유 수 | 확인 | `counters.edit` 는 횟수 | `EmployeeDto.unique_edits: u32` |
-| 모니터 2대 | 병렬 호출 | 확인 | `parallel` | — |
-| 상자 쌓임 (출고장) | 오늘 커밋 수 | 확인 | 커밋 사건 | 팀 날짜별 누계 `commits_today` |
-| 책상 램프 | 시각 20–06시 = 조명 `night` 판정 (`props.night`) | 확인 | 있음 (22시 기준, T91 이 20시로) | — (크롬 야근 토글과 무관. 2절 시간표) |
-| 회의실 | `EnterPlanMode` 도구 호출 ~ `ExitPlanMode`(허가 질문, `plan:true`) 승인·거부 | 확인 | `ExitPlanMode` 만 허가로 처리, `EnterPlanMode` 는 미처리 | 직원 상태 `planning: bool` + 파서에 `EnterPlanMode` 도구 종류 |
-| 자료실 | `ContextCompaction` 사건 | 확인 | 있음 | 상태가 아니라 **일회성 방문 연출**(4초)로. 상태 모델 변경 없음 |
-| 경비실 | `ToolOutcome::Rejected` (허가 거부) | 확인 | 있음 | 일회성 방문 연출(3초). 훅 차단은 세션 파일에서 확인되지 않음 → **넣지 않는다** |
-| 옥상 | S58 "대기 중"(30분 조용, 프로세스 생존) | 추정 | `TeamPhase` dim | 옥상은 **탕비실 쉬는 자리가 찼을 때의 둘째 자리**로만. "응답 대기 30분"은 현재 전이(3분 졸음 → `waiting_user_since` 해제 → 30분 dim/off)와 겹쳐 쓰지 않는다 |
-| think 자세 | 침묵(응답 없음) 시간 — 기존 `Pose::Think` 의 발생·종료 조건 그대로 | **추정** | 있음 (`Pose::Think`, 침묵 기반) | 없음. `EventKind::Thinking` 은 자세 상태를 만들지 않으므로 쓰지 않는다. T97 은 프레임만 새로 그린다 |
+## 2. 상태 우선순위와 시간표
 
-## 2. 상태 우선순위와 시간표 (T92 가 확정하고 HANDOFF 5절·6.2절로)
-
-- **직원 자리·자세 우선순위** (위가 이긴다. 현재 코드의 "사장님 손이 필요한 상태가 먼저" 순서를 유지한다, `classify.rs` 장애 처리 주석): 퇴근 > 허가 대기(출입문) > 진행 중 도구(명령·테스트·빌드·출고장·외근·거래처 미팅: 실제 활동이지 연출이 아니다) > 장애 상황실(부장) > 계획 모드(회의실) > 작업(좌석) > 일회성 방문 연출(자료실·경비실) > 졸음(탕비실·옥상). 장애는 자리와 별개로 카드 `is-bad`·경광등·상황실 타일로 **항상 같이** 보인다 (허가를 기다리는 직원이 장애 중이라도 출입문에 있다). 새 자세(think·stretch·drink·phone·highfive)는 허가 대기·장애·퇴근 자세를 **덮지 않는다**; 일회성 연출은 더 높은 상태가 오면 즉시 끊고 복귀한다.
-- **사무실 전환·창 복귀** 때 지난 감정 표식·일회성 방문·자세를 재생하지 않는다 (현재 시각 기준으로 상태만 그린다, C10).
-- **시간표** (OS 로컬 시계. 모두 한 표에서 나온다. T90·T91 이 같이 쓴다):
-
-| 시각 | 창밖 | 조명 곱하기 | 책상 램프 | 크롬(야근 모드 자동) |
-|---|---|---|---|---|
-| 06–17 | 주간 | 없음(흰색) | 꺼짐 | 주간 |
-| 17–20 | 저녁 | `evening #F6E6C4` (새로) | 꺼짐 | 주간 |
-| 20–06 | 밤 | `night #F2DEAD` + 램프 비네트 | 켜짐 | 야근 (자동이면) |
-
-  기존 `night: 22–06시` 와 창문 저녁 `17–22시` 는 이 표로 바꾼다 (`floorplan.json` `lightTints.rule`, 창문 상태 전환 시각). `dim`(S58)·`off`(퇴근)는 시각과 무관하게 위 조명을 덮는다 (`renderer.ts` `lightOf` 순서 off > dim > night/evening 유지). 수동 야근 토글은 크롬만 바꾸고 조명·책상 램프는 바꾸지 않는다 (램프는 조명 `night` 을 따른다).
-- **근속 표식 기준**: `EmployeeDto.hiredAt`(입사) 뒤 경과. 팀 세션 나이도 `activity.since` 도 아니다. 커피 잔·stretch 도 같다.
-- **테스트 경계**: 06·17·20·22시 앞뒤 1분, 절전 복귀(시계가 한 번에 건너뜀) 후 1틱에 맞는 단계로 간다.
+자리·자세 우선순위와 새 방의 진입·유지·종료·중단은 `design/HANDOFF.md` 5.3·5.4절, 시간표는 6.2절에 둔다. T90·T91은 같은 시간표를 따른다. 계약은 `docs/CONTRACTS.md` C2·C8·C10, 상황 번호는 `docs/SCENARIOS.md`다.
 
 ## 3. 티켓
 
@@ -114,13 +79,13 @@
 
 ### T92 신호·상태 설계 확정 (메인 · 상)
 
-- 범위: `design/HANDOFF.md` 5절(1절 표를 옮겨 적는다)·6.2절·10절, `docs/CONTRACTS.md` C2(새 상태 `planning`, 일회성 방문)·C8(시간표)·C10(재구성 불변식에 메달·누계 추가), `docs/SCENARIOS.md`(새 S 번호).
-- 할 일: 1절 표의 "없는 것" 칸을 확정하고 2절 우선순위·시간표를 계약으로 옮긴다. 각 새 방의 진입·유지·종료·중단 조건을 5절 표 형식으로 쓴다.
+- 범위: `design/HANDOFF.md` 5절(신호 지원표·우선순위·새 방 조건)·6.2절·10절, `docs/CONTRACTS.md` C2(새 상태 `planning`, 일회성 방문)·C8(시간표)·C10(재구성 불변식에 메달·누계 추가), `docs/SCENARIOS.md`(새 S 번호).
+- 할 일: HANDOFF 5.2절의 보존 상태와 미확인 입력을 확정하고 5.3절 우선순위·6.2절 시간표를 계약에 연결한다. 각 새 방의 진입·유지·종료·중단 조건을 5절 표 형식으로 쓴다.
 - 완료 기준: 사용자 검토 뒤 커밋. 이 티켓 전에는 T93 이후를 시작하지 않는다.
 
 ### T93 파서·상태·DTO 확장 (과장 · 중) — T92 뒤
 
-- 범위: `src-tauri/src/parse/claude.rs`·`codex.rs`(`EnterPlanMode` 도구 종류), `src-tauri/src/parse/mod.rs`(`ToolKind`), `src-tauri/src/office/classify.rs`(`planning`, `pass_streak`·`medal_until`, 팀 날짜별 누계, `Cue::Stamp{agent_id}`, `approves` 낱말 경계; 테스트는 같은 파일의 `#[cfg(test)]`), `src-tauri/src/office/mod.rs`(`Cue`), `src-tauri/src/ipc.rs`(`EmployeeDto.unique_reads`·`unique_edits`·`medal`·`planning`, `TeamDto.tests_today`·`commits_today`), IPC 타입 재생성 → `src/types/*`, 그리고 **타입 변경으로 깨지는 프론트 사용처만**: `src/test-office.ts`(테스트 데이터 생성기), `src/office/actors.test.ts`(`Stamp` cue 생성), `dev/*.ts`(개발 시나리오의 DTO 리터럴), `src/types/*` 를 쓰는 다른 테스트. `fixtures/claude/*`(새 시나리오: 계획 모드, 연속 통과 3회, 거부, 컴팩션).
+- 범위: `src-tauri/src/parse/claude.rs`·`codex.rs`(`EnterPlanMode` 도구 종류), `src-tauri/src/parse/mod.rs`(`ToolKind`), `src-tauri/src/office/classify.rs`(`planning`, `pass_streak`·`medal_until`, 팀 날짜별 누계, `Cue::Stamp{agent_id}`, `approves` 낱말 경계; 기존 상태 테스트 배치는 `office/tests.rs`를 따른다), `src-tauri/src/office/mod.rs`(직원·팀 상태, `Cue`), `src-tauri/src/office/tests.rs`(상태·재구성 검증), `src-tauri/src/ipc.rs`(`EmployeeDto.unique_reads`·`unique_edits`·`medal`·`planning`, `TeamDto.tests_today`·`commits_today`), IPC 타입 재생성 → `src/types/*`, 그리고 **타입 변경으로 깨지는 프론트 사용처만**: `src/test-office.ts`(테스트 데이터 생성기), `src/office/actors.test.ts`(`Stamp` cue 생성), `dev/*.ts`(개발 시나리오의 DTO 리터럴), `src/types/*` 를 쓰는 다른 테스트. `fixtures/claude/*`(새 합성 시나리오: 계획 모드, 연속 통과 3회, 거부, 컴팩션), `fixtures/README.md`(새 fixture의 합성 여부·출처).
 - 완료 기준: 새 상태·누계마다 fixture replay 테스트 1개 + **재구성 불변식 테스트** (같은 fixture 를 처음부터 다시 읽어도 `pass_streak`·`medal_until`·누계·`planning` 이 같다, C10), 날짜가 바뀌면 누계가 0 이 되는 테스트, `cargo test`·clippy·`npm run check`·`npm test` 모두 녹색. **화면 기능은 바꾸지 않는다** — 프론트 수정은 새 필드를 채우는 생성기·테스트 데이터·개발 시나리오와 타입 검사 통과에 필요한 것까지만.
 
 ### T94 소품 확장 1차 (과장 · 중) — T93 뒤
@@ -133,10 +98,7 @@
 
 - 범위: `design/sprites/floorplan.json`(rooms·stands·path·layouts.large/small), `design/tools/owlfice_art.py`(회의실 화이트보드, 자료실 파쇄기, 경비실 창구·차단봉, 옥상 조각·자판기), `design/sprites/office.*`, `design/assets/office-*.png`, `src/office/floorplan.ts`(+test), `src/office/actors.ts`·`anim-queue.ts`(+test), `src/office/canvas-tooltip.ts`(방 이름표), `design/handoff/phrases.ko.json` rooms, `design/handoff/icons/room-*.svg` 4개, HANDOFF 4.4·5·6.5절.
 - 방별 조건 (T92 가 확정):
-  - 회의실: 진입 `EnterPlanMode` → `planning` / 유지 `ExitPlanMode` 질문 중 포함 / 종료 승인(박수 뒤 좌석)·거부(머리 긁기 뒤 좌석) / 중단 장애·퇴근.
-  - 자료실: `ContextCompaction` 사건 → 4초 방문(파쇄기) → 원래 자리. 상태 변화 없음. 카드는 행적 한 줄만.
-  - 경비실: `Rejected` → 3초 방문(결재판) → 원래 자리. 허가 대기 중이면 출입문 자세가 우선.
-  - 옥상: 탕비실 쉬는 자리가 찼을 때의 둘째 자리. 추정 꼬리표. 다른 진입 조건 없음.
+  - `design/HANDOFF.md` 5.4절. 장애·퇴근은 회의실 연출만 중단하고 `planning`은 보존한다. 일반 질문 응답을 계획 종료로 쓰지 않는다.
 - 순서: 메인이 격자 안에서 방 4개의 사각형·출입 지점·서 있을 자리를 정하고 줄어드는 기존 방(후보: 개발실 임시 책상 열, 거래처 미팅실 폭)을 HANDOFF 6.5절에 적는다 → 과장이 생성기·배치·이동 → 대리가 테스트·fixture.
 - 완료 기준: 방마다 replay 테스트(진입·종료·중단 각 1개), 우선순위 테스트(회의실 중 장애 → 상황실), 참조 렌더 비교 통과, 1×·2× 방 이름표 비겹침, 좌석·임시 책상 수가 HANDOFF 11절과 같음.
 

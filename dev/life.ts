@@ -1,7 +1,8 @@
 // 개발용 서브 종료·재출근·분갈이·액자 교체 연출 확인 페이지 (npm run dev 에서 /dev/life.html). 앱 빌드에 들어가지 않는다.
 // 버튼이 직원 방·퇴장 시각·화분 값·제목을 바꿔 S20 S38 S39 S60 을 보여 준다. 걷는 장면은 앞 상태를 먼저 보낸 뒤 다음 상태를 보낸다.
 import { mountOffice } from "../src/office/renderer.ts";
-import { office as testOffice, team as testTeam } from "../src/test-office.ts";
+import { mountPanel } from "../src/sidebar-right.ts";
+import { act as testAct, office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type {
   CueDto,
   EmployeeDto,
@@ -63,7 +64,8 @@ function emp(
   };
 }
 
-const lead = () => emp("boss", "Bujang", "TeamLead", "Sit");
+const lead = () =>
+  emp("boss", "Bujang", "TeamLead", "Sit", { contextUsed: 170_000, contextWindow: 200_000 });
 /** 자리에 앉은 서브 / 퇴장해 탕비실에 있는 서브 */
 const desk = (id: string, seat: number) => emp(id, "Daeri", "Dev", "Type", { seat });
 const gone = (id: string) => emp(id, "Daeri", "Pantry", "Sit", { retiredAt: iso() });
@@ -138,6 +140,26 @@ const sitting = () => show(office([desk("a", 0), desk("b", 1)], 0.9, "제목"));
 const STEPS: [string, () => void][] = [
   ["처음: 둘 다 자리에", sitting],
   [
+    "허가 대기 카드 (합성)",
+    () =>
+      show(
+        office(
+          [
+            emp("a", "Daeri", "Door", "Sit", {
+              activity: testAct({
+                room: "Door",
+                since: iso(120_000),
+                sentence: "결재판 들고 문 앞 대기: 「합성 문서를 수정할까요?」",
+              }),
+            }),
+            desk("b", 1),
+          ],
+          0.9,
+          "제목",
+        ),
+      ),
+  ],
+  [
     "서브 a 종료 (S20: 콘솔 sit, 게임기, 퇴근 자석)",
     () =>
       then(sitting, () =>
@@ -180,7 +202,18 @@ for (const [label, run] of STEPS) {
   buttons.append(b);
 }
 
-mountOffice(document.getElementById("large")!, store).catch((e) => {
+const stage = document.getElementById("large")!;
+const shell = document.createElement("div");
+shell.className = "ow-app";
+Object.assign(shell.style, { width: "1444px", height: "680px" });
+stage.before(shell);
+const panel = document.createElement("div");
+panel.style.display = "flex";
+shell.append(stage, panel);
+mountPanel(panel, store, {
+  viewport: { size: () => ({ w: 1444, h: 680 }), subscribe: () => () => {} },
+});
+mountOffice(stage, store).catch((e) => {
   document.body.append(`실패: ${e}`);
   console.error(e);
 });

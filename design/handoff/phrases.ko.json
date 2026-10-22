@@ -108,7 +108,12 @@
     "stats": { "read": "읽은 파일", "edit": "수정", "cmd": "명령", "web": "출장", "mcp": "거래처", "incident": "사고" },
     "panelTitle": "직원 현황판",
     "sort": "정렬 바꾸기",
+    "sortDefault": "기본 순서",
+    "sortName": "이름순",
     "detail": "직원 상세",
+    "openApproval": "결재판 열기",
+    "openSource": "원본 폴더 열기",
+    "askingFor": "허가 대기 · {elapsed}째",
     "count": "{n}명",
     "empty": "출근한 직원이 없습니다"
   },

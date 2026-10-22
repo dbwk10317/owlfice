@@ -113,6 +113,8 @@
     "detail": "직원 상세",
     "openApproval": "결재판 열기",
     "openSource": "원본 폴더 열기",
+    "checkRunning": "빌드·테스트 진행 중",
+    "checkFailed": "마지막 빌드·테스트 실패",
     "askingFor": "허가 대기 · {elapsed}째",
     "count": "{n}명",
     "empty": "출근한 직원이 없습니다"

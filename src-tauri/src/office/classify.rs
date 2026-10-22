@@ -110,6 +110,7 @@ impl Employee {
             planning: false,
             pass_streak: 0,
             medal_until: None,
+            last_check_failed: false,
             last_event: at,
             context_used: None,
             context_window: None,
@@ -131,6 +132,21 @@ impl Employee {
             spawn_logged: false,
             too_long: None,
             record: Arc::default(),
+        }
+    }
+
+    pub fn build_test_light(&self) -> Light {
+        if self
+            .pending
+            .iter()
+            .chain(&self.background)
+            .any(|call| lights(&call.tool, &call.summary))
+        {
+            Light::Yellow
+        } else if self.last_check_failed {
+            Light::Red
+        } else {
+            Light::Off
         }
     }
 
@@ -1081,6 +1097,20 @@ impl Team {
         } else {
             None
         };
+        let check_verdict = if call.tool == ToolKind::Build && confirmed && declares {
+            match outcome {
+                ToolOutcome::Ok => Some(TestVerdict::Pass),
+                ToolOutcome::Err if call.summary.compound == Compound::Single => {
+                    Some(TestVerdict::Fail)
+                }
+                _ => None,
+            }
+        } else {
+            test_verdict
+        };
+        if let Some(verdict) = check_verdict {
+            e.last_check_failed = verdict == TestVerdict::Fail;
+        }
         if call.tool == ToolKind::Test && *outcome != ToolOutcome::Started {
             if let Some(verdict) = test_verdict {
                 let counts = &mut self

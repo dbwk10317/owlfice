@@ -28,6 +28,7 @@ import roomTest from "../design/handoff/icons/room-test.svg?raw";
 import { createEventCollector, createTicker, empKey, rankLabel, teamName } from "./ticker.ts";
 import { durationText, fill, fillElapsed, hhmm } from "./text.ts";
 import { setAvatar } from "./avatar.ts";
+import { ringOf } from "./sidebar-left.ts";
 import type {
   Activity,
   CueDto,
@@ -457,6 +458,7 @@ function updateCard(
   small: boolean,
   byId: Map<string, EmployeeDto>,
   building: string,
+  delayed: boolean,
 ): void {
   const r = c.ref;
   setAvatar(r.avatar, e, building);
@@ -482,10 +484,22 @@ function updateCard(
     working: phrases.sidebar.stateWorking,
   }[state];
   r.pin.dataset.state = state;
-  r.pin.setAttribute("aria-label", stateLabel);
+  const ring = state === "off" ? "" : ringOf(e.buildTestBorder, delayed);
+  if (ring) r.pin.dataset.ring = ring;
+  else delete r.pin.dataset.ring;
+  const ringLabel =
+    ring === "run"
+      ? phrases.card.checkRunning
+      : ring === "fail"
+        ? phrases.card.checkFailed
+        : ring === "lag"
+          ? phrases.empty.lag
+          : "";
+  const pinLabel = [stateLabel, ringLabel].filter(Boolean).join(" · ");
+  r.pin.setAttribute("aria-label", pinLabel);
   c.open.setAttribute(
     "aria-label",
-    `${e.name} ${rankLabel(e.rank)} · ${stateLabel} · ${phrases.card.detail}`,
+    `${e.name} ${rankLabel(e.rank)} · ${pinLabel} · ${phrases.card.detail}`,
   );
 
   setText(c, "name", r.name, e.name);
@@ -896,7 +910,7 @@ export function mountPanel(
           c.el.classList.toggle("is-compact", compact);
           if (!quiet) fresh.push({ c, e });
         }
-        updateCard(c, e, i === 0, t.phase === "Off", small, byId, t.building);
+        updateCard(c, e, i === 0, t.phase === "Off", small, byId, t.building, t.delayed);
         tickCard(c, Date.now());
         liveCards.add(key);
         // 부장은 퇴근 묶음에 넣지 않는다. 서브만 (docs/CONTRACTS.md C3)

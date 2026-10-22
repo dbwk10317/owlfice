@@ -1581,3 +1581,64 @@ fn extension_dtos_use_recorded_paths_counts_and_snapshot_medal_time() {
             .medal
     );
 }
+
+#[test]
+fn employee_check_border_uses_own_calls_and_rebuilds() {
+    let other = |secs, kind| Event {
+        agent_id: "b".into(),
+        parent_agent: Some("a".into()),
+        ..ev("a", secs, kind)
+    };
+    let events = vec![
+        ev("a", 0, tool("test", ToolKind::Test, "cargo test")),
+        other(1, tool("build", ToolKind::Build, "cargo build")),
+        ev("a", 2, done("test", ToolOutcome::Err, None)),
+        other(3, done("build", ToolOutcome::Ok, None)),
+        ev("a", 4, tool("build", ToolKind::Build, "cargo build")),
+        ev("a", 5, tool("test", ToolKind::Test, "cargo test")),
+        ev("a", 6, done("build", ToolOutcome::Started, None)),
+        ev("a", 7, done("test", ToolOutcome::Ok, None)),
+        ev("a", 8, done("build", ToolOutcome::Unknown, None)),
+    ];
+    let mut team = Team::new("a", Product::ClaudeCli, t0());
+    for (i, event) in events.iter().enumerate() {
+        let now = event.ts.unwrap();
+        team.tick(now, utc(), &mut Vec::new());
+        team.apply(event, &mut Vec::new());
+        let current = employee_dto(&team.employees[0], now);
+        let expected = match i {
+            0..=1 | 4..=7 => Border::Running,
+            2..=3 => Border::Failed,
+            _ => Border::Plain,
+        };
+        assert_eq!(current.build_test_border, expected);
+        let json = serde_json::to_value(&current).unwrap();
+        assert_eq!(
+            json["buildTestBorder"],
+            serde_json::to_value(expected).unwrap()
+        );
+        if i >= 1 {
+            assert_eq!(
+                employee_dto(&team.employees[1], now).build_test_border,
+                if i < 3 {
+                    Border::Running
+                } else {
+                    Border::Plain
+                }
+            );
+        }
+        let rebuilt = rebuild(
+            "a",
+            Product::ClaudeCli,
+            &[],
+            vec![events[..=i].to_vec()],
+            utc(),
+        );
+        for (live, restored) in team.employees.iter().zip(&rebuilt.employees) {
+            assert_eq!(
+                employee_dto(live, now).build_test_border,
+                employee_dto(restored, now).build_test_border
+            );
+        }
+    }
+}

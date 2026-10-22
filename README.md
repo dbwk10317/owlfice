@@ -7,15 +7,19 @@
 <p align="center"><strong>AI는 일하고, 사무실은 살아납니다.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/dbwk10317/owlfice/releases/latest/download/Owlfice_0.1.1_x64-setup.exe">Windows 설치 파일 다운로드</a>
+  <a href="https://github.com/dbwk10317/owlfice/releases/latest/download/Owlfice_0.2.0_x64-setup.exe">Windows 설치 파일 다운로드</a>
   · <a href="https://github.com/dbwk10317/owlfice/releases">모든 버전</a>
 </p>
 
 내 컴퓨터에서 일하는 AI 코딩 에이전트를 작은 픽셀아트 사무실로 보여주는 Windows 앱입니다. 세션은 팀이 되고, 에이전트는 올빼미 직원이 됩니다. 읽기·테스트·코드 수정이 직원의 행동으로 나타납니다. AI가 일하는 동안 가끔 들여다보세요.
 
-![야근불 사무실 전경](docs/images/office.png)
+![야근불 사무실 주간 전경](docs/images/office.png)
 
-*실제 UI에 합성 데이터를 넣은 예시입니다.*
+*실제 앱에 합성 데이터를 넣은 주간 예시입니다.*
+
+![야근불 사무실 야근 모드](docs/images/office-night.png)
+
+*실제 앱에 합성 데이터를 넣고 야근 모드를 켠 예시입니다.*
 
 ## 사무실에서 볼 수 있는 것
 
@@ -28,7 +32,7 @@
 
 ![직원 상세 화면](docs/images/employee.png)
 
-*실제 UI에 합성 데이터를 넣은 예시입니다.*
+*실제 앱에 합성 데이터를 넣은 직원 상세 예시입니다.*
 
 ## 지원 환경
 

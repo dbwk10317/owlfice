@@ -348,7 +348,7 @@ def owl_body(sp, pose, dirn, f):
 GLASSES_EYES = [(3, 4), (9, 10)]   # 모든 종의 눈 위치가 같다 (옷 레이어를 종과 무관하게 쓰기 위해)
 
 
-def owl_outfit(outfit, g, dirn, chest):
+def owl_outfit(outfit, g, dirn, chest, worn=False):
     """옷 레이어. outfit = '<rank>-<vendor>' | 'boss' | 'librarian'."""
     cells = {}
     if outfit == "boss":
@@ -369,7 +369,7 @@ def owl_outfit(outfit, g, dirn, chest):
 
     if dirn == "f":
         if rank in ("bujang", "boss"):
-            for yt in (10, 11, 12, 13):
+            for yt in ((11, 12, 13, 14) if worn and rank == "bujang" else (10, 11, 12, 13)):
                 T(6, yt, tie)
                 T(7, yt, tie)
         if rank == "gwajang":
@@ -404,9 +404,9 @@ def owl_outfit(outfit, g, dirn, chest):
         for yt in (9, 10, 11):
             y = torso_y(yt, g)
             c = sleeve
-            if rank == "daeri" and yt == 10:
+            if (rank == "daeri" or worn) and yt == 10:
                 c = (250, 250, 250)
-            if rank == "daeri" and yt == 11:
+            if (rank == "daeri" or worn) and yt == 11:
                 continue
             cells[(xs, y)] = c
     if rank == "boss":
@@ -415,6 +415,23 @@ def owl_outfit(outfit, g, dirn, chest):
             for x, ch in enumerate(row):
                 if ch != ".":
                     cells[(x, -1 + r + g["hy"])] = (244, 196, 48) if ch == "Y" else (210, 50, 60)
+    return cells
+
+
+def owl_wear(stage, g, dirn, chest):
+    cells = {}
+    for side, x in (("l", 1), ("r", 12)):
+        if g["w" + side][0] == "down" and not g["crouch"]:
+            cells[(x, torso_y(10, g))] = (250, 250, 250)
+    if stage >= 2 and dirn == "f":
+        for x0, x1 in GLASSES_EYES:
+            for x in range(x0, x1 + 1):
+                cells[(x, 7 + g["hy"])] = (106, 88, 98)
+    if stage >= 3:
+        for x, yt in ((3, 9), (4, 9), (3, 10), (4, 10), (3, 11), (4, 11), (3, 12)):
+            y = torso_y(yt, g)
+            if y is not None and (x, y) in chest:
+                cells[(x, y)] = (214, 224, 220) if x == 3 else (248, 248, 232)
     return cells
 
 
@@ -493,6 +510,11 @@ def build_owls():
         chest = {p for p, ch in cells.items() if ch == "c"}
         for of in OUTFITS:
             frames[f"outfit/{of}/{name}"] = cells_to_img(owl_outfit(of, g, dirn, chest), g["lift"])
+            if of not in ("boss", "librarian"):
+                # 투명한 근속 겹으로는 기존 소매·넥타이를 지울 수 없어 옷 생성기를 재사용한다.
+                frames[f"outfit/{of}-worn/{name}"] = cells_to_img(owl_outfit(of, g, dirn, chest, worn=True), g["lift"])
+        for stage in (1, 2, 3):
+            frames[f"wear/{stage}/{name}"] = cells_to_img(owl_wear(stage, g, dirn, chest), g["lift"])
         for role in ROLES:
             frames[f"role/{role}/{name}"] = cells_to_img(owl_role(role, g, dirn, chest), g["lift"])
         hx, hy = g["hands"]["r"]
@@ -1514,7 +1536,11 @@ def place(canvas, key, x, y, flip=False, tint=None):
 
 def owl_keys(c):
     name = f"{c['pose']}_{c.get('dir', 'f')}_{c.get('frame', 0)}"
-    keys = [f"body/{c['species']}/{name}", f"outfit/{c['outfit']}/{name}"]
+    wear = c.get("wear", 0) if c["outfit"] not in ("boss", "librarian") else 0
+    outfit = c["outfit"] + ("-worn" if wear else "")
+    keys = [f"body/{c['species']}/{name}", f"outfit/{outfit}/{name}"]
+    if wear:
+        keys.append(f"wear/{wear}/{name}")
     if c.get("role", "trainee") != "trainee":
         keys.append(f"role/{c['role']}/{name}")
     return keys, name
@@ -1861,9 +1887,9 @@ def write_atlas(name, entries, animations, extra, max_w):
 # =====================================================================
 # 미리보기와 캔버스용 참조 렌더
 # =====================================================================
-def owl_composite(species, outfit, role="trainee", pose="idle", dirn="f", frame=0, held=None):
+def owl_composite(species, outfit, role="trainee", pose="idle", dirn="f", frame=0, held=None, wear=0):
     img = Image.new("RGBA", (OWL_W + 8, OWL_H), (0, 0, 0, 0))
-    draw_owl_local(img, dict(species=species, outfit=outfit, role=role, pose=pose, dir=dirn, frame=frame, held=held), 4 + OWL_AX, OWL_AY)
+    draw_owl_local(img, dict(species=species, outfit=outfit, role=role, pose=pose, dir=dirn, frame=frame, held=held, wear=wear), 4 + OWL_AX, OWL_AY)
     return img
 
 
@@ -1912,6 +1938,11 @@ def make_previews():
     layers.save(os.path.join(PREV, "layers.png"))
     with open(os.path.join(PREV, "owls-20.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(dict(cell=[cw, ch], cols=4, labels=labels, poses=[f"{p}_{d_}_{f_}" for p, d_, f_ in poses]), f, ensure_ascii=False, indent=1)
+    wear_sheet = Image.new("RGBA", (24 * 4, 28 * 4), (0, 0, 0, 0))
+    for row, outfit in enumerate(("bujang-claude", "gwajang-codex", "daeri-gemini", "sawon-claude")):
+        for stage in range(4):
+            wear_sheet.alpha_composite(owl_composite("barn", outfit, wear=stage), (stage * 24, row * 28 + 2))
+    wear_sheet.save(os.path.join(PREV, "wear.png"))
     # 소품 목록 (3배, 이름 표시)
     scale, pad, label_h = 3, 14, 18
     font = ImageFont.truetype("consola.ttf", 13) if os.path.exists(r"C:\Windows\Fonts\consola.ttf") else ImageFont.load_default()
@@ -1942,9 +1973,9 @@ def make_previews():
 def make_canvas_images():
     """캔버스 시안이 쓰는 그림. 모두 시트와 평면도로만 그린다."""
     hero_cast = [
-        dict(id="bujang", species="eagle", outfit="bujang-claude", role="backend", pose="carry", gx=20.9, gy=2.15, depth=23.0, held="duck"),
-        dict(id="gwajang", species="barn", outfit="gwajang-claude", role="backend", pose="idle", gx=13.3, gy=2.75),
-        dict(id="daeri", species="little", outfit="daeri-claude", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
+        dict(id="bujang", wear=1, species="eagle", outfit="bujang-claude", role="backend", pose="carry", gx=20.9, gy=2.15, depth=23.0, held="duck"),
+        dict(id="gwajang", wear=2, species="barn", outfit="gwajang-claude", role="backend", pose="idle", gx=13.3, gy=2.75),
+        dict(id="daeri", wear=3, species="little", outfit="daeri-claude", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
         dict(id="sawon1", species="scops", outfit="sawon-claude", role="trainee", pose="carry", gx=1.4, gy=1.7, held="folder"),
         dict(id="sawon2", species="longeared", outfit="sawon-claude", role="qa", pose="idle", gx=10.5, gy=12.6),
         dict(id="librarian", species="little", outfit="librarian", role="trainee", pose="idle", gx=2.8, gy=2.95, depth=5.75),
@@ -1965,9 +1996,9 @@ def make_canvas_images():
     evening.save(os.path.join(CANVAS, "office-claude-evening.png"))
     T = TEAM_TINTS
     smb_cast = [
-        dict(id="bujangA", species="scops", outfit="bujang-codex", role="devops", pose="idle", gx=17.6, gy=4.1),
-        dict(id="bujangB", species="eagle", outfit="bujang-codex", role="frontend", pose="jump", gx=19.6, gy=2.2, depth=21.6),
-        dict(id="bujangC", species="longeared", outfit="bujang-codex", role="backend", pose="panic", gx=19.6, gy=9.95, depth=29.7),
+        dict(id="bujangA", wear=1, species="scops", outfit="bujang-codex", role="devops", pose="idle", gx=17.6, gy=4.1),
+        dict(id="bujangB", wear=2, species="eagle", outfit="bujang-codex", role="frontend", pose="jump", gx=19.6, gy=2.2, depth=21.6),
+        dict(id="bujangC", wear=3, species="longeared", outfit="bujang-codex", role="backend", pose="panic", gx=19.6, gy=9.95, depth=29.7),
         dict(id="subC1", species="barn", outfit="daeri-codex", role="qa", pose="idle", gx=21.8, gy=10.8),
         dict(id="subC2", species="little", outfit="sawon-codex", role="trainee", pose="idle", gx=22.8, gy=10.3),
         dict(id="subA1", species="little", outfit="daeri-codex", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
@@ -2087,8 +2118,9 @@ def main():
         anims[g].sort(key=lambda s: int(s.rsplit("_", 1)[1]))
     owl_extra = dict(
         frame=[OWL_W, OWL_H], anchor=[OWL_AX, OWL_AY],
-        layers=["body", "outfit", "role", "held"],
-        layerRule="body → outfit → role 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
+        layers=["body", "outfit", "wear", "role", "held"],
+        layerRule="body → outfit → wear → role 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
+        wear={"1": "1시간 · 소매 걷음·부장 넥타이 느슨", "2": "3시간 · 눈 밑 그림자 추가", "3": "6시간 · 어깨 수건 추가"},
         species={k: v["name"] for k, v in SPECIES.items()}, employeeSpecies=EMPLOYEE_SPECIES,
         speciesRule="직원 종 = EMPLOYEE_SPECIES[hash(agent_id) % 5]. 흰올빼미는 사장님 전용",
         outfits={o: (RANK_KO.get(o.split('-')[0]) + (' · ' + THEMES[o.split('-')[1]]['label'] if '-' in o else '')) for o in OUTFITS},

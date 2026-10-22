@@ -1,4 +1,4 @@
-// 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 세 겹 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
+// 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 겹친 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
 import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
@@ -31,6 +31,7 @@ const BADGE_OFFSET: [number, number] = [14, 6];
 /** 자리 초과 "+n" 은 그 자리 직원 머리 기준 (HANDOFF 4.4) */
 const CROWD_OFFSET: [number, number] = [14, -6];
 const BUBBLE_MS = 4000;
+const EMOTE_MS = 1200;
 /** 사장님 말풍선은 30자에서 자른다 (HANDOFF 5절) */
 const BOSS_TEXT_MAX = 30;
 /** 사장님이 부장 좌석에서 떨어져 서는 거리 (gy 칸) */
@@ -431,12 +432,13 @@ interface Body {
   /** actors 맵 키 (empKey) */
   key: string;
   root: Container;
-  /** body, outfit, role. 아틀라스가 없으면 비어 있다 */
+  /** body, outfit, wear, role. 아틀라스가 없으면 비어 있다 */
   layers: Sprite[];
   held: Sprite | null;
   heldName: string | undefined;
   species: string;
   outfit: string;
+  wear: number;
   role: string | null;
   look: Look;
   spot: string;
@@ -465,6 +467,8 @@ interface Actor extends Body {
   emp: EmployeeDto;
   /** 말풍선 사건 시각(ms). 4초가 지나면 update 가 숨긴다 */
   bubbleAt: number;
+  emote: HTMLElement | null;
+  emoteUntil: number;
 }
 
 /** 사장님 방문: 문에서 걸어와 `leaveAt` 에 퇴장한다 (HANDOFF 5절) */
@@ -580,8 +584,12 @@ export class ActorLayer {
     const switched = !!this.lastOffice && office?.officeId !== this.lastOffice.officeId;
     if (office?.officeId !== this.lastOffice?.officeId || (fresh && office?.rebuilt))
       this.highlight = null;
+    const previous = this.lastOffice;
     this.lastOffice = office;
     const instant = opts.instant || (fresh && !!office?.rebuilt);
+    const canEmote = fresh && !!previous && !instant && !switched && !reducedMotion();
+    if (!canEmote && (instant || switched || reducedMotion()))
+      for (const a of this.actors.values()) this.clearEmote(a);
     const cuesOf = new Map<string, CueDto[]>();
     const visits: CueDto[] = [];
     const stamps: Extract<CueDto, { kind: "Stamp" }>[] = [];
@@ -656,6 +664,7 @@ export class ActorLayer {
         a.zz?.remove();
         a.badge?.remove();
         a.bubble?.remove();
+        this.clearEmote(a);
         this.actors.delete(key);
         if (this.hovered === key) this.hover(null);
       }
@@ -666,6 +675,7 @@ export class ActorLayer {
       const old = this.actors.get(key);
       const a = old ?? this.create(p.team.teamId, p.emp, key, now);
       shown.add(key);
+      const before = old?.spot ? old.emp : null;
       a.emp = p.emp;
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
@@ -707,6 +717,8 @@ export class ActorLayer {
       }
       this.setBadge(a);
       this.setBubble(a, now);
+      if (a.bubble) this.clearEmote(a);
+      else if (canEmote && before) this.setEmote(a, before, cues, now);
       if (!a.root.parent && this.world) this.world.addChild(a.root);
     });
     for (const a of this.actors.values())
@@ -721,6 +733,7 @@ export class ActorLayer {
         a.badge = null;
         a.bubble?.remove();
         a.bubble = null;
+        this.clearEmote(a);
         a.spot = "";
         if (this.hovered === a.key) this.hover(null);
       }
@@ -770,6 +783,7 @@ export class ActorLayer {
     for (const a of this.actors.values()) {
       moved = this.draw(a, now) || moved;
       this.placeSweat(a, now);
+      if (now >= a.emoteUntil || reducedMotion() || !a.root.visible) this.clearEmote(a);
     }
     for (const v of this.visitors) {
       if (!v.leaving && now >= v.leaveAt) {
@@ -865,6 +879,10 @@ export class ActorLayer {
       if (now >= a.nextBlink + BLINK_MS) a.nextBlink = now + 3000 + Math.random() * 2000;
       frame = now >= a.nextBlink ? 1 : 0;
     }
+    if ("emp" in a) {
+      const hours = (now - Date.parse((a as Actor).emp.hiredAt)) / 3_600_000;
+      a.wear = hours >= 6 ? 3 : hours >= 3 ? 2 : hours >= 1 ? 1 : 0;
+    }
     this.setFrame(a, frame);
     return moved;
   }
@@ -877,6 +895,7 @@ export class ActorLayer {
       if (a.zz) this.put(a.zz, h.x + ZZ_OFFSET[0], h.y + ZZ_OFFSET[1]);
       if (a.badge) this.put(a.badge, h.x + BADGE_OFFSET[0], h.y + BADGE_OFFSET[1]);
       if (a.bubble) this.put(a.bubble, h.x, h.y);
+      if ("emote" in a && a.emote) this.put(a.emote as HTMLElement, h.x, h.y);
     }
     for (const c of this.crowds.values()) this.put(c.el, c.x, c.y);
     const a = this.hovered ? this.actors.get(this.hovered) : undefined;
@@ -924,7 +943,7 @@ export class ActorLayer {
       if (this.hovered === key) this.hover(null);
     });
     b.root.on("pointertap", () => this.onPick?.(teamId, id));
-    const a: Actor = Object.assign(b, { emp, bubbleAt: 0 });
+    const a: Actor = Object.assign(b, { emp, bubbleAt: 0, emote: null, emoteUntil: 0 });
     this.actors.set(key, a);
     return a;
   }
@@ -934,7 +953,7 @@ export class ActorLayer {
     const layers: Sprite[] = [];
     if (this.owls) {
       const [ax, ay] = this.owls.meta.anchor;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         const s = new Sprite();
         s.anchor.set(0);
         s.pivot.set(ax, ay);
@@ -951,6 +970,7 @@ export class ActorLayer {
       heldName: undefined,
       species: "",
       outfit: "",
+      wear: 0,
       role: null,
       look: IDLE,
       spot: "",
@@ -1101,7 +1121,10 @@ export class ActorLayer {
 
   private setFrame(a: Body, frame: number): void {
     if (!this.owls) return;
-    const keys = owlFrameKeys(this.owls.textures, a.species, a.outfit, a.role, a.look, frame);
+    const outfit = a.wear ? `${a.outfit}-worn` : a.outfit;
+    const keys = owlFrameKeys(this.owls.textures, a.species, outfit, a.role, a.look, frame);
+    const wear = `wear/${a.wear}/${a.look.pose}_${a.look.dir}_${frame}`;
+    keys.splice(2, 0, a.wear && this.owls.textures[wear] ? wear : null);
     keys.forEach((k, i) => {
       const s = a.layers[i];
       s.visible = k !== null;
@@ -1203,6 +1226,42 @@ export class ActorLayer {
     a.bubble.classList.toggle("is-incident", b?.say.kind === "Incident");
     a.bubble.classList.toggle("is-ask", act.room === "Door");
     a.bubble.textContent = text;
+  }
+
+  private clearEmote(a: Actor): void {
+    a.emote?.remove();
+    a.emote = null;
+    a.emoteUntil = 0;
+  }
+
+  private setEmote(a: Actor, before: EmployeeDto, cues: CueDto[], now: number): void {
+    const cue = [...cues]
+      .reverse()
+      .find(
+        (c) => c.kind === "Reject" || c.kind === "Shake" || (c.kind === "Stamp" && c.confirmedPass),
+      );
+    let text: string | null = null;
+    let inferred = false;
+    if (cue) text = cue.kind === "Reject" ? "✕" : cue.kind === "Shake" ? "!" : "♪";
+    else if (a.emp.activity.room === "Door" && before.activity.room !== "Door") {
+      text = "?";
+      inferred = a.emp.activity.confidence === "Inferred";
+    } else if (a.emp.activity.pose === "Pace" && before.activity.pose !== "Pace") {
+      text = "…";
+      inferred = true;
+    } else if (a.emp.review?.approved && before.review?.approved === false) {
+      text = "✓";
+      inferred = true;
+    }
+    if (!text) return;
+    this.clearEmote(a);
+    a.emote = this.overlay.ownerDocument.createElement("div");
+    a.emote.className = "ow-bubble ow-emote";
+    a.emote.classList.toggle("is-estimate", inferred);
+    a.emote.setAttribute("aria-hidden", "true");
+    a.emote.textContent = text;
+    a.emoteUntil = now + EMOTE_MS;
+    this.overlay.insertBefore(a.emote, this.nametag);
   }
 
   private head(a: Body): { x: number; y: number } {

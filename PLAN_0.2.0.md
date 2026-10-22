@@ -37,7 +37,7 @@
 ### T85 머리말 v2 + 배율·가운데로 (과장 · 중)
 
 - 범위: `src/header.ts`(+test), `src/main.ts`, `src/office/renderer.ts`(+test; 공개 API 에 `setScale(n)`·`centerCanvas()` 추가, 현재는 배율 표시만 있다), `src/styles/app.css`, `src-tauri/capabilities/default.json`(창 최대화 권한 `core:window:allow-toggle-maximize` 가 필요하면), `design/handoff/phrases.ko.json` header.
-- 할 일: HANDOFF 4.3. 세그먼트 묶음(야근 토글은 T90 전까지 `disabled`), "결재 n건 대기" 칩, 배율 칩 메뉴(1×·2×·3×, 들어가지 않는 배율은 비활성, 고르면 `setScale`), 무대 모서리 `ow-stage__tools`(가운데로 = 패닝 원점 복귀, 전체 화면 = 창 최대화 토글).
+- 할 일: HANDOFF 4.3. 세그먼트 묶음(야근 토글은 T90 전까지 `disabled`), "결재 대기 n명" 칩, 배율 칩 메뉴(1×·2×·3×, 들어가지 않는 배율은 비활성, 고르면 `setScale`), 무대 모서리 `ow-stage__tools`(가운데로 = 패닝 원점 복귀, 전체 화면 = 창 최대화 토글).
 - 완료 기준: 배율 메뉴·가운데로 테스트(렌더러 가짜 객체로 호출 확인), `aria-pressed`, `npm test`·`cargo test` 녹색.
 
 ### T86 직원 카드 v2 (과장 · 중)

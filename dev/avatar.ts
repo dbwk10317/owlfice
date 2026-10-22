@@ -1,3 +1,4 @@
+import "../design/handoff/tokens.css";
 import "../src/styles/app.css";
 import { setAvatar } from "../src/avatar.ts";
 import { speciesOf } from "../src/office/actors.ts";

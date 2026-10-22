@@ -296,7 +296,7 @@ fn asking_count_excludes_retired_and_off_and_updates_at_escalation_boundary() {
     assert_eq!((at.asking_count, at.asking), (2, true));
     t.phase = TeamPhase::Off;
     let off = team_summary(&w, &k, &t, now);
-    assert_eq!((off.asking_count, off.asking), (0, true));
+    assert_eq!((off.asking_count, off.asking), (0, false));
 }
 
 #[test]
@@ -325,7 +325,7 @@ fn read_failure_and_recovery_publish_with_actual_last_activity() {
     assert!(e.ipc.poll(&mut sent, t0()).0.is_none());
 }
 
-/// 중소기업 층 점: 장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근. 결재판은 어느 팀이든
+/// 중소기업 층 점: 장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근. 결재판은 근무 중인 어느 팀이든
 #[test]
 fn small_floor_dot_follows_most_urgent_team() {
     let e = env(Scale::Small);
@@ -375,7 +375,21 @@ fn small_floor_dot_follows_most_urgent_team() {
     let k = key("windows", Vendor::Claude, "off");
     w.teams.get_mut(&k).unwrap().employees[0].asking = Some("q".into());
     drop(w);
-    assert!(e.ipc.snapshot(now).list.offices[0].asking);
+    assert!(!e.ipc.snapshot(now).list.offices[0].asking);
+
+    let mut w = lock(&e.world);
+    let k = key("windows", Vendor::Claude, "working");
+    w.teams.get_mut(&k).unwrap().employees[0].asking = Some("q".into());
+    drop(w);
+    let list = e.ipc.snapshot(now).list;
+    let floor = &list.offices[0];
+    assert!(floor.asking);
+    let working = floor
+        .teams
+        .iter()
+        .find(|t| t.team_id == team_id_str(&k))
+        .unwrap();
+    assert_eq!((working.asking_count, working.asking), (1, true));
 }
 
 fn fixture_dir(rel: &str) -> PathBuf {

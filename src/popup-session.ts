@@ -4,6 +4,7 @@ import checkSvg from "../design/handoff/icons/check.svg?raw";
 import copySvg from "../design/handoff/icons/copy.svg?raw";
 import fileSvg from "../design/handoff/icons/file.svg?raw";
 import folderSvg from "../design/handoff/icons/folder.svg?raw";
+import { setAvatar } from "./avatar.ts";
 import { detailErrorText, hms, openModal, smallIcon, type LiveEmployee } from "./popup-modal.ts";
 import type { Invoke } from "./scale.ts";
 import { h, icon, setRich } from "./sidebar-right.ts";
@@ -211,13 +212,16 @@ export function openSessionDetail(
     return emp ? `${emp.name} ${rankLabel(emp.rank)}` : e.agentId;
   }
 
-  function eventRow(e: EventDto): HTMLElement {
+  function eventRow(e: EventDto, building: string): HTMLElement {
+    const avatar = h(doc, "span", "ow-avatar ow-avatar--sm");
+    const employee = e.kind === "UserMessage" ? undefined : deps.live(teamId, e.agentId);
+    if (employee) setAvatar(avatar, employee, building);
     const row = h(doc, "div", "ow-tl");
     const what = h(doc, "span", "ow-tl__what");
     setRich(what, e.summary);
     row.append(
       h(doc, "span", "ow-tl__time", hms(e.ts)),
-      h(doc, "span", "ow-avatar ow-avatar--sm"),
+      avatar,
       h(doc, "span", "ow-tl__who", who(e)),
       what,
       e.confidence === "Inferred" ? h(doc, "span", "ow-est-tag", phrases.card.estimate) : "",
@@ -244,7 +248,7 @@ export function openSessionDetail(
       p.setAttribute("role", "alert");
       parts.push(p);
     } else {
-      parts.push(...dto.recent.map(eventRow));
+      parts.push(...dto.recent.map((e) => eventRow(e, dto.building)));
       // 20개를 채워 받았을 때만 더 있을 수 있다. 100개가 끝이다
       if (limit < MAX && dto.recent.length >= limit) {
         const more = h(doc, "button", "ow-pop__more", S.more);

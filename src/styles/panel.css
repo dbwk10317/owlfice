@@ -10,6 +10,8 @@
   height: 48px;
 }
 .ow-panel__title {
+  flex: none;
+  white-space: nowrap;
   margin: 0;
   font-size: 14px;
   font-weight: 600;
@@ -19,6 +21,7 @@
   font-size: 11.5px;
 }
 .ow-panel__office {
+  min-width: 0;
   margin-left: auto;
   font-size: 12px;
   color: var(--ow-ink-3);
@@ -50,7 +53,8 @@
   pointer-events: none;
 }
 .ow-panel__toast {
-  background: #fff;
+  background: var(--ow-surface);
+  color: var(--ow-ink);
   border-radius: var(--ow-radius-md);
   box-shadow: var(--ow-shadow-pop);
   padding: 8px 12px;

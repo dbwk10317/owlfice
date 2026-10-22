@@ -131,7 +131,7 @@ function setup(
   };
 }
 
-test("3.2 표의 너비 경계", () => {
+test("2.2 표의 너비 경계", () => {
   expect([1600, 1100, 1099, 900, 899, 720, 719].map(layoutOf)).toEqual([
     "wide",
     "wide",

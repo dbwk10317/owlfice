@@ -63,6 +63,9 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ow-header__title {
+  flex: none;
+}
 .ow-header__sub {
   color: var(--ow-ink-3);
   font-size: 13px;
@@ -128,6 +131,16 @@ body {
 }
 .ow-header__work {
   display: none;
+}
+@media (width < 1300px) {
+  .ow-app[data-layout="wide"] .ow-header__sub,
+  .ow-app[data-layout="wide"] .ow-header__session,
+  .ow-app[data-layout="wide"] .ow-header__state {
+    display: none;
+  }
+}
+.ow-stage:has(.ow-minimap:not([hidden])) .ow-stage__tools {
+  bottom: 100px;
 }
 .ow-header--strip {
   height: var(--ow-band-h);

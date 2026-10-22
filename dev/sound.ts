@@ -1,3 +1,4 @@
+import "../design/handoff/tokens.css";
 import "../src/styles/app.css";
 import { mountOffice } from "../src/office/renderer.ts";
 import { OfficeSound } from "../src/office/sound.ts";

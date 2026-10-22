@@ -185,14 +185,14 @@
 .ow-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ow-px { image-rendering: pixelated; display: block; }
 .ow-icon { width: 16px; height: 16px; flex: none; }
-.ow-icon--sm { width: 14px; height: 14px; }
+.ow-icon--sm, .ow-icon--sm svg { width: 14px; height: 14px; }
 
 /* ---------- 아이콘 버튼 ---------- */
 .ow-iconbtn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--ow-radius-md); color: var(--ow-ink-2); flex: none; transition: background var(--ow-dur-1) var(--ow-ease), color var(--ow-dur-1) var(--ow-ease); }
 .ow-iconbtn:hover { background: var(--ow-fill); color: var(--ow-ink); }
 .ow-iconbtn[aria-pressed="true"] { background: var(--ow-fill); color: var(--ow-ink); }
 .ow-iconbtn--sm { width: 28px; height: 28px; }
-.ow-iconbtn--solid[aria-expanded="true"] { background: var(--ow-ink); color: #fff; }
+.ow-iconbtn--solid[aria-expanded="true"] { background: var(--ow-ink); color: var(--ow-bg); }
 .ow-iconbtn--raised { background: var(--ow-surface); border: 1px solid var(--ow-line); box-shadow: var(--ow-elev-1); } /* 무대 모서리 버튼 */
 .ow-segment { display: inline-flex; align-items: center; height: 32px; padding: 2px; border-radius: 9px; background: var(--ow-fill); gap: 2px; } /* 머리말 아이콘 토글 묶음 */
 .ow-segment .ow-iconbtn { width: 28px; height: 28px; border-radius: 7px; transition: background var(--ow-dur-seg) var(--ow-ease); }
@@ -297,7 +297,7 @@
 .ow-nametag { position: absolute; transform: translate(-50%, calc(-100% - 6px)); background: var(--ow-ink); color: #fff; border-radius: var(--ow-radius-md); padding: 7px 10px; font-size: 12px; line-height: 17px; box-shadow: var(--ow-shadow-tip); white-space: nowrap; }
 .ow-nametag b { font-weight: 600; }
 .ow-nametag span { color: #D4D4D8; }
-.ow-roomlabel { position: absolute; transform: translate(-50%, -50%); background: var(--ow-roomlabel-bg); backdrop-filter: blur(4px); box-shadow: var(--ow-elev-1); color: var(--ow-roomlabel-ink); border: 1px solid rgba(24, 24, 27, 0.08); border-radius: var(--ow-radius-full); padding: 0 2px; line-height: 12px; font-size: 11px; font-weight: 500; color: var(--ow-ink-2b); white-space: nowrap; }
+.ow-roomlabel { position: absolute; transform: translate(-50%, -50%); background: var(--ow-roomlabel-bg); backdrop-filter: blur(4px); box-shadow: var(--ow-elev-1); color: var(--ow-roomlabel-ink); border: 1px solid rgba(24, 24, 27, 0.08); border-radius: var(--ow-radius-full); padding: 0 2px; line-height: 12px; font-size: 11px; font-weight: 500; white-space: nowrap; }
 .ow-parallel, .ow-crowd { position: absolute; background: var(--ow-ink); color: #fff; font: 600 10px/1 var(--ow-font-mono); padding: 3px 5px; border-radius: 5px; }
 .ow-zz { position: absolute; font: 600 11px var(--ow-font-mono); color: var(--ow-ink-2b); letter-spacing: 1px; }
 .ow-minimap { position: absolute; right: 10px; bottom: 10px; padding: 4px; border-radius: var(--ow-radius-lg); background: var(--ow-surface); box-shadow: var(--ow-shadow-pop); }

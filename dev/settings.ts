@@ -7,7 +7,7 @@ import { openSettings, saveSettings } from "../src/popup-settings.ts";
 import type { Invoke } from "../src/scale.ts";
 import { mountSidebar } from "../src/sidebar-left.ts";
 import { mountPanel } from "../src/sidebar-right.ts";
-import { createStore } from "../src/store.ts";
+import { createStore, createUpdateStore } from "../src/store.ts";
 import { act, emp, office, team } from "../src/test-office.ts";
 import type { OfficeDto, OfficeListDto, SettingsDto } from "../src/types/ipc.ts";
 
@@ -22,6 +22,31 @@ let settings: SettingsDto = {
   osNotifications: true,
   rawDiagnostics: false,
 };
+// 합성 진행은 버튼으로 한 단계씩 보내 검수 중에도 표시를 유지한다.
+let advanceUpdate: (() => void) | undefined;
+const updates = createUpdateStore({
+  getVersion: async () => "0.2.0",
+  check: async () => ({
+    version: "0.2.1",
+    downloadAndInstall: (progress) =>
+      new Promise<void>((resolve) => {
+        progress?.({ event: "Started", data: { contentLength: 1024 } });
+        advanceUpdate = () => {
+          progress?.({ event: "Progress", data: { chunkLength: 512 } });
+          advanceUpdate = () => {
+            progress?.({ event: "Progress", data: { chunkLength: 512 } });
+            progress?.({ event: "Finished" });
+            advanceUpdate = () => {
+              advanceUpdate = undefined;
+              resolve();
+            };
+          };
+        };
+      }),
+    close: async () => {},
+  }),
+});
+window.addEventListener("beforeunload", () => updates.destroy(), { once: true });
 let failSave = false;
 let failCopy = false;
 let failGet = false;
@@ -149,6 +174,7 @@ const open = (opener: HTMLElement) =>
       invoke,
       onSettings: applySettings,
       writeClipboard,
+      updates,
       onError(message) {
         get("status").textContent = message;
       },
@@ -189,6 +215,7 @@ mountOffice(get("stage"), store, { onScale: (n) => header.setScale(n) }).then(
     get("status").textContent = `캔버스 로드 실패: ${String(error)}`;
   },
 );
+get("update-progress").addEventListener("click", () => advanceUpdate?.());
 get("open").addEventListener("click", () => open(get("open")));
 get("fail-save").addEventListener("click", () => {
   failSave = true;

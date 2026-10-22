@@ -219,3 +219,25 @@ test("저장 중 팝업을 닫아도 메모리 반영과 저장 실패 알림은
   expect(onSettings).toHaveBeenLastCalledWith(changed);
   expect(onError).toHaveBeenCalledWith(expect.stringContaining("디스크 잠김"));
 });
+
+test("공통 여백 변경은 설정 머리와 본문에 20px을 적용하고 저장 버튼 높이는 보존한다", async () => {
+  const { readFileSync } = await vi.importActual<{
+    readFileSync: (path: string, encoding: "utf8") => string;
+  }>("node:fs");
+  const style = document.createElement("style");
+  style.textContent =
+    readFileSync("design/handoff/tokens.css", "utf8") +
+    readFileSync("src/styles/popup.css", "utf8");
+  document.head.append(style);
+  try {
+    setup();
+    await settle();
+    const css = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+    expect(css(".ow-pop__head").paddingLeft).toBe("20px");
+    expect(css(".ow-settings").paddingLeft).toBe("20px");
+    expect(css(".ow-settings").paddingBottom).toBe("20px");
+    expect(css(".ow-modal__foot .ow-btn").height).toBe("36px");
+  } finally {
+    style.remove();
+  }
+});

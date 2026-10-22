@@ -116,7 +116,11 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     opener?: HTMLElement,
   ): void =>
     openEmployeeDetail(
-      { invoke, live },
+      {
+        invoke,
+        live,
+        isTeamOff: (id) => store.state.office?.teams.find((t) => t.teamId === id)?.phase === "Off",
+      },
       {
         officeId,
         teamId,

@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from "vite-plus/test";
+import userEvent from "@testing-library/user-event";
 import phrases from "../design/handoff/phrases.ko.json";
 import { openEmployeeDetail, type EmployeePopupDeps } from "./popup-employee.ts";
 import { emp } from "./test-office.ts";
-import type { EmployeeDetailDto, EventDto } from "./types/ipc.ts";
+import type { EmployeeDetailDto, EmployeeDto, EventDto } from "./types/ipc.ts";
 import { setAvatar } from "./avatar.ts";
 
 vi.mock("./avatar.ts", () => ({ setAvatar: vi.fn() }));
 
 afterEach(() => {
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   document.body.innerHTML = "";
 });
 
@@ -61,6 +63,8 @@ type Handlers = {
   detail?: () => unknown;
   timeline?: (args: Record<string, unknown>) => unknown;
   open?: () => unknown;
+  live?: EmployeeDto | null;
+  off?: boolean;
 };
 function setup(handlers: Handlers = {}, teamId = "t1") {
   const calls: [string, Record<string, unknown> | undefined][] = [];
@@ -74,9 +78,10 @@ function setup(handlers: Handlers = {}, teamId = "t1") {
   const deps: EmployeePopupDeps = {
     invoke: invoke as unknown as EmployeePopupDeps["invoke"],
     live: (t, id) =>
-      t === "t1" && id === "a"
-        ? emp("a", { contextUsed: 150_000, contextWindow: 200_000 })
+      t === "t1" && id === "a" && handlers.live !== null
+        ? (handlers.live ?? emp("a", { contextUsed: 150_000, contextWindow: 200_000 }))
         : undefined,
+    isTeamOff: () => handlers.off ?? false,
     now: () => new Date(2026, 0, 1, 14, 31, 0).getTime(),
   };
   const opener = document.createElement("button");
@@ -110,6 +115,8 @@ test("(teamId, agentId) 로 요약과 타임라인 첫 50개를 불러 머리·�
   await flush();
   expect(s.q("#ed-title")!.textContent).toBe("박서준");
   expect(s.q(".ow-pop__rank")!.textContent).toBe("과장");
+  expect(s.q(".ow-avatar--xl")).not.toBeNull();
+  expect(s.q(".ow-emp__work.is-live")!.textContent).toBe("근무 중 · 3분째");
   const chips = s.qa(".ow-pop__chips .ow-chip").map((c) => c.textContent);
   expect(chips[0]).toBe("담당 백엔드");
   expect(chips[1]).toBe("claude-opus-5-5");
@@ -139,7 +146,8 @@ test("(teamId, agentId) 로 요약과 타임라인 첫 50개를 불러 머리·�
     "1회",
     "1회",
   ]);
-  expect(s.qa(".ow-ev")).toHaveLength(3);
+  expect(s.qa(".ow-stat__head b").map((e) => e.textContent)).toEqual(["2", "2", "5"]);
+  expect(s.qa(".ow-tl__row")).toHaveLength(3);
   expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("50개 중 3개");
 });
 
@@ -152,8 +160,8 @@ test("부장은 상사 토막이 빠지고, 요약이 거절되면 코드별 문
 
   s = setup({ detail: () => reject("not_found") });
   await flush();
-  expect(s.q(".ow-pop__error")!.textContent).toBe(phrases.detailError.not_found);
-  expect(s.q(".ow-ev")).toBeNull();
+  expect(s.q(".ow-pop__body .ow-pop__error")!.textContent).toBe(phrases.detailError.not_found);
+  expect(s.q(".ow-tl__row")).toBeNull();
 });
 
 test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결과 원문과 가운데 생략", async () => {
@@ -190,45 +198,46 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
     ],
   });
   await flush();
-  const rows = s.qa(".ow-ev");
+  const rows = s.qa(".ow-tl__row");
   expect(rows).toHaveLength(11);
-  const head = (i: number) => rows[i].querySelector<HTMLElement>(".ow-ev__head")!;
-  expect(head(0).querySelector(".ow-ev__tool")!.textContent).toBe("Bash");
-  expect(head(0).querySelector(".ow-ev__sum .ow-code")!.textContent).toBe("cargo test");
-  expect(head(0).querySelector(".ow-ev__t")!.textContent).toBe("14:31:59");
+  const head = (i: number) => rows[i].querySelector<HTMLElement>(".ow-tl__head")!;
+  expect(head(0).querySelector(".ow-tool")!.textContent).toBe("Bash");
+  expect(head(0).querySelector(".ow-tl__summary .ow-code")!.textContent).toBe("cargo test");
+  expect(head(0).querySelector(".ow-tl__time")!.textContent).toBe("14:31:59");
   expect(head(0).getAttribute("aria-expanded")).toBe("false");
-  expect(rows[0].querySelector<HTMLElement>(".ow-ev__body")!.hidden).toBe(true);
+  expect(rows[0].querySelector<HTMLElement>(".ow-tl__raw")!.hidden).toBe(true);
 
-  const res = (i: number) => head(i).querySelector<HTMLElement>(".ow-ev__res")!;
-  expect(res(1).classList.contains("is-bad")).toBe(true);
+  const res = (i: number) => head(i).querySelector<HTMLElement>(".ow-tl__result")!;
+  expect(res(1).classList.contains("ow-tl__bad")).toBe(true);
   expect(res(1).textContent).toBe("실패");
-  expect(res(2).classList.contains("is-ok")).toBe(true);
+  expect(res(2).classList.contains("ow-tl__ok")).toBe(true);
   expect(res(2).textContent).toBe("성공추정");
   // 이력이라 경과 시간은 붙이지 않는다
-  expect(res(3).classList.contains("is-run")).toBe(true);
+  expect(res(3).classList.contains("ow-tl__run")).toBe(true);
   expect(res(3).textContent).toBe("백그라운드 시작");
   expect(res(4).textContent).toBe("결과 확인 불가");
   expect(res(0).textContent).toBe(""); // 호출 칸은 결과색이 없다
-  expect(head(1).querySelector(".ow-ev__tool")!.textContent).toBe("결과");
+  expect(head(1).querySelector(".ow-tool")!.textContent).toBe("결과");
   // 테스트 수가 있는 실패는 합격·반려 수까지, 성공은 그대로
-  expect(res(6).classList.contains("is-bad")).toBe(true);
+  expect(res(6).classList.contains("ow-tl__bad")).toBe(true);
   expect(res(6).textContent).toBe("실패 · 합격 11 / 반려 1");
   expect(res(7).textContent).toBe("성공");
   expect(res(10).textContent).toBe("반려");
   // 도구가 아닌 사건의 칩은 한글 종류 이름
-  const chip = (i: number) => head(i).querySelector(".ow-ev__tool")!.textContent;
+  const chip = (i: number) => head(i).querySelector(".ow-tool")!.textContent;
   expect([chip(5), chip(8), chip(9)]).toEqual(["지시", "채용", "PR 등록"]);
 
   head(0).click();
   expect(head(0).getAttribute("aria-expanded")).toBe("true");
-  const open0 = rows[0].querySelector<HTMLElement>(".ow-ev__body")!;
+  expect(rows[0].classList.contains("is-open")).toBe(true);
+  const open0 = rows[0].querySelector<HTMLElement>(".ow-tl__raw")!;
   expect(open0.hidden).toBe(false);
   expect(open0.textContent).toContain("입력");
   expect(open0.textContent).toContain('{ "command": "cargo test" }');
   expect(open0.querySelector(".ow-emp__cut")).toBeNull();
 
   head(1).click();
-  const body1 = rows[1].querySelector<HTMLElement>(".ow-ev__body")!;
+  const body1 = rows[1].querySelector<HTMLElement>(".ow-tl__raw")!;
   expect(body1.textContent).toContain("결과");
   // 가운데 잘려 나간 바이트: 3200 - len("running 12 tests") - len("test result: FAILED")
   expect(body1.querySelector(".ow-emp__cut")!.textContent).toBe(
@@ -241,6 +250,7 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
   head(1).click();
   expect(head(1).getAttribute("aria-expanded")).toBe("false");
   expect(body1.hidden).toBe(true);
+  expect(rows[1].classList.contains("is-open")).toBe(false);
 });
 
 test("원본 열기는 SourceLine, 사이드카가 있으면 Sidecar 로 open_path 를 부르고 실패하면 문구", async () => {
@@ -250,7 +260,7 @@ test("원본 열기는 SourceLine, 사이드카가 있으면 Sidecar 로 open_pa
     open: () => (fail ? reject("open_failed") : undefined),
   });
   await flush();
-  s.q<HTMLElement>(".ow-ev__head")!.click();
+  s.q<HTMLElement>(".ow-tl__head")!.click();
   const links = s.qa(".ow-emp__link");
   expect(links.map((l) => l.querySelector(".ow-emp__linkfile")!.textContent)).toEqual([
     "agent-a.jsonl:200",
@@ -283,11 +293,11 @@ test("더 보기는 마지막 칸의 cursor 를 before 로 50개씩 이어 붙�
     timeline: (args) => (args.before === null ? page(0, 50) : page(50, 7)),
   });
   await flush();
-  expect(s.qa(".ow-ev")).toHaveLength(50);
+  expect(s.qa(".ow-tl__row")).toHaveLength(50);
   const more = s.q<HTMLButtonElement>(".ow-pop__more")!;
   expect(more.hidden).toBe(false);
   expect(more.textContent).toBe("더 보기50개씩");
-  s.q<HTMLElement>(".ow-ev__head")!.click(); // 펼친 행은 더 보기 뒤에도 그대로
+  s.q<HTMLElement>(".ow-tl__head")!.click(); // 펼친 행은 더 보기 뒤에도 그대로
   more.click();
   expect(s.calls[s.calls.length - 1]).toEqual([
     "get_employee_timeline",
@@ -300,8 +310,8 @@ test("더 보기는 마지막 칸의 cursor 를 before 로 50개씩 이어 붙�
     },
   ]);
   await flush();
-  expect(s.qa(".ow-ev")).toHaveLength(57);
-  expect(s.q(".ow-ev__head")!.getAttribute("aria-expanded")).toBe("true");
+  expect(s.qa(".ow-tl__row")).toHaveLength(57);
+  expect(s.q(".ow-tl__head")!.getAttribute("aria-expanded")).toBe("true");
   expect(s.q(".ow-pop__tlhead .ow-pop__n")!.textContent).toBe("57");
   expect(s.q<HTMLButtonElement>(".ow-pop__more")!.hidden).toBe(true);
 });
@@ -324,8 +334,8 @@ test("cursor_invalid 면 처음부터 다시 불러와 목록을 바꾸고 그 �
     { generation: 1, byteOffset: 1000 - 49 },
     null,
   ]);
-  expect(s.qa(".ow-ev")).toHaveLength(50);
-  expect(s.q(".ow-ev__sum")!.textContent).toBe("src/a100.ts 수정");
+  expect(s.qa(".ow-tl__row")).toHaveLength(50);
+  expect(s.q(".ow-tl__summary")!.textContent).toBe("src/a100.ts 수정");
   const notice = s.q(".ow-emp__main .ow-pop__error")!;
   expect(notice.hidden).toBe(false);
   expect(notice.textContent).toBe(phrases.detailError.cursor_invalid);
@@ -347,13 +357,13 @@ test("타임라인만 거절되면 요약은 그대로 두고 코드별 문구, 
   const more = s.q<HTMLButtonElement>(".ow-pop__more")!;
   more.click();
   await flush();
-  expect(s.qa(".ow-ev")).toHaveLength(50);
+  expect(s.qa(".ow-tl__row")).toHaveLength(50);
   expect(s.q(".ow-emp__main .ow-pop__error")!.textContent).toBe(phrases.detailError.timeout);
   expect(more.disabled).toBe(false);
   fail = false;
   more.click();
   await flush();
-  expect(s.qa(".ow-ev")).toHaveLength(51);
+  expect(s.qa(".ow-tl__row")).toHaveLength(51);
   expect(s.q<HTMLElement>(".ow-emp__main .ow-pop__error")!.hidden).toBe(true);
 });
 
@@ -378,9 +388,116 @@ test("처음부터 다시 불러오기마저 실패해도 더 보기는 마지�
   const btn = s.q<HTMLButtonElement>(".ow-pop__more")!;
   btn.click();
   await flush();
-  expect(s.qa(".ow-ev")).toHaveLength(50);
+  expect(s.qa(".ow-tl__row")).toHaveLength(50);
   expect(btn.hidden).toBe(false);
   expect(btn.disabled).toBe(false);
   btn.click();
   expect(s.calls[s.calls.length - 1][1]!.before).toEqual({ generation: 1, byteOffset: 1000 - 49 });
+});
+
+test("근무·일 마침·개별 퇴근·팀 퇴근을 구별하고 기록만 있는 직원은 확인된 상태만 표시한다", async () => {
+  const ended = new Date(2026, 0, 1, 14, 30).toISOString();
+  for (const [handlers, text, hidden] of [
+    [{ live: emp("a", { retiredAt: ended }) }, phrases.card.done, false],
+    [{ live: emp("a", { departedAt: ended }) }, phrases.sidebar.stateOff, false],
+    [{ off: true }, phrases.sidebar.stateOff, false],
+    [{ live: null, detail: () => ({ ...detail, retiredAt: ended }) }, phrases.card.done, false],
+    [{ live: null }, "", true],
+  ] as [Handlers, string, boolean][]) {
+    const s = setup(handlers);
+    await flush();
+    const work = s.q<HTMLElement>(".ow-emp__work")!;
+    expect(work.hidden).toBe(hidden);
+    if (!hidden) expect(work.textContent).toBe(text);
+    expect(work.classList.contains("is-live")).toBe(false);
+  }
+});
+
+test("머리의 원본 폴더 열기는 등록된 팀 SourceFolder를 쓰고 실패 뒤 버튼을 복구한다", async () => {
+  let rejectOpen!: (reason: string) => void;
+  const s = setup({ open: () => new Promise((_, reject) => (rejectOpen = reject)) });
+  await flush();
+  const source = s.q<HTMLButtonElement>(".ow-pop__actions .ow-btn")!;
+  expect(source.textContent).toBe(phrases.card.openSource);
+  source.click();
+  expect(source.disabled).toBe(true);
+  expect(s.calls[s.calls.length - 1]).toEqual([
+    "open_path",
+    { target: { kind: "SourceFolder", officeId: "o1", teamId: "t1" } },
+  ]);
+  rejectOpen("open_failed");
+  await flush();
+  expect(source.disabled).toBe(false);
+  const error = s.q<HTMLElement>(".ow-pop__head [role='alert']")!;
+  expect(error.hidden).toBe(false);
+  expect(error.textContent).toBe(phrases.detailError.open_failed);
+});
+
+test("키보드로 펼치고 접어도 원문은 실행되지 않으며 Escape 뒤 연 버튼으로 초점이 돌아온다", async () => {
+  const user = userEvent.setup();
+  const raw = '<img src=x onerror="alert(1)"><script>alert(1)</script>';
+  const s = setup({
+    timeline: () => [event(0, { body: { head: raw, tail: "", bytes: raw.length } })],
+  });
+  await flush();
+  const head = s.q<HTMLButtonElement>(".ow-tl__head")!;
+  head.focus();
+  await user.keyboard("{Enter}");
+  expect(head.getAttribute("aria-expanded")).toBe("true");
+  expect(s.q(".ow-tl__raw pre")!.textContent).toBe(raw);
+  expect(s.q(".ow-tl__raw img, .ow-tl__raw script")).toBeNull();
+  await user.tab();
+  expect(document.activeElement).toBe(s.q(".ow-emp__link"));
+  head.focus();
+  await user.keyboard("{Enter}");
+  expect(head.getAttribute("aria-expanded")).toBe("false");
+  await user.tab();
+  expect(document.activeElement).toBe(s.q(".ow-pop__actions .ow-btn"));
+  await user.keyboard("{Escape}");
+  expect(s.q(".ow-modal")).toBeNull();
+  expect(document.activeElement).toBe(s.opener);
+});
+
+test("닫힌 직원 팝업의 늦은 응답은 팝업을 다시 그리거나 초점을 바꾸지 않는다", async () => {
+  let resolveDetail!: (value: EmployeeDetailDto) => void;
+  let resolveTimeline!: (value: EventDto[]) => void;
+  const s = setup({
+    detail: () => new Promise((resolve) => (resolveDetail = resolve)),
+    timeline: () => new Promise((resolve) => (resolveTimeline = resolve)),
+  });
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  resolveDetail(detail);
+  resolveTimeline(page(0, 3));
+  await flush();
+  expect(s.q(".ow-modal")).toBeNull();
+  expect(document.activeElement).toBe(s.opener);
+});
+
+test("직원 타임라인은 세로 flex와 38px 접힌 행, 아바타는 80×88을 사용한다", async () => {
+  const { readFileSync } = await vi.importActual<{
+    readFileSync: (path: string, encoding: "utf8") => string;
+  }>("node:fs");
+  const style = document.createElement("style");
+  style.textContent =
+    readFileSync("design/handoff/tokens.css", "utf8") +
+    readFileSync("src/styles/popup.css", "utf8");
+  document.head.append(style);
+  try {
+    const s = setup();
+    await flush();
+    const css = (selector: string) => getComputedStyle(s.q(selector)!);
+    expect(css(".ow-emp .ow-tl").display).toBe("flex");
+    expect(css(".ow-emp .ow-tl").flexDirection).toBe("column");
+    expect(css(".ow-tl__row").height).toBe("38px");
+    expect(css(".ow-avatar--xl").width).toBe("80px");
+    expect(css(".ow-avatar--xl").height).toBe("88px");
+    expect(css(".ow-pop__head").paddingLeft).toBe("20px");
+    expect(css(".ow-emp__main").paddingLeft).toBe("20px");
+    expect(css(".ow-pop__actions .ow-btn").height).toBe("28px");
+    s.q<HTMLElement>(".ow-tl__head")!.click();
+    expect(css(".ow-tl__row").height).toBe("auto");
+    expect(css(".ow-tl__raw").display).toBe("flex");
+  } finally {
+    style.remove();
+  }
 });

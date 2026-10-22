@@ -87,6 +87,11 @@ function setup(
   app.append(header, panelHost);
   document.body.append(app);
   const setRoomLabels = vi.fn();
+  const setScale = vi.fn();
+  const centerCanvas = vi.fn();
+  const toggleMaximize = vi.fn().mockResolvedValue(undefined);
+  const stage = document.createElement("div");
+  app.append(stage);
   let handle: ReturnType<typeof mountHeader> | null = null;
   const panel = mountPanel(panelHost, store, {
     viewport: vp,
@@ -97,9 +102,26 @@ function setup(
     bandSlot,
     togglePanel: () => panel.toggleDrawer(),
     setRoomLabels,
+    setScale,
+    stage,
+    centerCanvas,
+    toggleMaximize,
   });
   const q = (sel: string) => header.querySelector<HTMLElement>(sel)!;
-  return { store, app, header, vp, setRoomLabels, handle, q, panelHost };
+  return {
+    store,
+    app,
+    header,
+    vp,
+    setRoomLabels,
+    setScale,
+    centerCanvas,
+    toggleMaximize,
+    stage,
+    handle,
+    q,
+    panelHost,
+  };
 }
 
 test("3.2 표의 너비 경계", () => {
@@ -245,4 +267,91 @@ test("창 너비 구간마다 배치: 띠는 레일에서, 머리말은 select �
   expect(at(600)).toEqual(["select", true, false]);
   s.vp.set(800);
   expect(s.q(".ow-header__work").textContent).toBe("오늘의 업무 · 버그 수정");
+});
+
+test("결재 칩은 선택 사무실의 활성 팀 인원을 합하고, 퇴근·다른 사무실은 빼며 0이면 숨는다", () => {
+  const base = summary().teams[0];
+  const o = summary({
+    teams: [
+      { ...base, teamId: "a", askingCount: 2 },
+      { ...base, teamId: "b", askingCount: 3 },
+      { ...base, teamId: "off", phase: "Off", askingCount: 7 },
+    ],
+  });
+  const s = setup(o, "Small");
+  s.store.applyList({
+    ...s.store.state.list!,
+    listSeq: 2,
+    offices: [o, summary({ officeId: "else", teams: [{ ...base, askingCount: 9 }] })],
+  });
+  expect(s.q(".ow-header__asking > span:last-child").textContent).toBe("결재 대기 5명");
+  expect(s.q(".ow-header__asking").hidden).toBe(false);
+  s.store.applyList({ ...s.store.state.list!, listSeq: 3, offices: [summary()] });
+  expect(s.q(".ow-header__asking").hidden).toBe(true);
+});
+
+test("세그먼트의 이름·소리 상태와 미연결 야근 버튼은 aria-pressed로 표시한다", () => {
+  const s = setup(summary());
+  const buttons = s.header.querySelectorAll<HTMLButtonElement>(".ow-segment button");
+  expect([...buttons].map((b) => b.getAttribute("aria-pressed"))).toEqual([
+    "true",
+    "false",
+    "false",
+  ]);
+  expect(buttons[2].disabled).toBe(true);
+  buttons[0].click();
+  expect(s.setRoomLabels).toHaveBeenCalledWith(false);
+  expect(buttons[0].getAttribute("aria-pressed")).toBe("false");
+  s.handle!.setSettings(null, true);
+  expect(buttons[1].getAttribute("aria-pressed")).toBe("true");
+});
+
+test("배율 메뉴는 허용 배율만 전달하고 선택·Escape에 닫히며 맞춤 한도만 바뀌어도 갱신된다", () => {
+  const s = setup(summary());
+  const trigger = s.q(".ow-header__scale");
+  const choices = [...s.header.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+  const menu = s.q('[role="menu"]');
+  s.handle!.setScale(1, 2);
+  expect(choices.map((b) => b.disabled)).toEqual([false, false, true]);
+  trigger.click();
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  choices[2].click();
+  expect(s.setScale).not.toHaveBeenCalled();
+  expect(menu.hidden).toBe(false);
+  choices[1].click();
+  expect(s.setScale).toHaveBeenCalledExactlyOnceWith(2);
+  expect(menu.hidden).toBe(true);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  s.handle!.setScale(2, 2);
+  expect(choices.map((b) => b.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
+  s.handle!.setScale(2, 3);
+  expect(choices.map((b) => b.disabled)).toEqual([false, false, false]);
+  trigger.click();
+  choices[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  expect(document.activeElement).toBe(choices[2]);
+  choices[2].dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  expect(menu.hidden).toBe(true);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(trigger);
+  trigger.click();
+  s.vp.set(600);
+  expect(menu.hidden).toBe(true);
+  s.handle!.setScale(1, 1);
+  expect(choices.map((b) => b.disabled)).toEqual([false, true, true]);
+});
+
+test("무대 도구는 가운데·최대화 동작을 호출하고 최대화 실패를 알린다", async () => {
+  const s = setup(summary());
+  s.stage.querySelector<HTMLButtonElement>('[aria-label="사무실 가운데로"]')!.click();
+  expect(s.centerCanvas).toHaveBeenCalledOnce();
+  const maximize = s.stage.querySelector<HTMLButtonElement>('[aria-label="창 최대화·복원"]')!;
+  maximize.click();
+  expect(s.toggleMaximize).toHaveBeenCalledOnce();
+  expect(maximize.disabled).toBe(true);
+  await Promise.resolve();
+  expect(maximize.disabled).toBe(false);
+  s.toggleMaximize.mockRejectedValueOnce(new Error("창 조작 실패"));
+  maximize.click();
+  await Promise.resolve();
+  expect(s.app.querySelector('[role="alert"]')!.textContent).toContain("창 조작 실패");
 });

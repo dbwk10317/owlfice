@@ -275,6 +275,8 @@ const WHITE: Rgb = [255, 255, 255];
 
 /** 머리말이 부르는 것 */
 export interface OfficeHandle {
+  setScale(scale: number): void;
+  centerCanvas(): void;
   setRoomLabels(on: boolean): void;
   setBossName(name: string | null): void;
   highlightTeam(officeId: string, teamId: string): void;
@@ -282,8 +284,8 @@ export interface OfficeHandle {
 export interface OfficeOptions {
   sound?: OfficeSound;
   bossName?: string | null;
-  /** 정수 배율(장치 픽셀 기준). 처음 한 번 현재 값으로 부르고, 바뀔 때마다 부른다 */
-  onScale?(scale: number): void;
+  /** 장치 픽셀 기준. 현재 배율 또는 최대맞춤 배율이 바뀔 때 알린다 */
+  onScale?(scale: number, maxFit: number): void;
   /** 직원을 눌렀을 때 (직원 상세 팝업). officeId 는 캔버스에 그려진 사무실이다: 전환 중엔 선택과 다를 수 있다 */
   onEmployee?: (officeId: string, teamId: string, agentId: string) => void;
   /** 사규 액자·팀장석을 눌렀을 때 (세션 상세 팝업) */
@@ -379,6 +381,8 @@ export async function mountOffice(
   let avail = { w: CANVAS_W, h: CANVAS_H };
   const pan = { x: 0, y: 0, maxX: 0, maxY: 0 };
   let notifiedScale = 0; // 0 이라 첫 layout() 이 현재 값을 알린다
+  let notifiedMaxFit = 0;
+  let preferredScale: number | null = null;
 
   function showAt(text: string, x: number, y: number): void {
     const rect = wrap.getBoundingClientRect();
@@ -574,13 +578,16 @@ export async function mountOffice(
   function layout(): void {
     tooltip.close();
     dpr = window.devicePixelRatio || 1;
-    fit = canvasScale(avail.w, avail.h, dpr);
+    const maxFit = window.innerWidth < 720 ? 1 : canvasScale(avail.w, avail.h, dpr).scale;
+    const scale = Math.min(preferredScale ?? maxFit, maxFit);
+    fit = canvasScale(CANVAS_W * scale, CANVAS_H * scale, dpr);
     if (app.renderer.width !== fit.backingW || app.renderer.height !== fit.backingH)
       app.renderer.resize(fit.backingW, fit.backingH);
     app.stage.scale.set(fit.scale);
-    if (fit.scale !== notifiedScale) {
+    if (fit.scale !== notifiedScale || maxFit !== notifiedMaxFit) {
       notifiedScale = fit.scale;
-      opts.onScale?.(fit.scale);
+      notifiedMaxFit = maxFit;
+      opts.onScale?.(fit.scale, maxFit);
     }
     for (const el of [wrap, app.canvas]) {
       el.style.width = `${fit.cssW}px`;
@@ -747,6 +754,12 @@ export async function mountOffice(
   measure();
   layout();
   return {
+    setScale: (scale) => {
+      if (!Number.isInteger(scale) || scale < 1 || scale > 3) return;
+      preferredScale = scale;
+      layout();
+    },
+    centerCanvas: () => movePan(0, 0),
     setRoomLabels: (on) => void (overlay.hidden = !on),
     setBossName: (name) => {
       bossName = name || phrases.ranks.boss;

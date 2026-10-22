@@ -684,6 +684,52 @@ def Lw(p, a, b, z1, z2, fill, outline=None):  # 왼쪽 뒷벽 면 (gx=0)
     p.poly([(0, a, z1), (0, b, z1), (0, b, z2), (0, a, z2)], fill, outline)
 
 
+
+def build_seasons():
+    colors = {"spring": (225, 143, 169), "summer": (36, 113, 68),
+              "autumn": (218, 130, 53), "winter": (179, 198, 205)}
+    states = []
+    for size, length in (("window_l", 2.7), ("window_xl", 3.4)):
+        for season, color in colors.items():
+            for daylight in ("day", "dusk", "night"):
+                p = wall_r(length, 42)
+                p.img = OFFICE[f"{size}/{daylight}"]["img"].copy()
+                p.d = ImageDraw.Draw(p.img)
+                for u in (0.24, 0.76):
+                    x = length * u
+                    p.line((x, 0, 11), (x, 0, 21), (115, 91, 76))
+                    p.poly([(x - 0.24, 0, 15), (x - 0.30, 0, 20),
+                            (x - 0.12, 0, 25), (x + 0.12, 0, 26),
+                            (x + 0.30, 0, 21), (x + 0.24, 0, 16)], color)
+                frame = (250, 250, 248)
+                R(p, 0, length, 10, 40, None, frame)
+                p.line((length / 2, 0, 10), (length / 2, 0, 40), frame)
+                p.line((0, 0, 25), (length, 0, 25), frame)
+                state = f"{size}_{season}_{daylight}"
+                reg(f"season/{state}", p.result())
+                states.append(state)
+    p = Painter(0.6, 0.6, 19)
+    p.box(0.2, 0.2, 0.2, 0.2, 4, (125, 89, 57))
+    x, y = p.P(0.3, 0.3, 4)
+    p.d.polygon([(x - 6, y), (x, y - 14), (x + 6, y)], fill=(42, 113, 67))
+    for dx, dy, c in [(-2, -3, (237, 190, 72)), (2, -5, (203, 72, 65)), (0, -10, (237, 190, 72))]:
+        p.d.point((x + dx, y + dy), fill=c)
+    reg("season/tree", p.result())
+    p = Painter(0.3, 0.2, 7)
+    x, y = p.P(0, 0, 0)
+    p.d.polygon([(x, y - 7), (x + 3, y - 7), (x + 3, y - 2),
+                 (x + 5, y - 2), (x + 5, y), (x, y)], fill=(191, 65, 64))
+    p.d.line([(x, y - 7), (x + 3, y - 7)], fill=(250, 244, 222), width=2)
+    reg("season/stocking", p.result())
+    p = wall_r(0.65, 29)
+    p.line((0.3, 0, 26), (0.3, 0, 22), (111, 76, 51))
+    R(p, 0.05, 0.6, 13, 22, (217, 87, 62), (123, 65, 46))
+    p.line((0.3, 0, 14), (0.3, 0, 21), (245, 195, 92))
+    p.line((0.3, 0, 13), (0.3, 0, 10), (217, 153, 62))
+    reg("season/lantern", p.result())
+    prop("season", "fx", states + ["tree", "stocking", "lantern"], desc="계절 나무와 날짜 장식")
+
+
 def build_wall_items():
     # 창문
     for size, L in (("window_l", 2.7), ("window_xl", 3.4)):
@@ -2240,6 +2286,7 @@ def main():
     build_furniture()
     build_fx()
     build_wallsegs()
+    build_seasons()
     office_anims = {}
     for k in OFFICE:
         name, st = k.split("/", 1)

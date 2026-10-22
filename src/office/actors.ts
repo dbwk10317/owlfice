@@ -109,6 +109,7 @@ const ROOM_RULE: Partial<Record<Room, Rule>> = {
   Test: { at: ["test"], look: IDLE },
   Review: { at: ["review_sofa"], look: SIT },
   Meeting: { at: ["meeting"], look: IDLE },
+  Conference: { at: ["conference"], look: { pose: "read", dir: "f" } },
   Shipping: { at: ["shipping"], look: { pose: "carry", dir: "f", held: "box_carry" } },
   Door: { at: ["door_wait", "door"], look: { pose: "carry", dir: "f", held: "clipboard" } },
   // 서브 종료 (HANDOFF 5절): 첫째 콘솔, 둘째 안마의자, 그다음은 탕비실에 서 있는다
@@ -144,6 +145,7 @@ const SIT_ON: Record<string, string> = {
   review_sofa: "review_seat",
   pantry_sofa: "sofa",
   pantry_massage: "massage_chair",
+  roof: "roof_bench",
 };
 
 interface Spot {
@@ -182,7 +184,8 @@ function standSpots(fp: Floorplan, kind: Kind, rule: Rule & { at: string[] }): S
   const placements = fp.layouts[kind].placements;
   return rule.at.flatMap((name) =>
     (fp.stands[name] ?? []).map(([gx, gy, z = 0], i) => {
-      const on = SIT_ON[name] && placements.find((p) => p.id === SIT_ON[name]);
+      const on =
+        SIT_ON[name] && (name !== "roof" || z > 0) && placements.find((p) => p.id === SIT_ON[name]);
       return {
         id: `${name}_${i}`,
         gx,
@@ -233,6 +236,7 @@ export function layoutActors(
   kind: Kind,
   office: OfficeDto,
   crowd = new Map<string, number>(),
+  visits = new Map<string, "archive" | "security">(),
 ): Placed[] {
   const used = new Set<string>();
   const out: Placed[] = [];
@@ -245,7 +249,22 @@ export function layoutActors(
       if (boss && kind === "small" && team.deskSlot === null) return;
       // 퇴근한 서브는 캔버스에서 빠진다. 보이던 액터는 sync 가 출구까지 걷게 한 뒤 숨긴다 (HANDOFF 5절)
       if (emp.departedAt !== null) return;
-      const rule = placeRule(emp.activity.room, emp.activity.pose, boss);
+      const visit = visits.get(empKey(team.teamId, emp.agentId));
+      const rule = visit
+        ? {
+            at: [visit],
+            look: {
+              pose: "carry",
+              dir: "f",
+              held: visit === "security" ? "clipboard" : "folder",
+            } as Look,
+          }
+        : team.idleAlive && emp.activity.room === "Pantry" && emp.activity.pose === "Sleep"
+          ? {
+              at: ["pantry_sofa", "pantry_massage", "pantry_console", "pantry", "roof"],
+              look: SEAT_LOOK.Sleep,
+            }
+          : placeRule(emp.activity.room, emp.activity.pose, boss);
       if (!rule) return;
       let spots: Spot[];
       let start: number;
@@ -263,7 +282,10 @@ export function layoutActors(
       while (k < spots.length && used.has(spots[k].id)) k++;
       if (
         k === spots.length &&
-        ((rule.at === "seat" && !boss) || rule.at === ROOM_RULE.Pantry?.at)
+        ((rule.at === "seat" && !boss) ||
+          emp.activity.room === "Pantry" ||
+          emp.activity.room === "Conference" ||
+          !!visit)
       ) {
         const last = spots[spots.length - 1].id;
         crowd.set(last, (crowd.get(last) ?? 0) + 1);
@@ -468,6 +490,19 @@ function targetOf(p: Placed): Target {
   };
 }
 
+function canRoomVisit(team: TeamDto, emp: EmployeeDto, room: "archive" | "security"): boolean {
+  return (
+    team.phase !== "Off" &&
+    emp.departedAt === null &&
+    emp.pendingCount === 0 &&
+    emp.activity.room !== "Door" &&
+    emp.activity.room !== "Outside" &&
+    emp.activity.pose !== "Pace" &&
+    team.incident === null &&
+    (room === "security" || (!emp.planning && !emp.rejected))
+  );
+}
+
 export class ActorLayer {
   private actors = new Map<string, Actor>();
   private world: Container | null = null;
@@ -480,6 +515,10 @@ export class ActorLayer {
   private nametagText: HTMLElement;
   private lastOffice: OfficeDto | null = null;
   private visitors: Visitor[] = [];
+  private roomVisits = new Map<string, { room: "archive" | "security"; until: number }>();
+  private layoutKind: Kind = "large";
+  /** 실제 허용된 자료실 방문에만 파쇄기 소품을 켠다. */
+  onArchiveVisit: ((active: boolean) => void) | null = null;
   /** 자리 초과 "+n" 배지. 키는 마지막 자리 id, x·y 는 1× 캔버스 좌표 */
   private crowds = new Map<string, { el: HTMLElement; x: number; y: number }>();
   /** 사장님이 오면 인터폰이 울린다 (소품 층이 건다) */
@@ -535,8 +574,10 @@ export class ActorLayer {
     now: number,
     opts: { instant?: boolean; earlier?: CueDto[] } = {},
   ): Placed[] {
+    this.layoutKind = kind;
     // 목록만 바뀌어도 같은 스냅샷으로 다시 불린다. 그때 cue 를 또 재생하지 않는다
     const fresh = office !== this.lastOffice;
+    const switched = !!this.lastOffice && office?.officeId !== this.lastOffice.officeId;
     if (office?.officeId !== this.lastOffice?.officeId || (fresh && office?.rebuilt))
       this.highlight = null;
     this.lastOffice = office;
@@ -557,8 +598,46 @@ export class ActorLayer {
       else if (c.kind === "FrameSwap") frames.push(c);
       else playCue(c, undefined, now);
     }
+    const stopped = new Set<string>();
+    const started = new Set<string>();
+    for (const [key, visit] of this.roomVisits) {
+      const team = office?.teams.find((t) =>
+        t.employees.some((e) => empKey(t.teamId, e.agentId) === key),
+      );
+      const emp = team?.employees.find((e) => empKey(team.teamId, e.agentId) === key);
+      if (
+        instant ||
+        switched ||
+        now >= visit.until ||
+        !team ||
+        !emp ||
+        !canRoomVisit(team, emp, visit.room)
+      ) {
+        this.roomVisits.delete(key);
+        stopped.add(key);
+      }
+    }
+    if (!instant && !switched && !reducedMotion())
+      for (const [key, cues] of cuesOf) {
+        const team = office?.teams.find((t) =>
+          t.employees.some((e) => empKey(t.teamId, e.agentId) === key),
+        );
+        const emp = team?.employees.find((e) => empKey(team.teamId, e.agentId) === key);
+        const cue = [...cues].reverse().find((c) => c.kind === "Reject" || c.kind === "Compaction");
+        if (!team || !emp || !cue) continue;
+        const room = cue.kind === "Reject" ? "security" : "archive";
+        if (canRoomVisit(team, emp, room)) {
+          // 경비실은 이동을 포함한 전체 3초라 반려 유지 4초를 넘어 예약되지 않는다.
+          this.roomVisits.set(key, { room, until: now + (room === "security" ? 3000 : 4000) });
+          started.add(key);
+        }
+      }
     const crowd = new Map<string, number>();
-    const placed = office ? layoutActors(this.fp, kind, office, crowd) : [];
+    const visitsAt = new Map([...this.roomVisits].map(([key, v]) => [key, v.room]));
+    const placed = office ? layoutActors(this.fp, kind, office, crowd, visitsAt) : [];
+    this.onArchiveVisit?.(
+      placed.some((p) => visitsAt.get(empKey(p.team.teamId, p.emp.agentId)) === "archive"),
+    );
     const away = new Set(
       office?.teams.flatMap((t) =>
         t.phase === "Off"
@@ -603,7 +682,9 @@ export class ActorLayer {
         (cues.some((c) => c.kind === "Rehire") && !old?.root.visible);
       const target = targetOf(p);
       // cue 없이 처음 보는 직원은 놓친 cue 로 보고 제자리에 둔다 (docs/CONTRACTS.md C10)
-      if (instant || (!old && !entering)) a.track.reset(target, now);
+      if (started.has(key) && old) a.track.visit(target, now);
+      else if (stopped.has(key)) a.track.reset(target, now);
+      else if (instant || (!old && !entering)) a.track.reset(target, now);
       // 테스트실에 있던 직원이 합격 도장 때 만세를 부르고 나서 자리로 돌아간다 (추정 도장은 합격을 보증하지 않는다)
       if (
         old &&
@@ -630,7 +711,7 @@ export class ActorLayer {
     });
     for (const a of this.actors.values())
       if (!shown.has(a.key)) {
-        if (instant) a.track.reset(HIDDEN, now);
+        if (instant || stopped.has(a.key) || this.roomVisits.has(a.key)) a.track.reset(HIDDEN, now);
         else a.track.retarget(HIDDEN, now);
         a.away = away.has(a.key);
         for (const c of cuesOf.get(a.key) ?? []) playCue(c, a.track, now);
@@ -681,6 +762,10 @@ export class ActorLayer {
   }
 
   update(now: number): void {
+    if ([...this.roomVisits.values()].some((v) => now >= v.until)) {
+      this.sync(this.lastOffice, this.layoutKind, now);
+      return;
+    }
     let moved = false;
     for (const a of this.actors.values()) {
       moved = this.draw(a, now) || moved;
@@ -823,7 +908,8 @@ export class ActorLayer {
     if (!a) return;
     const act = a.emp.activity;
     // {elapsed} 는 백엔드가 둔 자리일 때만 채운다. 에이전트가 쓴 글 속 같은 글자는 그대로 둔다
-    const text = fillElapsed(act.sentence, (now - Date.parse(act.since)) / 1000, act.elapsed);
+    const activity = fillElapsed(act.sentence, (now - Date.parse(act.since)) / 1000, act.elapsed);
+    const text = a.spot.startsWith("roof_") ? `옥상 휴식 (추정) · ${activity}` : activity;
     if (this.nametagText.textContent !== text) this.nametagText.textContent = text;
   }
 

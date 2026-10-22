@@ -31,7 +31,7 @@ type PropsTarget = Pick<Scene, "wall" | "world" | "overlay" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
 export const DRIVEN_PROP =
-  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|dev_part_\d|interphone|mug_\d|duck_\d|(?:boss|dev)_mon_\d_\d|bookshelf|rack_\d|terminal|game_tv|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table)$/;
+  /^(ci_light|window|trash|safety_board|ramen|plant_boss_\d|dev_part_\d|interphone|mug_\d|duck_\d|(?:boss|dev)_mon_\d_\d|bookshelf|rack_\d|terminal|game_tv|fan|test_machine|test_board|job_ticket|door|meeting_screen|review_screen|whiteboard|beacon|incident_table|shredder)$/;
 
 /** 부장 자세로 정해지는 책상 소품 (HANDOFF 5절): 응답 대기 김, 러버덕 집어 듦, 결재 대기 화면보호기 */
 export interface BossFx {
@@ -293,8 +293,8 @@ const FIREWORKS_AT = { gx: 2.5, gy: 12.5, z: 34 };
 const TRUCK_FROM = { gx: 1.5, gy: 16.6 };
 const TRUCK_TO_GY = 22;
 // 회의 탁자 위 (탁자 높이 z=9): 명함과 펼친 매뉴얼
-const CARD_AT = { gx: 19.2, gy: 14.0, z: 9 };
-const MANUAL_AT = { gx: 20.6, gy: 14.0, z: 9 };
+const CARD_AT = { gx: 21.4, gy: 14.0, z: 9 };
+const MANUAL_AT = { gx: 22.5, gy: 14.0, z: 9 };
 // 미팅실 화면의 밝은 띠 중심과 폭 (meeting_screen 소품 위치 기준 1× px)
 const BAND = { x: 10, y: -5, w: 18 };
 // 사다리는 사규 액자 아래 벽에 기대 놓는다 (액자 위치에서의 격자 차이). 액자 옆 화분(부장 책상)에 가리지 않게 화분 오른쪽
@@ -303,7 +303,7 @@ const LADDER_AT = { dgx: 0.85, dgy: 0.3 };
 const FX_DEPTH = 80;
 
 // 피자 상자는 탁자 위 한 곳에 쌓이고 상자마다 0.01 씩 앞으로 (render_scene)
-const PIZZA_DEPTH = 26.21;
+const PIZZA_DEPTH = 24.61;
 // 종이·피자는 월드의 평면도 소품과 겹쳐도 같은 depth 면 뒤에 오게 순번을 크게
 const LOOSE_SEQ = 5000;
 
@@ -504,6 +504,7 @@ export class PropsLayer {
 
   /** 사무실 전환: 지난 사무실에서 진행 중인 효과를 지운다 */
   reset(): void {
+    this.archiveVisit(false);
     this.pendingTitle = null;
     for (const [id, r] of this.repots) {
       const sprite = this.target.driven.get(id);
@@ -1047,6 +1048,10 @@ export class PropsLayer {
         return s;
       }),
     );
+  }
+
+  archiveVisit(active: boolean): void {
+    this.state("shredder", active ? "shred" : "idle");
   }
 
   private updatePizza(pizza: number): void {

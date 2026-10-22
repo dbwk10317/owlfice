@@ -194,6 +194,13 @@ export class Track {
     this.nextIdle = now + idlePeriod(this.ctx.seed);
   }
 
+  /** 새 방문은 지난 큐를 쌓지 않고 지금 보이는 자리에서 시작한다. */
+  visit(target: Target, now: number): void {
+    const shown = this.update(now);
+    this.reset({ ...target, at: shown.at }, now);
+    this.retarget(target, now);
+  }
+
   /** 새 스냅샷 자리. `entering` 이면 문에서 4초 걸어 들어온다 (출근·재출근). `held` 는 숨었다 돌아올 때 들고 오는 물건 */
   retarget(target: Target, now: number, entering = false, held?: string): void {
     this.advance(now);

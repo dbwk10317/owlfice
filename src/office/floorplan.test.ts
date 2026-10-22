@@ -4,6 +4,7 @@ import office from "../../design/sprites/office.json";
 import {
   gridToScreen,
   parseFloorplan,
+  roomAt,
   spriteName,
   tileFrame,
   zIndexOf,
@@ -88,4 +89,18 @@ test("렌더러 상수와 다른 평면도는 거부한다", () => {
   expect(() => parseFloorplan(null)).toThrow();
   expect(() => parseFloorplan({ ...rawFloorplan, rooms: null })).toThrow();
   expect(() => parseFloorplan({ ...rawFloorplan, themes: null })).toThrow();
+});
+
+test("14개 방은 바닥 전체를 한 번씩 덮고 새 방 자리는 자기 방 안에 있다", () => {
+  expect(Object.keys(fp.rooms)).toHaveLength(14);
+  for (let x = 0; x < 24; x++)
+    for (let y = 0; y < 16; y++) {
+      expect(
+        Object.values(fp.rooms).filter(
+          ({ rect: [a, b, c, d] }) => a <= x && x < c && b <= y && y < d,
+        ),
+      ).toHaveLength(1);
+    }
+  for (const key of ["archive", "conference", "security", "roof"])
+    for (const [x, y] of fp.stands[key]) expect(roomAt(fp, x, y)).toBe(key);
 });

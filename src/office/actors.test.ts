@@ -96,6 +96,7 @@ function emp(
     pendingCount: 0,
     uniqueEdits: 0,
     planning: false,
+    rejected: false,
     medal: false,
     buildTestBorder: "Plain",
     lastSay: null,
@@ -1075,11 +1076,17 @@ test("Reject cue: 부장이 머리를 긁고, 결재판 자리에 도장이 1초
   layer.sync(office(BOSS_IN), "large", NOW);
   layer.sync(withCues(office(BOSS_IN), [cue({ kind: "Reject", agent: "boss" })]), "large", NOW);
   const stamp = layer.rootOf("t", "boss")!.children.slice(-1)[0] as Sprite;
+  expect(bodyOf(layer, "boss")).toMatch(/\/walk_b_/);
+  expect(stamp.visible).toBe(false);
+  const seat = fp.layouts.large.seats.boss[0];
+  const arrive =
+    NOW + walkMs(walkPath(fp, { gx: seat.gx, gy: seat.gy, z: 0 }, stand(fp, "security")));
+  layer.update(arrive);
   expect(bodyOf(layer, "boss")).toMatch(/\/scratch_f_/);
   expect(stamp.visible).toBe(true);
-  layer.update(NOW + STAMP_MS - 1);
+  layer.update(arrive + STAMP_MS - 1);
   expect(stamp.visible).toBe(true);
-  layer.update(NOW + STAMP_MS);
+  layer.update(arrive + STAMP_MS);
   expect(stamp.visible).toBe(false);
   // 조용한 재구성에서는 다시 보이지 않는다
   layer.sync(
@@ -1485,4 +1492,242 @@ test("FrameSwap: 가는 사람은 늘 한 명이다", () => {
   const all = [boss(), ...emps];
   const moved = all.filter((e) => posOf(layer, e.agentId).x !== at("large", o(), e.agentId)!.x);
   expect(moved).toHaveLength(1);
+});
+
+test("회의실은 계획 진행 자리이며 만석은 겹치지 않고 배지로 표시한다", () => {
+  const o = office([
+    team("t", [boss("Conference"), ...[0, 1, 2, 3].map((i) => emp(`p${i}`, "Conference"))]),
+  ]);
+  const crowd = new Map<string, number>();
+  const placed = layoutActors(fp, "large", o, crowd);
+  expect(placed.map((p) => p.spot)).toEqual([
+    "conference_0",
+    "conference_1",
+    "conference_2",
+    "conference_3",
+  ]);
+  expect(crowd).toEqual(new Map([["conference_3", 1]]));
+  const { layer } = newLayer();
+  layer.sync(o, "large", NOW);
+  layer.sync(office([team("t", [boss("Incident")])]), "large", NOW + 1);
+  layer.update(NOW + 1 + WALK_MAX_MS);
+  expect(posOf(layer, "boss")).toEqual(screen(...(fp.stands.incident[0] as [number, number])));
+  layer.sync(office([team("t", [boss()])]), "large", NOW + 2000);
+  layer.update(NOW + 2000 + WALK_MAX_MS);
+  expect(posOf(layer, "boss")).toEqual(
+    screen(...(fp.layouts.large.seats.boss.map((p) => [p.gx, p.gy])[0] as [number, number])),
+  );
+});
+
+test("S58 활동 팀의 종료 서브와 살아 있는 졸음 팀이 탕비실·옥상을 나누고 복귀한다", () => {
+  const teams = [
+    testTeam(
+      "working",
+      [
+        testEmp("working-boss", {
+          rank: "Bujang",
+          depth: 0,
+          activity: { ...testEmp("x").activity, room: "TeamLead" },
+        }),
+        ...Array.from({ length: 5 }, (_, j) =>
+          testEmp(`done${j}`, {
+            parent: "working-boss",
+            retiredAt: SINCE,
+            activity: { ...testEmp("x").activity, room: "Pantry", pose: "Sit" },
+          }),
+        ),
+      ],
+      { deskSlot: 0 },
+    ),
+    ...Array.from({ length: 5 }, (_, i) =>
+      testTeam(
+        `rest${i}`,
+        [
+          testEmp(`boss${i}`, {
+            rank: "Bujang",
+            depth: 0,
+            activity: { ...testEmp("x").activity, room: "Pantry", pose: "Sleep" },
+          }),
+        ],
+        { deskSlot: i + 1, phase: "Dozing", idleAlive: true },
+      ),
+    ),
+  ];
+  const o = testOffice("vendor/Claude", 1, teams);
+  const crowd = new Map<string, number>();
+  const placed = layoutActors(fp, "small", o, crowd);
+  expect(placed).toHaveLength(10);
+  const resting = placed.filter((p) => p.emp.activity.room === "Pantry");
+  expect(resting).toHaveLength(9);
+  expect(new Set(resting.map((p) => p.spot)).size).toBe(9);
+  expect(resting.filter((p) => p.spot.startsWith("roof_"))).toHaveLength(3);
+  expect(resting.filter((p) => p.team.teamId === "working")).toHaveLength(4);
+  expect(crowd).toEqual(new Map([["pantry_1", 1]]));
+  const fewer = { ...o, teams: teams.slice(1) };
+  expect(layoutActors(fp, "small", fewer).some((p) => p.spot.startsWith("roof_"))).toBe(false);
+  const { layer, overlay } = newLayer();
+  layer.sync(o, "small", NOW);
+  expect(overlay.querySelector(".ow-crowd")?.textContent).toBe("+1");
+  layer
+    .rootOf("rest2", "boss2")!
+    .emit("pointerover", new FederatedPointerEvent(new EventBoundary()));
+  expect(overlay.querySelector(".ow-nametag span")?.textContent).toContain("옥상 휴식 (추정)");
+  layer.sync(fewer, "small", NOW + 1);
+  layer.update(NOW + 1 + WALK_MAX_MS);
+  const target = layoutActors(fp, "small", fewer).find((p) => p.emp.agentId === "boss2")!;
+  expect(target.spot.startsWith("pantry")).toBe(true);
+  expect(posOf(layer, "boss2", "rest2")).toEqual({ x: target.x, y: target.y });
+  const active = {
+    ...o,
+    teams: teams.map((t) =>
+      t.teamId === "rest2"
+        ? testTeam(
+            "rest2",
+            [
+              testEmp("boss2", {
+                rank: "Bujang",
+                depth: 0,
+                activity: { ...testEmp("x").activity, room: "TeamLead" },
+              }),
+            ],
+            { deskSlot: 3 },
+          )
+        : t,
+    ),
+  };
+  const home = layoutActors(fp, "small", active).find((p) => p.emp.agentId === "boss2")!;
+  expect(home.spot).toBe("boss_3");
+  layer.sync(o, "small", NOW + 2000);
+  layer.update(NOW + 2000 + WALK_MAX_MS);
+  const roof = placed.find((p) => p.emp.agentId === "boss2")!;
+  expect(roof.spot.startsWith("roof_")).toBe(true);
+  expect(posOf(layer, "boss2", "rest2")).toEqual({ x: roof.x, y: roof.y });
+  layer.sync(active, "small", NOW + 4000);
+  layer.update(NOW + 4000 + WALK_MAX_MS);
+  expect(posOf(layer, "boss2", "rest2")).toEqual({ x: home.x, y: home.y });
+  const off = {
+    ...o,
+    teams: teams.map((t) => (t.teamId === "rest2" ? { ...t, phase: "Off" as const } : t)),
+  };
+  expect(layoutActors(fp, "small", off).some((p) => p.emp.agentId === "boss2")).toBe(false);
+});
+
+for (const [kind, room, ms] of [
+  ["Compaction", "archive", 4000],
+  ["Reject", "security", 3000],
+] as const) {
+  const event = cue(
+    kind === "Compaction" ? { kind, agent: "boss", at: SINCE } : { kind, agent: "boss" },
+  );
+  test(`${room}: 새 사건만 방문하고 기한에 현재 자리로 복귀한다`, () => {
+    const { layer } = newLayer();
+    const archive = vi.fn();
+    layer.onArchiveVisit = archive;
+    layer.sync(office([team("t", [boss()])]), "large", NOW);
+    const o = withCues(office([team("t", [boss()])]), [event]);
+    layer.sync(o, "large", NOW);
+    layer.update(NOW + WALK_MAX_MS);
+    expect(posOf(layer, "boss")).toEqual(screen(...(fp.stands[room][0] as [number, number])));
+    layer.sync(o, "large", NOW + ms - 1);
+    layer.update(NOW + ms);
+    const home = layoutActors(fp, "large", o)[0];
+    expect(posOf(layer, "boss")).toEqual({ x: home.x, y: home.y });
+    expect(archive).toHaveBeenLastCalledWith(false);
+    layer.update(NOW + ms + WALK_MAX_MS);
+    expect(posOf(layer, "boss")).toEqual({ x: home.x, y: home.y });
+  });
+  test(`${room}: 높은 활동·숨김·재구성·전환은 방문과 파쇄기를 끊고 지난 사건을 재생하지 않는다`, () => {
+    for (const stop of [
+      "pending",
+      "permission",
+      "incident",
+      "off",
+      "hidden",
+      "rebuilt",
+      "switch",
+    ] as const) {
+      const { layer } = newLayer();
+      const archive = vi.fn();
+      layer.onArchiveVisit = archive;
+      layer.sync(office([team("t", [boss()])]), "large", NOW);
+      layer.sync(withCues(office([team("t", [boss()])]), [event]), "large", NOW);
+      const b = boss(
+        stop === "permission" ? "Door" : stop === "incident" ? "Incident" : "TeamLead",
+      );
+      if (stop === "pending") b.pendingCount = 1;
+      const t = team("t", [b], stop === "off" ? { phase: "Off" } : {});
+      if (stop === "incident") t.incident = { since: SINCE, lastError: SINCE };
+      const o = withCues(office([t]), [], stop === "rebuilt");
+      if (stop === "switch") o.officeId = "other";
+      layer.sync(o, "large", NOW + 100, { instant: stop === "hidden" });
+      expect(archive, stop).toHaveBeenLastCalledWith(false);
+      layer.update(NOW + 100 + WALK_MAX_MS);
+      const home = layoutActors(fp, "large", o)[0];
+      if (home) expect(posOf(layer, "boss"), stop).toEqual({ x: home.x, y: home.y });
+      else expect(layer.rootOf("t", "boss")?.visible).toBe(false);
+      layer.sync(office([team("t", [boss()])]), "large", NOW + 2000);
+      expect(archive, stop).toHaveBeenLastCalledWith(false);
+    }
+  });
+  test(`${room}: 동시 방문은 두 자리와 만석 배지로 제한한다`, () => {
+    const { layer, overlay } = newLayer();
+    const employees = [
+      boss(),
+      emp("a", "Dev", "Sit", { seat: 0 }),
+      emp("b", "Dev", "Sit", { seat: 1 }),
+    ];
+    layer.sync(office([team("t", employees)]), "large", NOW);
+    const events = employees.map((e) =>
+      cue(
+        kind === "Compaction" ? { kind, agent: e.agentId, at: SINCE } : { kind, agent: e.agentId },
+      ),
+    );
+    const placed = layer.sync(withCues(office([team("t", employees)]), events), "large", NOW);
+    expect(placed.map((p) => p.spot)).toEqual([`${room}_0`, `${room}_1`]);
+    expect(overlay.querySelector(".ow-crowd")?.textContent).toBe("+1");
+  });
+}
+
+test("반려 뒤 1초 압축은 생략하고 반려 유지가 끝난 4초 뒤 새 압축만 허용한다", () => {
+  const { layer } = newLayer();
+  const held = { ...boss(), rejected: true };
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  layer.sync(
+    withCues(office([team("t", [held])]), [cue({ kind: "Reject", agent: "boss" })]),
+    "large",
+    NOW,
+  );
+  const compact = { ...held, activity: { ...held.activity, sentence: "분갈이 중" } };
+  const skipped = layer.sync(
+    withCues(office([team("t", [compact])]), [
+      cue({ kind: "Compaction", agent: "boss", at: SINCE }),
+    ]),
+    "large",
+    NOW + 1000,
+  );
+  expect(skipped[0].spot).toBe("security_0");
+  layer.update(NOW + 3000);
+  expect(posOf(layer, "boss")).toEqual(
+    screen(fp.layouts.large.seats.boss[0].gx, fp.layouts.large.seats.boss[0].gy),
+  );
+  const fresh = {
+    ...compact,
+    rejected: false,
+    activity: { ...compact.activity, sentence: "반려: 옛 호출" },
+  };
+  const allowed = layer.sync(
+    withCues(office([team("t", [fresh])]), [cue({ kind: "Compaction", agent: "boss", at: SINCE })]),
+    "large",
+    NOW + 4000,
+  );
+  expect(allowed[0].spot).toBe("archive_0");
+});
+
+test("사무실 id가 달라진 스냅샷의 새 방문 cue도 재생하지 않는다", () => {
+  const { layer } = newLayer();
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  const o = withCues({ ...office([team("t", [boss()])]), officeId: "other" }, [
+    cue({ kind: "Compaction", agent: "boss", at: SINCE }),
+  ]);
+  expect(layer.sync(o, "large", NOW + 1)[0].spot).toBe("boss_0");
 });

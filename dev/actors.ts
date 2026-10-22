@@ -50,6 +50,7 @@ function emp(
     pendingCount: 0,
     uniqueEdits: 0,
     planning: false,
+    rejected: false,
     medal: false,
     buildTestBorder: "Plain",
     lastSay: null,

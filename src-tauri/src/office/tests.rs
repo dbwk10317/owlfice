@@ -4131,3 +4131,77 @@ fn employee_check_light_cleanup_keeps_failure_and_rebuilds() {
         }
     }
 }
+
+#[test]
+fn planning_conference_yields_to_calls_reject_permission_wait_and_incident() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("enter", ToolKind::EnterPlanMode, summary()))
+        .on(MAIN, 1, result("enter", ToolOutcome::Ok))
+        .tick(2);
+    assert_eq!(s.boss().activity.room, Room::Conference);
+    s.on(MAIN, 3, call("build", ToolKind::Build, cmd("cargo build")))
+        .tick(4);
+    assert_eq!(s.boss().activity.room, Room::Build);
+    s.on(MAIN, 5, result("build", ToolOutcome::Rejected))
+        .tick(8);
+    assert_ne!(s.boss().activity.room, Room::Conference);
+    s.tick(9);
+    assert_eq!(s.boss().activity.room, Room::Conference);
+    s.on(MAIN, 10, call("ask", ToolKind::Ask, summary()))
+        .on(MAIN, 10, ask("Question", false))
+        .tick(11);
+    assert_eq!(s.boss().activity.room, Room::Door);
+    s.on(MAIN, 12, result("ask", ToolOutcome::Ok)).tick(13);
+    assert_eq!(s.boss().activity.room, Room::Conference);
+    let mut waiting = Sim::new();
+    waiting
+        .on(MAIN, 0, call("enter", ToolKind::EnterPlanMode, summary()))
+        .on(MAIN, 1, result("enter", ToolOutcome::Ok))
+        .on(MAIN, 2, text("확인 부탁드립니다"))
+        .tick(146);
+    assert!(waiting.boss().planning);
+    assert_eq!(
+        (waiting.boss().activity.room, waiting.boss().activity.pose),
+        (Room::TeamLead, Pose::Pace)
+    );
+    fail(&mut s, "f1", 14, "cargo build");
+    fail(&mut s, "f2", 15, "cargo build");
+    fail(&mut s, "f3", 16, "cargo build");
+    s.tick(17);
+    assert_eq!(s.boss().activity.room, Room::Incident);
+    assert!(s.boss().planning);
+    s.on(MAIN, 18, call("exit", ToolKind::ExitPlanMode, summary()))
+        .on(MAIN, 18, ask("Plan", true));
+    assert_eq!(s.boss().activity.room, Room::Door);
+    assert!(s.boss().planning);
+    s.on(MAIN, 19, result("exit", ToolOutcome::Ok)).tick(20);
+    assert!(!s.boss().planning);
+    assert_ne!(s.boss().activity.room, Room::Conference);
+}
+
+#[test]
+fn planning_off_hides_conference_and_new_activity_returns_without_clearing_plan() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("enter", ToolKind::EnterPlanMode, summary()))
+        .on(MAIN, 1, result("enter", ToolOutcome::Ok))
+        .tick(2);
+    assert!(s.boss().planning);
+    assert_eq!(s.boss().activity.room, Room::Conference);
+
+    s.tick(31 * 60);
+    assert_eq!(s.team.phase, TeamPhase::Off);
+    assert!(s.boss().planning);
+    assert_ne!(s.boss().activity.room, Room::Conference);
+
+    s.on(
+        MAIN,
+        32 * 60,
+        EventKind::UserMessage {
+            text: "계획을 계속해 줘".into(),
+        },
+    )
+    .tick(32 * 60 + 1);
+    assert_eq!(s.team.phase, TeamPhase::Working);
+    assert!(s.boss().planning);
+    assert_eq!(s.boss().activity.room, Room::Conference);
+}

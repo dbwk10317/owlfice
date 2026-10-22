@@ -65,20 +65,25 @@ NIGHT_TINT = (242, 222, 173)  # 곱하기. 창문 레이어에는 적용하지 �
 EVENING_TINT = (246, 230, 196)
 
 ROOMS = {  # key: (이름, gx0, gy0, gx1, gy1, 바닥 타일)
-    "library": ("소스 서고", 0, 0, 6, 5, "library"),
+    "library": ("소스 서고", 0, 0, 4, 5, "library"),
+    "archive": ("자료실", 4, 0, 6, 5, "archive"),
     "build": ("빌드실", 6, 0, 11, 5, "build"),
     "test": ("테스트실", 11, 0, 16, 5, "test"),
     "boss": ("팀장실", 16, 0, 24, 6, "boss"),
     "dev": ("개발실", 0, 5, 16, 11, "dev"),
     "review": ("리뷰실", 16, 6, 24, 9, "review"),
     "incident": ("장애 상황실", 16, 9, 24, 12, "incident"),
-    "meeting": ("거래처 미팅실", 16, 12, 24, 16, "meeting"),
-    "entrance": ("출입문 · 출고장", 0, 11, 5, 16, "entrance"),
-    "pantry": ("탕비실", 5, 11, 16, 16, "pantry"),
+    "conference": ("회의실", 16, 12, 20, 16, "conference"),
+    "meeting": ("거래처 미팅실", 20, 12, 24, 16, "meeting"),
+    "security": ("경비실", 0, 11, 5, 13, "security"),
+    "entrance": ("출입문 · 출고장", 0, 13, 5, 16, "entrance"),
+    "pantry": ("탕비실", 5, 11, 13, 16, "pantry"),
+    "roof": ("옥상", 13, 11, 16, 16, "roof"),
 }
 FLOOR = {"library": (196, 160, 120), "build": (184, 188, 194), "test": (204, 208, 212), "dev": (218, 211, 198),
          "review": (214, 196, 170), "incident_off": (112, 108, 104), "incident_on": (190, 128, 118),
          "meeting": (196, 210, 188), "entrance": (190, 182, 170), "pantry": (234, 226, 210)}
+FLOOR.update(archive=(174, 158, 136), conference=(186, 204, 218), security=(172, 182, 176), roof=(164, 176, 178))
 for _t, _v in THEMES.items():
     FLOOR["boss_" + _t] = _v["boss_carpet"]
 
@@ -957,7 +962,7 @@ def build_furniture():
     p.dot((0.5, 0.2, 2), (210, 60, 50))
     reg("pizza_box/default", p.result())
     prop("pizza_box", "floor", ["default"], (1.2, 0.45), 2,
-         desc="피자 상자. 활성 2시간부터 1시간마다 1개. 탁자 위 z=5, 상자마다 z+2", stack=dict(gx=10.15, gy=15.07, z0=5, dz=2, max=8))
+         desc="피자 상자. 활성 2시간부터 1시간마다 1개. 탁자 위 z=5, 상자마다 z+2", stack=dict(gx=8.45, gy=15.17, z0=5, dz=2, max=8))
     reg("ramen/default", (pix(["wwww", "rwwr", "rrrr", ".rr."], dict(w=(250, 250, 250), r=(210, 60, 50))), (2, 3)))
     prop("ramen", "floor", ["default"], (0.2, 0.2), 4, desc="컵라면. 야근 모드에만. 조리대 위 z=12")
     p = Painter(1.0, 1.2, 18)
@@ -1059,10 +1064,10 @@ def build_furniture():
             p.lq(0, 0, 2.6, 0.2, 0, 0.6, 2.0, 10, 14, (230, 236, 248))
         reg(f"meeting_screen/{st}", p.result())
     prop("meeting_screen", "floor", ["off", "on"], (2.6, 0.2), 20, desc="화상회의 화면. MCP 미팅 중 on, 밝은 띠에 거래처 상호를 코드가 쓴다")
-    p = Painter(4.2, 1.3, 9)
-    p.box(0, 0, 4.2, 1.3, 9, (210, 184, 140))
+    p = Painter(2.8, 1.3, 9)
+    p.box(0, 0, 2.8, 1.3, 9, (210, 184, 140))
     reg("meeting_table/default", p.result())
-    prop("meeting_table", "floor", ["default"], (4.2, 1.3), 9, desc="긴 회의 탁자")
+    prop("meeting_table", "floor", ["default"], (2.8, 1.3), 9, desc="긴 회의 탁자")
     for st, n in (("empty", 0), ("s1", 4), ("s2", 8), ("s3", 12), ("default", 12)):
         p = Painter(0.6, 1.4, 22)
         p.box(0, 0, 0.6, 1.4, 22, (150, 104, 66))
@@ -1074,6 +1079,49 @@ def build_furniture():
         reg(f"bookshelf/{st}", p.result())
     prop("bookshelf", "floor", ["default", "empty", "s1", "s2", "s3"], (0.6, 1.4), 22,
          desc="사무실 모든 직원의 고유 읽기 수 합계: 0–24 empty, 25–49 s1, 50–99 s2, 100 이상 s3")
+
+    # 새 방도 기존 투영과 상자 도구만 쓴다.
+    p = Painter(2.4, 1.0, 9)
+    p.box(0, 0, 2.4, 1.0, 9, (182, 160, 126))
+    reg("conference_table/default", p.result())
+    prop("conference_table", "floor", ["default"], (2.4, 1.0), 9, desc="계획 회의 탁자")
+    p = Painter(2.6, 0.2, 24)
+    p.box(0, 0, 2.6, 0.2, 24, (246, 246, 238))
+    for i, width in enumerate((1.8, 1.2, 1.5)):
+        p.line((0.3, 0.2, 18-i*5), (0.3+width, 0.2, 18-i*5), (62, 110, 148))
+    reg("conference_whiteboard/default", p.result())
+    prop("conference_whiteboard", "floor", ["default"], (2.6, 0.2), 24, desc="계획 회의 화이트보드")
+    for state in ("idle", "shred"):
+        p = Painter(0.9, 0.8, 15)
+        p.box(0, 0, 0.9, 0.8, 11, (78, 86, 90))
+        p.box(0.12, 0.2, 0.65, 0.12, 1, (28, 32, 34), z=11)
+        if state == "shred":
+            p.box(0.2, 0.22, 0.5, 0.03, 4, (246, 242, 220), z=11)
+            for i in range(4):
+                p.line((0.2+i*0.14, 0.82, 8), (0.2+i*0.14, 0.82, 3), (246, 242, 220))
+        reg(f"shredder/{state}", p.result())
+    prop("shredder", "floor", ["idle", "shred"], (0.9, 0.8), 15, desc="새 압축 방문 동안 종이를 파쇄")
+    p = Painter(1.8, 0.6, 17)
+    p.box(0, 0, 1.8, 0.6, 10, (116, 134, 126))
+    p.box(0, 0, 1.8, 0.1, 7, (192, 214, 218), z=10)
+    reg("security_window/default", p.result())
+    prop("security_window", "floor", ["default"], (1.8, 0.6), 17, desc="경비실 결재 창구")
+    p = Painter(0.25, 1.0, 12)
+    p.box(0, 0, 0.25, 0.25, 12, (94, 106, 106))
+    p.box(0, 0, 0.15, 1.0, 2, (230, 188, 64), z=9)
+    reg("security_barrier/default", p.result())
+    prop("security_barrier", "floor", ["default"], (0.25, 1.0), 12, desc="경비실 차단봉")
+    p = Painter(2.2, 0.7, 10)
+    p.box(0, 0.1, 2.2, 0.5, 4, (148, 114, 78))
+    p.box(0, 0, 2.2, 0.12, 10, (132, 102, 74))
+    reg("roof_bench/default", p.result())
+    prop("roof_bench", "floor", ["default"], (2.2, 0.7), 10, desc="옥상 휴식 벤치")
+    p = Painter(1.1, 0.9, 25)
+    p.box(0, 0, 1.1, 0.9, 25, (80, 122, 150))
+    p.box(0.12, 0.9, 0.62, 0.02, 12, (174, 206, 216), z=9)
+    p.box(0.8, 0.9, 0.14, 0.02, 3, (244, 212, 100), z=14)
+    reg("roof_vending/default", p.result())
+    prop("roof_vending", "floor", ["default"], (1.1, 0.9), 25, desc="옥상 음료 자판기")
 
     for name in ("boss_desk_l", "boss_desk_s", "dev_desk", "folding_desk"):
         w, d = PROPS[name]["footprint"]
@@ -1229,12 +1277,12 @@ def build_fx():
 # =====================================================================
 # 평면도
 # =====================================================================
-PARTITIONS = [(5.9, 0, 0.2, 3.6, 16), (10.9, 0, 0.2, 3.6, 16), (15.9, 0, 0.2, 4.0, 16),
-              (0, 4.9, 1.6, 0.2, 6), (3.2, 4.9, 4.5, 0.2, 6), (9.2, 4.9, 3.4, 0.2, 6), (14.2, 4.9, 1.7, 0.2, 6),
+PARTITIONS = [(3.9, 0, 0.2, 3.6, 16), (5.9, 0, 0.2, 3.6, 16), (10.9, 0, 0.2, 3.6, 16), (15.9, 0, 0.2, 4.0, 16),
+              (0, 4.9, 1.6, 0.2, 6), (3.2, 4.9, 1.0, 0.2, 6), (5.7, 4.9, 2.0, 0.2, 6), (9.2, 4.9, 3.4, 0.2, 6), (14.2, 4.9, 1.7, 0.2, 6),
               (16, 5.9, 1.4, 0.2, 6), (19.4, 5.9, 4.6, 0.2, 6), (15.9, 6.0, 0.2, 1.2, 6), (15.9, 8.6, 0.2, 2.4, 6),
-              (16, 8.9, 5, 0.2, 6), (22.4, 8.9, 1.6, 0.2, 6), (16, 11.9, 2, 0.2, 6), (19.4, 11.9, 4.6, 0.2, 6),
+              (16, 8.9, 5, 0.2, 6), (22.4, 8.9, 1.6, 0.2, 6), (16, 11.9, 1.2, 0.2, 6), (18.8, 11.9, 2.4, 0.2, 6), (22.8, 11.9, 1.2, 0.2, 6), (19.9, 12.0, 0.2, 4.0, 6),
               (15.9, 12.2, 0.2, 1.6, 6), (15.9, 15.0, 0.2, 1.0, 6), (0, 10.9, 1.0, 0.2, 6), (3, 10.9, 3.5, 0.2, 6),
-              (9, 10.9, 4.5, 0.2, 6), (4.9, 11.4, 0.2, 2.0, 6), (4.9, 15.0, 0.2, 1.0, 6)]
+              (9, 10.9, 4.5, 0.2, 6), (4.9, 11.0, 0.2, 0.4, 6), (4.9, 12.6, 0.2, 3.4, 6), (0, 12.9, 1.2, 0.2, 6), (2.8, 12.9, 2.2, 0.2, 6), (12.9, 11.0, 0.2, 0.4, 6), (12.9, 12.6, 0.2, 3.4, 6)]
 
 
 def build_wallsegs():
@@ -1276,9 +1324,9 @@ def build_layout(kind):
     put("job_ticket", "job_ticket", 7.85, 0, layer="wall", visible=False, drive="백그라운드 명령이 있을 때만")
     put("tv", "tv", 0, 6.3, "on", layer="wall", drive="팀별 컨텍스트 사용량 선")
     put("attendance", "attendance", 0, 11.1, layer="wall", drive="직원마다 자석 하나")
-    put("door", "door", 0, 12.6, "closed", layer="wall", drive="누가 드나드는 1초 동안 open")
+    put("door", "door", 0, 13.6, "closed", layer="wall", drive="누가 드나드는 1초 동안 open")
     put("stats_board", "stats_board", 0, 14.65, layer="wall")
-    put("doormat", "doormat", 0, 12.7, layer="decal")
+    put("doormat", "doormat", 0, 13.6, layer="decal")
     put("rug_review", "rug_review", 17.6, 6.7, layer="decal")
     # 칸막이
     for n, (gx, gy, w, d, h) in enumerate(PARTITIONS, 1):
@@ -1286,9 +1334,9 @@ def build_layout(kind):
     # 서고
     for k, gy in enumerate((0.4, 1.5, 2.6)):
         put(f"cabinet_side_{k}", "cabinet_side", 0.15, gy)
-    for k, gx in enumerate((1.4, 2.5, 3.6)):
+    for k, gx in enumerate((0.8, 1.85, 2.9)):
         put(f"cabinet_front_{k}", "cabinet_front", gx, 0.15, "closed", drive="서류철 꺼낼 때 그 직원과 가장 가까운 것 open" if k == 1 else None)
-    put("lib_desk", "lib_desk", 3.2, 3.0, depth=7.5)
+    put("lib_desk", "lib_desk", 2.2, 3.0, depth=6.5)
     # 빌드실
     put("rack_0", "rack", 6.4, 0.3, "led_0", drive="셸 명령 중 led_0/led_1 반복")
     put("rack_1", "rack", 7.7, 0.3, "led_0")
@@ -1334,13 +1382,13 @@ def build_layout(kind):
     put("coffee", "coffee_machine", 5.5, 11.4, "idle", z=12, depth=17.31)
     put("ramen", "ramen", 7.0, 11.6, z=12, depth=17.32, visible=False, drive="야근 모드")
     put("fridge", "fridge", 8.2, 11.25, depth=20.0)
-    put("tv_stand", "tv_stand", 12.4, 11.25, depth=24.7)
-    put("game_tv", "game_tv", 12.5, 11.3, "off", z=8, depth=24.71, drive="게임기 앞에 직원이 있으면 game")
-    put("sofa", "sofa_claude", 9.3, 13.4, depth=24.4, themed=True)
-    put("coffee_table", "coffee_table", 10.0, 15.0, depth=26.2)
-    put("massage_chair", "massage_chair", 14.3, 13.3, depth=28.2)
+    put("tv_stand", "tv_stand", 9.6, 11.25, depth=21.9)
+    put("game_tv", "game_tv", 9.7, 11.3, "off", z=8, depth=21.91, drive="게임기 앞에 직원이 있으면 game")
+    put("sofa", "sofa_claude", 7.6, 13.5, depth=22.8, themed=True)
+    put("coffee_table", "coffee_table", 8.3, 15.1, depth=24.6)
+    put("massage_chair", "massage_chair", 11.7, 13.3, depth=25.6)
     # 출입문 · 출고장
-    put("label_table", "label_table", 3.4, 12.0, depth=16.4)
+    put("label_table", "label_table", 3.4, 13.1, depth=17.5)
     put("box_0", "box_lg", 2.2, 14.4, depth=17.3)
     put("box_1", "box_md", 3.1, 14.6, depth=18.1)
     put("box_2", "box_sm", 2.35, 14.5, z=9, depth=17.31)
@@ -1358,10 +1406,17 @@ def build_layout(kind):
     put("incident_table", "incident_table", 18.4, 10.3, "off", depth=30.2)
     put("safety_board", "safety_board", 16.3, 8.6, depth=25.9, drive="무재해 분: 팀 중 최솟값")
     # 미팅실
-    put("meeting_screen", "meeting_screen", 18.0, 12.15, "off", depth=31.4)
-    put("meeting_table", "meeting_table", 17.6, 13.4, depth=33.75)
-    put("bookshelf", "bookshelf", 16.3, 14.5, depth=32.0)
+    put("meeting_screen", "meeting_screen", 20.6, 12.15, "off", depth=34.0)
+    put("meeting_table", "meeting_table", 20.6, 13.5, depth=36.15)
+    put("bookshelf", "bookshelf", 23.1, 14.3, depth=38.4)
     put("plant_meeting", "plant", 23.4, 15.4, "s4", depth=38.8)
+    put("conference_whiteboard", "conference_whiteboard", 16.4, 12.3)
+    put("conference_table", "conference_table", 16.7, 13.5)
+    put("shredder", "shredder", 4.3, 0.7, "idle")
+    put("security_window", "security_window", 1.0, 11.15)
+    put("security_barrier", "security_barrier", 4.1, 11.3)
+    put("roof_bench", "roof_bench", 13.2, 13.2, depth=28.0)
+    put("roof_vending", "roof_vending", 14.6, 11.2)
     # 오버레이
     put("glow_incident", "glow_incident", 16.0, 9.0, layer="overlay", visible=False, drive="장애 판정 중")
     return L
@@ -1394,26 +1449,29 @@ def seats(kind):
 
 
 STANDS = {
-    "library": [[2.2, 2.0], [1.5, 3.5], [4.7, 1.6]], "librarian": [[4.0, 2.75]],
+    "library": [[1.4, 1.7], [1.2, 3.5], [3.0, 2.0]], "librarian": [[2.8, 2.95]],
     "build_terminal": [[9.8, 3.7]], "build": [[8.2, 2.4], [7.0, 2.4]],
     "test": [[13.3, 2.75], [12.4, 2.8], [15.0, 3.9]],
     "review_sofa": [[18.8, 7.95], [19.8, 7.95], [20.8, 7.95]],
     "incident": [[19.6, 9.95], [21.8, 10.8], [22.8, 10.3], [17.4, 10.7], [18.2, 11.6], [21.0, 11.6]],
-    "meeting": [[18.4, 13.15], [19.6, 13.15], [20.8, 13.15], [18.6, 15.1], [20.2, 15.1]],
-    "pantry_console": [[13.3, 12.6]], "pantry_massage": [[14.8, 13.9, 6]], "pantry_sofa": [[10.3, 14.0, 4], [11.4, 14.0, 4]],
-    "pantry": [[6.6, 12.6], [7.4, 13.4]], "door": [[0.9, 13.5]], "door_wait": [[1.7, 12.4]], "shipping": [[2.9, 13.6], [3.8, 13.2]],
-    "boss_window": [[20.3, 1.3]], "boss_pace": [[18.9, 4.4], [21.6, 4.4]], "dev_center": [[6.6, 8.0]], "exit": [[0.2, 13.5]],
+    "meeting": [[20.9, 13.2], [22.4, 13.2], [20.9, 15.1], [22.4, 15.1], [23.6, 14.2]],
+    "pantry_console": [[10.5, 12.6]], "pantry_massage": [[12.2, 13.9, 6]], "pantry_sofa": [[8.6, 14.1, 4], [9.7, 14.1, 4]],
+    "pantry": [[5.9, 12.6], [6.4, 14.4]], "door": [[0.9, 14.1]], "door_wait": [[1.7, 13.6]], "shipping": [[2.9, 14.0], [3.8, 14.0]],
+    "boss_window": [[20.3, 1.3]], "boss_pace": [[18.9, 4.4], [21.6, 4.4]], "dev_center": [[6.6, 8.0]], "exit": [[0.2, 14.1]],
+    "conference": [[17.2, 13.2], [18.7, 13.2], [17.2, 15.1], [18.7, 15.1]],
+    "archive": [[5, 2], [5, 3.6]], "security": [[2.1, 11.8], [3.3, 11.8]],
+    "roof": [[13.8, 13.8, 4], [14.9, 13.8, 4], [14.7, 15.1]],
 }
-ENTRIES = {"library": [2.4, 5.0], "build": [8.45, 5.0], "test": [13.4, 5.0], "boss": [16.0, 4.9], "review": [16.0, 7.9],
-           "incident": [21.7, 9.0], "meeting": [16.0, 14.4], "pantry": [7.75, 11.0], "entrance": [2.0, 11.0], "dev": [13.5, 8.0]}
-LABELS = {"library": [1.5, 3.8], "build": [8.5, 3.6], "test": [12.6, 4.3], "boss": [21.0, 4.9], "dev": [12.0, 8.0],
-          "review": [21.6, 7.4], "incident": [21.0, 10.6], "meeting": [20.0, 14.9], "entrance": [2.2, 13.6], "pantry": [8.0, 14.5]}
+ENTRIES = {"library": [2, 5], "archive": [5, 5], "build": [8.45, 5], "test": [13.4, 5], "boss": [16, 4.9], "review": [16, 7.9],
+           "incident": [21.7, 9], "conference": [18, 12], "meeting": [22, 12], "pantry": [7.75, 11], "roof": [13, 12],
+           "security": [5, 12], "entrance": [2, 13], "dev": [13.5, 8]}
+LABELS = {"library": [177, 74], "archive": [228, 106], "build": [271, 138], "test": [337, 170], "boss": [405, 203], "dev": [250, 192], "review": [382, 235], "incident": [340, 267], "conference": [244, 267], "meeting": [294, 301], "security": [106, 140], "entrance": [51, 171], "pantry": [136, 201], "roof": [200, 233]}
 
 
 def floorplan_json():
     rooms = {}
     for k, (name, a, b, c, e, floor) in ROOMS.items():
-        lx, ly = rnd(iso(*LABELS[k]))
+        lx, ly = LABELS[k]
         rooms[k] = dict(name=name, rect=[a, b, c, e], floor=floor, label=[lx, ly], entry=ENTRIES[k])
     return dict(
         version=1,
@@ -1565,7 +1623,7 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
         drawn.append((gx + gy, len(drawn), ("ball", (gx, gy), None)))
     for k in range(pizza):
         st = PROPS["pizza_box"]["stack"]
-        drawn.append((26.21 + k * 0.01, len(drawn), ("pizza", (st["gx"], st["gy"], st["z0"] + st["dz"] * k), None)))
+        drawn.append((24.61 + k * 0.01, len(drawn), ("pizza", (st["gx"], st["gy"], st["z0"] + st["dz"] * k), None)))
     if progress is not None:
         placements = {p["id"]: p for p in fp["placements"]}
         for seats in fp["seats"].values():
@@ -1887,9 +1945,9 @@ def make_canvas_images():
         dict(id="bujang", species="eagle", outfit="bujang-claude", role="backend", pose="carry", gx=20.9, gy=2.15, depth=23.0, held="duck"),
         dict(id="gwajang", species="barn", outfit="gwajang-claude", role="backend", pose="idle", gx=13.3, gy=2.75),
         dict(id="daeri", species="little", outfit="daeri-claude", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
-        dict(id="sawon1", species="scops", outfit="sawon-claude", role="trainee", pose="carry", gx=2.2, gy=2.0, held="folder"),
-        dict(id="sawon2", species="longeared", outfit="sawon-claude", role="qa", pose="idle", gx=13.3, gy=12.6),
-        dict(id="librarian", species="little", outfit="librarian", role="trainee", pose="idle", gx=4.0, gy=2.75, depth=6.7),
+        dict(id="sawon1", species="scops", outfit="sawon-claude", role="trainee", pose="carry", gx=1.4, gy=1.7, held="folder"),
+        dict(id="sawon2", species="longeared", outfit="sawon-claude", role="qa", pose="idle", gx=10.5, gy=12.6),
+        dict(id="librarian", species="little", outfit="librarian", role="trainee", pose="idle", gx=2.8, gy=2.95, depth=5.75),
     ]
     kan = [(0, "yellow"), (1, "pink"), (2, "yellow"), (3, "blue"), (4, "yellow"), (6, "green"), (7, "green"), (8, "green")]
     mags = [(0, 0, "red"), (0, 1, "blue"), (0, 2, "green"), (0, 3, "yellow"), (3, 0, "gray")]
@@ -1914,7 +1972,7 @@ def make_canvas_images():
         dict(id="subC2", species="little", outfit="sawon-codex", role="trainee", pose="idle", gx=22.8, gy=10.3),
         dict(id="subA1", species="little", outfit="daeri-codex", role="frontend", pose="type", gx=2.75, gy=6.25, depth=8.9),
         dict(id="subB1", species="barn", outfit="gwajang-codex", role="backend", pose="read", gx=6.15, gy=6.25, depth=12.3),
-        dict(id="subA2", species="scops", outfit="sawon-codex", role="trainee", pose="sleep", gx=14.8, gy=13.9, z=6, depth=28.6),
+        dict(id="subA2", species="scops", outfit="sawon-codex", role="trainee", pose="sleep", gx=12.2, gy=13.9, z=6, depth=25.6),
         dict(id="boss", species="snowy", outfit="boss", role="trainee", pose="walk", dir="b", frame=1, gx=13.0, gy=8.2),
     ]
     tints = {f"dev_part_{i}": c for i, c in enumerate([T[0], T[1], T[2], T[2], THEMES["codex"]["cubicle"], THEMES["codex"]["cubicle"]])}
@@ -1983,6 +2041,11 @@ def check(owl_sheet_pos, office_pos):
         n = sum(1 for k in OWLS if k.startswith(f"body/{sp}/"))
         if n != expected:
             errors.append(f"body/{sp}: 프레임 {n}개, 기대 {expected}개")
+    for i in range(COLS):
+        for j in range(ROWS):
+            matches = [k for k, (_, a, b, c, d, _) in ROOMS.items() if a <= i < c and b <= j < d]
+            if len(matches) != 1:
+                errors.append(f"바닥 ({i},{j}) 방 중복·누락: {matches}")
     for kind, lay in FLOORPLAN["layouts"].items():
         for pl in lay["placements"]:
             for st in PROPS[pl["sprite"]]["states"]:

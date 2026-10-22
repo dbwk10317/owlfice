@@ -159,6 +159,7 @@ pub enum Room {
     Review,
     Incident,
     Meeting,
+    Conference,
     Shipping,
     Pantry,
     Outside,

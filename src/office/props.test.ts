@@ -74,9 +74,9 @@ function office(shared: Partial<OfficeDto["shared"]> = {}, teams: TeamDto[] = []
   } as unknown as OfficeDto;
 }
 
-function layer(kind: Kind = "large") {
+function layer(kind: Kind = "large", season = false) {
   const scene = buildScene(assets, kind, "claude", false);
-  return { scene, props: new PropsLayer(fp, sheet, kind, scene) };
+  return { scene, props: new PropsLayer(fp, sheet, kind, scene, null, season) };
 }
 
 const withFrame = (children: unknown[], frame: string) =>
@@ -1189,4 +1189,91 @@ test("자료실 파쇄기는 허용된 방문 동안만 켜지고 전환에서 �
   props.archiveVisit(true);
   props.reset();
   expect(frameOf(shredder)).toBe("shredder/idle");
+});
+
+test("계절 나무는 로컬 월로 바뀌고 기존 낮·저녁·밤 하늘 단계를 따른다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind, true);
+    const t = testTeam("a", [testEmp("boss")]);
+    const o = testOffice("a", 1, [t]);
+    for (const [month, season] of [
+      [1, "winter"],
+      [2, "winter"],
+      [3, "spring"],
+      [5, "spring"],
+      [6, "summer"],
+      [8, "summer"],
+      [9, "autumn"],
+      [11, "autumn"],
+      [12, "winter"],
+    ] as const) {
+      for (const daylight of ["day", "evening", "night"] as const) {
+        t.daylight = daylight;
+        props.update(o, new Date(2026, month - 1, 10, 12).getTime());
+        expect(tex(scene, "window")).toBe(
+          `season/window_${kind === "large" ? "l" : "xl"}_${season}_${windowState(daylight)}`,
+        );
+      }
+    }
+  }
+});
+
+test("12월 장식은 자정 갱신과 표 밖 연도에도 각 하나만 보인다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind, true);
+    const decorations = () => [count(scene, "season/tree"), count(scene, "season/stocking")];
+    props.update(null, new Date(2040, 10, 30, 23, 59).getTime());
+    expect(decorations()).toEqual([0, 0]);
+    props.update(null, new Date(2040, 11, 1, 0).getTime());
+    expect(decorations()).toEqual([1, 1]);
+    props.update(null, new Date(2040, 11, 20, 12).getTime());
+    expect(decorations()).toEqual([1, 1]);
+    props.update(null, new Date(2041, 0, 1, 0).getTime());
+    expect(decorations()).toEqual([0, 0]);
+    expect(tex(scene, "window")).toContain("winter_day");
+  }
+});
+
+test("설·추석 벽 등은 날짜표의 당일만 켜지고 자정에 사라진다", () => {
+  const { scene, props } = layer("large", true);
+  const lanterns = () => withFrame(scene.wall.children, "season/lantern").length;
+  const dates = [
+    [2026, "02-17", "09-25"],
+    [2027, "02-07", "09-15"],
+    [2028, "01-27", "10-03"],
+    [2029, "02-13", "09-22"],
+    [2030, "02-03", "09-12"],
+    [2031, "01-23", "10-01"],
+    [2032, "02-11", "09-19"],
+    [2033, "01-31", "09-08"],
+    [2034, "02-19", "09-27"],
+    [2035, "02-08", "09-16"],
+  ] as const;
+  for (const [year, ...days] of dates)
+    for (const day of days) {
+      const [month, date] = day.split("-").map(Number);
+      props.update(null, new Date(year, month - 1, date, 0, 0, -1).getTime());
+      expect(lanterns()).toBe(0);
+      props.update(null, new Date(year, month - 1, date, 0).getTime());
+      expect(lanterns()).toBe(1);
+      props.update(null, new Date(year, month - 1, date, 23, 59).getTime());
+      expect(lanterns()).toBe(1);
+      props.update(null, new Date(year, month - 1, date + 1, 0).getTime());
+      expect(lanterns()).toBe(0);
+    }
+  for (const year of [2025, 2036]) {
+    props.update(null, new Date(year, 1, 17, 12).getTime());
+    expect(lanterns()).toBe(0);
+    expect(tex(scene, "window")).toContain("winter_day");
+  }
+});
+
+test("season false는 계절·12월·명절에도 참조 장면을 유지한다", () => {
+  const { scene, props } = layer("small", false);
+  for (const now of [new Date(2026, 1, 17), new Date(2026, 5, 10), new Date(2026, 11, 10)]) {
+    props.update(null, now.getTime());
+    expect(tex(scene, "window")).toBe("window_xl/day");
+    expect(count(scene, "season/tree") + count(scene, "season/stocking")).toBe(0);
+    expect(withFrame(scene.wall.children, "season/lantern")).toHaveLength(0);
+  }
 });

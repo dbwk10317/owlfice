@@ -1183,6 +1183,11 @@ pub async fn get_diagnostics(
 }
 
 #[tauri::command]
+pub fn get_log_folder(runtime: State<'_, Arc<Runtime>>) -> String {
+    runtime.log_dir.to_string_lossy().into_owned()
+}
+
+#[tauri::command]
 pub fn open_log_folder(runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
     detail::open_log_folder(&runtime.log_dir)
         .map_err(|e| format!("로그 폴더를 열지 못했습니다: {e:?}"))

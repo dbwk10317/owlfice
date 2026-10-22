@@ -507,7 +507,7 @@ test("같은 agent_id 는 액터를 다시 쓰고, 목록에서 빠지면 지운
   expect(root.destroyed).toBe(true);
 });
 
-test("세 겹을 같은 자리에, 수습은 담당 겹을 숨기고 depth 는 zIndexOf 로 배치 뒤", () => {
+test("네 겹을 같은 자리에, 수습은 담당·근속 겹을 숨기고 depth 는 zIndexOf 로 배치 뒤", () => {
   const { layer } = newLayer();
   layer.sync(
     office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0, role: "Trainee" })])]),
@@ -516,8 +516,8 @@ test("세 겹을 같은 자리에, 수습은 담당 겹을 숨기고 depth 는 z
   );
   const root = layer.rootOf("t", "a")!;
   const sprites = root.children.filter((c) => c instanceof Sprite);
-  expect(sprites).toHaveLength(3);
-  expect(sprites.map((s) => s.visible)).toEqual([true, true, false]);
+  expect(sprites).toHaveLength(4);
+  expect(sprites.map((s) => s.visible)).toEqual([true, true, false, false]);
   expect(sprites.every((s) => s.pivot.x === 8 && s.pivot.y === 23)).toBe(true);
   // 의자(8.7) 뒤, 책상(9.2) 앞
   const n = fp.layouts.large.placements.length;
@@ -1730,4 +1730,175 @@ test("사무실 id가 달라진 스냅샷의 새 방문 cue도 재생하지 않�
     cue({ kind: "Compaction", agent: "boss", at: SINCE }),
   ]);
   expect(layer.sync(o, "large", NOW + 1)[0].spot).toBe("boss_0");
+});
+
+const emoteOf = (overlay: HTMLElement) => overlay.querySelector<HTMLElement>(".ow-emote");
+const emoteOffice = (e: EmployeeDto, cues: OfficeDto["cues"] = []) =>
+  withCues(office([team("t", [e])]), cues);
+
+for (const mark of ["✓", "✕", "!", "?", "…", "♪"]) {
+  test(`감정 ${mark}: 새 전이만 1.2초 표시하고 추정은 점선이다`, () => {
+    const { layer, overlay } = newLayer();
+    const before = boss();
+    before.review = { pens: 0, approved: false };
+    layer.sync(emoteOffice(before), "large", NOW);
+    const after = structuredClone(before);
+    const cues: OfficeDto["cues"] = [];
+    if (mark === "✓") after.review!.approved = true;
+    if (mark === "?") after.activity.room = "Door";
+    if (mark === "…") after.activity.pose = "Pace";
+    if (mark === "✕") cues.push(cue({ kind: "Reject", agent: "boss" }));
+    if (mark === "!") cues.push(cue({ kind: "Shake", agent: "boss" }));
+    if (mark === "♪")
+      cues.push(
+        cue({
+          kind: "Stamp",
+          agent: "boss",
+          at: SINCE,
+          passed: 1,
+          failed: 0,
+          estimated: false,
+          confirmedPass: true,
+        }),
+      );
+    const next = emoteOffice(after, cues);
+    layer.sync(next, "large", NOW + 1);
+    const el = emoteOf(overlay)!;
+    expect(el.textContent).toBe(mark);
+    expect(el.getAttribute("aria-hidden")).toBe("true");
+    expect(el.classList.contains("is-estimate")).toBe(mark === "✓" || mark === "…");
+    layer.update(NOW + 1200);
+    expect(emoteOf(overlay)).toBe(el);
+    layer.update(NOW + 1201);
+    expect(emoteOf(overlay)).toBeNull();
+    layer.sync(next, "large", NOW + 1300);
+    layer.sync(emoteOffice(after), "large", NOW + 1301);
+    expect(emoteOf(overlay)).toBeNull();
+  });
+}
+
+test("감정: 추정 허가는 점선, 미확정 테스트 도장은 생략한다", () => {
+  const { layer, overlay } = newLayer();
+  layer.sync(emoteOffice(boss()), "large", NOW);
+  const ask = boss("Door");
+  ask.activity.confidence = "Inferred";
+  layer.sync(emoteOffice(ask), "large", NOW + 1);
+  expect(emoteOf(overlay)!.classList.contains("is-estimate")).toBe(true);
+  layer.update(NOW + 1201);
+  for (const [estimated, passed, failed] of [
+    [true, 1, 0],
+    [false, 0, 1],
+  ]) {
+    layer.sync(
+      emoteOffice(boss(), [
+        cue({
+          kind: "Stamp",
+          agent: "boss",
+          at: SINCE,
+          passed,
+          failed,
+          estimated,
+          confirmedPass: false,
+        }),
+      ]),
+      "large",
+      NOW + 1300,
+    );
+    expect(emoteOf(overlay)).toBeNull();
+  }
+});
+
+test("감정: 보이는 말풍선과 충돌하면 버리고 새 말풍선은 진행 중 표식을 지운다", () => {
+  const { layer, overlay } = newLayer();
+  layer.sync(emoteOffice(boss()), "large", NOW);
+  const reject = cue({ kind: "Reject", agent: "boss" });
+  layer.sync(
+    emoteOffice({ ...boss(), bubble: bub({ kind: "Say", text: "답" }, NOW) }, [reject]),
+    "large",
+    NOW + 1,
+  );
+  expect(emoteOf(overlay)).toBeNull();
+  layer.update(NOW + 4000);
+  layer.sync(emoteOffice(boss()), "large", NOW + 4001);
+  expect(emoteOf(overlay)).toBeNull();
+  layer.sync(emoteOffice(boss(), [reject]), "large", NOW + 4002);
+  expect(emoteOf(overlay)).not.toBeNull();
+  layer.sync(
+    emoteOffice({ ...boss(), bubble: bub({ kind: "Say", text: "새 답" }, NOW + 4003) }),
+    "large",
+    NOW + 4003,
+  );
+  expect(emoteOf(overlay)).toBeNull();
+});
+
+for (const stop of [
+  "first",
+  "switch",
+  "instant",
+  "rebuilt",
+  "reduced",
+  "off",
+  "outside",
+  "removed",
+]) {
+  test(`감정: ${stop} 경계에서 지우고 지난 표식을 재생하지 않는다`, () => {
+    const { layer, overlay } = newLayer();
+    const reject = cue({ kind: "Reject", agent: "boss" });
+    const approved = boss();
+    approved.review = { pens: 0, approved: true };
+    if (stop !== "first") {
+      layer.sync(emoteOffice(boss()), "large", NOW);
+      layer.sync(emoteOffice(boss(), [reject]), "large", NOW + 1);
+      expect(emoteOf(overlay)).not.toBeNull();
+    }
+    const next = emoteOffice(approved, [reject]);
+    if (stop === "switch") next.officeId = "other";
+    if (stop === "rebuilt") next.rebuilt = true;
+    if (stop === "off") next.teams[0].phase = "Off";
+    if (stop === "outside") approved.activity.room = "Outside";
+    if (stop === "removed") next.teams = [];
+    if (stop === "reduced") vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    try {
+      layer.sync(next, "large", NOW + 2, { instant: stop === "instant" });
+      expect(emoteOf(overlay)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const settled = emoteOffice(approved);
+    settled.officeId = next.officeId;
+    layer.sync(settled, "large", NOW + 3);
+    expect(emoteOf(overlay)).toBeNull();
+  });
+}
+
+test("근속: 직원 hiredAt의 1·3·6시간 경계를 update에 반영하고 늦게 고용한 서브는 0단계다", () => {
+  const { layer } = newLayer({ owls: labeled });
+  const old = boss();
+  old.hiredAt = new Date(NOW).toISOString();
+  const late = emp("late", "Dev", "Sit", {
+    seat: 0,
+    hiredAt: new Date(NOW + 6 * 3_600_000).toISOString(),
+  });
+  layer.sync(office([team("t", [old, late], { started: "2020-01-01T00:00:00Z" })]), "large", NOW);
+  const root = layer.rootOf("t", "boss")!;
+  const frames = () => root.children.filter((c): c is Sprite => c instanceof Sprite);
+  for (const [elapsed, stage] of [
+    [3_600_000 - 1, 0],
+    [3_600_000, 1],
+    [3 * 3_600_000 - 1, 1],
+    [3 * 3_600_000, 2],
+    [6 * 3_600_000 - 1, 2],
+    [6 * 3_600_000, 3],
+  ]) {
+    layer.update(NOW + elapsed);
+    const sprites = frames();
+    expect(sprites[1].texture.label).toContain(stage ? "bujang-claude-worn/" : "bujang-claude/");
+    expect(sprites[2].visible).toBe(stage > 0);
+    if (stage) expect(sprites[2].texture.label).toMatch(new RegExp(`^wear/${stage}/`));
+    expect(sprites[3].texture.label).toContain("role/backend/");
+    expect(sprites.every((s) => s.pivot.x === 8 && s.pivot.y === 23)).toBe(true);
+  }
+  const lateSprites = layer.rootOf("t", "late")!.children as Sprite[];
+  expect(lateSprites[2].visible).toBe(false);
+  expect(lateSprites[1].texture.label).not.toContain("worn");
 });

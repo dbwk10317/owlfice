@@ -159,3 +159,8 @@ body {
 .ow-app[data-layout="select"] .ow-main {
   flex: 1;
 }
+
+.ow-emote {
+  text-align: center;
+  min-width: 11px;
+}

@@ -7,7 +7,7 @@
 - **서버·유료 인증서 없음.** 업데이트 목록(`latest.json`)과 설치 파일은 지금처럼 GitHub Releases 에 올린다. 서명은 Tauri 내장 minisign 키 쌍이며 코드 서명 인증서(SmartScreen)와 무관하다. SmartScreen 경고는 이 작업으로 사라지지 않는다.
 - **업데이터는 "들어 있는 버전부터" 동작한다.** 0.1.x 에는 없으므로 0.1.x → 0.2.0 은 설치 파일을 직접 받아 덮어 깐다. 자동 업데이트가 처음 동작하는 건 0.2.0 → 다음 버전이다. 그래서 **정식 0.2.0 을 내보내기 전에** 서명된 빌드 두 개로 업데이트가 실제로 되는지 검증한다 (아래 B). 미검증 업데이터를 배포하면 고장 난 업데이터로 업데이터를 고쳐야 한다.
 - **새 의존성 (사용자 허락 필요, AGENTS.md 1절):** Rust `tauri-plugin-updater` / npm `@tauri-apps/plugin-updater` 만. Windows 전용 앱이고 Windows 에서는 설치 프로그램이 앱을 스스로 종료·재시작하므로 `process` 플러그인(`relaunch()`)은 **넣지 않는다** (확인됨: https://v2.tauri.app/plugin/updater/#windows-before-exit-hook ). 뒤에 다른 OS 를 지원하면 그때 더한다.
-- **CSP 는 안 바꾼다.** 확인·다운로드는 Rust 쪽(플러그인)이 하므로 webview `connect-src` 에 GitHub 를 넣을 필요가 없다 (미확인: B 검증에서 확인하고 틀리면 여기 고친다).
+- **CSP 는 안 바꾼다.** 확인·다운로드는 Rust 쪽(플러그인)이 하므로 webview `connect-src` 에 GitHub 를 넣을 필요가 없다 (확인됨: T82-1 배포 빌드의 확인·다운로드·서명 거부·설치·재시작에서 CSP 차단 없음. 공개 GitHub 전송 검증은 T82-3).
 - **Windows 한계 (확인됨):** 설치 단계에서 앱이 자동 종료된다. NSIS 가 기존 버전을 제거하고 새로 깐 뒤 사용자 데이터는 남는다. `installMode` 는 기본값 `passive`.
 - **외부 네트워크 예외:** HANDOFF 12절 "외부 네트워크 요청이 없다"의 예외는 업데이트 확인(`latest.json` GET)과 사용자가 누른 뒤의 설치 파일 다운로드 두 가지뿐이다. 둘 다 Rust 플러그인이 하고, 세션 내용은 보내지 않는다 (CONTRACTS C1). 12절 문구는 고쳐 두었다.
 

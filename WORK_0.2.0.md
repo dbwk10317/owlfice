@@ -4,12 +4,10 @@
 
 ## 진행
 
-T83·T92·T93·T84·T85·T86·T87·T88·T89·T90·T91·T94·T95·T96·T97·T98·T99·T100·T102·T79를 통합했다. 남은 순서는 T80·T81 → T82-1 → T101 → main 병합 전 정지다.
+T83·T92·T93·T84·T85·T86·T87·T88·T89·T90·T91·T94·T95·T96·T97·T98·T99·T100·T102·T79·T80·T81을 통합했고 T82-1을 통과했다. 남은 순서는 T101 → main 병합 전 정지다.
 
-- T80은 `t80-update-ui`에서 설정의 업데이트 상태·설치 진행·시작 토스트를 구현한다.
-- T81은 `t81-release-tools`에서 릴리스 manifest·검사 스크립트와 BUILD 절차를 구현한다.
-- T79는 키 없는 빌드가 서명 단계에서 실패하고, 올바른 키로 설치 파일과 `.sig`가 생성됨을 확인했다. 서명 trusted comment에 실제 버전이 있어 `requireSignedVersion`을 켰다. 기존 의존성 버전은 바뀌지 않았다.
-- T79 통합 전 메인이 Rust 490개와 프론트 검사를 직접 통과시켰다. 화면 통합의 전체 프론트 498개와 실제 화면 검수 범위는 HANDOFF 12절이 기준이다.
+- T101에서 실제 제품 화면의 주간·야근·직원 상세 캡처와 README 설치 링크·버전 셋·lock을 정리한다. 정식 태그는 만들지 않는다.
+- Windows 도구의 커서 접근 거부 이후 네이티브 입력은 멈췄다. 앞서 실제 휠과 업데이트 확인 버튼, WebView의 설정 스크롤·720×480 표시·키보드 이동은 통과했다. 사용자의 데스크톱 활성 상태 답변을 기다린다.
 
 ## 업데이트 검증 준비
 
@@ -17,9 +15,9 @@ T83·T92·T93·T84·T85·T86·T87·T88·T89·T90·T91·T94·T95·T96·T97·T98·
 
 키는 저장소 밖 `%USERPROFILE%/.tauri/owlfice.key`에 암호화해 보관한다. 비밀번호는 같은 폴더의 `owlfice.password.dpapi`에서 현재 Windows 계정으로 복호화한다. 공식 배포 전 별도 백업 확인은 남아 있다.
 
-시험 앱은 override JSON으로 이름 `Owlfice Updater QA`, 식별자 `com.owlfice.updaterqa`, currentUser 설치 모드를 쓴다. 별도 임시 설치 경로와 APPDATA를 사용하며 비승격 상태로 실행한다. NSIS의 비승격 재시작은 직접 ShellExecute 분기지만, 자동 재시작 뒤 실제 설정 유지까지 확인해야 한다. 정식 설정에는 로컬 endpoint나 HTTP 예외를 합치지 않는다.
+시험 앱은 override JSON으로 이름 `Owlfice Updater QA`, 식별자 `com.owlfice.updaterqa`, currentUser 설치 모드를 썼다. 별도 임시 설치 경로와 APPDATA에서 비승격 자동 재시작 후 test.2와 설정 보존을 확인했다. 정식 설정에는 로컬 endpoint나 HTTP 예외를 합치지 않는다.
 
-시험 자료 위치는 `%TEMP%/owlfice-updater-qa-current.txt`가 가리킨다. `configs/`에 test.1/test.2 override, `server.cjs`에 127.0.0.1 전용 서버가 있다. `server-mode.json`으로 정상·서명 불일치·없는 파일·없는 manifest와 느린 다운로드를 선택한다. `server-requests.jsonl`의 설치 파일 GET 횟수로 중복 설치를 검사한다. 실제 자산을 받기 전이며 최종 서버는 아직 실행하지 않았다.
+시험 자료 위치는 `%TEMP%/owlfice-updater-qa-current.txt`가 가리킨다. `configs/`에 test.1/test.2 override, `server.cjs`에 127.0.0.1 전용 서버가 있다. private 릴리스의 다운로드 해시 일치, 서명 거부, 없는 파일·manifest, 서버 연결 실패의 조용한 시작, 중복 설치 방지와 설정 파일 바이트 보존을 확인했다. 검증 릴리스는 삭제했다. PC 네트워크 자체는 끄지 않았고, 검증 endpoint 중단으로 연결 실패를 재현했다.
 
 ## 화면 검수에서 지킬 것
 

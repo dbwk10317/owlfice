@@ -258,7 +258,10 @@
     "contextDefault": "컨텍스트 창 기본값", "contextDefaultHint": "요약 기록을 아직 못 본 세션의 화분 크기 계산에 써요.",
     "contextOptions": ["200,000 토큰", "1,000,000 토큰"],
     "diag": "진단", "rawDiag": "원문 진단", "rawDiagHint": "켜면 명령 원문 80자와 결과 앞 200자를 미대응 로그에 저장해요. 켜 둔 동안 간판에 경고 점이 떠요.",
-    "copyDiag": "진단 정보 복사", "openUnhandled": "미대응 로그 폴더 열기"
+    "copyDiag": "진단 정보 복사", "openLogFolder": "로그 폴더 열기",
+    "logFolder": "앱 로그 위치", "logFolderLoading": "로그 위치를 불러오는 중입니다.",
+    "logFolderHint": "운영 오류 기록과 미대응 AI 동작 기록은 같은 폴더에 저장해요.",
+    "logFolderError": "로그 위치를 불러오지 못했습니다"
   },
 
   "onboarding": {

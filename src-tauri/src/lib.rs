@@ -219,6 +219,7 @@ pub fn run() {
             ipc::rescan,
             ipc::get_discovery,
             ipc::get_diagnostics,
+            ipc::get_log_folder,
             ipc::open_log_folder,
             notification::set_window_hidden,
             ipc::get_employee_timeline,

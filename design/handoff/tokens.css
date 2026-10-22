@@ -397,9 +397,9 @@
 .ow-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: left var(--ow-dur-2) var(--ow-ease); }
 .ow-switch[aria-checked="true"] { background: var(--ow-ink); }
 .ow-switch[aria-checked="true"]::after { left: 19px; }
-.ow-input { height: 34px; border: 1px solid #D4D4D8; border-radius: var(--ow-radius-md); padding: 0 10px; background: var(--ow-surface); font-size: 13px; }
+.ow-input { height: 34px; border: 1px solid #D4D4D8; border-radius: var(--ow-radius-md); padding: 0 10px; background: var(--ow-surface); color: var(--ow-ink); font-size: 13px; }
 .ow-input::placeholder { color: var(--ow-ink-3); }
-.ow-select { height: 32px; border: 1px solid #D4D4D8; border-radius: var(--ow-radius-md); padding: 0 10px; background: var(--ow-surface); font-size: 13px; font-weight: 500; }
+.ow-select { height: 32px; border: 1px solid #D4D4D8; border-radius: var(--ow-radius-md); padding: 0 10px; background: var(--ow-surface); color: var(--ow-ink); font-size: 13px; font-weight: 500; }
 
 /* ---------- 팝업 ---------- */
 .ow-backdrop { position: fixed; inset: 0; background: var(--ow-backdrop); display: flex; align-items: center; justify-content: center; z-index: var(--ow-z-modal); animation: ow-fade var(--ow-dur-2) var(--ow-ease); }
@@ -450,6 +450,7 @@
 /* ---------- 야근 모드 (다크 크롬) ----------
  * <html data-theme="night">. 머리말 토글, 또는 20시 이후 자동 (설정). 전환 --ow-dur-theme.
  * 픽셀 사무실은 조명 곱하기(HANDOFF 6.2절)로 따로 어두워지고, 여기는 크롬만 바꾼다. 상태 색은 밝은 짝으로. */
+html[data-theme="night"] { color-scheme: dark; }
 [data-theme="night"] {
   --ow-bg: #111113;
   --ow-panel: #17171A;

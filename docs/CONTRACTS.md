@@ -108,7 +108,7 @@ DTO는 [Rust 계약](../src-tauri/src/ipc.rs)에서 생성한 [TypeScript 타입
 
 ## C12. 검증 불변식과 fixture
 
-같은 논리 종료 시각에서 전체 재구성·증분 적용·허용된 병합 순서는 같은 최종 상태를 만들어야 한다. 파일 재설정과 재조회는 성과·직원·사건을 중복 누적하지 않아야 한다. 파서의 모르는 입력·혼합 명령·반려·시간 역행, 선택·상세의 늦은 응답, WSL 접근 차단과 경로 이탈은 동작 회귀로 검증한다. [스케줄러 검증](../src-tauri/src/tail/scheduler.rs), [상세 검증](../src-tauri/src/detail/tests.rs), [선택 검증](../src/store.test.ts), [연출 검증](../src/office/renderer.test.ts)
+같은 논리 종료 시각에서 전체 재구성·증분 적용·허용된 병합 순서는 같은 최종 상태를 만들어야 한다. 파일 재설정과 재조회는 성과·직원·사건을 중복 누적하지 않아야 한다. 파서의 모르는 입력·혼합 명령·반려·시간 역행, 선택·상세의 늦은 응답, WSL 접근 차단과 경로 이탈은 동작 회귀로 검증한다. [스케줄러 검증](../src-tauri/src/tail/scheduler.rs), [상세 검증](../src-tauri/src/detail/tests.rs), [선택 검증](../src/store.test.ts), [연출 검증](../src/office/renderer.test.ts). 코드와 검증이 가리키는 `S` 번호의 뜻은 [시나리오 번호표](SCENARIOS.md)
 
 원본 세션은 저장소 밖에 두고 읽기만 한다. fixture에 넣는 레코드는 허용 목록을 바탕으로 식별 정보·비밀을 제거하고, 필요한 형식·연결 관계·시간 간격만 남긴다. 자동 익명화가 사람 이름과 모든 비밀을 찾아낸다고 가정하지 않으며 최종 사람이 확인한다. 실제 발췌와 합성을 구분하고 미확인 형식을 실제로 확인한 자료처럼 쓰지 않는다. [익명화 도구](../tools/anonymize.py), [fixture 출처](../fixtures/README.md)
 

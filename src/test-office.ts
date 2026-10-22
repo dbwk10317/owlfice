@@ -30,6 +30,7 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
     recent: [],
     counters: { read: 1, edit: 2, shell: 3, outside: 4, meeting: 5, errors: 6 },
     uniqueReads: 0,
+    pendingCount: 0,
     uniqueEdits: 0,
     planning: false,
     medal: false,

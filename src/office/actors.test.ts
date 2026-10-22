@@ -93,6 +93,7 @@ function emp(
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },
     uniqueReads: 0,
+    pendingCount: 0,
     uniqueEdits: 0,
     planning: false,
     medal: false,

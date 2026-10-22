@@ -1205,6 +1205,32 @@ fn employee_carries_jobs_meeting_and_review() {
     );
 }
 
+/// 문장이 질문·허가 대기로 바뀌어도 진행 호출 수를 보존하고 백그라운드는 합치지 않는다.
+#[test]
+fn employee_pending_count_survives_waiting_and_rebuild() {
+    let mut events = vec![
+        ev("a", 1, tool("bg", ToolKind::Shell, "npm run dev")),
+        ev("a", 2, done("bg", ToolOutcome::Started, None)),
+        ev("a", 3, tool("one", ToolKind::FileRead, "")),
+        ev("a", 4, tool("two", ToolKind::FileRead, "")),
+    ];
+    let mut team = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
+    team.employees[0].asking = Some("계속할까요?".into());
+    team.employees[0].pending[0].summary.escalated = true;
+    let dto = employee_dto(&team.employees[0], team.last_activity);
+    assert_eq!((dto.pending_count, dto.jobs), (2, 1));
+    events.push(ev("a", 5, done("one", ToolOutcome::Ok, None)));
+    let restored = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
+    let dto = employee_dto(&restored.employees[0], restored.last_activity);
+    assert_eq!((dto.pending_count, dto.jobs), (1, 1));
+    events.push(ev("a", 6, done("two", ToolOutcome::Ok, None)));
+    let restored = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
+    assert_eq!(
+        employee_dto(&restored.employees[0], restored.last_activity).pending_count,
+        0
+    );
+}
+
 /// 결과판: 팀은 마지막 테스트 결과, 공유는 테스트를 가장 늦게 끝낸 팀 것. 숫자 없는 Mixed 는 바꾸지 않는다
 #[test]
 fn test_board_follows_the_latest_test() {

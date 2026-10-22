@@ -45,6 +45,7 @@ function makeTeam(id: string, name: string, slot: number): TeamDto {
 }
 const teams = [makeTeam("one", "한결", 0), makeTeam("two", "다온", 1)];
 let scale: Scale = "Small";
+let sidebarStates = false;
 let seq = 1;
 let selectRequest = 0;
 const store = createStore<OfficeListDto, OfficeDto>();
@@ -57,15 +58,16 @@ const status = document.getElementById("status")!;
 
 function summary(id: string, members: TeamDto[], floor: number): OfficeSummaryDto {
   const active = members.some((t) => t.phase !== "Off");
+  const asking = sidebarStates && members.some((t) => t.teamId === "one" && t.phase !== "Off");
   return {
     officeId: id,
     building: scale === "Large" ? "B" : null,
     floor,
     room: scale === "Large" ? floor + 100 : null,
-    label: scale === "Small" ? "Claude" : members[0].title,
+    label: scale === "Small" ? "1층 Claude 사무실" : `B동 ${floor + 100}호`,
     phase: active ? "Working" : "Off",
-    dot: active ? "Working" : "Off",
-    asking: false,
+    dot: active ? (sidebarStates ? (asking ? "Waiting" : "IdleAlive") : "Working") : "Off",
+    asking,
     border: "Plain",
     delayed: false,
     teams: members.map((t) => ({
@@ -76,12 +78,19 @@ function summary(id: string, members: TeamDto[], floor: number): OfficeSummaryDt
       others: 1,
       started: since,
       phase: t.phase,
-      dot: t.phase === "Off" ? "Off" : "Working",
-      asking: false,
-      askingCount: 0,
+      dot:
+        t.phase === "Off"
+          ? "Off"
+          : sidebarStates
+            ? t.teamId === "one"
+              ? "Waiting"
+              : "IdleAlive"
+            : "Working",
+      asking: sidebarStates && t.teamId === "one" && t.phase !== "Off",
+      askingCount: sidebarStates && t.teamId === "one" && t.phase !== "Off" ? 2 : 0,
       border: "Plain",
       delayed: false,
-      hostBadge: null,
+      hostBadge: sidebarStates && t.teamId === "two" ? "WSL" : null,
       workType: t.workType,
     })),
   };
@@ -292,5 +301,9 @@ document.getElementById("parallel")!.addEventListener("click", () => {
 document.getElementById("visit")!.addEventListener("click", () => {
   teams[1].props.bossVisit = "다온 팀의 수정 결과를 확인해 주세요";
   publish([{ teamId: "two", kind: "BossVisit", text: teams[1].props.bossVisit }]);
+});
+document.getElementById("sidebar-states")!.addEventListener("click", () => {
+  sidebarStates = !sidebarStates;
+  publish();
 });
 publish();

@@ -32,6 +32,13 @@
 .ow-sidebar__footer > button {
   margin-left: auto;
 }
+.ow-sidebar__status {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ow-ok);
+}
 .ow-sidebar__error {
   margin: 0;
   padding: 8px 12px;
@@ -56,10 +63,10 @@
   display: none;
 }
 
-/* 토스트: aside 밖이라 레일·드롭다운 모드에서도 보인다. 간판 60 아래에 겹쳐 띄운다 (HANDOFF 4.1) */
+/* 토스트: aside 밖이라 레일·드롭다운 모드에서도 보인다. 간판과 지표 아래에 띄운다 (HANDOFF 4.1) */
 .ow-toast-slot {
   position: absolute;
-  top: 60px;
+  top: calc(var(--ow-brand-h) + var(--ow-kpi-h) + 10px);
   left: 0;
   width: var(--ow-sidebar-w);
   z-index: calc(var(--ow-z-rail-pop) + 1);
@@ -85,8 +92,7 @@
   font-weight: 600;
 }
 .ow-toast__ago {
-  color: #fff;
-  opacity: 0.7;
+  color: #d4d4d8;
   font-size: 11px;
 }
 .ow-toast .ow-dot::before {
@@ -104,7 +110,6 @@
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding-top: 2px;
 }
 .ow-row__ask {
   color: var(--ow-ask);
@@ -124,12 +129,6 @@
 .ow-row__meta {
   white-space: nowrap;
 }
-/* "대기 중" 칩 (HANDOFF 4.2 idle-alive). 크기는 시안 Components 범례 */
-.ow-row__idle {
-  height: 18px;
-  padding: 0 5px;
-  font-size: 11px;
-}
 .ow-row.is-floor .ow-row__fold {
   margin-top: 6px;
 }
@@ -143,7 +142,7 @@
   opacity: 0.55;
 }
 .ow-row.is-new {
-  animation: ow-slide-in 240ms var(--ow-ease);
+  animation: ow-slide-in 200ms var(--ow-ease);
 }
 .ow-row__main:disabled {
   cursor: default;
@@ -201,14 +200,12 @@
 }
 
 /* 레일: 상태 점 색 (tokens 의 .ow-dot 규칙은 14px 점 전용) */
-.ow-rail__item.is-off {
-  opacity: 0.6;
-}
 .ow-rail__state[data-state="working"],
 .ow-rail__state[data-state="waiting"] {
   --ow-dot-color: var(--ow-ok);
 }
-.ow-rail__state[data-state="sleepy"] {
+.ow-rail__state[data-state="sleepy"],
+.ow-rail__state[data-state="idle-alive"] {
   --ow-dot-color: var(--ow-sleep);
 }
 .ow-rail__state[data-state="incident"] {

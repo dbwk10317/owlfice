@@ -39,6 +39,7 @@ function boss(room: Room, pose: Pose): EmployeeDto {
     planning: false,
     rejected: false,
     medal: false,
+    items: [],
     buildTestBorder: "Plain",
     lastSay: null,
     hiredAt: since,

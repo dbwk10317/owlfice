@@ -30,7 +30,7 @@
   },
   "beacon/off": {
    "frame": {
-    "x": 1364,
+    "x": 1377,
     "y": 378,
     "w": 5,
     "h": 4
@@ -58,7 +58,7 @@
   },
   "beacon/on_0": {
    "frame": {
-    "x": 1370,
+    "x": 1383,
     "y": 378,
     "w": 5,
     "h": 4
@@ -86,7 +86,7 @@
   },
   "beacon/on_1": {
    "frame": {
-    "x": 1376,
+    "x": 1389,
     "y": 378,
     "w": 5,
     "h": 4
@@ -422,7 +422,7 @@
   },
   "business_card/default": {
    "frame": {
-    "x": 1417,
+    "x": 1430,
     "y": 378,
     "w": 4,
     "h": 3
@@ -730,7 +730,7 @@
   },
   "cloud_lag/default": {
    "frame": {
-    "x": 1317,
+    "x": 1324,
     "y": 378,
     "w": 10,
     "h": 5
@@ -1542,7 +1542,7 @@
   },
   "duck_desk/default": {
    "frame": {
-    "x": 1382,
+    "x": 1395,
     "y": 378,
     "w": 5,
     "h": 4
@@ -1934,7 +1934,7 @@
   },
   "held_box_carry/default": {
    "frame": {
-    "x": 1388,
+    "x": 1401,
     "y": 378,
     "w": 5,
     "h": 4
@@ -1960,9 +1960,37 @@
     1
    ]
   },
+  "held_briefcase/default": {
+   "frame": {
+    "x": 1335,
+    "y": 378,
+    "w": 5,
+    "h": 5
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 5,
+    "h": 5
+   },
+   "sourceSize": {
+    "w": 5,
+    "h": 5
+   },
+   "anchor": {
+    "x": 0.2,
+    "y": 0.2
+   },
+   "anchorPx": [
+    1,
+    1
+   ]
+  },
   "held_clipboard/default": {
    "frame": {
-    "x": 1328,
+    "x": 1341,
     "y": 378,
     "w": 4,
     "h": 5
@@ -1990,7 +2018,7 @@
   },
   "held_duck/default": {
    "frame": {
-    "x": 1394,
+    "x": 1407,
     "y": 378,
     "w": 5,
     "h": 4
@@ -2018,7 +2046,7 @@
   },
   "held_envelope/default": {
    "frame": {
-    "x": 1400,
+    "x": 1413,
     "y": 378,
     "w": 5,
     "h": 4
@@ -2038,6 +2066,34 @@
    "anchor": {
     "x": 0.2,
     "y": 0.25
+   },
+   "anchorPx": [
+    1,
+    1
+   ]
+  },
+  "held_flashlight/default": {
+   "frame": {
+    "x": 1435,
+    "y": 378,
+    "w": 5,
+    "h": 3
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 5,
+    "h": 3
+   },
+   "sourceSize": {
+    "w": 5,
+    "h": 3
+   },
+   "anchor": {
+    "x": 0.2,
+    "y": 0.333333
    },
    "anchorPx": [
     1,
@@ -2074,7 +2130,7 @@
   },
   "held_papers/default": {
    "frame": {
-    "x": 1406,
+    "x": 1419,
     "y": 378,
     "w": 5,
     "h": 4
@@ -2100,9 +2156,37 @@
     1
    ]
   },
+  "held_scroll/default": {
+   "frame": {
+    "x": 1302,
+    "y": 378,
+    "w": 6,
+    "h": 6
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 6,
+    "h": 6
+   },
+   "sourceSize": {
+    "w": 6,
+    "h": 6
+   },
+   "anchor": {
+    "x": 0.166667,
+    "y": 0.166667
+   },
+   "anchorPx": [
+    1,
+    1
+   ]
+  },
   "held_swatch/default": {
    "frame": {
-    "x": 1422,
+    "x": 1441,
     "y": 378,
     "w": 3,
     "h": 3
@@ -2466,7 +2550,7 @@
   },
   "magnet/blue": {
    "frame": {
-    "x": 1436,
+    "x": 1455,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2494,7 +2578,7 @@
   },
   "magnet/coral": {
    "frame": {
-    "x": 1439,
+    "x": 1458,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2522,7 +2606,7 @@
   },
   "magnet/gray": {
    "frame": {
-    "x": 1442,
+    "x": 1461,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2550,7 +2634,7 @@
   },
   "magnet/green": {
    "frame": {
-    "x": 1445,
+    "x": 1464,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2578,7 +2662,7 @@
   },
   "magnet/red": {
    "frame": {
-    "x": 1448,
+    "x": 1467,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2606,7 +2690,7 @@
   },
   "magnet/teal": {
    "frame": {
-    "x": 1451,
+    "x": 1470,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2634,7 +2718,7 @@
   },
   "magnet/violet": {
    "frame": {
-    "x": 1454,
+    "x": 1473,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2662,7 +2746,7 @@
   },
   "magnet/yellow": {
    "frame": {
-    "x": 1457,
+    "x": 1476,
     "y": 378,
     "w": 2,
     "h": 2
@@ -2690,7 +2774,7 @@
   },
   "manual_open/default": {
    "frame": {
-    "x": 1333,
+    "x": 1346,
     "y": 378,
     "w": 9,
     "h": 5
@@ -3418,7 +3502,7 @@
   },
   "mug/steam_0": {
    "frame": {
-    "x": 1302,
+    "x": 1309,
     "y": 378,
     "w": 4,
     "h": 6
@@ -3446,7 +3530,7 @@
   },
   "mug/steam_1": {
    "frame": {
-    "x": 1307,
+    "x": 1314,
     "y": 378,
     "w": 4,
     "h": 6
@@ -3474,7 +3558,7 @@
   },
   "mug/still": {
    "frame": {
-    "x": 1312,
+    "x": 1319,
     "y": 378,
     "w": 4,
     "h": 6
@@ -3502,7 +3586,7 @@
   },
   "note_full/default": {
    "frame": {
-    "x": 1343,
+    "x": 1356,
     "y": 378,
     "w": 6,
     "h": 5
@@ -3530,7 +3614,7 @@
   },
   "note_return/default": {
    "frame": {
-    "x": 1350,
+    "x": 1363,
     "y": 378,
     "w": 6,
     "h": 5
@@ -3558,7 +3642,7 @@
   },
   "note_temp/default": {
    "frame": {
-    "x": 1357,
+    "x": 1370,
     "y": 378,
     "w": 6,
     "h": 5
@@ -3586,7 +3670,7 @@
   },
   "paper_ball/default": {
    "frame": {
-    "x": 1426,
+    "x": 1445,
     "y": 378,
     "w": 3,
     "h": 3
@@ -4062,7 +4146,7 @@
   },
   "ramen/default": {
    "frame": {
-    "x": 1412,
+    "x": 1425,
     "y": 378,
     "w": 4,
     "h": 4
@@ -4986,7 +5070,7 @@
   },
   "sweat/0": {
    "frame": {
-    "x": 1430,
+    "x": 1449,
     "y": 378,
     "w": 2,
     "h": 3
@@ -5014,7 +5098,7 @@
   },
   "sweat/1": {
    "frame": {
-    "x": 1433,
+    "x": 1452,
     "y": 378,
     "w": 2,
     "h": 3
@@ -9212,6 +9296,42 @@
     "desc": "손에 드는 물건. 기준점을 올빼미 hand 기준점에 맞춘다"
    },
    "held_papers": {
+    "kind": "held",
+    "footprint": [
+     0,
+     0
+    ],
+    "height": 0,
+    "states": [
+     "default"
+    ],
+    "desc": "손에 드는 물건. 기준점을 올빼미 hand 기준점에 맞춘다"
+   },
+   "held_briefcase": {
+    "kind": "held",
+    "footprint": [
+     0,
+     0
+    ],
+    "height": 0,
+    "states": [
+     "default"
+    ],
+    "desc": "손에 드는 물건. 기준점을 올빼미 hand 기준점에 맞춘다"
+   },
+   "held_flashlight": {
+    "kind": "held",
+    "footprint": [
+     0,
+     0
+    ],
+    "height": 0,
+    "states": [
+     "default"
+    ],
+    "desc": "손에 드는 물건. 기준점을 올빼미 hand 기준점에 맞춘다"
+   },
+   "held_scroll": {
     "kind": "held",
     "footprint": [
      0,

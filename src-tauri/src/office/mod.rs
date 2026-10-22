@@ -298,6 +298,7 @@ pub struct Employee {
     pub planning: bool,
     pub pass_streak: u32,
     pub medal_until: Option<DateTime<Utc>>,
+    pub blanket: bool,
     pub last_check_failed: bool,
     /// 이 직원 파일의 마지막 이벤트 시각
     pub last_event: DateTime<Utc>,

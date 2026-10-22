@@ -16,15 +16,21 @@ pub enum Role {
     Qa,
     DevOps,
     Writer,
+    Security,
+    Data,
+    Designer,
     Trainee,
 }
 
-const CATEGORIES: [Role; 5] = [
+const CATEGORIES: [Role; 8] = [
     Role::Backend,
     Role::Frontend,
     Role::Qa,
     Role::DevOps,
     Role::Writer,
+    Role::Security,
+    Role::Data,
+    Role::Designer,
 ];
 
 /// 이 수 미만의 분류되는 파일(서로 다른 경로)을 만졌으면 수습
@@ -33,7 +39,7 @@ const TRAINEE_BELOW: usize = 5;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Touched {
     seen: HashSet<String>,
-    counts: [u32; 5],
+    counts: [u32; 8],
 }
 
 impl Touched {
@@ -121,11 +127,30 @@ fn category(p: &str) -> Option<Role> {
     if name == "dockerfile" || name.starts_with("dockerfile.") {
         return Some(Role::DevOps);
     }
+    if p.split('/').any(|part| matches!(part, "auth" | "security"))
+        || matches!(ext, "pem" | "policy")
+        || matches!(
+            name,
+            "permissions.json" | "permissions.toml" | "permissions.yaml" | "permissions.yml"
+        )
+        || (ext == "json"
+            && p.rsplit_once('/').is_some_and(|(dir, _)| {
+                dir == "src-tauri/capabilities" || dir.ends_with("/src-tauri/capabilities")
+            }))
+    {
+        return Some(Role::Security);
+    }
+    if p.split('/').any(|part| part == "design") || matches!(ext, "css" | "scss" | "fig") {
+        return Some(Role::Designer);
+    }
+    if matches!(ext, "sql" | "csv" | "parquet" | "ipynb") {
+        return Some(Role::Data);
+    }
     match ext {
         "rs" | "go" | "py" | "java" | "kt" | "cs" | "rb" | "php" | "c" | "cpp" | "h" => {
             Some(Role::Backend)
         }
-        "tsx" | "jsx" | "vue" | "svelte" | "css" | "scss" | "html" => Some(Role::Frontend),
+        "tsx" | "jsx" | "vue" | "svelte" | "html" => Some(Role::Frontend),
         "yml" | "yaml" | "toml" | "sh" | "ps1" => Some(Role::DevOps),
         e if is_doc_ext(e) => Some(Role::Writer),
         "ts" | "js" => Some(if p.contains("src/server") || has(&["api", "backend"]) {

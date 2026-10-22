@@ -223,6 +223,10 @@
   overflow-y: auto;
 }
 
+html:not([data-theme="night"]) .ow-rail__item.is-claude {
+  color: var(--ow-ink);
+}
+
 /* 창 너비 구간 (design/HANDOFF.md 2.2). data-mode 는 mountSidebar 가 정한다 */
 .ow-side-host[data-mode="rail"] .ow-rail {
   display: flex;

@@ -630,9 +630,18 @@ test("reset: 사무실을 옮기면 진행 중인 효과가 사라진다", () =>
     NOW,
   );
   props.cue({ teamId: "t", kind: "Truck" }, NOW);
+  props.ring(NOW);
+  props.openDoor(NOW);
+  expect(tex(scene, "interphone")).toMatch(/^interphone\/ring_[01]$/);
+  expect(tex(scene, "door")).toBe("door/open");
   props.reset();
   props.update(office(), NOW + 10);
   expect(count(scene, "stamp_fail/default") + count(scene, "truck/drive_0")).toBe(0);
+  expect(tex(scene, "interphone")).toBe("interphone/idle");
+  expect(tex(scene, "door")).toBe("door/closed");
+  props.tick(NOW + 500);
+  expect(tex(scene, "interphone")).toBe("interphone/idle");
+  expect(tex(scene, "door")).toBe("door/closed");
 });
 
 test("Stamp: 전부 통과 / 일부 실패 / 추정 각각의 도장, 2초 뒤 사라진다", () => {
@@ -1277,3 +1286,49 @@ test("season false는 계절·12월·명절에도 참조 장면을 유지한다"
     expect(withFrame(scene.wall.children, "season/lantern")).toHaveLength(0);
   }
 });
+
+for (const pose of ["Think", "Pace"] as const)
+  test(`움직임 줄이기는 ${pose} 김·화면보호기·인터폰을 낮·밤 update 뒤에도 첫 장에 둔다`, () => {
+    let reduced = false;
+    vi.stubGlobal("matchMedia", () => ({ matches: reduced }));
+    const { scene, props } = layer();
+    const snapshot = (daylight: TeamDto["daylight"]) =>
+      testOffice("o", 1, [
+        testTeam(
+          "t",
+          [
+            testEmp("boss", {
+              activity: { ...testEmp("boss").activity, room: "TeamLead", pose },
+            }),
+          ],
+          { daylight },
+        ),
+      ]);
+    const active = () => (pose === "Think" ? tex(scene, "mug_0") : tex(scene, "boss_mon_0_0"));
+    const prefix = pose === "Think" ? "mug/steam_" : "monitor_lg/saver_";
+    try {
+      props.update(snapshot("day"), NOW);
+      props.ring(NOW);
+      props.tick(NOW + 625);
+      expect(active()).toBe(`${prefix}1`);
+      expect(tex(scene, "interphone")).toBe("interphone/ring_1");
+      reduced = true;
+      for (const dt of [626, 750, 875, 999]) {
+        props.tick(NOW + dt);
+        expect(active()).toBe(`${prefix}0`);
+        expect(tex(scene, "interphone")).toBe("interphone/ring_0");
+      }
+      for (const [i, daylight] of (["day", "night"] as const).entries()) {
+        const now = NOW + 2000 + i * 2000;
+        props.update(snapshot(daylight), now);
+        props.ring(now);
+        for (const dt of [0, 125, 375, 625, 999]) {
+          props.tick(now + dt);
+          expect(active()).toBe(`${prefix}0`);
+          expect(tex(scene, "interphone")).toBe("interphone/ring_0");
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });

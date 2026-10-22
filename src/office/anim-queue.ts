@@ -314,11 +314,8 @@ export class Track {
   }
 
   update(now: number): Shown {
-    this.advance(now);
-    if (this.ctx.reduced())
-      for (const s of this.steps)
-        if (s.kind === "walk" && (s.held === "briefcase" || s.held === "flashlight"))
-          s.held = undefined;
+    if (this.ctx.reduced()) this.reset(this.target, now);
+    else this.advance(now);
     if (this.steps.length === 0) this.idle(now);
     const s = this.steps[0];
     const t = this.target;

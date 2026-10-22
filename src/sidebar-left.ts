@@ -957,6 +957,7 @@ export function mountSidebar(
       }
       v.id = s.id;
       if (changed(v.last, "l", s.letter)) v.letter.textContent = s.letter;
+      v.el.classList.toggle("is-claude", !s.asking && s.square === color("claude"));
       const square = s.asking ? "var(--ow-ask)" : s.square;
       if (changed(v.last, "sq", square)) v.el.style.setProperty("--ow-square", square);
       // 허가 대기는 점 자리를 결재 색으로 칠한다 (HANDOFF 4.2)

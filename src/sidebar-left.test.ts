@@ -681,3 +681,18 @@ test("팝업 이름은 클릭이 준 사무실·팀으로 찾는다 (선택과 �
   expect(popupNames(l, "102", "없음").teamLabel).toBe("B동 102");
   expect(popupNames(l, "없음", "t").officeName).toBe("");
 });
+
+test("Claude 일반 레일의 진한 글자 대상은 허가 전환과 다른 제품에서 남지 않는다", () => {
+  const s = setup(list([office("101"), office("codex", { building: "C" })]), 800);
+  const tile = byClass(s.root, "ow-rail__item")[0];
+  expect(tile.classList.contains("is-claude")).toBe(true);
+  expect(byClass(s.root, "ow-rail__item")[1].classList.contains("is-claude")).toBe(false);
+  expect(tile.style.getPropertyValue("--ow-square")).toBe("var(--ow-claude)");
+  s.store.applyList(list([office("101", { asking: true }), office("codex", { building: "C" })]));
+  expect(tile.classList.contains("is-claude")).toBe(false);
+  expect(tile.style.getPropertyValue("--ow-square")).toBe("var(--ow-ask)");
+  s.store.applyList(list([office("101"), office("codex", { building: "C" })]));
+  expect(tile.classList.contains("is-claude")).toBe(true);
+  expect(tile.style.getPropertyValue("--ow-square")).toBe("var(--ow-claude)");
+  s.dispose();
+});

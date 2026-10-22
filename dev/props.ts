@@ -5,7 +5,7 @@ import { CANVAS_H, CANVAS_W, hexToRgb, type Kind, type Theme } from "../src/offi
 import { PropsLayer } from "../src/office/props.ts";
 import { buildScene, createOfficeApp } from "../src/office/renderer.ts";
 import { loadOfficeAssets } from "../src/office/sprites.ts";
-import { office as testOffice, team as testTeam } from "../src/test-office.ts";
+import { emp as testEmp, office as testOffice, team as testTeam } from "../src/test-office.ts";
 import type { OfficeDto, TeamDto, TodoItem } from "../src/types/ipc.ts";
 
 import { compare, loadRef, show, unpremultiply } from "./ref.ts";
@@ -20,7 +20,24 @@ const todo = (status: TodoItem["status"], n: number): TodoItem[] =>
   Array.from({ length: n }, () => ({ content: "x", status }));
 const team = (deskSlot: number, plant: number | null, building: string): TeamDto => {
   const t = testTeam(`t${deskSlot}`, [], { building });
-  return { ...t, deskSlot, props: { ...t.props, plant } };
+  t.deskSlot = deskSlot;
+  t.props.plant = plant;
+  if (deskSlot === 0) {
+    const night = building === "C";
+    t.employees = [
+      testEmp("boss", {
+        hiredAt: since(NOW(night ? 23 : 18), night ? 240 : 120),
+        uniqueReads: night ? 100 : 50,
+        uniqueEdits: 20,
+        pendingCount: 2,
+      }),
+    ];
+    t.testsToday = { passed: night ? 105 : 12, failed: night ? 7 : 2 };
+    t.commitsToday = 2;
+    t.props.pr = [1, "https://example.invalid/pull/1"];
+    t.props.night = night;
+  }
+  return t;
 };
 const office = (shared: Partial<OfficeDto["shared"]>, teams: TeamDto[]): OfficeDto => {
   const o = testOffice("props-reference", 0, teams);

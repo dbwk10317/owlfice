@@ -303,9 +303,9 @@ python design/tools/owlfice_art.py
 
 | 연출 | 기록의 신호와 뜻 · 확인/추정 | 보존할 상태 → DTO 또는 cue | 검증 근거 |
 |---|---|---|---|
-| 파란 트럭 | `PrLinked`의 PR 연결은 확인. 열림·머지 상태는 없음 | 기존 `props.pr` → 연결됨일 때만 파란색 | S30, PR 연결 유무 합성 필요 |
-| 오늘 로컬 테스트 전광판 | 대응 `Test` 호출의 확정 완료 **실행 횟수**. 케이스 수·CI·빌드 횟수와 구분. 마지막 `TestVerdict`에는 추정 결과도 섞이므로 집계 근거로 쓰지 않음 | 팀의 로컬 날짜별 합격·실패 누계 → `testsToday` | S64, `claude/test-fail-fix-pass` 합성 + 날짜 경계·중복·Mixed 합성 필요 |
-| 책장 채움 | `FileRead` 호출에 경로가 기록됐음은 확인 | 기존 `record.files_read` 고유 항목 수 → `uniqueReads`; 0·25·50·100 단계 | S65, 같은 경로 반복·검색 제외 합성 필요 |
+| 파란 트럭 | `PrLinked`의 PR 연결은 확인. 열림·머지 상태는 없음 | 표시 사무실의 어느 팀이든 `props.pr`가 있으면 파란 주차 트럭 | S30, PR 연결 유무 합성 필요 |
+| 오늘 로컬 테스트 전광판 | 대응 `Test` 호출의 확정 완료 **실행 횟수**. 케이스 수·CI·빌드 횟수와 구분. 마지막 `TestVerdict`에는 추정 결과도 섞이므로 집계 근거로 쓰지 않음 | 팀의 로컬 날짜별 합격·실패 누계 → `testsToday`; 표시 사무실 모든 팀(퇴근 포함)의 합 | S64, `claude/test-fail-fix-pass` 합성 + 날짜 경계·중복·Mixed 합성 필요 |
+| 책장 채움 | `FileRead` 호출에 경로가 기록됐음은 확인 | 기존 `record.files_read` 고유 항목 수 → `uniqueReads`; 표시 사무실 모든 팀·직원(퇴근 포함)의 합으로 0·25·50·100 단계. 직원 간 경로 중복 제거 수는 아님 | S65, 같은 경로 반복·검색 제외 합성 필요 |
 | 서류 더미 | `FileWrite`·`FileEdit` 호출에 경로가 기록됐음은 확인 | 기존 `record.files_edited` 고유 항목 수 → `uniqueEdits`; 10개마다 | S65, 같은 경로 반복·쓰기/수정 합성 필요 |
 | 메달 | 같은 직원의 확정 테스트 연속 3회 통과 때 획득. 완료 사건 시각부터 5분 유지, 이후 연속 통과마다 5분 갱신 | 직원 `pass_streak`·`medal_until` → `medal`; 사건 시각으로 재구성 | S66, 연속 통과·실패·추정 결과·재구성·만료 경계 합성 필요 |
 | 하이파이브 | 같은 팀의 서로 다른 두 직원이 10초 안에 확정 테스트 통과 | `Stamp`의 `agent`·`at`·`confirmedPass`로 직원·사건 시각·확정 통과를 보존 → 새 사건의 2인 연출. 도장에 표시한 테스트 숫자만으로 통과를 추정하지 않음 | S67, 두 직원·경계·전환 뒤 재생 금지 합성 필요 |
@@ -315,8 +315,8 @@ python design/tools/owlfice_art.py
 | ? 허가 표식 | 명시적 `PermissionRequest`는 확인. 무응답 시간으로 짐작한 허가는 추정 | 기존 asking 판정·신뢰도 → 표식; 추정은 점선 | S34·S68, Codex 질문 실제 발췌 + 시간 기반 허가 테스트 |
 | … 응답 표식 | `waiting_user_since` 등 발화·침묵에 따른 대기는 추정 | 기존 대기 상태 → 점선 표식 | S04·S32·S68, 기존 상태 전이 테스트 |
 | 커피 잔·근속 표식 | 직원의 `hiredAt` 뒤 경과. 팀 세션 나이·`activity.since`를 대신 쓰지 않음 | 기존 `hiredAt` → 커피 잔 1시간마다 최대 4개, 근속 1·3·6시간 단계 | S69, 늦게 입사한 서브·시계 경계 합성 필요 |
-| 모니터 2대 | 병렬 호출은 확인 | 기존 진행 중 호출의 병렬 수 → 모니터 | S53, `claude/parallel-reversed` 실제 발췌 |
-| 출고장 상자 | 확정된 비혼합 `GitCommit` 성공은 확인 | 팀의 로컬 날짜별 `commits_today` → `commitsToday` | S70, 기존 커밋 중복·백그라운드·재구성 테스트 + 날짜 경계 필요 |
+| 모니터 2대 | 병렬 호출은 확인 | 직원 `pendingCount` = 진행 중 호출 수. 2개 이상이면 모니터 2대. 백그라운드 `jobs`는 합치지 않음 | S53, `claude/parallel-reversed` 실제 발췌 |
+| 출고장 상자 | 확정된 비혼합 `GitCommit` 성공은 확인 | 팀의 로컬 날짜별 `commits_today` → `commitsToday`; 표시 사무실 모든 팀(퇴근 포함)의 합 | S70, 기존 커밋 중복·백그라운드·재구성 테스트 + 날짜 경계 필요 |
 | 창문·램프 | OS 로컬 시각의 단계 | Rust에서 계산한 `TeamDto.daylight` → 창문·조명·램프, 시간표는 6.2절 | S41·S75, 시각 경계·절전 복귀 테스트 필요 |
 | 회의실·두루마리 | Claude `EnterPlanMode`·`ExitPlanMode` 호출과 대응 결과. **(미확인)** 실제 진입→종료 연쇄는 현재 fixture에 없음. Codex 대응 신호는 약속하지 않음 | 계획 호출을 일반 `Ask`와 구별해 보존 → 직원 `planning` | S63, 진입·종료·별도 질문·중단 합성 필요 |
 | 자료실 | `ContextCompaction`은 확인 | 지속 상태를 새로 만들지 않고 사건의 직원 식별자 → 4초 방문 | S38·S71, Claude/Codex 압축 실제 발췌 + 서브 압축 합성 필요 |

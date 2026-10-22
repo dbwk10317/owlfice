@@ -826,6 +826,7 @@ fn call_summary(tool: &ToolKind, summary: &ToolSummary, m: &Mark) -> String {
         summary: summary.clone(),
         started: m.ts,
         big_read: false,
+        question: None,
     };
     let (label, subject) = (sentence::label(tool), sentence::subject(&call));
     if label == subject {

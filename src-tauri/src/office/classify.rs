@@ -11,7 +11,8 @@ use super::stats::TeamStats;
 use super::work::{Role, Touched, WorkTally, WorkType, touches_file};
 use super::{
     Activity, Bubble, BubbleSay, Counters, Cue, Employee, Incident, Light, Mark, PendingCall, Pose,
-    Rank, Room, Team, TeamPhase, TeamProps, TestVerdict, TimelineKind, Tokens, call_hash,
+    Rank, Room, Team, TeamPhase, TeamProps, TestCounts, TestVerdict, TimelineKind, Tokens,
+    call_hash,
 };
 use crate::discover::Product;
 use crate::parse::{
@@ -106,6 +107,9 @@ impl Employee {
             waiting_user_since: None,
             rejected_at: None,
             asking: None,
+            planning: false,
+            pass_streak: 0,
+            medal_until: None,
             last_event: at,
             context_used: None,
             context_window: None,
@@ -237,6 +241,9 @@ impl Team {
             seq: 0,
             turns: 0,
             commits: 0,
+            daily: HashMap::new(),
+            date: chrono::NaiveDate::MIN,
+            local: FixedOffset::east_opt(0).unwrap(),
             tokens: None,
         }
     }
@@ -447,12 +454,16 @@ impl Team {
                     summary.range.is_none()
                         || e.reads.iter().filter(|&&t| t <= ts).count() >= READ_BURST
                 };
+                if *tool == ToolKind::EnterPlanMode {
+                    e.planning = true;
+                }
                 e.pending.push(PendingCall {
                     call_id: call_id.clone(),
                     tool: tool.clone(),
                     summary: summary.clone(),
                     started: ts,
                     big_read,
+                    question: None,
                 });
                 if *tool == ToolKind::Spawn {
                     cues.push(Cue::Clap {
@@ -557,7 +568,11 @@ impl Team {
                 } else {
                     question.clone()
                 };
-                self.employees[i].asking = Some(q);
+                let e = &mut self.employees[i];
+                if let Some(call) = e.pending.last_mut() {
+                    call.question = Some(q.clone());
+                }
+                e.asking = Some(q);
                 self.refresh(i, ts);
                 let question = question.trim();
                 if *plan {
@@ -572,6 +587,10 @@ impl Team {
                 post_tokens,
             } => {
                 let e = &mut self.employees[i];
+                cues.push(Cue::Compaction {
+                    agent: e.id.clone(),
+                    at: ts,
+                });
                 e.context_used = *post_tokens;
                 if let Some(pre) = pre_tokens {
                     e.context_window = Some(window_from_pre_tokens(*pre, e.context_window));
@@ -810,7 +829,24 @@ impl Team {
         self.note_gaps(&before, from, "tick", cues);
     }
 
+    pub fn tests_today(&self) -> TestCounts {
+        self.daily
+            .get(&self.date)
+            .map_or(TestCounts::default(), |d| d.0)
+    }
+
+    pub fn commits_today(&self) -> u32 {
+        self.daily.get(&self.date).map_or(0, |d| d.1)
+    }
+
     fn tick_to(&mut self, now: DateTime<Utc>, local: FixedOffset, cues: &mut Vec<Cue>) {
+        self.local = local;
+        self.date = self.date.max(now.with_timezone(&local).date_naive());
+        for e in &mut self.employees {
+            if e.medal_until.is_some_and(|until| now >= until) {
+                e.medal_until = None;
+            }
+        }
         if let Some(at) = self
             .incident
             .as_ref()
@@ -1012,8 +1048,8 @@ impl Team {
                 on: false,
             });
         }
-        if call.tool == ToolKind::Ask {
-            e.asking = None;
+        if matches!(call.tool, ToolKind::Ask | ToolKind::ExitPlanMode) {
+            e.asking = e.pending.iter().rev().find_map(|c| c.question.clone());
         }
         if *outcome != ToolOutcome::Started {
             e.quiet_since = Some(ts);
@@ -1022,7 +1058,50 @@ impl Team {
         }
         let home = home_room(e);
         let confirmed = *outcome_confidence == Confidence::Confirmed;
+        if confirmed
+            && ((call.tool == ToolKind::EnterPlanMode
+                && matches!(outcome, ToolOutcome::Err | ToolOutcome::Rejected))
+                || (call.tool == ToolKind::ExitPlanMode
+                    && matches!(outcome, ToolOutcome::Ok | ToolOutcome::Rejected)))
+        {
+            e.planning = false;
+        }
         let declares = call.summary.compound != Compound::Mixed;
+        let test_verdict = if call.tool == ToolKind::Test && confirmed && declares {
+            match outcome {
+                ToolOutcome::Ok => Some(verdict(test_result.map_or(0, |t| t.failed))),
+                ToolOutcome::Err
+                    if call.summary.compound == Compound::Single
+                        || test_result.is_some_and(|t| t.failed > 0) =>
+                {
+                    Some(TestVerdict::Fail)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if call.tool == ToolKind::Test && *outcome != ToolOutcome::Started {
+            if let Some(verdict) = test_verdict {
+                let counts = &mut self
+                    .daily
+                    .entry(ts.with_timezone(&self.local).date_naive())
+                    .or_default()
+                    .0;
+                match verdict {
+                    TestVerdict::Pass => counts.passed = counts.passed.saturating_add(1),
+                    TestVerdict::Fail => counts.failed = counts.failed.saturating_add(1),
+                }
+            }
+            if test_verdict == Some(TestVerdict::Pass) {
+                e.pass_streak = e.pass_streak.saturating_add(1);
+                if e.pass_streak >= 3 {
+                    e.medal_until = Some(ts + Duration::minutes(5));
+                }
+            } else {
+                e.pass_streak = 0;
+            }
+        }
         let own = match outcome {
             ToolOutcome::Rejected => Some(conflict::REJECTED),
             ToolOutcome::Err if confirmed => Some(conflict::ACCIDENT),
@@ -1059,6 +1138,9 @@ impl Team {
                         self.props.test = Some(verdict(t.failed));
                         self.props.test_at = ts;
                         cues.push(Cue::Stamp {
+                            confirmed_pass: test_verdict == Some(TestVerdict::Pass),
+                            agent: agent.clone(),
+                            at: ts,
                             passed: t.passed,
                             failed: t.failed,
                             estimated: false,
@@ -1069,6 +1151,9 @@ impl Team {
                             self.props.test = Some(verdict(t.failed));
                             self.props.test_at = ts;
                             cues.push(Cue::Stamp {
+                                confirmed_pass: test_verdict == Some(TestVerdict::Pass),
+                                agent: agent.clone(),
+                                at: ts,
                                 passed: t.passed,
                                 failed: t.failed,
                                 estimated: true,
@@ -1081,6 +1166,12 @@ impl Team {
                     }
                     (ToolKind::GitCommit, true) => {
                         self.commits = self.commits.saturating_add(1);
+                        let commits = &mut self
+                            .daily
+                            .entry(ts.with_timezone(&self.local).date_naive())
+                            .or_default()
+                            .1;
+                        *commits = commits.saturating_add(1);
                     }
                     (ToolKind::GitPush | ToolKind::PrCreate, true) => cues.push(Cue::Truck),
                     (ToolKind::Release, true) => cues.push(Cue::Fireworks),
@@ -1116,7 +1207,9 @@ impl Team {
             }
             ToolOutcome::Err if confirmed => {
                 e.counters.errors += 1;
-                cues.push(Cue::Shake { agent });
+                cues.push(Cue::Shake {
+                    agent: agent.clone(),
+                });
                 self.props.trash += 1;
                 self.props.safe_since = ts;
                 match &call.tool {
@@ -1136,6 +1229,9 @@ impl Team {
                         }
                         if let Some(t) = test_result {
                             cues.push(Cue::Stamp {
+                                confirmed_pass: test_verdict == Some(TestVerdict::Pass),
+                                agent: agent.clone(),
+                                at: ts,
                                 passed: t.passed,
                                 failed: t.failed,
                                 estimated: !declares,
@@ -1363,7 +1459,8 @@ impl Team {
             _ => None,
         };
         // 질문은 직급 인사를 받지 않는다. 결재판을 든 채 인사가 남는다
-        let greet = !e.is_boss() && !e.greeted && *tool != ToolKind::Ask;
+        let greet =
+            !e.is_boss() && !e.greeted && !matches!(tool, ToolKind::Ask | ToolKind::ExitPlanMode);
         let say = if greet && once.is_none() {
             Some(BubbleSay::Rank)
         } else {
@@ -1406,11 +1503,15 @@ impl Team {
 
     /// 결과가 영영 오지 않는 호출을 Unknown 으로 정리한다 (docs/CONTRACTS.md C8). 실적·평균은 건드리지 않는다
     fn give_up(&mut self, i: usize, call: PendingCall, at: DateTime<Utc>, bubble: bool) {
-        if call.tool == ToolKind::Ask {
-            self.employees[i].asking = None;
+        if matches!(call.tool, ToolKind::Ask | ToolKind::ExitPlanMode) {
+            let e = &mut self.employees[i];
+            e.asking = e.pending.iter().rev().find_map(|c| c.question.clone());
         }
         self.restore_light(&call);
         let e = &mut self.employees[i];
+        if call.tool == ToolKind::Test {
+            e.pass_streak = 0;
+        }
         let room = home_room(e);
         e.log_activity(Activity::new(
             sentence::unknown(&call),
@@ -1819,7 +1920,7 @@ fn event_name(kind: &EventKind) -> &'static str {
 /// 사장님 결재를 기다리는 호출. 자리를 비우면 30분을 넘길 수 있어 포기하지 않는다.
 /// 죽은 세션은 팀 Off 가 정리한다 (docs/CONTRACTS.md C8)
 fn waits_for_boss(c: &PendingCall) -> bool {
-    c.tool == ToolKind::Ask || c.summary.escalated
+    matches!(c.tool, ToolKind::Ask | ToolKind::ExitPlanMode) || c.summary.escalated
 }
 
 /// 신호등을 노랑으로 켜는 호출. Mixed 는 결과를 보증하지 못해 신호등을 건드리지 않는다 (docs/CONTRACTS.md C7)
@@ -1862,10 +1963,10 @@ fn is_review(tool: &ToolKind) -> bool {
 }
 
 /// 리뷰 승인 문구 (docs/CONTRACTS.md C3 리뷰실). 대소문자는 가리지 않는다
-// ponytail: 낱말 경계를 안 봐서 "미승인"·"disapprove" 도 승인으로 센다, 오판 사례가 나오면 경계를 본다
 fn approves(text: &str) -> bool {
     let t = text.to_lowercase();
-    ["lgtm", "승인", "approve"].iter().any(|w| t.contains(w))
+    t.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|word| matches!(word, "lgtm" | "승인" | "approve"))
 }
 
 /// 테스트 결과판: 실패가 하나라도 있으면 실패. 도장(프론트)과 같은 기준
@@ -1919,6 +2020,7 @@ fn room_for(tool: &ToolKind, boss: bool, big_read: bool) -> Room {
         | ToolKind::FileEdit
         | ToolKind::Spawn
         | ToolKind::Todo
+        | ToolKind::EnterPlanMode
         | ToolKind::Other(_) => {
             if boss {
                 Room::TeamLead
@@ -1935,7 +2037,7 @@ fn room_for(tool: &ToolKind, boss: bool, big_read: bool) -> Room {
         }
         ToolKind::Mcp { .. } | ToolKind::Skill { .. } => Room::Meeting,
         ToolKind::WebSearch | ToolKind::WebFetch => Room::Outside,
-        ToolKind::Ask => Room::Door,
+        ToolKind::Ask | ToolKind::ExitPlanMode => Room::Door,
     }
 }
 
@@ -1964,7 +2066,12 @@ fn count(c: &mut Counters, tool: &ToolKind) {
         | ToolKind::Release => c.shell += 1,
         ToolKind::WebSearch | ToolKind::WebFetch => c.outside += 1,
         ToolKind::Mcp { .. } | ToolKind::Skill { .. } => c.meeting += 1,
-        ToolKind::Spawn | ToolKind::Ask | ToolKind::Todo | ToolKind::Other(_) => {}
+        ToolKind::Spawn
+        | ToolKind::Ask
+        | ToolKind::EnterPlanMode
+        | ToolKind::ExitPlanMode
+        | ToolKind::Todo
+        | ToolKind::Other(_) => {}
     }
 }
 
@@ -2126,7 +2233,8 @@ pub(crate) mod sentence {
             ToolKind::PrCreate => "PR 생성",
             ToolKind::Release => "릴리스",
             ToolKind::Spawn => "업무 지시",
-            ToolKind::Ask => "결재",
+            ToolKind::Ask | ToolKind::ExitPlanMode => "결재",
+            ToolKind::EnterPlanMode => "계획 시작",
             ToolKind::WebSearch => "웹 검색",
             ToolKind::WebFetch => "웹 열람",
             ToolKind::Todo => "칸반 정리",
@@ -2248,7 +2356,8 @@ pub(crate) mod sentence {
                 None => format!("출고 포장 중: {}", command(call, "커밋")),
             },
             ToolKind::Spawn => "업무 지시 중".to_string(),
-            ToolKind::Ask => ASKING.to_string(),
+            ToolKind::Ask | ToolKind::ExitPlanMode => ASKING.to_string(),
+            ToolKind::EnterPlanMode => "계획 시작 중".to_string(),
             ToolKind::Todo => "칸반 보드 정리 중".to_string(),
             ToolKind::Other(name) => format!("처음 보는 업무: {}", code(name)),
         };
@@ -2317,7 +2426,7 @@ pub(crate) mod sentence {
             ToolKind::Mcp { server, .. } => format!("거래처 {} 미팅 완료", code(server)),
             ToolKind::Skill { name } => format!("외주 매뉴얼 {} 확인", code(name)),
             ToolKind::Spawn => "업무 지시 완료".to_string(),
-            ToolKind::Ask => "결재 받음".to_string(),
+            ToolKind::Ask | ToolKind::ExitPlanMode => "결재 받음".to_string(),
             ToolKind::Todo => "칸반 보드 정리".to_string(),
             _ => format!("{} 완료", subject(call)),
         }

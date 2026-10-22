@@ -93,6 +93,7 @@ function list(selectedId: string | null): OfficeListDto {
             phase: "Working",
             dot: "Working",
             asking: false,
+            askingCount: 0,
             border: "Plain",
             delayed: false,
             hostBadge: null,

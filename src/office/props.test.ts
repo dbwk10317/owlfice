@@ -554,7 +554,16 @@ test("출고장에 있는 직원마다 포장된 상자가 하나씩, 슬롯 수
 const jobsOf = (a: number, b: number) =>
   crew({ ...emp("Dev"), jobs: a }, { ...emp("Dev", "Sit", "f"), jobs: b });
 const stampCue = (passed: number, failed: number, estimated = false) =>
-  ({ teamId: "t", kind: "Stamp", passed, failed, estimated }) as const;
+  ({
+    teamId: "t",
+    kind: "Stamp",
+    confirmedPass: !estimated && failed === 0,
+    agent: "e",
+    at: new Date(NOW).toISOString(),
+    passed,
+    failed,
+    estimated,
+  }) as const;
 
 test("작업표: 어느 직원이든 백그라운드 명령이 있으면 보이고, 장면을 다시 지어도 스냅샷으로 같다", () => {
   const { scene, props } = layer();
@@ -594,7 +603,19 @@ test("결과판: 공유 test 를 따르고 없으면 평면도 기본. 사무실
 
 test("reset: 사무실을 옮기면 진행 중인 효과가 사라진다", () => {
   const { scene, props } = layer();
-  props.cue({ teamId: "t", kind: "Stamp", passed: 1, failed: 1, estimated: false }, NOW);
+  props.cue(
+    {
+      teamId: "t",
+      kind: "Stamp",
+      confirmedPass: false,
+      agent: "e",
+      at: new Date(NOW).toISOString(),
+      passed: 1,
+      failed: 1,
+      estimated: false,
+    },
+    NOW,
+  );
   props.cue({ teamId: "t", kind: "Truck" }, NOW);
   props.reset();
   props.update(office(), NOW + 10);

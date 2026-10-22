@@ -85,7 +85,7 @@
 
 ### T93 파서·상태·DTO 확장 (과장 · 중) — T92 뒤
 
-- 범위: `src-tauri/src/parse/claude.rs`·`codex.rs`(`EnterPlanMode` 도구 종류), `src-tauri/src/parse/mod.rs`(`ToolKind`), `src-tauri/src/office/classify.rs`(`planning`, `pass_streak`·`medal_until`, 팀 날짜별 누계, `Cue::Stamp{agent_id}`, `approves` 낱말 경계; 기존 상태 테스트 배치는 `office/tests.rs`를 따른다), `src-tauri/src/office/mod.rs`(직원·팀 상태, `Cue`), `src-tauri/src/office/tests.rs`(상태·재구성 검증), `src-tauri/src/ipc.rs`(`EmployeeDto.unique_reads`·`unique_edits`·`medal`·`planning`, `TeamDto.tests_today`·`commits_today`), IPC 타입 재생성 → `src/types/*`, 그리고 **타입 변경으로 깨지는 프론트 사용처만**: `src/test-office.ts`(테스트 데이터 생성기), `src/office/actors.test.ts`(`Stamp` cue 생성), `dev/*.ts`(개발 시나리오의 DTO 리터럴), `src/types/*` 를 쓰는 다른 테스트. `fixtures/claude/*`(새 합성 시나리오: 계획 모드, 연속 통과 3회, 거부, 컴팩션), `fixtures/README.md`(새 fixture의 합성 여부·출처).
+- 범위: `src-tauri/src/parse/claude.rs`·`codex.rs`(`EnterPlanMode` 도구 종류), `src-tauri/src/parse/mod.rs`(`ToolKind`), `src-tauri/src/office/classify.rs`(`planning`, `pass_streak`·`medal_until`, 팀 날짜별 누계, `Cue::Stamp{agent, at, confirmedPass}`·직원별 `Cue::Compaction{agent, at}`, `approves` 낱말 경계; 기존 상태 테스트 배치는 `office/tests.rs`를 따른다), `src-tauri/src/office/mod.rs`(직원·팀 상태, `Cue`), `src-tauri/src/office/tests.rs`(상태·재구성 검증), `src-tauri/src/detail.rs`·`src-tauri/src/ipc/tests.rs`(호출 질문 필드와 DTO 시각 인자 대응·노출 검증), `src-tauri/src/ipc.rs`(`EmployeeDto.unique_reads`·`unique_edits`·`medal`·`planning`, `TeamDto.tests_today`·`commits_today`, `TeamSummaryDto.asking_count`: 퇴근하지 않은 팀에서 결재를 기다리는 직원 수), IPC 타입 재생성 → `src/types/*`, 그리고 **타입 변경으로 깨지는 프론트 사용처만**: `src/test-office.ts`(테스트 데이터 생성기), `src/office/actors.test.ts`(`Stamp` cue 생성), `dev/*.ts`(개발 시나리오의 DTO 리터럴), `src/types/*` 를 쓰는 다른 테스트. `fixtures/claude/*`(새 합성 시나리오: 계획 모드, 연속 통과 3회, 거부, 컴팩션), `fixtures/README.md`(새 fixture의 합성 여부·출처).
 - 완료 기준: 새 상태·누계마다 fixture replay 테스트 1개 + **재구성 불변식 테스트** (같은 fixture 를 처음부터 다시 읽어도 `pass_streak`·`medal_until`·누계·`planning` 이 같다, C10), 날짜가 바뀌면 누계가 0 이 되는 테스트, `cargo test`·clippy·`npm run check`·`npm test` 모두 녹색. **화면 기능은 바꾸지 않는다** — 프론트 수정은 새 필드를 채우는 생성기·테스트 데이터·개발 시나리오와 타입 검사 통과에 필요한 것까지만.
 
 ### T94 소품 확장 1차 (과장 · 중) — T93 뒤
@@ -111,7 +111,7 @@
 ### T97 자세 +5 (과장 · 중) — T96 뒤
 
 - 범위: `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`preview/poses.png`, `src/office/actors.ts`·`anim-queue.ts`(+test), HANDOFF 6.4절 표.
-- 할 일: think(기존 침묵 기반 `Pose::Think` 의 발생·종료 조건 그대로, 프레임 2장만 새로, 추정 꼬리표 유지), highfive(`Cue::Stamp{agent_id}` 둘이 10초 안, 2인), stretch(`hiredAt` 뒤 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지). 2절 우선순위를 지킨다.
+- 할 일: think(기존 침묵 기반 `Pose::Think` 의 발생·종료 조건 그대로, 프레임 2장만 새로, 추정 꼬리표 유지), highfive(`Cue::Stamp{agent, at, confirmedPass}`·직원별 `Cue::Compaction{agent, at}` 둘이 10초 안, 2인), stretch(`hiredAt` 뒤 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지). 2절 우선순위를 지킨다.
 - 완료 기준: 자세마다 replay 테스트 + 우선순위 테스트(허가 대기 중 stretch 금지, 장애 중 drink 금지), 프레임 규격 6.4절, 미리보기 갱신.
 
 ### T98 담당 +3 · 소지품 +7 (과장 · 중) — T97 뒤
@@ -138,9 +138,16 @@
 - T82-1 출시 전 검증이 통과한 뒤에 한다. `docs/images/office.png`·`employee.png` 재촬영(합성 데이터, 주간 1장 + 야근 1장 추가), `README.md` 캡션과 **설치 파일 링크 파일명을 0.2.0 으로** (`latest/download/Owlfice_0.2.0_x64-setup.exe`. 파일명이 고정이라 릴리스마다 바꿔야 한다. `PLAN_update.md` T81 절차 1번). `tauri.conf.json`·`package.json`·`src-tauri/Cargo.toml`(+`Cargo.lock`) 0.2.0 — T81 의 `release_check.py` 가 셋을 같이 본다.
 - 릴리스 자체는 T82-2 (`PLAN_update.md`). 이 문서와 `PLAN_update.md` 삭제는 T82-3 뒤.
 
+### T102 설정의 앱 로그 위치 (대리 · 하) — T90 뒤
+
+- 읽을 것: `docs/CONTRACTS.md` C9·C11, `design/HANDOFF.md` 4.6.
+- 범위: `src/popup-settings.ts`(+test), `src/styles/popup.css`(긴 경로 줄바꿈만), `src-tauri/src/ipc.rs`·`src-tauri/src/lib.rs`(로그 경로 조회 명령), `dev/settings.ts`, `design/handoff/phrases.ko.json` settings.
+- 할 일: 백엔드가 사용하는 실제 로그 폴더를 설정 진단 영역에 선택·복사 가능한 텍스트로 표시한다. 기존 `open_log_folder`와 탐색기 열기 처리를 재사용하고 버튼 이름을 "로그 폴더 열기"로 바꾼다. 운영 오류 기록과 미대응 AI 동작 기록이 같은 폴더에 있음을 안내한다. 경로 조회 실패·열기 실패를 표시한다. 프론트가 보낸 경로를 열거나 로그 원문을 UI에 자동 로드하지 않는다.
+- 완료 기준: 경로 표시, 긴 경로 레이아웃, 조회 실패에도 설정 사용 가능, 탐색기 요청과 실패 알림을 검증한다. 기본 구조 진단·명시적 원문 진단 동작은 C11을 유지한다.
+
 ## 4. 순서
 
-T83 → T92(메인) → T93 → (T84 ‖ T85 ‖ T88) → T86 → T87 → T89 → T90 → T91 → T94 → T95 → T96 → T97 → T98 → T99 → T100 → `PLAN_update.md` T79 → (T80 ‖ T81) → T82-1 출시 전 검증 → T101 버전·문서 확정 → T82-2 정식 출시 → T82-3 실전 확인 → 두 PLAN 삭제.
+T83 → T92(메인) → T93 → (T84 ‖ T85 ‖ T88) → T86 → T87 → T89 → T90 → T102 → T91 → T94 → T95 → T96 → T97 → T98 → T99 → T100 → `PLAN_update.md` T79 → (T80 ‖ T81) → T82-1 출시 전 검증 → T101 버전·문서 확정 → **사용자 지시: main 병합 전에 정지** → T82-2 정식 출시 → T82-3 실전 확인 → 두 PLAN 삭제.
 
 - 쓰는 서브는 같은 파일에 둘을 두지 않는다 (AGENTS.md 3절). T84·T85·T88 은 파일이 겹치지 않아 동시 가능.
 - T94–T99 는 모두 `owlfice_art.py` 와 스프라이트 시트를 고치므로 하나씩. 생성기를 고칠 때마다 `python design/tools/owlfice_art.py` 가 끝까지 돌고 겹침·누락 검사를 통과해야 한다.

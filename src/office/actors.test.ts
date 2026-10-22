@@ -92,6 +92,10 @@ function emp(
     },
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },
+    uniqueReads: 0,
+    uniqueEdits: 0,
+    planning: false,
+    medal: false,
     lastSay: null,
     hiredAt: SINCE,
     retiredAt: null,
@@ -127,6 +131,8 @@ function team(teamId: string, employees: EmployeeDto[], o: Partial<TeamDto> = {}
     props: {} as TeamDto["props"],
     incident: null,
     idleAlive: false,
+    testsToday: { passed: 0, failed: 0 },
+    commitsToday: 0,
     ...o,
   };
 }
@@ -1212,7 +1218,16 @@ test("반려 도장은 걷는 동안 숨고 긁기가 시작된 때부터 1초 �
 // ---------- 빌드실·테스트실·출고장 (T25) ----------
 
 const stamp = (o: { passed?: number; failed?: number; estimated?: boolean } = {}) =>
-  cue({ kind: "Stamp", passed: 12, failed: 0, estimated: false, ...o });
+  cue({
+    kind: "Stamp",
+    confirmedPass: true,
+    agent: "a",
+    at: SINCE,
+    passed: 12,
+    failed: 0,
+    estimated: false,
+    ...o,
+  });
 // 테스트실에서 일하던 직원이 도장 때 개발실로 돌아간다
 const testerLeaves = (cues: OfficeDto["cues"]) => {
   const { layer } = newLayer({ owls: labeled });

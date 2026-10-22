@@ -78,7 +78,7 @@ started: string, phase: TeamPhase, dot: Dot,
 /**
  * 점 옆 결재판 (허가 대기)
  */
-asking: boolean, border: Border, 
+asking: boolean, askingCount: number, border: Border, 
 /**
  * 통신 지연 (점선 테두리, WSL 의심 상태)
  */
@@ -114,7 +114,7 @@ export type RoomEventDto = { teamId: string, agentId: string, activity: Activity
 /**
  * 연출 신호와 그 팀. 중소기업은 한 사무실에 팀이 여럿이라 팀 단위 연출(사장님 방문, 분갈이 등)에 필요하다
  */
-export type CueDto = { teamId: string, } & ({ "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Depart", agent: string, } | { "kind": "Stamp", passed: number, failed: number, estimated: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Paper", agent: string, on: boolean, });
+export type CueDto = { teamId: string, } & ({ "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Depart", agent: string, } | { "kind": "Stamp", agent: string, at: string, passed: number, failed: number, estimated: boolean, confirmedPass: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Compaction", agent: string, at: string, } | { "kind": "Paper", agent: string, on: boolean, });
 
 export type SelectResponseDto = { requestId: number, stateSeq: number, officeId: string, rebuilt: boolean, teams: Array<TeamDto>, shared: SharedPropsDto, roomRecent: Array<RoomRecentDto>, cues: Array<CueDto>, };
 
@@ -138,7 +138,7 @@ employees: Array<EmployeeDto>, props: TeamProps, incident: Incident | null,
 /**
  * 30분 넘게 조용하지만 프로세스가 살아 있다 (S58). 살아 있는 팀이 모두 그러면 조명이 어둡다
  */
-idleAlive: boolean, };
+idleAlive: boolean, testsToday: TestCounts, commitsToday: number, };
 
 /**
  * 직원 카드 한 장 (docs/CONTRACTS.md C3)
@@ -151,7 +151,7 @@ role: Role, model: string | null, description: string | null, activity: Activity
 /**
  * 최근 행적, 최신이 먼저
  */
-recent: Array<Activity>, counters: Counters, lastSay: string | null, hiredAt: string, 
+recent: Array<Activity>, counters: Counters, uniqueReads: number, uniqueEdits: number, planning: boolean, medal: boolean, lastSay: string | null, hiredAt: string, 
 /**
  * 있으면 퇴장한(또는 퇴장으로 짐작한) 직원
  */
@@ -292,12 +292,14 @@ safeSince: string, pizza: number, kanban: Array<TodoItem>, night: boolean, pr: [
  */
 export type TestVerdict = "Pass" | "Fail";
 
+export type TestCounts = { passed: number, failed: number, };
+
 export type Incident = { since: string, lastError: string, };
 
 /**
  * 프론트 연출 힌트 (docs/CONTRACTS.md C9 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
  */
-export type AnimCue = { "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Depart", agent: string, } | { "kind": "Stamp", passed: number, failed: number, estimated: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Paper", agent: string, on: boolean, };
+export type AnimCue = { "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Depart", agent: string, } | { "kind": "Stamp", agent: string, at: string, passed: number, failed: number, estimated: boolean, confirmedPass: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Compaction", agent: string, at: string, } | { "kind": "Paper", agent: string, on: boolean, };
 
 /**
  * 직원 직급 (docs/CONTRACTS.md C8). 메인 에이전트가 부장인 것은 부르는 쪽이 정한다.

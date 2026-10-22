@@ -352,9 +352,12 @@ fn mixed_success_sends_no_truck_and_no_light() {
     assert!(!s.cues.contains(&Cue::Truck));
     assert_eq!(s.team.props.light, Light::Off);
     assert!(s.cues.contains(&Cue::Stamp {
+        agent: MAIN.into(),
+        at: at(5),
         passed: 3,
         failed: 1,
-        estimated: true
+        estimated: true,
+        confirmed_pass: false,
     }));
     is(
         s.boss(),
@@ -3493,4 +3496,463 @@ fn team_waking_from_doze_without_a_visit_is_a_gap() {
     s.cues.clear();
     s.on(MAIN, 5 * 60, text("하나 더"));
     assert!(gaps(&s.cues).contains(&(true, "졸음", "근무 중", "AssistantText")));
+}
+
+// S63~S71: 같은 논리 시각의 보존 상태를 직접 비교한다.
+fn assert_extension_state(a: &Team, b: &Team) {
+    assert_eq!(a.employees.len(), b.employees.len());
+    for (a, b) in a.employees.iter().zip(&b.employees) {
+        assert_eq!(a.id, b.id);
+        assert_eq!(a.planning, b.planning);
+        assert_eq!(a.pass_streak, b.pass_streak);
+        assert_eq!(a.medal_until, b.medal_until);
+        assert_eq!(a.record.files_read, b.record.files_read);
+        assert_eq!(a.record.files_edited, b.record.files_edited);
+    }
+    assert_eq!(a.daily, b.daily);
+    assert_eq!(a.tests_today(), b.tests_today());
+    assert_eq!(a.commits_today(), b.commits_today());
+}
+
+#[test]
+fn planning_fixture_keeps_other_questions_and_rebuilds_paths_and_compaction() {
+    let c = Case::claude("planning-state");
+    let snapshot = |sec| c.at(&at(sec).to_rfc3339(), 0);
+    assert!(boss(&snapshot(1)).planning);
+    let waiting = snapshot(15);
+    assert!(boss(&waiting).planning);
+    assert_eq!(boss(&waiting).asking.as_deref(), Some("계획 결재 올립니다"));
+    assert!(boss(&snapshot(16)).planning);
+    for sec in [17, 18, 20, 22] {
+        assert!(!boss(&snapshot(sec)).planning, "{sec}");
+    }
+    let t = snapshot(26);
+    assert!(boss(&t).planning);
+    assert_eq!(boss(&t).record.files_read.items, [("src/a.rs".into(), 2)]);
+    assert_eq!(boss(&t).record.files_edited.items, [("src/b.rs".into(), 2)]);
+    let events = merge(c.files.clone());
+    let mut live = Team::new(&c.id, c.product, t0());
+    let mut cues = Vec::new();
+    for ev in &events {
+        live.tick(ev.ts.unwrap(), utc(), &mut cues);
+        live.apply(ev, &mut cues);
+    }
+    assert!(cues.contains(&Cue::Compaction {
+        agent: c.id.clone(),
+        at: at(25)
+    }));
+    assert!(cues.contains(&Cue::Compaction {
+        agent: "plan-sub".into(),
+        at: at(26)
+    }));
+    assert_eq!(cues.iter().filter(|c| matches!(c, Cue::Repot)).count(), 1);
+    for end in [at(26), at(2000)] {
+        live.tick(end, utc(), &mut cues);
+        let mut rebuilt = rebuild(&c.id, c.product, &[], c.files.clone(), utc());
+        rebuilt.tick(end, utc(), &mut Vec::new());
+        assert_extension_state(&live, &rebuilt);
+        assert!(boss(&live).planning, "퇴근은 계획 상태를 지우지 않는다");
+    }
+}
+
+#[test]
+fn planning_exit_needs_its_confirmed_result_and_keeps_another_question() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("enter", ToolKind::EnterPlanMode, summary()))
+        .on(MAIN, 1, result("enter", ToolOutcome::Ok));
+    for (n, (outcome, confidence)) in [
+        (ToolOutcome::Err, Confirmed),
+        (ToolOutcome::Unknown, Confirmed),
+        (ToolOutcome::Ok, Inferred),
+        (ToolOutcome::Rejected, Inferred),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let t = 2 + n as i64 * 2;
+        let mut done = result("exit", outcome);
+        if let EventKind::ToolResult {
+            outcome_confidence, ..
+        } = &mut done
+        {
+            *outcome_confidence = confidence;
+        }
+        s.on(MAIN, t, call("exit", ToolKind::ExitPlanMode, summary()))
+            .on(MAIN, t, ask("Plan", true))
+            .on(MAIN, t + 1, done);
+        assert!(s.boss().planning);
+    }
+    s.on(MAIN, 10, call("exit", ToolKind::ExitPlanMode, summary()))
+        .on(MAIN, 10, ask("Plan", true))
+        .on(MAIN, 11, call("other", ToolKind::Ask, summary()))
+        .on(MAIN, 11, ask("Other question", false))
+        .on(MAIN, 12, result("exit", ToolOutcome::Ok));
+    assert!(!s.boss().planning);
+    assert_eq!(s.boss().asking.as_deref(), Some("Other question"));
+    s.on(MAIN, 13, result("other", ToolOutcome::Ok));
+    assert!(s.boss().asking.is_none());
+    s.on(
+        MAIN,
+        14,
+        call("new-enter", ToolKind::EnterPlanMode, summary()),
+    )
+    .on(MAIN, 15, result("new-enter", ToolOutcome::Ok))
+    .on(MAIN, 16, result("exit", ToolOutcome::Rejected));
+    assert!(
+        s.boss().planning,
+        "이미 끝난 종료 결과는 새 계획을 지우지 않는다"
+    );
+    fail(&mut s, "f1", 17, "cargo build");
+    fail(&mut s, "f2", 18, "cargo build");
+    fail(&mut s, "f3", 19, "cargo build");
+    s.tick(20);
+    assert!(s.team.incident.is_some());
+    assert!(s.boss().planning);
+}
+
+#[test]
+fn test_streak_fixture_counts_runs_and_preserves_medal_expiry() {
+    let c = Case::claude("test-streak");
+    let snapshot = |sec| c.at(&at(sec).to_rfc3339(), 0);
+    assert_eq!(boss(&snapshot(5)).medal_until, None);
+    assert_eq!(boss(&snapshot(8)).medal_until, Some(at(308)));
+    assert_eq!(boss(&snapshot(12)).medal_until, Some(at(312)));
+    assert_eq!(boss(&snapshot(18)).pass_streak, 0);
+    assert_eq!(boss(&snapshot(18)).medal_until, Some(at(312)));
+    let t = snapshot(24);
+    assert_eq!(
+        t.tests_today(),
+        super::TestCounts {
+            passed: 5,
+            failed: 1
+        }
+    );
+    assert_eq!(t.commits_today(), 1);
+    assert_eq!(t.commits, 1);
+    assert_eq!(boss(&t).pass_streak, 1);
+    assert_eq!(boss(&t).medal_until, Some(at(312)));
+    let events = merge(c.files.clone());
+    for end in [at(24), at(312), at(86400)] {
+        assert_extension_state(
+            &replayed(&c.id, &events, end),
+            &stepwise(&c.id, &events, end),
+        );
+    }
+}
+
+#[test]
+fn test_run_counts_require_confirmed_unmixed_completion() {
+    for (compound, outcome, confidence, numbers, expected) in [
+        (
+            Compound::Single,
+            ToolOutcome::Ok,
+            Confirmed,
+            None,
+            Some(true),
+        ),
+        (
+            Compound::Single,
+            ToolOutcome::Ok,
+            Confirmed,
+            Some((0, 0)),
+            Some(true),
+        ),
+        (
+            Compound::Single,
+            ToolOutcome::Ok,
+            Confirmed,
+            Some((3, 1)),
+            Some(false),
+        ),
+        (
+            Compound::Single,
+            ToolOutcome::Err,
+            Confirmed,
+            None,
+            Some(false),
+        ),
+        (
+            Compound::AndOnly,
+            ToolOutcome::Ok,
+            Confirmed,
+            None,
+            Some(true),
+        ),
+        (Compound::AndOnly, ToolOutcome::Err, Confirmed, None, None),
+        (
+            Compound::AndOnly,
+            ToolOutcome::Err,
+            Confirmed,
+            Some((4, 0)),
+            None,
+        ),
+        (
+            Compound::AndOnly,
+            ToolOutcome::Err,
+            Confirmed,
+            Some((3, 1)),
+            Some(false),
+        ),
+        (
+            Compound::Mixed,
+            ToolOutcome::Ok,
+            Confirmed,
+            Some((4, 0)),
+            None,
+        ),
+        (
+            Compound::Mixed,
+            ToolOutcome::Err,
+            Confirmed,
+            Some((3, 1)),
+            None,
+        ),
+        (
+            Compound::Single,
+            ToolOutcome::Rejected,
+            Confirmed,
+            None,
+            None,
+        ),
+        (
+            Compound::Single,
+            ToolOutcome::Unknown,
+            Confirmed,
+            None,
+            None,
+        ),
+        (
+            Compound::Single,
+            ToolOutcome::Ok,
+            Inferred,
+            Some((4, 0)),
+            None,
+        ),
+        (
+            Compound::Single,
+            ToolOutcome::Err,
+            Inferred,
+            Some((3, 1)),
+            None,
+        ),
+    ] {
+        let mut s = Sim::new();
+        for n in 0..2 {
+            s.on(MAIN, n * 2, call("seed", ToolKind::Test, cmd("cargo test")))
+                .on(MAIN, n * 2 + 1, result("seed", ToolOutcome::Ok));
+        }
+        s.on(MAIN, 4, call("build", ToolKind::Build, cmd("cargo build")))
+            .on(MAIN, 5, result("build", ToolOutcome::Err));
+        assert_eq!(s.boss().pass_streak, 2, "다른 업무는 연속을 끊지 않는다");
+        s.on(
+            MAIN,
+            6,
+            call(
+                "test",
+                ToolKind::Test,
+                ToolSummary {
+                    compound,
+                    ..cmd("cargo test")
+                },
+            ),
+        )
+        .on(MAIN, 7, result("test", ToolOutcome::Started));
+        assert_eq!(s.boss().pass_streak, 2);
+        let done = EventKind::ToolResult {
+            call_id: "test".into(),
+            outcome,
+            outcome_confidence: confidence,
+            preview: String::new(),
+            test_result: numbers.map(|(passed, failed)| TestResult { passed, failed }),
+        };
+        s.on(MAIN, 8, done.clone()).on(MAIN, 9, done);
+        assert_eq!(
+            s.team.tests_today(),
+            super::TestCounts {
+                passed: 2 + u32::from(expected == Some(true)),
+                failed: u32::from(expected == Some(false)),
+            },
+            "{compound:?} {outcome:?} {confidence:?}"
+        );
+        let actual_stamps: Vec<_> = s
+            .cues
+            .iter()
+            .filter_map(|cue| match cue {
+                Cue::Stamp {
+                    at: when,
+                    confirmed_pass,
+                    ..
+                } if *when == at(8) => Some(*confirmed_pass),
+                _ => None,
+            })
+            .collect();
+        if !actual_stamps.is_empty() {
+            assert_eq!(actual_stamps, [expected == Some(true)]);
+        }
+        assert_eq!(
+            s.boss().pass_streak,
+            if expected == Some(true) { 3 } else { 0 }
+        );
+        assert_eq!(
+            s.boss().medal_until,
+            (expected == Some(true)).then(|| at(308))
+        );
+    }
+}
+
+#[test]
+fn daily_counts_use_completion_date_even_when_past_results_arrive_late() {
+    let local = FixedOffset::east_opt(9 * 3600).unwrap();
+    let events = vec![
+        ev(
+            MAIN,
+            21590,
+            call("old-test", ToolKind::Test, cmd("cargo test")),
+        ),
+        ev(
+            MAIN,
+            21591,
+            call("old-commit", ToolKind::GitCommit, cmd("git commit")),
+        ),
+        ev(
+            MAIN,
+            21601,
+            call("new-test", ToolKind::Test, cmd("cargo test")),
+        ),
+        ev(MAIN, 21602, result("new-test", ToolOutcome::Ok)),
+        ev(MAIN, 21595, result("old-test", ToolOutcome::Ok)),
+        ev(MAIN, 21596, result("old-commit", ToolOutcome::Ok)),
+        ev(
+            MAIN,
+            21603,
+            call("new-commit", ToolKind::GitCommit, cmd("git commit")),
+        ),
+        ev(MAIN, 21604, result("new-commit", ToolOutcome::Ok)),
+    ];
+    let mut live = Team::new(MAIN, Product::ClaudeCli, events[0].ts.unwrap());
+    for event in &events {
+        live.tick(event.ts.unwrap(), local, &mut Vec::new());
+        live.apply(event, &mut Vec::new());
+        if event.ts == Some(at(21596)) {
+            assert_eq!(live.date, at(21602).with_timezone(&local).date_naive());
+            assert_eq!(
+                live.tests_today(),
+                super::TestCounts {
+                    passed: 1,
+                    failed: 0
+                }
+            );
+            assert_eq!(live.commits_today(), 0);
+        }
+    }
+    live.tick(at(21605), local, &mut Vec::new());
+    let mut rebuilt = rebuild(MAIN, Product::ClaudeCli, &[], vec![events], local);
+    rebuilt.tick(at(21605), local, &mut Vec::new());
+    assert_extension_state(&live, &rebuilt);
+    assert_eq!(
+        live.tests_today(),
+        super::TestCounts {
+            passed: 1,
+            failed: 0
+        }
+    );
+    assert_eq!(live.commits_today(), 1);
+    assert_eq!(live.commits, 2);
+    assert_eq!(live.daily.len(), 2);
+    live.tick(at(21600 + 86400), local, &mut Vec::new());
+    assert_eq!(live.tests_today(), super::TestCounts::default());
+    assert_eq!(live.commits_today(), 0);
+}
+
+#[test]
+fn review_approval_matches_whole_words_only() {
+    for (message, approved) in [
+        ("미승인", false),
+        ("disapprove", false),
+        ("unapproved", false),
+        ("lgtm_extra", false),
+        ("LGTM!", true),
+        ("승인", true),
+        ("(approve)", true),
+    ] {
+        let mut s = Sim::new();
+        s.on(MAIN, 0, call("review", ToolKind::GitDiff, cmd("git diff")))
+            .on(MAIN, 1, result("review", ToolOutcome::Ok))
+            .on(MAIN, 2, text(message));
+        assert_eq!(s.boss().approved, approved, "{message}");
+    }
+}
+
+#[test]
+fn passing_stamp_identifies_subagent_and_event_time() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, child_spawn(SUB))
+        .on(SUB, 1, call("test", ToolKind::Test, cmd("cargo test")))
+        .on(SUB, 2, with_tests("test", ToolOutcome::Ok, 4, 0));
+    assert!(s.cues.contains(&Cue::Stamp {
+        agent: SUB.into(),
+        at: at(2),
+        passed: 4,
+        failed: 0,
+        estimated: false,
+        confirmed_pass: true,
+    }));
+}
+
+#[test]
+fn late_passing_result_does_not_extend_medal_past_its_event_expiry() {
+    let events = vec![
+        ev(MAIN, 0, call("a", ToolKind::Test, cmd("cargo test"))),
+        ev(MAIN, 1, result("a", ToolOutcome::Ok)),
+        ev(MAIN, 2, call("b", ToolKind::Test, cmd("cargo test"))),
+        ev(MAIN, 3, result("b", ToolOutcome::Ok)),
+        ev(MAIN, 4, call("c", ToolKind::Test, cmd("cargo test"))),
+        ev(MAIN, 5, result("c", ToolOutcome::Ok)),
+    ];
+    let mut live = Team::new(MAIN, Product::ClaudeCli, t0());
+    for event in &events[..5] {
+        live.tick(event.ts.unwrap(), utc(), &mut Vec::new());
+        live.apply(event, &mut Vec::new());
+    }
+    live.tick(at(400), utc(), &mut Vec::new());
+    live.apply(&events[5], &mut Vec::new());
+    assert_eq!(live.employees[0].medal_until, Some(at(305)));
+    live.tick(at(400), utc(), &mut Vec::new());
+    assert!(live.employees[0].medal_until.is_none());
+    assert_extension_state(&live, &replayed(MAIN, &events, at(400)));
+}
+
+#[test]
+fn test_give_up_breaks_streak_without_counting_a_failure() {
+    for background in [false, true] {
+        let mut events = vec![
+            ev(MAIN, 0, call("a", ToolKind::Test, cmd("cargo test"))),
+            ev(MAIN, 1, result("a", ToolOutcome::Ok)),
+            ev(MAIN, 2, call("b", ToolKind::Test, cmd("cargo test"))),
+            ev(MAIN, 3, result("b", ToolOutcome::Ok)),
+            ev(
+                MAIN,
+                4,
+                call("unanswered", ToolKind::Test, cmd("cargo test")),
+            ),
+        ];
+        if background {
+            events.push(ev(MAIN, 5, result("unanswered", ToolOutcome::Started)));
+        }
+        events.extend([
+            ev(MAIN, 1900, call("next", ToolKind::Test, cmd("cargo test"))),
+            ev(MAIN, 1901, result("next", ToolOutcome::Ok)),
+        ]);
+        let live = stepwise(MAIN, &events, at(1901));
+        assert_eq!(live.employees[0].pass_streak, 1, "background={background}");
+        assert!(live.employees[0].medal_until.is_none());
+        assert_eq!(
+            live.tests_today(),
+            super::TestCounts {
+                passed: 3,
+                failed: 0
+            }
+        );
+        assert_extension_state(&live, &replayed(MAIN, &events, at(1901)));
+    }
 }

@@ -21,12 +21,12 @@
 2. 빌드 머신 환경변수. `.env` 파일은 안 된다 (확인됨).
    - `TAURI_SIGNING_PRIVATE_KEY` = 키 파일 경로 또는 내용
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = 비밀번호
-3. 검증용 **별도** 공개 저장소 하나 (`<검증 저장소>`, 예: `dbwk10317/owlfice-updater-test`). 같은 저장소에 테스트 릴리스를 올리면 그것이 Latest 로 잡혀 정식 `releases/latest/download/` 경로가 바뀔 수 있다 (`gh release create` 는 `--latest` 로 따로 제어하지만, 실수 여지를 없애려 저장소를 나눈다). B 절.
+3. 검증용 **별도 private 저장소** `dbwk10317/owlfice-updater-test`를 쓴다. 사용자 요청으로 비공개를 유지한다. 정식 저장소의 Latest를 테스트로 바꾸지 않으며, 앱·설정·저장소에 GitHub 인증 토큰을 넣지 않는다. 비공개 자산을 로컬 검증 endpoint로 전달하는 절차는 T82-1을 따른다. 검증 저장소는 제품 운영의 필수 영구 저장소가 아니다.
 
 ## 결정
 
 - **A. 알림 자리 = A1.** 설정 팝업에 "업데이트" 절(현재 버전, "새 버전 확인" 버튼, 찾으면 "x.y.z 설치" 버튼). 시작 때 사무실이 뜬 뒤 한 번 조용히 확인하고, 있으면 기존 왼쪽 목록 토스트로 한 줄 ("새 버전 x.y.z · 설정에서 설치"). 간판 배지(A2)는 쓰지 않는다. `design/HANDOFF.md` 4.6절 설정 행에 "업데이트" 절 한 줄을 T80 이 더한다 (v2 디자인 반영은 끝났으므로 충돌 없음).
-- **B. 검증 = 정식 출시 전, 서명된 빌드 두 개로.** 프로덕션 빌드는 TLS 를 강제하지만 `https://` GitHub 주소면 사전 검증에 문제가 없다. 원본 설정 파일을 고쳤다 되돌리지 않고 `npm run tauri build -- --config <덮어쓸 JSON 경로>` 로 endpoint·버전만 덮어쓴다 (확인됨: https://v2.tauri.app/reference/cli/#build ). 절차는 T82.
+- **B. 검증 = 정식 출시 전, 서명된 빌드 두 개로.** 비공개 검증 자산은 로그인된 `gh`로 임시 폴더에 받고, 검증용 로컬 서버가 제공한다. 원본 설정 파일을 고쳤다 되돌리지 않고 `npm run tauri build -- --config <덮어쓸 JSON 경로>` 로 테스트 설정만 덮어쓴다 (확인됨: https://v2.tauri.app/reference/cli/#build ). 정식 빌드의 HTTPS 강제는 유지한다. 절차와 전송 검증의 한계는 T82.
 
 ## 티켓
 
@@ -98,7 +98,8 @@
 
 ### T82 출시 전 검증 → 정식 출시 → 실전 확인 (메인 + 사용자)
 
-1. **T82-1 출시 전 검증 (0.2.0 정식 릴리스 전).** 검증용 endpoint 와 버전을 덮어쓰는 JSON 을 임시 폴더에 둔다: `{"version":"0.2.0-test.1","plugins":{"updater":{"endpoints":["https://github.com/<검증 저장소>/releases/latest/download/latest.json"]}}}`. `npm run tauri build -- --config <경로>` 로 **0.2.0-test.1 과 0.2.0-test.2** 두 설치본을 만든다 (`latest.json` 은 `release_manifest.py 0.2.0-test.2 … --repo <검증 저장소>`). test.2 와 그 `latest.json` 을 검증 저장소의 정식 릴리스로 올린다.
+1. **T82-1 출시 전 검증 (0.2.0 정식 릴리스 전).** 검증 저장소는 private으로 유지한다. 서명한 test.2 자산을 해당 저장소에 보관하고 `gh release download --repo <검증 저장소> --dir <임시 폴더>`로 받는다. 임시 폴더만 `127.0.0.1`에 바인딩한 로컬 서버로 제공한다. 테스트 전용 override JSON에 버전, 로컬 endpoint, `plugins.updater.dangerousInsecureTransportProtocol: true`를 넣고 `npm run tauri build -- --config <경로>` 로 **0.2.0-test.1 과 0.2.0-test.2** 설치본을 만든다. 임시 manifest의 asset URL도 로컬 서버로 맞추며 서명 검증은 그대로 둔다. GitHub 토큰은 앱에 넣지 않는다. 정식 설정에는 로컬 endpoint와 HTTP 허용을 합치지 않는다 (HTTP 예외 지원 확인됨: https://v2.tauri.app/plugin/updater/ ).
+   - **검증 한계:** 로컬 설치·서명·실패 처리를 확인하며, GitHub HTTPS 전송·redirect 경로의 종단 검증을 했다고 보고하지 않는다. 정식 HTTPS 설정과 HTTP 예외 부재는 별도로 검사하고 공개 배포 경로의 실전 검증은 T82-3에 남긴다.
    - **매번 test.1 에서 시작한다.** Tauri 는 현재보다 높은 버전만 업데이트로 보므로(확인됨: https://v2.tauri.app/plugin/updater/#allowing-downgrades ), test.2 가 깔린 뒤에는 어떤 결함도 검사에 걸리지 않는다. 아래 경로 하나를 마칠 때마다 test.2 를 지우고 test.1 을 다시 설치한다. 실패 경로는 **정상 `latest.json` 에 결함 하나만** 넣는다.
    - 성공 경로: 시작 토스트 → 설정 "새 버전 확인" → 설치 → 앱이 종료·재시작 → 설정의 현재 버전이 test.2, 규모·회사 이름·사장님 이름·직접 지정 경로가 남아 있다.
    - 잘못된 서명 (test.1 재설치 뒤): 정상 `latest.json` 의 `signature` 를 한 글자 바꿔 올리면 설치가 거부되고 문구가 뜬다.

@@ -325,8 +325,13 @@ impl ClaudeParser {
                     question: question.to_string(),
                     plan: name == "ExitPlanMode",
                 });
-                ToolKind::Ask
+                if name == "ExitPlanMode" {
+                    ToolKind::ExitPlanMode
+                } else {
+                    ToolKind::Ask
+                }
             }
+            "EnterPlanMode" => ToolKind::EnterPlanMode,
             "Read" => {
                 summary.path = rel(s("file_path"));
                 let num = |k: &str| {
@@ -1524,6 +1529,7 @@ mod tests {
     #[test]
     fn exit_plan_mode_is_a_plan_request() {
         let r = feed(&[tool_use("toolu_fake01", "ExitPlanMode", r#"{"plan":"P"}"#)]);
+        assert_eq!(call_at(&r, 1).1, ToolKind::ExitPlanMode);
         assert_eq!(
             at(&r, 1)[1],
             EventKind::PermissionRequest {

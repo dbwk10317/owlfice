@@ -90,6 +90,7 @@ fn call(started: DateTime<Utc>) -> PendingCall {
         },
         started,
         big_read: false,
+        question: None,
     }
 }
 
@@ -186,6 +187,29 @@ fn status_dot_legend() {
     w.set_suspect("wsl:Test", true);
     let r = team_summary(&w, &wk, &base, now);
     assert_eq!((r.delayed, r.host_badge.as_deref()), (true, Some("WSL")));
+}
+
+#[test]
+fn asking_count_excludes_retired_and_off_and_updates_at_escalation_boundary() {
+    let now = t0() + Duration::minutes(1);
+    let w = world_with_hosts(Scale::Large, tempfile::tempdir().unwrap().path());
+    let k = key("windows", Vendor::Claude, "s");
+    let mut t = team("s");
+    t.preregister("s-retired", None, None, None, 1, t0());
+    t.employees[0].asking = Some("q".into());
+    let mut escalated = call(now - Duration::seconds(35));
+    escalated.summary.escalated = true;
+    t.employees[1].pending.push(escalated);
+    t.employees[2].asking = Some("old q".into());
+    t.employees[2].retired_at = Some(now - Duration::seconds(1));
+
+    let before = team_summary(&w, &k, &t, now - Duration::seconds(1));
+    assert_eq!((before.asking_count, before.asking), (1, true));
+    let at = team_summary(&w, &k, &t, now);
+    assert_eq!((at.asking_count, at.asking), (2, true));
+    t.phase = TeamPhase::Off;
+    let off = team_summary(&w, &k, &t, now);
+    assert_eq!((off.asking_count, off.asking), (0, true));
 }
 
 /// 중소기업 층 점: 장애 > 근무 > 결재·응답 대기 > 졸음 > 퇴근. 결재판은 어느 팀이든
@@ -344,7 +368,14 @@ fn wall_room_events_merge_by_time_team_agent_and_existing_order() {
             true,
         );
     }
-    let dto = office_dto(&w, &OfficeId::Vendor(Vendor::Claude), false, Vec::new()).unwrap();
+    let dto = office_dto(
+        &w,
+        &OfficeId::Vendor(Vendor::Claude),
+        false,
+        Vec::new(),
+        t0(),
+    )
+    .unwrap();
     assert_eq!(
         dto.room_recent.iter().map(|r| r.room).collect::<Vec<_>>(),
         [Room::TeamLead, Room::Dev, Room::Door]
@@ -377,7 +408,14 @@ fn wall_room_events_merge_by_time_team_agent_and_existing_order() {
         t.employees.reverse();
         t.desk_slot = t.desk_slot.map(|slot| 3 - slot);
     }
-    let reordered = office_dto(&w, &OfficeId::Vendor(Vendor::Claude), false, Vec::new()).unwrap();
+    let reordered = office_dto(
+        &w,
+        &OfficeId::Vendor(Vendor::Claude),
+        false,
+        Vec::new(),
+        t0(),
+    )
+    .unwrap();
     assert_eq!(dto.room_recent, reordered.room_recent);
 }
 
@@ -409,7 +447,7 @@ fn wall_stats_deduplicate_files_per_team_and_sum_command_counts() {
         w.put_team(key("windows", Vendor::Claude, &t.id), t, t0(), true);
     }
     let id = OfficeId::Vendor(Vendor::Claude);
-    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
     assert_eq!(
         dto.shared.stats,
         BoardStatsDto {
@@ -429,7 +467,7 @@ fn wall_stats_deduplicate_files_per_team_and_sum_command_counts() {
     a.commits = u32::MAX;
     a.turns = u32::MAX;
     Arc::make_mut(&mut a.employees[0].record).commands.items[0].1 = u32::MAX;
-    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
     assert_eq!(
         dto.shared.stats,
         BoardStatsDto {
@@ -452,7 +490,7 @@ fn employee_activity_is_carried_verbatim() {
         let mut w = lock(&e.world);
         w.put_team(k.clone(), t, now, true);
         let id = w.office_of(&k);
-        let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+        let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
         let team = &w.teams[&k];
         let json = serde_json::to_value(&dto).unwrap();
         for (i, emp) in team.employees.iter().enumerate() {
@@ -992,7 +1030,7 @@ fn shared_light_follows_latest_result() {
     w.put_team(a, red, now, true);
     w.put_team(b.clone(), green, now, true);
     let office = OfficeId::Vendor(Vendor::Claude);
-    let light = office_dto(&w, &office, false, Vec::new())
+    let light = office_dto(&w, &office, false, Vec::new(), t0())
         .unwrap()
         .shared
         .light;
@@ -1062,7 +1100,7 @@ fn employee_carries_jobs_meeting_and_review() {
         let ev = ev("a", secs, kind);
         w.apply(&k, std::slice::from_ref(&ev), t0());
         events.push(ev);
-        office_dto(w, &id, false, Vec::new()).unwrap().teams[0].employees[0].clone()
+        office_dto(w, &id, false, Vec::new(), t0()).unwrap().teams[0].employees[0].clone()
     };
     let shell = || ToolKind::Shell;
 
@@ -1134,7 +1172,7 @@ fn employee_carries_jobs_meeting_and_review() {
     assert_eq!(live.review, review(0, false));
 
     let rebuilt = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
-    let again = employee_dto(&rebuilt.employees[0]);
+    let again = employee_dto(&rebuilt.employees[0], rebuilt.last_activity);
     assert_eq!(
         (again.jobs, again.meeting, again.review),
         (live.jobs, live.meeting, live.review)
@@ -1154,7 +1192,7 @@ fn test_board_follows_the_latest_test() {
     w.put_team(b.clone(), team("b"), t0(), true);
     let office = OfficeId::Vendor(Vendor::Claude);
     let shared = |w: &OfficeWorld| {
-        office_dto(w, &office, false, Vec::new())
+        office_dto(w, &office, false, Vec::new(), t0())
             .unwrap()
             .shared
             .test
@@ -1353,6 +1391,7 @@ fn bindings() -> String {
         Counters,
         TeamProps,
         TestVerdict,
+        TestCounts,
         Incident,
         Cue,
         Rank,
@@ -1422,18 +1461,69 @@ fn serialize_time() {
         w.put_team(k, t, now, true);
     }
     let id = OfficeId::Vendor(Vendor::Claude);
-    let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+    let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
     let employees: usize = dto.teams.iter().map(|t| t.employees.len()).sum();
     let n = 2000;
     let start = Instant::now();
     let mut bytes = 0;
     for _ in 0..n {
-        let dto = office_dto(&w, &id, false, Vec::new()).unwrap();
+        let dto = office_dto(&w, &id, false, Vec::new(), t0()).unwrap();
         bytes = serde_json::to_string(&dto).unwrap().len();
     }
     let avg = start.elapsed().as_secs_f64() * 1000.0 / f64::from(n);
     println!(
         "OfficeDto 만들기+직렬화 평균 {avg:.4}ms (팀 {}, 직원 {employees}, {bytes}바이트)",
         dto.teams.len()
+    );
+}
+
+#[test]
+fn extension_dtos_use_recorded_paths_counts_and_snapshot_medal_time() {
+    let e = env(Scale::Large);
+    let mut w = lock(&e.world);
+    let (plan_key, plan) = fixture_team("claude/planning-state");
+    let plan_time = plan.last_activity;
+    w.put_team(plan_key.clone(), plan, plan_time, true);
+    let id = w.office_of(&plan_key);
+    let dto = office_dto(&w, &id, true, Vec::new(), plan_time).unwrap();
+    let employee = &dto.teams[0].employees[0];
+    assert!(employee.planning);
+    assert_eq!((employee.unique_reads, employee.unique_edits), (1, 1));
+
+    let (test_key, tests) = fixture_team("claude/test-streak");
+    let end = tests.last_activity;
+    w.put_team(test_key.clone(), tests, end, true);
+    let id = w.office_of(&test_key);
+    let dto = office_dto(&w, &id, true, Vec::new(), end).unwrap();
+    assert_eq!(
+        dto.teams[0].tests_today,
+        TestCounts {
+            passed: 5,
+            failed: 1
+        }
+    );
+    assert_eq!(dto.teams[0].commits_today, 1);
+    assert!(dto.teams[0].employees[0].medal);
+    let expiry = t0() + Duration::seconds(312);
+    assert!(
+        office_dto(
+            &w,
+            &id,
+            true,
+            Vec::new(),
+            expiry - Duration::milliseconds(1)
+        )
+        .unwrap()
+        .teams[0]
+            .employees[0]
+            .medal
+    );
+    assert!(!office_dto(&w, &id, true, Vec::new(), expiry).unwrap().teams[0].employees[0].medal);
+    assert!(
+        !office_dto(&w, &id, true, Vec::new(), expiry + Duration::hours(1))
+            .unwrap()
+            .teams[0]
+            .employees[0]
+            .medal
     );
 }

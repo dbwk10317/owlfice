@@ -41,6 +41,7 @@ const summary = (over: Partial<OfficeSummaryDto> = {}): OfficeSummaryDto => ({
       phase: "Working",
       dot: "Working",
       asking: false,
+      askingCount: 0,
       border: "Plain",
       delayed: false,
       hostBadge: "WSL",

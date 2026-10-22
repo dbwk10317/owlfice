@@ -29,6 +29,10 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
     activity: act(),
     recent: [],
     counters: { read: 1, edit: 2, shell: 3, outside: 4, meeting: 5, errors: 6 },
+    uniqueReads: 0,
+    uniqueEdits: 0,
+    planning: false,
+    medal: false,
     lastSay: null,
     hiredAt: iso(13, 0),
     retiredAt: null,
@@ -77,6 +81,8 @@ export function team(id: string, employees: EmployeeDto[], over: Partial<TeamDto
     },
     incident: null,
     idleAlive: false,
+    testsToday: { passed: 0, failed: 0 },
+    commitsToday: 0,
     ...over,
   };
 }

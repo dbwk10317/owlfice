@@ -205,6 +205,8 @@ pub enum ToolKind {
     Release,
     Spawn,
     Ask,
+    EnterPlanMode,
+    ExitPlanMode,
     Mcp { server: String, tool: String },
     Skill { name: String },
     WebSearch,

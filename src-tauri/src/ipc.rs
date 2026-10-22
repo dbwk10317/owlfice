@@ -18,7 +18,7 @@ use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
 use crate::office::{
     Activity, Bubble, Counters, Cue, Employee, Incident, Light, Rank, Room, Team, TeamPhase,
-    TeamProps, TestVerdict, TimelineKind, Tokens,
+    TeamProps, TestCounts, TestVerdict, TimelineKind, Tokens,
 };
 use crate::parse::{Confidence, TodoItem, ToolKind, ToolOutcome};
 use crate::runtime::Runtime;
@@ -124,6 +124,7 @@ pub struct TeamSummaryDto {
     pub dot: Dot,
     /// 점 옆 결재판 (허가 대기)
     pub asking: bool,
+    pub asking_count: u32,
     pub border: Border,
     /// 통신 지연 (점선 테두리, WSL 의심 상태)
     pub delayed: bool,
@@ -224,6 +225,8 @@ pub struct TeamDto {
     pub incident: Option<Incident>,
     /// 30분 넘게 조용하지만 프로세스가 살아 있다 (S58). 살아 있는 팀이 모두 그러면 조명이 어둡다
     pub idle_alive: bool,
+    pub tests_today: TestCounts,
+    pub commits_today: u32,
 }
 
 /// 직원 카드 한 장 (docs/CONTRACTS.md C3)
@@ -241,6 +244,10 @@ pub struct EmployeeDto {
     /// 최근 행적, 최신이 먼저
     pub recent: Vec<Activity>,
     pub counters: Counters,
+    pub unique_reads: u32,
+    pub unique_edits: u32,
+    pub planning: bool,
+    pub medal: bool,
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     /// 있으면 퇴장한(또는 퇴장으로 짐작한) 직원
@@ -601,13 +608,6 @@ fn team_dot(t: &Team, now: DateTime<Utc>) -> Dot {
     }
 }
 
-fn team_asking(t: &Team, now: DateTime<Utc>) -> bool {
-    t.employees
-        .iter()
-        .filter(|e| e.retired_at.is_none())
-        .any(|e| t.asking(e, now))
-}
-
 fn border(light: Light) -> Border {
     match light {
         Light::Red => Border::Failed,
@@ -617,6 +617,11 @@ fn border(light: Light) -> Border {
 }
 
 fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamSummaryDto {
+    let raw_asking_count = t
+        .employees
+        .iter()
+        .filter(|e| e.retired_at.is_none() && t.asking(e, now))
+        .count() as u32;
     TeamSummaryDto {
         team_id: team_id_str(k),
         boss_name: t.employees[0].name.clone(),
@@ -626,7 +631,12 @@ fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> T
         started: t.started,
         phase: t.phase,
         dot: team_dot(t, now),
-        asking: team_asking(t, now),
+        asking: raw_asking_count > 0,
+        asking_count: if t.phase == TeamPhase::Off {
+            0
+        } else {
+            raw_asking_count
+        },
         border: border(t.props.light),
         delayed: w.suspect_hosts.contains(&k.host),
         host_badge: host_badge(w, &k.host),
@@ -699,7 +709,7 @@ fn summaries(
     out
 }
 
-fn employee_dto(e: &Employee) -> EmployeeDto {
+fn employee_dto(e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
     EmployeeDto {
         agent_id: e.id.clone(),
         name: e.name.clone(),
@@ -710,6 +720,10 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
         activity: e.activity.clone(),
         recent: e.recent.iter().cloned().collect(),
         counters: e.counters,
+        unique_reads: u32::try_from(e.record.files_read.items.len()).unwrap_or(u32::MAX),
+        unique_edits: u32::try_from(e.record.files_edited.items.len()).unwrap_or(u32::MAX),
+        planning: e.planning,
+        medal: e.medal_until.is_some_and(|until| now < until),
         last_say: e.last_say.clone(),
         hired_at: e.hired_at,
         retired_at: e.retired_at,
@@ -741,7 +755,7 @@ fn employee_dto(e: &Employee) -> EmployeeDto {
     }
 }
 
-fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team) -> TeamDto {
+fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamDto {
     TeamDto {
         team_id: team_id_str(k),
         title: t.title.clone(),
@@ -754,10 +768,12 @@ fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team) -> TeamDto {
         phase: t.phase,
         work_type: t.work_type,
         desk_slot: t.desk_slot,
-        employees: t.employees.iter().map(employee_dto).collect(),
+        employees: t.employees.iter().map(|e| employee_dto(e, now)).collect(),
         props: t.props.clone(),
         incident: t.incident.clone(),
         idle_alive: t.idle_alive,
+        tests_today: t.tests_today(),
+        commits_today: t.commits_today(),
     }
 }
 
@@ -815,6 +831,7 @@ pub fn office_dto(
     id: &OfficeId,
     rebuilt: bool,
     cues: Vec<CueDto>,
+    now: DateTime<Utc>,
 ) -> Option<OfficeDto> {
     let teams = grouped(w).remove(id)?;
     let mut room_recent: BTreeMap<Room, Vec<RoomEventDto>> = BTreeMap::new();
@@ -851,7 +868,7 @@ pub fn office_dto(
         state_seq: w.state_seq.get(id).copied().unwrap_or(0),
         office_id: office_id_str(id),
         rebuilt,
-        teams: teams.iter().map(|(k, t)| team_dto(w, k, t)).collect(),
+        teams: teams.iter().map(|(k, t)| team_dto(w, k, t, now)).collect(),
         shared: shared(&teams),
         room_recent,
         cues,
@@ -971,7 +988,7 @@ impl Ipc {
         let selected = w
             .selected
             .clone()
-            .and_then(|s| office_dto(&w, &s, true, Vec::new()));
+            .and_then(|s| office_dto(&w, &s, true, Vec::new(), now));
         WorldDto {
             list: OfficeListDto {
                 rebuilt: true,
@@ -995,7 +1012,8 @@ impl Ipc {
             return Err("없는 사무실입니다".to_string());
         }
         b.last_select = request_id;
-        let office = office_dto(&w, &id, true, Vec::new()).ok_or("없는 사무실입니다")?;
+        let office =
+            office_dto(&w, &id, true, Vec::new(), Utc::now()).ok_or("없는 사무실입니다")?;
         Ok(SelectResponseDto { office, request_id })
     }
 
@@ -1037,7 +1055,7 @@ impl Ipc {
                 return None;
             }
             sent.state = at;
-            office_dto(&w, &sel, quiet, cues)
+            office_dto(&w, &sel, quiet, cues, now)
         });
         (list, state)
     }

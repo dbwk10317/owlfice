@@ -12,7 +12,7 @@ use std::hash::{DefaultHasher, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -246,6 +246,8 @@ pub struct PendingCall {
     pub started: DateTime<Utc>,
     /// 큰 파일·연속 읽기라서 소스 서고로 가는 FileRead (docs/CONTRACTS.md C8). 시작할 때 정해 둔다
     pub big_read: bool,
+    /// 다른 질문의 결과가 이 질문의 허가 대기를 지우지 않게 호출에 보존한다.
+    pub question: Option<String>,
 }
 
 /// 오늘 실적 (docs/CONTRACTS.md C3 카드의 여섯 칸)
@@ -292,6 +294,9 @@ pub struct Employee {
     pub rejected_at: Option<DateTime<Utc>>,
     /// 허가 대기 질문. 그 Ask 호출의 결과가 오면 지운다
     pub asking: Option<String>,
+    pub planning: bool,
+    pub pass_streak: u32,
+    pub medal_until: Option<DateTime<Utc>>,
     /// 이 직원 파일의 마지막 이벤트 시각
     pub last_event: DateTime<Utc>,
     pub context_used: Option<u64>,
@@ -354,6 +359,12 @@ pub enum TestVerdict {
     Fail,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+pub struct TestCounts {
+    pub passed: u32,
+    pub failed: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamProps {
@@ -408,9 +419,13 @@ pub enum Cue {
         agent: String,
     },
     Stamp {
+        agent: String,
+        at: DateTime<Utc>,
         passed: u32,
         failed: u32,
         estimated: bool,
+        #[serde(rename = "confirmedPass")]
+        confirmed_pass: bool,
     },
     Truck,
     Return,
@@ -428,6 +443,10 @@ pub enum Cue {
         title: String,
     },
     Repot,
+    Compaction {
+        agent: String,
+        at: DateTime<Utc>,
+    },
     Paper {
         agent: String,
         on: bool,
@@ -497,6 +516,10 @@ pub struct Team {
     /// 사장님 메시지 수 (docs/CONTRACTS.md C9 턴 수)
     pub turns: u32,
     pub commits: u32,
+    /// 늦게 도착한 과거 결과가 오늘 실적에 섞이지 않게 날짜별로 보존한다.
+    daily: HashMap<NaiveDate, (TestCounts, u32)>,
+    date: NaiveDate,
+    local: FixedOffset,
     /// 사용량을 한 번도 못 봤으면 None
     pub tokens: Option<Tokens>,
 }

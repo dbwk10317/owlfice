@@ -78,6 +78,7 @@ function summary(id: string, members: TeamDto[], floor: number): OfficeSummaryDt
       phase: t.phase,
       dot: t.phase === "Off" ? "Off" : "Working",
       asking: false,
+      askingCount: 0,
       border: "Plain",
       delayed: false,
       hostBadge: null,

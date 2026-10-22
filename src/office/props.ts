@@ -1,7 +1,7 @@
 // 소품 상태: 신호등·화분·전광판·휴지통·칸반·피자·창밖·TV·미팅실·리뷰실·장애 상황실·외근 팻말 (HANDOFF 5, 6.5, 6.6, docs/CONTRACTS.md C3·C8).
 // 값 → 상태 이름은 순수 함수, PropsLayer 는 바뀐 소품만 다시 그린다. 움직임은 cue 몫이다.
 import { BitmapFont, BitmapText, Graphics, type Sprite, type Spritesheet } from "pixi.js";
-import type { CueDto, EmployeeDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
+import type { CueDto, Daylight, EmployeeDto, OfficeDto, TeamDto, TodoItem } from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
 import {
   gridToScreen,
@@ -13,6 +13,7 @@ import {
   type Seat,
 } from "./floorplan.ts";
 import { seated } from "./actors.ts";
+import { lightOf } from "./renderer.ts";
 import {
   DOOR_OPEN_MS,
   FIREWORKS_MS,
@@ -26,7 +27,7 @@ import {
 import type { Scene } from "./renderer.ts";
 import { placeSprite, tintedTexture } from "./sprites.ts";
 
-type PropsTarget = Pick<Scene, "wall" | "world" | "driven">;
+type PropsTarget = Pick<Scene, "wall" | "world" | "overlay" | "driven">;
 
 /** 평면도에서 상태나 보임을 코드가 바꾸는 소품. 숨겨진 채 시작하는 것(ramen, 중소기업 화분)도 장면에 만든다 */
 export const DRIVEN_PROP =
@@ -252,9 +253,8 @@ export function safeMinutes(since: string, nowMs: number): number {
   return Math.min(9999, Math.max(0, Math.floor((nowMs - t) / 60_000)));
 }
 
-/** 현지 시각 06–17 day, 17–22 dusk, 22–06 night */
-export const windowState = (hour: number): string =>
-  hour >= 6 && hour < 17 ? "day" : hour >= 17 && hour < 22 ? "dusk" : "night";
+export const windowState = (daylight: Daylight): string =>
+  daylight === "evening" ? "dusk" : daylight;
 
 export type NoteColor = "yellow" | "pink" | "blue" | "green";
 
@@ -628,7 +628,7 @@ export class PropsLayer {
     }
     this.updateStats(shared?.stats);
     this.state("ci_light", shared ? shared.light.toLowerCase() : undefined);
-    this.state("window", windowState(new Date(nowMs).getHours()));
+    this.state("window", windowState(office?.teams[0]?.daylight ?? "day"));
     this.state("trash", shared ? trashState(shared.trash) : undefined);
     const ramen = this.target.driven.get("ramen");
     if (ramen) ramen.visible = shared?.night ?? false;
@@ -702,12 +702,22 @@ export class PropsLayer {
       const coffee = Number.isFinite(age) ? Math.min(4, Math.max(0, age)) : 0;
       // ponytail: 작은 책상에서 서류는 네 단까지만 보인다, 책상 아트가 넓어지면 표시 상한을 늘린다.
       const papers = Math.min(4, Math.floor((emp?.uniqueEdits ?? 0) / 10));
-      const night = !!emp && teams.some((t) => t.employees.includes(emp) && t.props.night);
+      const night = !!emp && lightOf(office) === "night";
       const missingMonitors = emp
         ? Math.max(0, ((emp.pendingCount ?? 0) > 1 ? 2 : 1) - (seat.monitors?.length ?? 0))
         : 0;
       const signature = [coffee, papers, !!emp, night, missingMonitors].join();
       if (!this.changed(`desk:${seat.desk}`, signature)) continue;
+      const glow = night
+        ? this.fxSprite(
+            "glow_lamp/default",
+            pl.gx + meta.progressSlots.lamp[0],
+            pl.gy + meta.progressSlots.lamp[1],
+            meta.height ?? 0,
+          )
+        : null;
+      if (glow) this.target.overlay.addChild(glow);
+      this.replace(`lamp:${seat.desk}`, glow ? [glow] : []);
       const parts: Sprite[] = [];
       for (const [name, key] of [
         ["coffee", coffee ? `coffee_stack/s${coffee}` : null],

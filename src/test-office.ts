@@ -55,6 +55,7 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
 
 export function team(id: string, employees: EmployeeDto[], over: Partial<TeamDto> = {}): TeamDto {
   return {
+    daylight: "day",
     teamId: id,
     title: `팀${id}`,
     building: "A",

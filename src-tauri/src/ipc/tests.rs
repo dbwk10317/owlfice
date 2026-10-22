@@ -102,6 +102,93 @@ fn team(session: &str) -> Team {
 }
 
 #[test]
+fn daylight_dto_and_night_props_follow_local_boundaries_and_clock_jumps() {
+    let e = env(Scale::Large);
+    let mut w = lock(&e.world);
+    w.local = FixedOffset::east_opt(9 * 3600).unwrap();
+    let k = key("windows", Vendor::Claude, "daylight");
+    let at = |hour: i64, minute: i64| {
+        "2026-03-02T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+            + Duration::hours(hour - 9)
+            + Duration::minutes(minute)
+    };
+    for (hour, expected) in [
+        (6, Daylight::Day),
+        (17, Daylight::Evening),
+        (20, Daylight::Night),
+        (22, Daylight::Night),
+    ] {
+        for minute in [-1, 0, 1] {
+            let now = at(hour, minute);
+            let mut t = Team::new("daylight", Product::ClaudeCli, now);
+            t.employees[0].pending.push(call(now));
+            w.put_team(k.clone(), t, now, true);
+            w.tick(now, "windows");
+            let dto = office_dto(&w, &w.office_of(&k), false, Vec::new(), now).unwrap();
+            let expected = if minute < 0 {
+                match hour {
+                    6 => Daylight::Night,
+                    17 => Daylight::Day,
+                    20 => Daylight::Evening,
+                    _ => Daylight::Night,
+                }
+            } else {
+                expected
+            };
+            assert_eq!(dto.teams[0].daylight, expected, "{hour}:{minute}");
+            assert_eq!(dto.teams[0].props.night, expected == Daylight::Night);
+            assert_eq!(
+                serde_json::to_value(&dto.teams[0]).unwrap()["daylight"],
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+    }
+    let now = at(16, 59);
+    let mut t = Team::new("daylight", Product::ClaudeCli, now);
+    t.alive_in_registry = true;
+    t.employees[0].pending.push(call(now));
+    w.put_team(k.clone(), t, now, true);
+    for (now, expected) in [
+        (now, Daylight::Day),
+        (at(20, 1), Daylight::Night),
+        (at(30, 1), Daylight::Day),
+    ] {
+        w.tick(now, "windows");
+        let dto = office_dto(&w, &w.office_of(&k), false, Vec::new(), now).unwrap();
+        assert_eq!(dto.teams[0].daylight, expected);
+        assert_eq!(
+            dto.teams[0].props.night,
+            dto.teams[0].daylight == Daylight::Night
+        );
+    }
+}
+
+#[test]
+fn evening_boundary_publishes_state_without_night_prop_change() {
+    let e = env(Scale::Large);
+    let k = key("windows", Vendor::Claude, "daylight");
+    let now: DateTime<Utc> = "2026-03-02T16:59:00Z".parse().unwrap();
+    {
+        let mut w = lock(&e.world);
+        let mut t = Team::new("daylight", Product::ClaudeCli, now - Duration::hours(1));
+        t.alive_in_registry = true;
+        w.put_team(k.clone(), t, now, true);
+        w.tick(now, "windows");
+        let id = w.office_of(&k);
+        w.select(Some(id));
+    }
+    let mut sent = Sent::default();
+    let before = e.ipc.poll(&mut sent, now).1.unwrap();
+    let next = now + Duration::minutes(1);
+    lock(&e.world).tick(next, "windows");
+    let after = e.ipc.poll(&mut sent, next).1.expect("저녁 진입 상태 발행");
+    assert!(after.state_seq > before.state_seq);
+    assert_eq!(before.teams[0].daylight, Daylight::Day);
+    assert_eq!(after.teams[0].daylight, Daylight::Evening);
+    assert!(!before.teams[0].props.night && !after.teams[0].props.night);
+}
+
+#[test]
 fn office_id_round_trips_and_rejects_garbage() {
     let ids = [
         OfficeId::Team(key("windows", Vendor::Claude, "a1b2")),
@@ -1433,6 +1520,7 @@ fn bindings() -> String {
         CueDto,
         SelectResponseDto,
         TeamDto,
+        Daylight,
         EmployeeDto,
         Meeting,
         Review,

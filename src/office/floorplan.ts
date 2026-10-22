@@ -9,7 +9,7 @@ const ORIGIN_Y = 60;
 export type Kind = "large" | "small";
 export type Theme = "claude" | "codex" | "gemini";
 export type Layer = "decal" | "wall" | "window" | "world" | "fx" | "overlay";
-export type LightName = "night" | "dim" | "off";
+export type LightName = "evening" | "night" | "dim" | "off";
 
 export interface Placement {
   id: string;

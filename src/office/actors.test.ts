@@ -118,6 +118,7 @@ function emp(
 
 function team(teamId: string, employees: EmployeeDto[], o: Partial<TeamDto> = {}): TeamDto {
   return {
+    daylight: "day",
     teamId,
     title: "제목",
     building: "A",

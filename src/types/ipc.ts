@@ -138,7 +138,9 @@ employees: Array<EmployeeDto>, props: TeamProps, incident: Incident | null,
 /**
  * 30분 넘게 조용하지만 프로세스가 살아 있다 (S58). 살아 있는 팀이 모두 그러면 조명이 어둡다
  */
-idleAlive: boolean, testsToday: TestCounts, commitsToday: number, };
+idleAlive: boolean, testsToday: TestCounts, commitsToday: number, daylight: Daylight, };
+
+export type Daylight = "day" | "evening" | "night";
 
 /**
  * 직원 카드 한 장 (docs/CONTRACTS.md C3)

@@ -108,6 +108,7 @@ export interface Scene {
   lit: Container[];
   /** depth 로 정렬하는 월드. 직원 액터가 여기 들어간다 */
   world: Container;
+  overlay: Container;
   /** 평면도가 숨겨 둔 채 짓고 좌석 사용에 따라 켜는 소품 (임시·간이 책상, 쪽지) */
   toggled: Map<string, Sprite>;
   /** 소품 상태가 바꾸는 평면도 소품 (신호등, 창, 화분, 휴지통, 전광판, 컵라면) */
@@ -230,7 +231,17 @@ export function buildScene(
 
   const root = new Container();
   root.addChild(base, win, world, over);
-  return { root, lit: [base, world], world, toggled, driven, clickable, rooms, wall: base };
+  return {
+    root,
+    lit: [base, world],
+    world,
+    overlay: over,
+    toggled,
+    driven,
+    clickable,
+    rooms,
+    wall: base,
+  };
 }
 
 /**
@@ -781,13 +792,11 @@ export function canvasAria(office: OfficeDto | null, list: OfficeListDto): strin
   return fill(tpl, { office: name, n });
 }
 
-/**
- * 사무실 조명 (HANDOFF 5절): 모두 퇴근이면 off, 남은 팀이 모두 대기 중(S58)이면 dim, 야근이면 night.
- * HANDOFF 에 순서가 없어 off > dim > night 로 정했다
- */
+/** 퇴근·대기 조명이 시간표보다 우선한다 (HANDOFF 6.2). */
 export function lightOf(office: OfficeDto | null): LightName | null {
   const live = office?.teams.filter((t) => t.phase !== "Off") ?? [];
   if (live.length === 0) return "off";
   if (live.every((t) => t.idleAlive)) return "dim";
-  return office?.shared.night ? "night" : null;
+  const daylight = live[0].daylight;
+  return daylight === "day" ? null : daylight;
 }

@@ -1,135 +1,192 @@
-# 0.2.0 계획: 디자인 v2 를 앱에 적용
+# 0.2.0 계획: 디자인 v2 적용 + 상태 모델 확장
 
-디자인 v2(캔버스 [Owlfice 디자인 0.2.0](https://claude.ai/artifact/4PtdXQYh8xL3BQwJBCkgfV))는 이 브랜치의 `design/` 에 반영됐다. 앱(`src/`, `src-tauri/`)은 아직 0.1.0 마크업이다. 이 문서는 앱을 v2 로 옮기는 티켓 목록이다. 끝나면 지운다. 남길 결론은 `design/HANDOFF.md` 와 코드 주석으로 옮긴다 (AGENTS.md 7절).
+디자인 v2(캔버스 [Owlfice 디자인 0.2.0](https://claude.ai/artifact/4PtdXQYh8xL3BQwJBCkgfV))는 이 브랜치의 `design/` 에 반영됐다. 앱(`src/`, `src-tauri/`)은 아직 0.1.0 마크업이다. 이 문서는 앱을 v2 로 옮기고 확장안(새 방·소품·자세·담당·소지품·계절)을 넣는 티켓 목록이다. 끝나면 지운다 (T82 뒤). 남길 결론은 `design/HANDOFF.md`·`docs/CONTRACTS.md` 와 코드 주석으로 옮긴다 (AGENTS.md 7절).
 
-자동 업데이트(`PLAN_update.md` T79–T82)도 0.2.0 에 포함한다 (사용자 결정 2026-10-22). 그 문서의 A·B 답은 사용자가 준다.
+이 릴리스는 "디자인 적용"이 아니라 **디자인 적용 + 상태 모델·데이터 계약 확장**이다. 확장안이 요구하는 신호 중 지금 파서·상태·DTO 에 없는 것이 있어서(1절 표), UI 보다 Rust 쪽 선행 티켓(T92·T93)이 먼저다. 자동 업데이트(`PLAN_update.md` T79–T82)도 0.2.0 에 포함한다.
 
-## 브랜치
+## 결정된 것
 
-- 통합 브랜치 `v0.2.0`, 워크트리 `D:/workspace/owlfice-wt/v0.2.0`. 티켓 브랜치는 여기서 따고 여기로 합친다. main 병합과 push 는 사용자 지시 때.
-- 디자인 측은 끝났다 (아래 "디자인 측 완료"). 앱 티켓이 HANDOFF 와 어긋나는 걸 찾으면 코드가 아니라 메인이 사용자에게 알리고 HANDOFF 를 고친다 (AGENTS.md 머리말).
+- 확장안 2차(새 방 4개, 자세 +5, 담당 +3, 소지품 +7, 계절)는 0.2.0 에 넣는다 (사용자, 2026-10-22).
+- 자동 업데이트는 0.2.0 에 넣고, 정식 출시 **전에** 서명된 설치본 두 개로 검증한다 (`PLAN_update.md` B 절).
+- 야근 모드 자동 켜짐 기본값: **20시–06시 자동** (사용자가 달리 말하면 바꾼다. 설정에서 끌 수 있다).
+- 브랜치: 통합 `v0.2.0`, 워크트리 `D:/workspace/owlfice-wt/v0.2.0`. 티켓 브랜치는 여기서 따고 여기로 합친다. main 병합·push 는 사용자 지시 때.
 
-## 사용자가 정할 것
+## 1. 신호 지원표 (T92 가 확정하고 HANDOFF 5절로 옮긴다)
 
-- **야근 모드 자동 켜짐 기본값.** 20시 이후 자동(권장) / 수동만.
+확장안의 연출마다 **세션 파일의 신호 → 뜻 → 확인/추정 → 보존할 상태 → DTO → 연출 → fixture** 를 적는다. 아래는 현재 코드(`src-tauri/src/parse/mod.rs`, `office/classify.rs`, `office/work.rs`, `ipc.rs`)와 대조한 초안이다. "없음" 칸이 있는 행은 T93 이 먼저 만든다.
 
-확장안 2차(새 방 4개, 자세 +5, 담당 +4, 소지품 +7, 계절 장식)는 0.2.0 에 넣는다 (사용자 결정 2026-10-22). T94·T97–T99.
+| 연출 | 신호 | 확인/추정 | 지금 있는 것 | 없는 것 (T93) |
+|---|---|---|---|---|
+| 트럭 색 (출고장) | `PrLinked{number,url}` | 확인 | PR 연결 여부 | PR 열림/머지 상태는 세션 파일에 없다 → **"PR 연결됨 = 파란 트럭"만**. 머지 색은 넣지 않는다 |
+| 빌드실 전광판 | 마지막 로컬 빌드·테스트 결과 (`TestVerdict`) | 확인 | 마지막 결과 | "오늘 CI 성공/실패"는 신호가 없다 → **"오늘 로컬 테스트 합격 n / 반려 n 누계"** 로 바꾼다. 팀 상태에 날짜별 누계 2개 추가 + `TeamDto` |
+| 책장 채움 (소스 서고) | `Read` 고유 파일 수 | 확인 | 상세 조회의 `files_read` 만 | `EmployeeDto.unique_reads: u32` (실시간 `counters.read` 는 검색·git 조회도 세므로 쓰지 않는다) |
+| 메달 (소지품) | 테스트 전부 통과 연속 3회 | 확인 | 없음 | 직원 상태에 `pass_streak: u32`, `medal_until: Option<DateTime>` (사건에서 재구성되므로 재시작 뒤 같아야 한다, C10) + `EmployeeDto.medal: bool` |
+| 하이파이브 (자세) | 같은 팀 둘이 각각 테스트 통과 10초 안 | 확인 | `Cue::Stamp` 에 직원 ID 없음 | `Cue::Stamp { agent_id, .. }` + 팀 상태 `last_pass: Vec<(agent_id, ts)>` |
+| ✓ 승인 표식 | `approves()` 문구 판정 | **추정** (낱말 경계를 안 봐 "미승인"도 승인) | 판정 함수 | T93 이 낱말 경계를 본 뒤에도 **추정**으로 표시 (점선) |
+| ✕ 반려 표식 | `ToolOutcome::Rejected` | 확인 | 있음 | — |
+| ! 사고 | 사고 사건 (`incident-count`) | 확인 | 있음 | — |
+| ? 허가 대기 | `PermissionRequest` | 확인 | 있음 | — |
+| … 응답 대기 | `waiting_user_since` | 확인 | 있음 | — |
+| 커피 잔 (팀장석) | 직원 **입사 뒤** 경과 | 확인 | 직원 `since` | — (팀 세션 나이가 아니라 직원 입사 시각. 방금 들어온 서브가 팀 나이를 받지 않게) |
+| 서류 더미 (개발실) | 수정 파일 고유 수 | 확인 | `counters.edit` 는 횟수 | `EmployeeDto.unique_edits: u32` |
+| 모니터 2대 | 병렬 호출 | 확인 | `parallel` | — |
+| 상자 쌓임 (출고장) | 오늘 커밋 수 | 확인 | 커밋 사건 | 팀 날짜별 누계 `commits_today` |
+| 책상 램프 | 야근 모드 (크롬 토글) | 확인 | T90 | — |
+| 회의실 | `EnterPlanMode` 도구 호출 ~ `ExitPlanMode`(허가 질문, `plan:true`) 승인·거부 | 확인 | `ExitPlanMode` 만 허가로 처리, `EnterPlanMode` 는 미처리 | 직원 상태 `planning: bool` + 파서에 `EnterPlanMode` 도구 종류 |
+| 자료실 | `ContextCompaction` 사건 | 확인 | 있음 | 상태가 아니라 **일회성 방문 연출**(4초)로. 상태 모델 변경 없음 |
+| 경비실 | `ToolOutcome::Rejected` (허가 거부) | 확인 | 있음 | 일회성 방문 연출(3초). 훅 차단은 세션 파일에서 확인되지 않음 → **넣지 않는다** |
+| 옥상 | S58 "대기 중"(30분 조용, 프로세스 생존) | 추정 | `TeamPhase` dim | 옥상은 **탕비실 쉬는 자리가 찼을 때의 둘째 자리**로만. "응답 대기 30분"은 현재 전이(3분 졸음 → `waiting_user_since` 해제 → 30분 dim/off)와 겹쳐 쓰지 않는다 |
+| think 자세 | `EventKind::Thinking` | **추정** (종료 신호 없음 → 다음 사건까지) | 있음 (`Pose::Think`) | 종료 조건을 "다음 사건 또는 30초"로 고정하고 추정 꼬리표 |
 
-## 티켓
+## 2. 상태 우선순위와 시간표 (T92 가 확정하고 HANDOFF 5절·6.2절로)
 
-번호는 `PLAN_update.md` 의 T79–T82 다음부터. 등급은 AGENTS.md 3절.
+- **직원 자리·자세 우선순위** (위가 이긴다): 퇴근 > 장애 상황실 > 허가 대기(출입문) > 계획 모드(회의실) > 명령·테스트·빌드(해당 방) > 작업(좌석) > 일회성 방문(자료실·경비실·출고장·외근) > 졸음(탕비실·옥상). 새 자세(think·stretch·drink·phone·highfive)는 허가 대기·장애·퇴근 자세를 **덮지 않는다**; 일회성 연출은 더 높은 상태가 오면 즉시 끊고 복귀한다.
+- **사무실 전환·창 복귀** 때 지난 감정 표식·일회성 방문·자세를 재생하지 않는다 (현재 시각 기준으로 상태만 그린다, C10).
+- **시간표** (OS 로컬 시계. 모두 한 표에서 나온다. T90·T91 이 같이 쓴다):
+
+| 시각 | 창밖 | 조명 곱하기 | 책상 램프 | 크롬(야근 모드 자동) |
+|---|---|---|---|---|
+| 06–17 | 주간 | 없음(흰색) | 꺼짐 | 주간 |
+| 17–20 | 저녁 | `evening #F6E6C4` (새로) | 꺼짐 | 주간 |
+| 20–06 | 밤 | `night #F2DEAD` + 램프 비네트 | 켜짐 | 야근 (자동이면) |
+
+  기존 `night: 22–06시` 와 창문 저녁 `17–22시` 는 이 표로 바꾼다 (`floorplan.json` `lightTints.rule`, 창문 상태 전환 시각). `dim`(S58)·`off`(퇴근)는 시각과 무관하게 위 조명을 덮는다 (`renderer.ts` `lightOf` 순서 off > dim > night/evening 유지). 수동 야근 토글은 크롬만 바꾸고 조명은 바꾸지 않는다.
+- **근속 표식 기준**: 직원 `since`(입사) 뒤 경과. 팀 세션 나이가 아니다.
+- **테스트 경계**: 06·17·20·22시 앞뒤 1분, 절전 복귀(시계가 한 번에 건너뜀) 후 1틱에 맞는 단계로 간다.
+
+## 3. 티켓
+
+번호는 `PLAN_update.md` 의 T79–T82 다음부터. 등급은 AGENTS.md 3절. **범위**에 적힌 파일만 고친다. 범위 밖이 필요하면 멈추고 메인에 알린다.
 
 ### T83 tokens.css 적용 확인 (대리 · 하)
 
-- 범위: 읽기만. `src/styles/*.css`, `src/*.ts` 에서 `design/handoff/tokens.css` 값을 덮어쓰거나(`#fff`, 고정 padding) v2 에서 이름이 바뀐 클래스를 쓰는 곳을 목록으로.
+- 범위: 읽기만. `src/styles/*.css`, `src/*.ts`, `dev/*.ts` 에서 `design/handoff/tokens.css` 값을 덮어쓰거나(`#fff`, 고정 padding) v2 에서 이름이 바뀐 클래스를 쓰는 곳.
 - 완료 기준: 파일·줄·현재 값·v2 값 표. `npm run check` 녹색. 코드는 고치지 않는다.
 
 ### T84 사이드바 v2 (과장 · 중)
 
-- 범위: `src/sidebar-left.ts`(+test), `src/styles/sidebar.css`.
-- 할 일: HANDOFF 4.1 표대로. 간판 타일 + 회사 이름 첫 줄(설정 `companyName`, 없으면 `phrases.app.brand`), 지표 띠 `ow-kpi`(불 켜진 사무실/층 · 근무 중 직원 · 결재 대기), 행 여백(`ow-row__main` 12/4/12/18, 점 위 4, 상세 버튼 위 8), `ow-worktype.is-idle` 대기 중 칩 + `quietFor`, `ow-host` 테두리형 WSL 배지, `is-broken` 파싱 실패 색, 바닥 상태 점, 레일 `ow-rail__item` 32 타일(허가 대기 `--ow-ask` 바탕). tokens.css 의 `.ow-rail__letter` 와 ponytail 주석을 지운다.
-- 완료 기준: 지표 숫자가 세션 상태에서 계산되는 테스트(사무실 n·근무 중 n·결재 n), 기존 사이드바 테스트 통과, 1600·960·800 폭에서 HANDOFF 2.2 와 같음.
+- 범위: `src/sidebar-left.ts`(+test), `src/styles/sidebar.css`, `design/handoff/tokens.css`(`.ow-rail__letter` 와 그 ponytail 주석 삭제만), `dev/company.ts`·`dev/company.html`(샘플 마크업).
+- 할 일: HANDOFF 4.1 표대로. 간판 타일 + 회사 이름 첫 줄(설정 `companyName`, 없으면 `phrases.app.brand`), 지표 띠 `ow-kpi`(불 켜진 사무실/층 · 근무 중 직원 · 결재 대기), 행 여백, `ow-worktype.is-idle` + `quietFor`, `ow-host` 테두리형, `is-broken`, 바닥 상태 점, 레일 `ow-rail__item` 32 타일.
+- 완료 기준: 지표 숫자 계산 테스트(사무실 n·근무 중 n·결재 n, 중소기업 층 n), 기존 테스트 통과, 1600·960·800 폭 구조가 HANDOFF 2.2 와 같음.
 
-### T85 머리말 v2 (대리 · 하)
+### T85 머리말 v2 + 배율·가운데로 (과장 · 중)
 
-- 범위: `src/header.ts`(+test), `src/styles/app.css`.
-- 할 일: HANDOFF 4.3. 세그먼트 묶음 `ow-segment`(방 이름·소리·야근 토글. 야근 토글은 T90 이 동작을 붙이기 전까지 `disabled`), "결재 n건 대기" 칩 `is-ask`, 배율 칩 `is-zoom` + 1×·2×·3× 메뉴(들어가지 않는 배율은 비활성), 무대 모서리 `ow-stage__tools`(가운데로·전체 화면 = Tauri 창 최대화 토글). 문구는 `phrases.header`.
-- 완료 기준: 토글 `aria-pressed`, 배율 메뉴 테스트, `npm test` 녹색.
+- 범위: `src/header.ts`(+test), `src/main.ts`, `src/office/renderer.ts`(+test; 공개 API 에 `setScale(n)`·`centerCanvas()` 추가, 현재는 배율 표시만 있다), `src/styles/app.css`, `src-tauri/capabilities/default.json`(창 최대화 권한 `core:window:allow-toggle-maximize` 가 필요하면), `design/handoff/phrases.ko.json` header.
+- 할 일: HANDOFF 4.3. 세그먼트 묶음(야근 토글은 T90 전까지 `disabled`), "결재 n건 대기" 칩, 배율 칩 메뉴(1×·2×·3×, 들어가지 않는 배율은 비활성, 고르면 `setScale`), 무대 모서리 `ow-stage__tools`(가운데로 = 패닝 원점 복귀, 전체 화면 = 창 최대화 토글).
+- 완료 기준: 배율 메뉴·가운데로 테스트(렌더러 가짜 객체로 호출 확인), `aria-pressed`, `npm test`·`cargo test` 녹색.
 
 ### T86 직원 카드 v2 (과장 · 중)
 
-- 범위: `src/sidebar-right.ts`(+test), `src/avatar.ts`(핀 자리), `src/styles/panel.css`.
-- 할 일: HANDOFF 4.5 해부·변형 표대로. `ow-avatar-wrap` + `ow-pin`, 직급 칩(부장 `is-boss`), 담당 줄 말줄임, 컨텍스트 막대 `ow-ctx__bar`(5칸 눈금 삭제, tokens.css ponytail 주석 삭제), 행적 `ow-trail__item` 타임라인(반려 `is-bad`), 실적 숫자 `<b>`, 호버 액션 `ow-card__actions`(직원 상세), 허가 대기 `is-ask` 변형(버튼 2개: 세션 상세 열기 / 세션으로 이동 = 사이드바 행 선택), 외근 `is-away`, 압축형 9/12, 팀 머리글 줄바꿈 금지, 현황판 머리 `sort` 버튼(기본 순서 ↔ 이름순).
-- 재현: `fixtures/claude/*` replay 로 Cards 보드의 9가지 변형.
-- 완료 기준: 변형마다 DOM 테스트 1개 (클래스·칩 문구), 기존 테스트 통과, 창 높이 640 미만 압축형.
+- 범위: `src/sidebar-right.ts`(+test), `src/avatar.ts`(핀 자리), `src/styles/panel.css`, `design/handoff/tokens.css`(`.ow-ctx i` 눈금 규칙과 ponytail 주석 삭제, `.ow-card.is-idle` 은 아래 구조에 맞춰 조정), `dev/actors.ts`·`dev/life.ts`(샘플).
+- **구조 결정 (먼저 한다, 메인 승인)**: 지금은 카드 전체가 `<button>` 이라 안에 버튼을 둘 수 없다 (HTML 규격). 바꾼다: 카드는 `<article class="ow-card">`, 머리줄(아바타·이름·직급)을 감싼 `<button class="ow-card__open">` 이 직원 상세를 열고 로빙 tabindex 의 대상이다. 오른쪽 위 호버 액션 `ow-card__actions` 과 허가 대기 버튼 2개는 형제 `<button>`. 키보드: ↑↓ 로 카드의 `ow-card__open` 사이 이동, Tab 으로 그 카드의 다른 버튼, Enter 로 실행. `focus-within` 이면 호버 액션 표시. HANDOFF 10절 초점 순서 문장을 이에 맞춰 고친다.
+- 할 일: HANDOFF 4.5 해부·변형 표. 핀, 직급 칩, 담당 말줄임, 컨텍스트 막대, 타임라인 행적(`is-bad`), 실적 숫자, 호버 액션, `is-ask` 변형, `is-away`, 압축형 9/12, 팀 머리글 줄바꿈 금지, 현황판 머리 `sort`.
+- 완료 기준: 변형마다 DOM 테스트 1개, 키보드 이동 테스트(↑↓·Tab·Enter), 기존 테스트 통과, 창 높이 640 미만 압축형. 탕비실 카드의 글자 대비 4.5:1 이상 (카드 전체 opacity 가 아니라 글자 색으로 흐리게 — tokens.css 는 이미 그렇게 바꿨다).
 
 ### T87 무대 v2 (대리 · 하)
 
-- 범위: `src/styles/app.css`, `src/office/renderer.ts` 또는 `src/main.ts` 의 무대 DOM, `src/office/canvas-tooltip.ts`(방 이름표).
-- 할 일: 비네트 `ow-stage::before`, 바닥 그림자 `ow-stage__floor`, 유리 방 이름표(tokens.css `ow-roomlabel` 값), 캔버스 `drop-shadow`.
-- 완료 기준: 125%·150% DPR 에서 도트 경계 선명(HANDOFF 12절), 2× 와 3× 에서 그림자가 캔버스 밖 무대에만 그려짐. **drop-shadow 필터 프레임 시간을 재서 기존 대비 +1ms 를 넘으면 필터를 빼고 바닥 그림자만 둔다** (tokens.css ponytail 주석 정리). 측정값을 커밋 메시지에.
+- 범위: `src/styles/app.css`, `src/main.ts`(무대 DOM), `src/office/canvas-tooltip.ts`(방 이름표), `dev/viewport.ts`.
+- 할 일: 비네트, 바닥 그림자, 유리 방 이름표, 캔버스 `drop-shadow`.
+- 완료 기준: 125%·150% DPR 도트 선명(HANDOFF 12절), 2×·3× 에서 그림자가 캔버스 밖에만. **drop-shadow 프레임 시간을 재서 기존 대비 +1ms 를 넘으면 필터를 빼고 바닥 그림자만 둔다** (tokens.css ponytail 주석 정리). 측정값을 커밋 메시지에.
 
 ### T88 티커 v2 (대리 · 하)
 
 - 범위: `src/ticker.ts`(+test), `src/styles/panel.css`.
-- 할 일: 항목 `ow-ticker__item`(시각·팀 태그·이름·요약), 마우스 올리면 `is-paused` + 그 항목 회색, 조용할 때 회색 칩 + "조용한 밤입니다", `prefers-reduced-motion` 에서 정지.
+- 할 일: 항목 알약(시각·팀 태그·이름·요약), 호버 `is-paused` + 항목 회색, 조용할 때 회색 칩, `prefers-reduced-motion` 정지.
 - 완료 기준: 호버 정지·재개 테스트, 기존 테스트 통과.
 
 ### T89 직원 상세 팝업 v2 (과장 · 중)
 
-- 범위: `src/popup-employee.ts`(+test), `src/styles/popup.css`.
-- 할 일: HANDOFF 4.6 직원 상세 행대로. 머리 칩 줄(담당·모델·방·컨텍스트 막대) + 근무 상태 칩 + `open-external` 원본 열기, 타임라인 `ow-tl` 접힘 38/펼침 `ow-tl__raw`, 실적 요약 `ow-stat` 3묶음. 팝업 공통 여백(머리 20, 본문 좌우 20, 버튼 28)은 `ow-modal`·`ow-btn` 값이라 세션 상세·설정도 같이 바뀐다 → 두 팝업의 테스트가 깨지면 기대값이 아니라 마크업을 본다.
+- 범위: `src/popup-employee.ts`(+test), `src/styles/popup.css`, `src/popup-session.test.ts`·`src/popup-settings.test.ts`(공통 여백 변화로 깨지면 기대값이 아니라 마크업을 본다).
+- 할 일: HANDOFF 4.6 직원 상세 행. 머리 칩 줄 + 근무 상태 칩 + 원본 열기, 타임라인 `ow-tl` 접힘/펼침, 실적 요약 `ow-stat`.
 - 완료 기준: 펼침·접힘·더 보기 테스트, 세션 상세·설정 팝업 회귀 없음.
 
 ### T90 야근 모드 (과장 · 중)
 
-- 범위: `src/main.ts`, `src/header.ts`(토글 동작), `src/popup-settings.ts`(+test), `src/store.ts`, `src-tauri/src/settings.rs`(설정 키 `nightMode: "auto" | "on" | "off"`, 기본 `auto`) + IPC 타입 재생성(docs/BUILD.md).
-- 할 일: HANDOFF 4.8. `<html data-theme="night">` 토글, `auto` 는 로컬 시계 20시–06시, 전환 `--ow-dur-theme`, 6.2절 조명과 독립. 설정 "화면과 소리" 절에 세그먼트 3개(자동·켜짐·꺼짐).
-- 완료 기준: 세 값 각각 DOM 테스트, `cargo test` 설정 round-trip, 야근 모드에서 글자 대비 4.5:1 표(사이드바·카드·팝업·티커의 글자 색 × 바탕 색, 계산값) 를 PR 에 첨부.
+- 범위: `src/main.ts`, `src/header.ts`(토글 동작), `src/popup-settings.ts`(+test), `src/store.ts`, `src-tauri/src/ipc.rs`(`SettingsDto.night_mode: Option<NightMode>` — DTO 원본은 여기다), `src-tauri/src/settings.rs`(+test, 키 `nightMode: "auto" | "on" | "off"`, 기본 `auto`), IPC 타입 재생성(docs/BUILD.md), `dev/settings.ts`(완전한 설정 객체), `design/handoff/phrases.ko.json` settings.
+- 할 일: HANDOFF 4.8. `<html data-theme="night">`, `auto` 는 2절 시간표의 20–06시, 전환 `--ow-dur-theme`, 조명과 독립. 설정 "화면과 소리" 절에 세그먼트 3개.
+- 완료 기준: 세 값 DOM 테스트 + 20시·06시 경계 테스트(시계 주입), `cargo test` 설정 round-trip + 옛 설정 파일(키 없음) 읽기, 야근 모드 글자 대비 표(글자 색 × 바탕 색 계산값, `is-idle` 카드 포함) PR 첨부.
 
-### T91 조명 저녁 단계 (대리 · 하)
+### T91 조명 시간표 (대리 · 하) — T92 뒤
 
-- 범위: `design/sprites/floorplan.json` `lightTints`, `design/tools/owlfice_art.py`(참조 렌더), `src/office/renderer.ts`(+test), `design/assets/office-*-evening.png`(새 참조 1장), HANDOFF 6.2절 7번 한 줄.
-- 할 일: 저녁 `#F6E6C4` (17–20시), 야근은 그대로 `#F2DEAD` + 비네트 레이어(`overlay`, 책상 램프 주변만 밝음). 캔버스 "사무실 확장안" 윗줄.
-- 완료 기준: 참조 렌더 픽셀 비교(6.7절) 저녁 1장 추가 통과.
+- 범위: `design/sprites/floorplan.json`(`lightTints` + `rule`, 창문 전환 시각), `design/tools/owlfice_art.py`(참조 렌더), `src/office/floorplan.ts`(`LightName` 에 `evening`), `src/office/renderer.ts`(+test), `design/assets/office-claude-evening.png`(새 참조), HANDOFF 6.2절 7번과 5절 창문 행.
+- 할 일: 2절 시간표대로. 저녁 `#F6E6C4`, 야근 20시부터, 램프 비네트 레이어(`overlay`).
+- 완료 기준: 참조 렌더 비교에 저녁 1장 추가 통과, 17·20·06시 경계 테스트.
 
-### T92 감정 표식 · 근속 표식 (과장 · 중)
+### T92 신호·상태 설계 확정 (메인 · 상)
 
-- 범위: `src/office/canvas-tooltip.ts` 또는 새 오버레이 모듈(감정 표식 DOM `ow-emote`), `design/tools/owlfice_art.py` + `design/sprites/owls.json`(근속 `wear/<단계>/` 레이어), `src/office/actors.ts`, HANDOFF 5절 표에 행 추가, 4.4절에 `ow-emote` 행.
-- 할 일: 캔버스 "직원 확장안" 의 감정 표식 6종(! ? ♪ … ✕ ✓, 말풍선 틀, 1.2초, 말풍선이 있으면 생략)과 근속 표식 3단계(1h 넥타이 느슨·소매, 3h 커피 2잔·눈 밑, 6h 수건 + 말풍선). 계기는 모두 세션 파일에서 확인되는 사건만 (C13).
-- 완료 기준: replay 로 사고·허가 대기·테스트 통과·반려·승인 각 1회에 표식이 뜨고 1.2초 뒤 사라지는 테스트, 근속 레이어가 `session age` 로 바뀌는 테스트, 참조 렌더 갱신.
+- 범위: `design/HANDOFF.md` 5절(1절 표를 옮겨 적는다)·6.2절·10절, `docs/CONTRACTS.md` C2(새 상태 `planning`, 일회성 방문)·C8(시간표)·C10(재구성 불변식에 메달·누계 추가), `docs/SCENARIOS.md`(새 S 번호).
+- 할 일: 1절 표의 "없는 것" 칸을 확정하고 2절 우선순위·시간표를 계약으로 옮긴다. 각 새 방의 진입·유지·종료·중단 조건을 5절 표 형식으로 쓴다.
+- 완료 기준: 사용자 검토 뒤 커밋. 이 티켓 전에는 T93 이후를 시작하지 않는다.
 
-### T93 소품 확장 1차 (상 · 메인이 뼈대, 그림은 대리)
+### T93 파서·상태·DTO 확장 (과장 · 중) — T92 뒤
 
-- 범위: `design/tools/owlfice_art.py`, `design/sprites/office.json`·`office.png`, `src/office/props.ts`(+test), `src/office/renderer.ts`, HANDOFF 5절.
-- 할 일: 캔버스 "사무실 확장안" 의 기존 방 표 중 **이미 파싱되는 신호만**: 팀장석 커피 잔(근속 1h 마다, 최대 4)·책상 램프(야근), 개발실 서류 더미(수정 파일 10개마다)·모니터 2대(병렬), 소스 서고 책장 채움(읽은 파일 수), 출고장 상자 쌓임(커밋 수)·트럭 색(PR 열림/머지), 빌드실 CI 전광판(오늘 성공/실패). 메인이 신호→소품 표를 HANDOFF 5절에 먼저 적고, 대리가 생성기와 렌더러를 나눠 맡는다.
-- 완료 기준: 소품마다 replay 테스트 1개, 참조 렌더 4장 갱신·비교 통과.
+- 범위: `src-tauri/src/parse/claude.rs`·`codex.rs`(`EnterPlanMode` 도구 종류), `src-tauri/src/parse/mod.rs`(`ToolKind`), `src-tauri/src/office/classify.rs`(`planning`, `pass_streak`·`medal_until`, 팀 날짜별 누계, `Cue::Stamp{agent_id}`, `approves` 낱말 경계), `src-tauri/src/office/mod.rs`(`Cue`), `src-tauri/src/office/work.rs`(T98 담당 규칙은 여기가 아니라 T98), `src-tauri/src/ipc.rs`(`EmployeeDto.unique_reads`·`unique_edits`·`medal`·`planning`, `TeamDto.tests_today`·`commits_today`), IPC 타입 재생성, `src/types/*`, `fixtures/claude/*`(새 시나리오: 계획 모드, 연속 통과 3회, 거부, 컴팩션), `src-tauri/tests/*`.
+- 완료 기준: 새 상태·누계마다 fixture replay 테스트 1개 + **재구성 불변식 테스트** (같은 fixture 를 처음부터 다시 읽어도 `pass_streak`·`medal_until`·누계·`planning` 이 같다, C10), 날짜가 바뀌면 누계가 0 이 되는 테스트, `cargo test`·clippy 녹색. 프론트는 손대지 않는다.
 
-### T94 새 방 4개 (상 · 메인이 뼈대, 그림·배치는 과장)
+### T94 소품 확장 1차 (과장 · 중) — T93 뒤
 
-- 범위: `design/sprites/floorplan.json`(rooms·stands·path·layouts.large/small placements), `design/tools/owlfice_art.py`(새 소품: 회의실 화이트보드, 자료실 파쇄기, 경비실 창구·차단봉, 옥상 조각·자판기), `design/sprites/office.*`, `src/office/floorplan.ts`(+test), `src/office/actors.ts`(이동 규칙), 상태 판정이 있는 곳(`src/store.ts` 또는 `src-tauri` 이벤트 매핑), HANDOFF 5절·6.5절, `docs/SCENARIOS.md` 번호 추가, 참조 렌더 4장 갱신.
-- 할 일: 캔버스 "사무실 확장안" 새 방 4개. 신호 → 방: 계획 모드(`EnterPlanMode`/`ExitPlanMode` 도구 호출) → 회의실, 컨텍스트 정리(`ContextCompaction`) → 자료실, 허가 거부(`PermissionRequest` 거부) → 경비실, 사용자 응답 대기 30분 이상 → 옥상(탕비실이 찼을 때의 둘째 쉬는 자리, 추정 꼬리표). 훅 차단은 세션 파일에서 확인되는지 먼저 본다 (미확인이면 넣지 않고 표에 "미확인"으로).
-- 순서: 메인이 평면도의 방 사각형·출입 지점·서 있을 자리와 신호 표를 먼저 정한다 (방 10개 격자 안에서 자리를 내야 하므로 기존 방 하나는 줄어들 수 있다. 줄이는 방과 크기는 메인이 정하고 HANDOFF 6.5절에 적는다). 그다음 과장이 생성기·배치·렌더러, 대리가 테스트·replay fixture.
-- 완료 기준: 네 방 각각 replay 로 직원이 들어가고 카드 상태 칩이 바뀌는 테스트, 참조 렌더 픽셀 비교 통과(6.7절), 1×·2× 에서 방 이름표가 겹치지 않음.
+- 범위: `design/tools/owlfice_art.py`, `design/sprites/office.json`·`office.png`, `design/assets/office-*.png`(참조 렌더 재생성), `src/office/props.ts`(+test), `src/office/renderer.ts`, HANDOFF 5절.
+- 할 일: 1절 표의 소품 행 — 커피 잔(입사 1h 마다, 최대 4)·책상 램프(야근), 서류 더미(고유 수정 파일 10개마다)·모니터 2대(병렬), 책장 채움(고유 읽은 파일 0·25·50·100), 상자 쌓임(오늘 커밋)·파란 트럭(PR 연결), 전광판(오늘 합격/반려 누계).
+- 완료 기준: 소품마다 replay 테스트 1개 + 사무실 전환 뒤 상태만으로 같은 그림이 나오는 테스트, 참조 렌더 4장 비교 통과, 생성기 겹침·누락 검사 통과.
 
-### T97 자세 +5 (과장 · 중) — T92 뒤
+### T95 새 방 4개 (상 · 메인이 평면도, 과장이 구현) — T93 뒤
 
-- 범위: `design/tools/owlfice_art.py`, `design/sprites/owls.*`, `src/office/actors.ts`·`anim-queue.ts`(+test), HANDOFF 6.4절 표에 행 5개.
-- 할 일: 캔버스 "직원 확장안" 자세 표 — think(응답 생성 중), highfive(같은 팀 둘이 테스트 전부 통과, 2인), stretch(근속 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지 도착). 종 5 × 자세 5 × 방향 = 약 60프레임. "응답 생성 중" 이벤트가 세션 파일에서 확인되는지 먼저 본다 (미확인이면 think 는 텍스트 응답 시작 시각으로 대체).
-- 완료 기준: 자세마다 replay 테스트 1개, 프레임 규격(16×24, 발 기준점)이 6.4절과 같음, 미리보기 `poses.png` 갱신.
+- 범위: `design/sprites/floorplan.json`(rooms·stands·path·layouts.large/small), `design/tools/owlfice_art.py`(회의실 화이트보드, 자료실 파쇄기, 경비실 창구·차단봉, 옥상 조각·자판기), `design/sprites/office.*`, `design/assets/office-*.png`, `src/office/floorplan.ts`(+test), `src/office/actors.ts`·`anim-queue.ts`(+test), `src/office/canvas-tooltip.ts`(방 이름표), `design/handoff/phrases.ko.json` rooms, `design/handoff/icons/room-*.svg` 4개, HANDOFF 4.4·5·6.5절.
+- 방별 조건 (T92 가 확정):
+  - 회의실: 진입 `EnterPlanMode` → `planning` / 유지 `ExitPlanMode` 질문 중 포함 / 종료 승인(박수 뒤 좌석)·거부(머리 긁기 뒤 좌석) / 중단 장애·퇴근.
+  - 자료실: `ContextCompaction` 사건 → 4초 방문(파쇄기) → 원래 자리. 상태 변화 없음. 카드는 행적 한 줄만.
+  - 경비실: `Rejected` → 3초 방문(결재판) → 원래 자리. 허가 대기 중이면 출입문 자세가 우선.
+  - 옥상: 탕비실 쉬는 자리가 찼을 때의 둘째 자리. 추정 꼬리표. 다른 진입 조건 없음.
+- 순서: 메인이 격자 안에서 방 4개의 사각형·출입 지점·서 있을 자리를 정하고 줄어드는 기존 방(후보: 개발실 임시 책상 열, 거래처 미팅실 폭)을 HANDOFF 6.5절에 적는다 → 과장이 생성기·배치·이동 → 대리가 테스트·fixture.
+- 완료 기준: 방마다 replay 테스트(진입·종료·중단 각 1개), 우선순위 테스트(회의실 중 장애 → 상황실), 참조 렌더 비교 통과, 1×·2× 방 이름표 비겹침, 좌석·임시 책상 수가 HANDOFF 11절과 같음.
 
-### T98 담당 +4 · 소지품 +7 (과장 · 중) — T97 뒤
+### T96 감정 표식 · 근속 표식 (과장 · 중) — T93 뒤
 
-- 범위: `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`office.*`(`held_*`), 담당 추정 규칙이 있는 곳(`src/avatar.ts` 또는 `src/store.ts`, +test), `design/handoff/phrases.ko.json` roles, HANDOFF 6.4절.
-- 할 일: 담당 보안(security-review·권한 조사)·데이터(SQL·csv·분석)·디자이너(css·figma·design)·수습(담당 불명, 명찰로 대체). 소지품 메달(테스트 연속 통과 3회, 1시간)·안전모(장애 상황실)·서류 가방(퇴근 걷기)·손전등(소등 상태 재출근)·담요(10분 이상 sleep)·헤드폰(백그라운드 명령)·두루마리(계획 들고 회의실로, T94 뒤). 담당 추정 키워드는 subagent_type 과 지시문 첫 200자에서만.
-- 완료 기준: 담당 4종 추정 테스트(키워드 → 담당), 소지품마다 replay 테스트 1개, 카드 아바타(20×22 자르기)가 새 레이어에서도 깨지지 않음.
+- 범위: `src/office/canvas-tooltip.ts` 또는 새 `src/office/emote.ts`(+test), `src/office/actors.ts`, `design/tools/owlfice_art.py` + `design/sprites/owls.json`·`owls.png`·`preview/*.png`(근속 `wear/<단계>/` 레이어), `design/assets/office-*.png`, HANDOFF 4.4·5·6.4절.
+- 할 일: 감정 표식 6종(1절 표의 확인/추정 그대로, 1.2초, 말풍선 있으면 생략), 근속 표식 3단계(직원 입사 뒤 1h·3h·6h).
+- 완료 기준: 표식마다 replay 테스트 + **사무실 전환·창 복귀 때 지난 표식을 재생하지 않는 테스트**, 근속 레이어가 직원 `since` 로 바뀌는 테스트, 참조 렌더 갱신.
 
-### T99 계절 장식 (대리 · 하) — T94 뒤
+### T97 자세 +5 (과장 · 중) — T96 뒤
 
-- 범위: `design/tools/owlfice_art.py`, `design/sprites/office.json`(`season/<이름>` 상태), `src/office/props.ts`(+test), HANDOFF 5절.
-- 할 일: 창밖 하늘 시각별 4색 + 계절 색조(봄·여름·가을·겨울), 12월 입구 트리·양말 1개, 설·추석 벽 등 1개. 기준은 OS 로컬 날짜. 비·눈은 날씨 데이터가 없으므로 넣지 않는다.
-- 완료 기준: 날짜를 주입한 테스트 4계절 + 12월, 참조 렌더는 계절 없는 날짜로 고정해 기존 비교가 그대로 통과.
+- 범위: `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`preview/poses.png`, `src/office/actors.ts`·`anim-queue.ts`(+test), HANDOFF 6.4절 표.
+- 할 일: think(`EventKind::Thinking` 부터 다음 사건 또는 30초, 추정), highfive(`Cue::Stamp{agent_id}` 둘이 10초 안, 2인), stretch(입사 1시간마다), drink(응답 대기 중 30초마다), phone(사장님 메시지). 2절 우선순위를 지킨다.
+- 완료 기준: 자세마다 replay 테스트 + 우선순위 테스트(허가 대기 중 stretch 금지, 장애 중 drink 금지), 프레임 규격 6.4절, 미리보기 갱신.
 
-### T95 접근성 · 움직임 줄이기 점검 (대리 · 하)
+### T98 담당 +3 · 소지품 +7 (과장 · 중) — T97 뒤
 
-- 범위: `src/*.ts` 의 `aria-*`, `src/styles/*.css` 의 `prefers-reduced-motion`.
-- 할 일: HANDOFF 10절 + v2 추가분 — 세그먼트 `aria-pressed`, 핀 `aria-label`(상태 단어), 카드 호버 액션 키보드 도달(`focus-within`), 티커 정지, 야근 모드 대비 표(T90 결과 재확인).
-- 완료 기준: 체크리스트 12절 전 항목에 ✓ 또는 사유.
+- 범위: `src-tauri/src/office/work.rs`(+test; 담당 판정은 여기다), `src-tauri/src/office/mod.rs`(`Role`), `src-tauri/src/ipc.rs`(`Role` 값 추가, `EmployeeDto.items`), IPC 타입 재생성, `src/types/*`, `src/avatar.ts`, `design/tools/owlfice_art.py`, `design/sprites/owls.*`·`office.*`(`held_*`), `design/handoff/phrases.ko.json` roles, HANDOFF 6.4절.
+- 담당 규칙: **기존 파일 경로·확장자 규칙이 1차**다. 분류 범주에 보안(`auth/`·`security/`·`*.pem`·`*.policy`·권한 설정 파일), 데이터(`*.sql`·`*.csv`·`*.parquet`·`*.ipynb`), 디자이너(`*.css`·`*.scss`·`*.fig`·`design/`)를 더한다. 수습(고유 파일 5개 미만)은 이미 있다 → 신규는 3종. `subagent_type`(`SubagentSpawn` 에 있을 때만)은 **5개 미만일 때 수습 대신 쓰는 보조 규칙**이고, 없으면 수습. 지시문 본문은 보지 않는다.
+- 소지품: 메달(`medal`), 안전모(장애 상황실), 서류 가방(퇴근 걷기), 손전등(`off` 조명에서 재출근), 담요(sleep 10분), 헤드폰(백그라운드 명령), 두루마리(`planning`, T95 뒤).
+- 완료 기준: 담당 판정 단위 테스트(범주별 경로 → 담당, 보조 규칙, 재구성 뒤 같음), 소지품마다 replay 테스트, 카드 아바타 20×22 자르기가 새 레이어에서 깨지지 않음.
 
-### T96 스크린샷 · 버전 · 릴리스 (메인 + 사용자)
+### T99 계절 장식 (대리 · 하) — T95 뒤
 
-- `docs/images/office.png`·`employee.png` 를 v2 로 재촬영(합성 데이터, 1600×960 주간 1장 + 야근 1장 추가), `README.md` 캡션. `tauri.conf.json`·`package.json` 0.2.0. 릴리스는 `PLAN_update.md` T81 절차. 끝나면 이 문서와 `PLAN_update.md` 삭제, HANDOFF 0절 캔버스 링크 확인.
+- 범위: `design/tools/owlfice_art.py`, `design/sprites/office.json`(`season/<이름>`)·`office.png`, `design/sprites/holidays.json`(설·추석 날짜표 2026–2035, 표준 라이브러리에 음력이 없어 표로 둔다. 범위 밖 연도는 생략), `src/office/props.ts`(+test), `src/office/renderer.ts`(테스트용 `season: false` 옵션), HANDOFF 5절.
+- 할 일: 창밖 계절 색조 4종, 12월 트리·양말, 설·추석 벽 등. OS 로컬 날짜. 비·눈은 넣지 않는다.
+- 완료 기준: 날짜 주입 테스트(사계절 + 12월 + 설·추석 + 표 밖 연도), 참조 렌더 비교는 `season:false` 로 돌려 그대로 통과.
 
-## 순서
+### T100 접근성 · 움직임 줄이기 통합 검수 (과장 · 중) — 위 전부 뒤
 
-T83 → (T84 ‖ T85 ‖ T88) → T86 → T87 → T89 → T90 → T91 → T92 → T93 → T94 → T97 → T98 → T99 → T95 → `PLAN_update.md` T79 → (T80 ‖ T81) → T96 → T82.
+- 범위: `src/*.ts`, `src/office/actors.ts`·`props.ts`·`anim-queue.ts`(반복 연출 정지), `src/styles/*.css`, HANDOFF 10·12절.
+- 할 일: HANDOFF 10절 + v2 추가분(세그먼트 `aria-pressed`, 핀 `aria-label`, 카드 키보드 구조 T86, 티커 정지, 야근 대비), `prefers-reduced-motion` 에서 Pixi 쪽 반복(자세 반복·소품 깜빡임·감정 표식)도 멈춘다. 12절 "외부 네트워크 요청이 하나도 없다"는 **"업데이트 확인·다운로드(Rust 플러그인, 사용자 조치 전 다운로드 없음) 외에는"** 으로 고친다 (`PLAN_update.md`).
+- 완료 기준: 12절 전 항목 ✓ 또는 사유, 실측 대비 표.
 
-쓰는 서브는 같은 파일에 둘을 두지 않는다 (AGENTS.md 3절). T84·T85·T88 은 파일이 겹치지 않아 동시 가능. T86 과 T89 는 `panel.css`·`popup.css` 가 다르지만 `avatar.ts` 를 같이 보므로 순서대로. T93·T94·T97·T98·T99 는 모두 `owlfice_art.py` 와 스프라이트 시트를 고치므로 반드시 하나씩. 생성기를 고칠 때마다 `python design/tools/owlfice_art.py` 가 끝까지 돌고 겹침·누락 검사를 통과해야 한다.
+### T101 스크린샷 · 버전 · README (메인 + 사용자) — 릴리스 직전
 
-## 디자인 측 완료 (이 브랜치, 2026-10-22)
+- `docs/images/office.png`·`employee.png` 재촬영(합성 데이터, 주간 1장 + 야근 1장 추가), `README.md` 캡션과 **설치 파일 링크 파일명을 0.2.0 으로** (`latest/download/Owlfice_0.2.0_x64-setup.exe`. 파일명이 고정이라 릴리스마다 바꿔야 한다. `PLAN_update.md` T81 절차 4번). `tauri.conf.json`·`package.json` 0.2.0.
+- 릴리스는 `PLAN_update.md` T81 절차. 이 문서와 `PLAN_update.md` 삭제는 T82(실전 검증) 뒤.
 
-- `design/project/`: v2 19장 + `canvas.json` (캔버스 "Owlfice 디자인 0.2.0" 과 같은 파일). 0.1.0 의 `Main`·`MainSmb`·`Components` 는 v2 `Main`·`MainNight`·`Cards`/`Sidebar`/`Header`/`Tokens` 로 대체. 중소기업 주간 보드는 없다 (야근 보드가 중소기업 구조를 보여 준다).
-- `design/handoff/tokens.css`: v2 토큰(`--ow-surface`, `--ow-elev-*`, `--ow-radius-tag`, 금색·외근·야근 칩 색), 컴포넌트 규칙 v2 값, `[data-theme="night"]` 블록. 앱이 아직 쓰는 0.1.0 규칙(`.ow-ctx i` 눈금, `.ow-rail__letter`)은 `ponytail` 주석으로 남겼다 → T86·T84 가 지운다.
-- `design/handoff/phrases.ko.json` 키 19개(sidebar 5·header 6·card 8), `design/handoff/icons/` 4개(center·fullscreen·sort·menu).
-- `design/HANDOFF.md` 0·1·2.1·3·4.1–4.6·4.8(새 절)·7·12절.
-- 검증: 19장을 로컬 렌더해 넘침·개행·겹침 자동 검사 통과 (티커 흐름과 한 글자 고정 상자는 의도된 것). 1:1 눈 검사는 v2 8장만 했고, 이어받은 11장은 DOM 측정(여백·구조)으로 확인했다.
+## 4. 순서
+
+T83 → T92(메인) → T93 → (T84 ‖ T85 ‖ T88) → T86 → T87 → T89 → T90 → T91 → T94 → T95 → T96 → T97 → T98 → T99 → T100 → `PLAN_update.md` T79 → (T80 ‖ T81) → T101 → T82 → 두 PLAN 삭제.
+
+- 쓰는 서브는 같은 파일에 둘을 두지 않는다 (AGENTS.md 3절). T84·T85·T88 은 파일이 겹치지 않아 동시 가능.
+- T94–T99 는 모두 `owlfice_art.py` 와 스프라이트 시트를 고치므로 하나씩. 생성기를 고칠 때마다 `python design/tools/owlfice_art.py` 가 끝까지 돌고 겹침·누락 검사를 통과해야 한다.
+- IPC 타입을 바꾸는 티켓(T85·T90·T93·T98)은 `OWLFICE_WRITE_TYPES=1 cargo test ts_bindings` 를 돌리고 생성 파일을 같이 커밋한다.
+
+## 5. 디자인 측 완료 (이 브랜치, 2026-10-22)
+
+- `design/project/`: v2 19장 + `canvas.json` (캔버스와 같은 파일). 0.1.0 의 `Main`·`MainSmb`·`Components` 는 v2 `Main`·`MainNight`·`Cards`/`Sidebar`/`Header`/`Tokens` 로 대체.
+- `design/handoff/tokens.css`: v2 토큰·컴포넌트 규칙·`[data-theme="night"]` 블록. 앱이 아직 쓰는 0.1.0 규칙(`.ow-ctx i`, `.ow-rail__letter`)은 ponytail 주석 → T86·T84 가 지운다. 탕비실 카드는 opacity 대신 글자 색으로 흐리게 (대비 4.5:1).
+- `design/handoff/phrases.ko.json` 키 19개, `design/handoff/icons/` 4개, `design/HANDOFF.md` 0·1·2.1·3·4·7·12절과 4.8절.
+- 리뷰(2026-10-22) 반영: 1·2절 표, T86 카드 구조, T92·T93 선행, 범위 파일 보강, 시간표, T99 음력 표, T97 think 추정. 받지 않은 것: 없음. 다만 "훅 차단 → 경비실"과 "PR 머지 색"은 신호가 없어 뺐다.

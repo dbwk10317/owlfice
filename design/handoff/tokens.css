@@ -317,7 +317,9 @@
 .ow-card { background: var(--ow-surface); border: 1px solid var(--ow-line); border-radius: var(--ow-radius-xl); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; flex: none; position: relative; box-shadow: var(--ow-elev-1); text-align: left; width: 100%; transition: opacity var(--ow-dur-3) var(--ow-ease); }
 .ow-card:hover { border-color: #D4D4D8; box-shadow: var(--ow-elev-2); }
 .ow-card.is-boss { border-color: var(--ow-boss-gold); box-shadow: 0 0 0 1px var(--ow-boss-gold), var(--ow-elev-1); }
-.ow-card.is-idle { opacity: 0.55; }
+.ow-card.is-idle { background: var(--ow-panel); } /* 탕비실: 불투명도가 아니라 색으로 흐리게 (글자 대비 4.5:1 유지) */
+.ow-card.is-idle .ow-card__name, .ow-card.is-idle .ow-now { color: var(--ow-ink-2); }
+.ow-card.is-idle .ow-avatar { opacity: 0.7; }
 .ow-card.is-highlight { box-shadow: 0 0 0 2px var(--ow-ink), 0 4px 14px rgba(24, 24, 27, 0.14); }
 .ow-card.is-hit { border-color: var(--ow-fail); box-shadow: 0 0 0 1px var(--ow-fail); animation: ow-shake var(--ow-dur-shake) linear; }
 .ow-card.is-ask { border-color: var(--ow-ask); box-shadow: 0 0 0 1px var(--ow-ask); }

@@ -91,6 +91,9 @@ export const ROLE_LABEL: Record<Role, string> = {
   Qa: phrases.roles.qa,
   DevOps: phrases.roles.devops,
   Writer: phrases.roles.writer,
+  Security: phrases.roles.security,
+  Data: phrases.roles.data,
+  Designer: phrases.roles.designer,
   Trainee: phrases.roles.trainee,
 };
 

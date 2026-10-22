@@ -1992,7 +1992,7 @@ fn role_per_category() {
         ("go", Role::Backend),
         ("php", Role::Backend),
         ("tsx", Role::Frontend),
-        ("scss", Role::Frontend),
+        ("scss", Role::Designer),
         ("yml", Role::DevOps),
         ("ps1", Role::DevOps),
         ("mdx", Role::Writer),
@@ -3506,6 +3506,7 @@ fn assert_extension_state(a: &Team, b: &Team) {
         assert_eq!(a.planning, b.planning);
         assert_eq!(a.pass_streak, b.pass_streak);
         assert_eq!(a.medal_until, b.medal_until);
+        assert_eq!(a.blanket, b.blanket);
         assert_eq!(a.last_check_failed, b.last_check_failed);
         assert_eq!(a.build_test_light(), b.build_test_light());
         assert_eq!(a.record.files_read, b.record.files_read);
@@ -4204,4 +4205,137 @@ fn planning_off_hides_conference_and_new_activity_returns_without_clearing_plan(
     assert_eq!(s.team.phase, TeamPhase::Working);
     assert!(s.boss().planning);
     assert_eq!(s.boss().activity.room, Room::Conference);
+}
+
+#[test]
+fn extended_roles_keep_path_priority_unique_threshold_and_rebuild() {
+    for (pattern, want) in [
+        ("auth/a{}.rs", Role::Security),
+        ("security/a{}.css", Role::Security),
+        ("nested/a{}.pem", Role::Security),
+        ("nested/a{}.policy", Role::Security),
+        ("p{}/permissions.json", Role::Security),
+        ("p{}/permissions.toml", Role::Security),
+        ("p{}/permissions.yaml", Role::Security),
+        ("p{}/permissions.yml", Role::Security),
+        ("src-tauri/capabilities/a{}.json", Role::Security),
+        ("p{}/src-tauri/capabilities/main.json", Role::Security),
+        ("design/a{}.sql", Role::Designer),
+        ("a{}.css", Role::Designer),
+        ("a{}.scss", Role::Designer),
+        ("a{}.fig", Role::Designer),
+        ("a{}.sql", Role::Data),
+        ("a{}.csv", Role::Data),
+        ("a{}.parquet", Role::Data),
+        ("a{}.ipynb", Role::Data),
+        ("ci/auth/a{}.pem", Role::DevOps),
+        (".github/security/a{}.sql", Role::DevOps),
+        ("security/test_a{}.pem", Role::Qa),
+        ("design/test_a{}.css", Role::Qa),
+        ("security/p{}/Dockerfile", Role::DevOps),
+        ("author/a{}.rs", Role::Backend),
+        ("redesign/a{}.ts", Role::Frontend),
+        ("src-tauri/capabilities/nested/a{}.json", Role::Trainee),
+        ("p{}/user-permissions.json", Role::Trainee),
+        ("C:/outside/security/a{}.rs", Role::Backend),
+    ] {
+        let events: Vec<_> = (0..5)
+            .map(|i| {
+                ev(
+                    MAIN,
+                    i,
+                    call(
+                        &format!("c{i}"),
+                        ToolKind::FileRead,
+                        file(&pattern.replace("{}", &i.to_string())),
+                    ),
+                )
+            })
+            .collect();
+        let mut live = Team::new(MAIN, Product::ClaudeCli, t0());
+        for event in &events[..4] {
+            live.apply(event, &mut Vec::new());
+        }
+        assert_eq!(live.employees[0].role, Role::Trainee, "{pattern}: 4개");
+        live.apply(&events[4], &mut Vec::new());
+        assert_eq!(live.employees[0].role, want, "{pattern}");
+        let rebuilt = rebuild(MAIN, Product::ClaudeCli, &[], vec![events], utc());
+        assert_eq!(rebuilt.employees[0].role, want, "{pattern}: 재구성");
+    }
+    assert_eq!(
+        touch(&[
+            "auth/A.pem",
+            "auth/a.PEM",
+            "auth/b.pem",
+            "auth/c.pem",
+            "auth/d.pem"
+        ]),
+        Role::Trainee
+    );
+    assert_eq!(
+        touch(&["a.rs", "b.rs", "auth/a.pem", "auth/b.pem", "one.sql"]),
+        Role::Backend
+    );
+    assert_eq!(
+        touch(&["auth/a.pem", "auth/b.pem", "one.sql", "two.sql", "one.fig"]),
+        Role::Security
+    );
+    assert_eq!(
+        touch(&["one.sql", "two.sql", "one.fig", "two.fig", "one.rs"]),
+        Role::Data
+    );
+}
+
+#[test]
+fn blanket_follows_sleep_interval_resets_on_activity_and_rebuilds() {
+    let mut s = Sim::new();
+    s.tick(181).tick(779);
+    assert_eq!(s.boss().activity.pose, Pose::Sleep);
+    assert!(!s.boss().blanket);
+    s.tick(780);
+    assert!(s.boss().blanket);
+    s.tick(781).tick(300);
+    assert!(s.boss().blanket);
+    s.on(
+        MAIN,
+        781,
+        EventKind::UserMessage {
+            text: "다음 일".into(),
+        },
+    );
+    assert!(!s.boss().blanket);
+    s.tick(1382).tick(1980);
+    assert!(!s.boss().blanket);
+    s.tick(1981);
+    assert!(s.boss().blanket);
+    let events = vec![ev(
+        MAIN,
+        781,
+        EventKind::UserMessage {
+            text: "다음 일".into(),
+        },
+    )];
+    let mut rebuilt = rebuild(MAIN, Product::ClaudeCli, &[], vec![events], utc());
+    rebuilt.tick(at(1981), utc(), &mut Vec::new());
+    assert_eq!(s.boss().blanket, rebuilt.employees[0].blanket);
+    s.tick(2582);
+    assert_eq!(s.team.phase, TeamPhase::Off);
+    assert!(!s.boss().blanket);
+}
+
+#[test]
+fn retiring_a_sleeping_sub_clears_blanket_before_departure() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, child_spawn(SUB))
+        .on(SUB, 0, call("read", ToolKind::FileRead, file("a.rs")))
+        .on(SUB, 0, result("read", ToolOutcome::Ok))
+        .on(MAIN, 20, call("build", ToolKind::Build, cmd("cargo build")))
+        .tick(601)
+        .tick(1200);
+    assert!(s.sub().blanket);
+    s.team.retire_employee(SUB, at(1201), &mut s.cues);
+    assert!(!s.sub().blanket);
+    s.tick(1802);
+    assert!(s.sub().departed_at.is_some());
+    assert!(!s.sub().blanket);
 }

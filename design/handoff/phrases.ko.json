@@ -89,7 +89,7 @@
   },
 
   "ranks": { "bujang": "부장", "gwajang": "과장", "daeri": "대리", "sawon": "사원", "boss": "사장님" },
-  "roles": { "backend": "백엔드", "frontend": "프론트", "qa": "QA", "devops": "데브옵스", "writer": "테크라이터", "trainee": "수습" },
+  "roles": { "backend": "백엔드", "frontend": "프론트", "qa": "QA", "devops": "데브옵스", "writer": "테크라이터", "security": "보안", "data": "데이터", "designer": "디자이너", "trainee": "수습" },
   "species": { "eagle": "수리부엉이", "longeared": "칡부엉이", "little": "금눈쇠올빼미", "barn": "가면올빼미", "scops": "소쩍새", "snowy": "흰올빼미" },
 
   "card": {

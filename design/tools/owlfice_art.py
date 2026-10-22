@@ -480,6 +480,30 @@ def owl_role(role, g, dirn, chest):
         hy = g["hy"]
         for x, y, c in [(11, 3, (60, 60, 60)), (12, 2, (60, 90, 200)), (13, 1, (60, 90, 200))]:
             cells[(x, y + hy)] = c
+    elif role == "security" and dirn == "f":
+        for x in range(2, 12):
+            cells[(x, 5 + g["hy"])] = (22, 24, 30)
+            if x not in (6, 7):
+                cells[(x, 6 + g["hy"])] = (22, 24, 30)
+        cells[(3, 5 + g["hy"])] = (94, 104, 118)
+        cells[(9, 5 + g["hy"])] = (94, 104, 118)
+    elif role == "data" and dirn == "f":
+        for x, yt in ((5, 9), (8, 9), (5, 10), (8, 10)):
+            T(x, yt, (70, 112, 150))
+        for yt in range(11, 14):
+            for x in range(5, 9):
+                T(x, yt, (242, 244, 232))
+        for x, yt in ((5, 12), (6, 11), (6, 12), (7, 13), (8, 12), (8, 13)):
+            T(x, yt, (56, 140, 152))
+    elif role == "designer":
+        for y, xs in ((-1, range(4, 10)), (0, range(3, 11)), (1, range(2, 12))):
+            for x in xs:
+                cells[(x, y + g["hy"])] = (74, 44, 94)
+        cells[(8, -2 + g["hy"])] = (50, 32, 64)
+        if dirn == "f" and g["wr"][0] == "down" and not g["crouch"]:
+            for yt in range(10, 15):
+                cells[(12, torso_y(yt, g))] = (152, 100, 54)
+            cells[(12, torso_y(9, g))] = (224, 112, 80)
     elif role in ("frontend", "qa") and g["wl"][0] == "down" and not g["crouch"] and dirn == "f":
         y0 = torso_y(12, g)
         if role == "frontend":
@@ -496,6 +520,38 @@ def owl_role(role, g, dirn, chest):
     return cells
 
 
+def owl_item(item, g, dirn, chest):
+    cells = {}
+    if item == "medal" and dirn == "f":
+        for x, yt, c in [(5, 9, (66, 112, 190)), (8, 9, (190, 60, 64)),
+                         (6, 10, (66, 112, 190)), (7, 10, (190, 60, 64)),
+                         (6, 11, (246, 200, 60)), (7, 11, (246, 200, 60)),
+                         (6, 12, (204, 142, 32)), (7, 12, (246, 200, 60))]:
+            y = torso_y(yt, g)
+            if y is not None and (x, y) in chest:
+                cells[(x, y)] = c
+    elif item == "blanket":
+        for (x, y) in chest:
+            cells[(x, y)] = (100, 140, 160) if (x + y) % 4 else (152, 184, 190)
+        for side, x in (("l", 1), ("r", 12)):
+            if g["w" + side][0] == "down" and not g["crouch"]:
+                for yt in range(9, 14):
+                    cells[(x, torso_y(yt, g))] = (100, 140, 160)
+    elif item == "headphones":
+        for x in range(2, 12):
+            cells[(x, g["hy"])] = (44, 48, 60)
+        for x in (1, 2, 11, 12):
+            for y in range(2, 7):
+                cells[(x, y + g["hy"])] = (44, 48, 60) if x in (1, 12) else (80, 104, 132)
+    elif item == "helmet":
+        for y, xs in ((-2, range(4, 10)), (-1, range(2, 12)), (0, range(1, 13)), (1, range(1, 13)), (2, range(0, 14))):
+            for x in xs:
+                cells[(x, y + g["hy"])] = (246, 194, 54) if y < 2 else (194, 138, 32)
+        for y in range(-1, 2):
+            cells[(7, y + g["hy"])] = (255, 224, 112)
+    return cells
+
+
 def cells_to_img(cells, lift, pal=None):
     img = Image.new("RGBA", (OWL_W, OWL_H), (0, 0, 0, 0))
     for (x, y), v in cells.items():
@@ -507,11 +563,11 @@ def cells_to_img(cells, lift, pal=None):
 
 
 OUTFITS = [f"{r}-{v}" for r in ("bujang", "gwajang", "daeri", "sawon") for v in THEMES] + ["boss", "librarian"]
-ROLES = ["backend", "frontend", "qa", "devops", "writer"]   # 수습(trainee)은 레이어 없음
+ROLES = ["backend", "frontend", "qa", "devops", "writer", "security", "data", "designer"]   # 수습(trainee)은 레이어 없음
 RANK_KO = {"bujang": "부장", "gwajang": "과장", "daeri": "대리", "sawon": "사원", "boss": "사장님",
            "librarian": "사서"}
 ROLE_KO = {"backend": "백엔드", "frontend": "프론트", "qa": "QA", "devops": "데브옵스", "writer": "테크라이터",
-           "trainee": "수습"}
+           "security": "보안", "data": "데이터", "designer": "디자이너", "trainee": "수습"}
 
 
 def pose_frames():
@@ -541,6 +597,8 @@ def build_owls():
             frames[f"wear/{stage}/{name}"] = cells_to_img(owl_wear(stage, g, dirn, chest), g["lift"])
         for role in ROLES:
             frames[f"role/{role}/{name}"] = cells_to_img(owl_role(role, g, dirn, chest), g["lift"])
+        for item in ("medal", "helmet", "blanket", "headphones"):
+            frames[f"item/{item}/{name}"] = cells_to_img(owl_item(item, g, dirn, chest), g["lift"])
         hx, hy = g["hands"]["r"]
         anchors[name] = dict(hand=[hx + TX, hy + TY - g["lift"]], head=[OWL_AX, 2 + g["hy"] + TY - g["lift"]])
     return frames, anchors
@@ -1200,6 +1258,9 @@ def build_fx():
         "envelope": (["kkkkk", "kwkwk", "kwwwk", "kkkkk"], dict(k=(150, 120, 80), w=(236, 214, 170)), (1, 1)),
         "box_carry": (["kkkkk", "kbbbk", "kbbbk", "kkkkk"], dict(k=(140, 100, 60), b=(206, 160, 104)), (1, 1)),
         "papers": (["wwww.", "wkkww", "wwwww", ".wwww"], dict(w=(250, 250, 248), k=(150, 150, 150)), (1, 1)),
+        "briefcase": ([".kkk.", "kkkkk", "kbbbk", "kbbbk", "kkkkk"], dict(k=(78, 58, 46), b=(132, 92, 56)), (1, 1)),
+        "flashlight": (["...yy", "kkkyy", ".kk.."], dict(k=(60, 64, 76), y=(255, 222, 114)), (1, 1)),
+        "scroll": (["kkkkkk", "kwwwwk", ".wwww.", ".wkkw.", ".wwww.", "kkkkkk"], dict(k=(152, 108, 54), w=(248, 230, 180)), (1, 1)),
         "swatch": (["rrr", "yyy", "bbb"], dict(r=(232, 80, 70), y=(250, 200, 60), b=(70, 130, 230)), (1, 1)),
     }
     for name, (rows, pal, anc) in held.items():
@@ -1567,6 +1628,11 @@ def owl_keys(c):
         keys.append(f"wear/{wear}/{name}")
     if c.get("role", "trainee") != "trainee":
         keys.append(f"role/{c['role']}/{name}")
+    items = c.get("items", [])
+    for item in ("medal", "blanket", "headphones", "helmet"):
+        if item not in items or (item == "medal" and "blanket" in items) or (item == "headphones" and "helmet" in items):
+            continue
+        keys.append(f"item/{item}/{name}")
     return keys, name
 
 
@@ -1967,6 +2033,15 @@ def make_previews():
         for stage in range(4):
             wear_sheet.alpha_composite(owl_composite("barn", outfit, wear=stage), (stage * 24, row * 28 + 2))
     wear_sheet.save(os.path.join(PREV, "wear.png"))
+    roles = Image.new("RGBA", (24 * 3, 28 * 5), (0, 0, 0, 0))
+    for row, sp in enumerate(EMPLOYEE_SPECIES):
+        for col, role in enumerate(("security", "data", "designer")):
+            roles.alpha_composite(owl_composite(sp, "bujang-claude", role), (col * 24, row * 28 + 2))
+    roles.save(os.path.join(PREV, "roles.png"))
+    items = Image.new("RGBA", (24 * 6, 28), (0, 0, 0, 0))
+    for col, equipped in enumerate((["medal"], ["helmet"], ["blanket"], ["headphones"], ["helmet", "headphones"], ["blanket", "medal"])):
+        draw_owl_local(items, dict(species="barn", outfit="bujang-claude", role="designer", pose="idle", items=equipped, wear=3), col * 24 + 4 + OWL_AX, OWL_AY)
+    items.save(os.path.join(PREV, "items.png"))
     # 소품 목록 (3배, 이름 표시)
     scale, pad, label_h = 3, 14, 18
     font = ImageFont.truetype("consola.ttf", 13) if os.path.exists(r"C:\Windows\Fonts\consola.ttf") else ImageFont.load_default()
@@ -2117,6 +2192,10 @@ def check(owl_sheet_pos, office_pos):
         hx, hy = OWL_META["anchors"][name]["hand"]
         if not (0 <= hx < OWL_W and 0 <= hy < OWL_H):
             errors.append(f"손 기준점 {name} 이 프레임 밖")
+    for role in ("security", "data", "designer"):
+        frame = OWLS[f"role/{role}/idle_f_0"]["img"]
+        if frame.crop((0, 2, 16, 24)).getbbox() is None or frame.crop((0, 0, 16, 2)).getbbox() is not None:
+            errors.append(f"role/{role}: 카드 자르기 안에 담당 그림이 온전히 들어오지 않음")
     assert not errors, "\n".join(errors)
     print(f"검사 통과: 올빼미 {len(OWLS)} 프레임, 사무실 {len(OFFICE)} 프레임, 소품 {len(PROPS)} 종")
 
@@ -2142,8 +2221,8 @@ def main():
         anims[g].sort(key=lambda s: int(s.rsplit("_", 1)[1]))
     owl_extra = dict(
         frame=[OWL_W, OWL_H], anchor=[OWL_AX, OWL_AY],
-        layers=["body", "outfit", "wear", "role", "held"],
-        layerRule="body → outfit → wear → role 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
+        layers=["body", "outfit", "wear", "role", "item", "held"],
+        layerRule="body → outfit → wear → role → item 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
         wear={"1": "1시간 · 소매 걷음·부장 넥타이 느슨", "2": "3시간 · 눈 밑 그림자 추가", "3": "6시간 · 어깨 수건 추가"},
         species={k: v["name"] for k, v in SPECIES.items()}, employeeSpecies=EMPLOYEE_SPECIES,
         speciesRule="직원 종 = EMPLOYEE_SPECIES[hash(agent_id) % 5]. 흰올빼미는 사장님 전용",

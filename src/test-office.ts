@@ -35,6 +35,7 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
     planning: false,
     rejected: false,
     medal: false,
+    items: [],
     buildTestBorder: "Plain",
     lastSay: null,
     hiredAt: iso(13, 0),

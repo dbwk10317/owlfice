@@ -230,6 +230,18 @@ export class Track {
   retarget(target: Target, now: number, entering = false, held?: string): void {
     this.advance(now);
     const prev = this.target;
+    if (
+      !same(prev.at, target.at) &&
+      this.steps.some(
+        (s) => s.kind === "walk" && (s.held === "briefcase" || s.held === "flashlight"),
+      )
+    ) {
+      // 출입이 중단되면 그 걷기에 딸린 소품도 새 경로로 가져가지 않는다.
+      const shown = this.update(now);
+      this.steps = [];
+      this.pos = shown.at;
+      this.t0 = now;
+    }
     this.target = target;
     // 큐(유휴 동작 빼고)는 늘 앞 목표에서 끝난다. 자리가 그대로면 자세만 바뀐다
     if (!entering && same(prev.at, target.at)) return;
@@ -239,12 +251,12 @@ export class Track {
     const tail = target.sitOn ? target.depth : undefined;
     const head = from && prev.sitOn && same(from, prev.at) ? prev.depth : undefined;
     if (entering && target.at)
-      this.walk(walkPath(fp, stand(fp, "door"), target.at), ENTER_MS, now, false, { tail });
+      this.walk(walkPath(fp, stand(fp, "door"), target.at), ENTER_MS, now, false, { tail, held });
     else if (from && target.at)
       this.walk(walkPath(fp, from, target.at), undefined, now, false, { head, tail });
     else if (from) {
       // 외근·퇴장: 출구까지 걸어가 사라진다
-      this.walk(walkPath(fp, from, stand(fp, "exit")), undefined, now, false, { head });
+      this.walk(walkPath(fp, from, stand(fp, "exit")), undefined, now, false, { head, held });
       this.push({ kind: "hide" }, now);
     } else if (target.at)
       // 숨어 있다 돌아오면 문에서 들어온다 (웹 복귀)
@@ -303,6 +315,10 @@ export class Track {
 
   update(now: number): Shown {
     this.advance(now);
+    if (this.ctx.reduced())
+      for (const s of this.steps)
+        if (s.kind === "walk" && (s.held === "briefcase" || s.held === "flashlight"))
+          s.held = undefined;
     if (this.steps.length === 0) this.idle(now);
     const s = this.steps[0];
     const t = this.target;

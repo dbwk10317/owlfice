@@ -98,6 +98,7 @@ function emp(
     planning: false,
     rejected: false,
     medal: false,
+    items: [],
     buildTestBorder: "Plain",
     lastSay: null,
     hiredAt: SINCE,
@@ -507,7 +508,7 @@ test("같은 agent_id 는 액터를 다시 쓰고, 목록에서 빠지면 지운
   expect(root.destroyed).toBe(true);
 });
 
-test("네 겹을 같은 자리에, 수습은 담당·근속 겹을 숨기고 depth 는 zIndexOf 로 배치 뒤", () => {
+test("기본·착용 겹을 같은 자리에, 수습은 담당·근속·소품 겹을 숨기고 depth 는 zIndexOf 로 배치 뒤", () => {
   const { layer } = newLayer();
   layer.sync(
     office([team("t", [boss(), emp("a", "Dev", "Type", { seat: 0, role: "Trainee" })])]),
@@ -516,8 +517,17 @@ test("네 겹을 같은 자리에, 수습은 담당·근속 겹을 숨기고 dep
   );
   const root = layer.rootOf("t", "a")!;
   const sprites = root.children.filter((c) => c instanceof Sprite);
-  expect(sprites).toHaveLength(4);
-  expect(sprites.map((s) => s.visible)).toEqual([true, true, false, false]);
+  expect(sprites).toHaveLength(8);
+  expect(sprites.map((s) => s.visible)).toEqual([
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
   expect(sprites.every((s) => s.pivot.x === 8 && s.pivot.y === 23)).toBe(true);
   // 의자(8.7) 뒤, 책상(9.2) 앞
   const n = fp.layouts.large.placements.length;
@@ -2294,4 +2304,264 @@ test("하이파이브 장소는 사무실 공유라 첫 팀만 연출하고 그�
     expect(bodyOf(layer, "lead", "u")).not.toContain("/highfive_");
     expect(bodyOf(layer, "c", "u")).not.toContain("/highfive_");
   }
+});
+
+function itemLayer() {
+  const overlay = document.createElement("div");
+  const sheet = {
+    data: officeJson,
+    textures: Object.fromEntries(
+      Object.keys(officeJson.frames).map((k) => [k, new Texture({ label: k })]),
+    ),
+  } as unknown as Spritesheet;
+  const layer = new ActorLayer(fp, sheet, labeled, overlay);
+  layer.attach(new Container());
+  return layer;
+}
+const visibleTextures = (layer: ActorLayer, id = "boss") =>
+  layer
+    .rootOf("t", id)
+    ?.children.filter((c): c is Sprite => c instanceof Sprite && c.visible)
+    .map((s) => s.texture.label ?? "") ?? [];
+const heldItems = (layer: ActorLayer, id = "boss") =>
+  visibleTextures(layer, id).filter((k) => k.startsWith("held_"));
+
+for (const item of ["Medal", "Helmet", "Blanket", "Headphones"] as const) {
+  test(`착용 ${item}: 새 후보를 자세에 겹치고 후보 종료·퇴근이면 즉시 지운다`, () => {
+    const layer = itemLayer();
+    layer.sync(office([team("t", [boss()])]), "large", NOW);
+    const e = { ...boss(), items: [item] };
+    layer.sync(office([team("t", [e])]), "large", NOW + 1);
+    expect(visibleTextures(layer).some((k) => k.startsWith(`item/${item.toLowerCase()}/`))).toBe(
+      true,
+    );
+    const step = { ...e, activity: { ...e.activity, room: "Pantry" as const } };
+    layer.sync(office([team("t", [step])]), "large", NOW + 2);
+    let seenFront = false;
+    for (let dt = 0; dt < WALK_MAX_MS; dt += 20) {
+      layer.update(NOW + 2 + dt);
+      if (bodyOf(layer, "boss")?.includes("/walk_f_")) {
+        seenFront = true;
+        expect(
+          visibleTextures(layer).some((k) => k.startsWith(`item/${item.toLowerCase()}/walk_f_`)),
+        ).toBe(true);
+      }
+    }
+    expect(seenFront).toBe(true);
+    layer.sync(office([team("t", [boss()])]), "large", NOW + 2000);
+    expect(visibleTextures(layer).some((k) => k.startsWith("item/"))).toBe(false);
+    layer.sync(office([team("t", [e])]), "large", NOW + 2001);
+    layer.sync(office([team("t", [e], { phase: "Off" })]), "large", NOW + 2002);
+    expect(visibleTextures(layer).some((k) => k.startsWith("item/"))).toBe(false);
+  });
+}
+
+test("안전모는 헤드폰·베레모 위, 담요는 근속 수건 위이며 메달을 가린다", () => {
+  const layer = itemLayer();
+  const e = {
+    ...boss(),
+    role: "Designer" as const,
+    hiredAt: new Date(NOW - 6 * 3_600_000).toISOString(),
+    items: ["Medal", "Helmet", "Blanket", "Headphones"] as EmployeeDto["items"],
+  };
+  layer.sync(office([team("t", [e])]), "large", NOW);
+  const keys = visibleTextures(layer);
+  expect(keys).toContain("role/designer/sit_f_0");
+  expect(keys).toContain("wear/3/sit_f_0");
+  expect(keys).toContain("item/helmet/sit_f_0");
+  expect(keys).toContain("item/blanket/sit_f_0");
+  expect(keys.some((k) => k.startsWith("item/headphones/") || k.startsWith("item/medal/"))).toBe(
+    false,
+  );
+  expect(keys.indexOf("item/blanket/sit_f_0")).toBeGreaterThan(keys.indexOf("wear/3/sit_f_0"));
+  expect(keys.indexOf("item/helmet/sit_f_0")).toBeGreaterThan(
+    keys.indexOf("role/designer/sit_f_0"),
+  );
+});
+
+test("두루마리는 계획 중 회의실 읽기·걷기에만 들고 허가 결재판·배송 상자를 덮지 않는다", () => {
+  const layer = itemLayer();
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  const e = { ...boss("Conference"), planning: true, items: ["Scroll"] as EmployeeDto["items"] };
+  layer.sync(office([team("t", [e])]), "large", NOW + 1);
+  expect(heldItems(layer)).toEqual(["held_scroll/default"]);
+  layer.update(NOW + 1 + WALK_MAX_MS);
+  expect(heldItems(layer)).toEqual(["held_scroll/default"]);
+  for (const [room, item] of [
+    ["Door", "clipboard"],
+    ["Archive", "folder"],
+    ["Shipping", "box_carry"],
+  ] as const) {
+    layer.sync(
+      office([team("t", [{ ...e, activity: { ...e.activity, room } }])]),
+      "large",
+      NOW + 2000,
+      { instant: true },
+    );
+    expect(heldItems(layer)).toEqual([`held_${item}/default`]);
+  }
+  layer.sync(office([team("t", [boss("Conference")])]), "large", NOW + 2001, { instant: true });
+  expect(heldItems(layer)).toEqual([]);
+});
+
+for (const leave of ["off", "departed", "outside", "removed"]) {
+  test(`퇴장 ${leave}: 가방은 퇴근 걷기에만 들고 완료 후 숨는다`, () => {
+    const layer = itemLayer();
+    const o = office([team("t", [boss()])]);
+    layer.sync(o, "large", NOW);
+    const next = office([
+      team(
+        "t",
+        [
+          leave === "outside"
+            ? boss("Outside")
+            : { ...boss(), departedAt: leave === "departed" ? new Date(NOW).toISOString() : null },
+        ],
+        { phase: leave === "off" ? "Off" : "Working" },
+      ),
+    ]);
+    if (leave === "removed") next.teams = [];
+    layer.sync(next, "large", NOW + 1);
+    expect(heldItems(layer)).toEqual(
+      leave === "off" || leave === "departed" ? ["held_briefcase/default"] : [],
+    );
+    layer.update(NOW + 1 + WALK_MAX_MS);
+    expect(layer.rootOf("t", "boss")?.visible ?? false).toBe(false);
+  });
+}
+
+for (const previousOff of [true, false]) {
+  test(`출입 손전등: 이전 논리 off=${previousOff}, 현재 켜진 사무실로 입장한 동안만`, () => {
+    const layer = itemLayer();
+    layer.sync(
+      office([team("t", [boss()], { phase: previousOff ? "Off" : "Working" })]),
+      "large",
+      NOW,
+    );
+    layer.sync(
+      withCues(office([team("t", [boss()])]), [cue({ kind: "Enter", agent: "boss" })]),
+      "large",
+      NOW + 1,
+    );
+    expect(heldItems(layer)).toEqual(previousOff ? ["held_flashlight/default"] : []);
+    layer.update(NOW + ENTER_MS);
+    expect(heldItems(layer)).toEqual(previousOff ? ["held_flashlight/default"] : []);
+    layer.update(NOW + 1 + ENTER_MS);
+    expect(heldItems(layer)).toEqual([]);
+  });
+}
+
+test("재출근 손전등은 기존 손 물건을 침범하지 않는다", () => {
+  for (const room of ["Door", "Archive", "Shipping"] as const) {
+    const layer = itemLayer();
+    layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW);
+    layer.sync(
+      withCues(office([team("t", [boss(room)])]), [cue({ kind: "Rehire", agent: "boss" })]),
+      "large",
+      NOW + 1,
+    );
+    expect(heldItems(layer)).not.toContain("held_flashlight/default");
+  }
+});
+
+for (const quiet of ["first", "instant", "rebuilt", "switch", "reduced"]) {
+  test(`출입 ${quiet}: 지난 손전등·가방을 재생하지 않는다`, () => {
+    const layer = itemLayer();
+    if (quiet !== "first")
+      layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW);
+    const next = withCues(
+      office([team("t", [boss()])]),
+      [cue({ kind: "Enter", agent: "boss" })],
+      quiet === "rebuilt",
+    );
+    if (quiet === "switch") next.officeId = "other";
+    if (quiet === "reduced") vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    try {
+      layer.sync(next, "large", NOW + 1, { instant: quiet === "instant" });
+      expect(heldItems(layer)).not.toContain("held_flashlight/default");
+      layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW + 2, {
+        instant: true,
+      });
+      expect(heldItems(layer)).not.toContain("held_briefcase/default");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+}
+
+test("출입 중 반대 전이·외근이 생기면 지난 손전등·가방을 즉시 지운다", () => {
+  const layer = itemLayer();
+  layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW);
+  layer.sync(
+    withCues(office([team("t", [boss()])]), [cue({ kind: "Enter", agent: "boss" })]),
+    "large",
+    NOW + 1,
+  );
+  expect(heldItems(layer)).toEqual(["held_flashlight/default"]);
+  layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW + 100);
+  expect(heldItems(layer)).toEqual(["held_briefcase/default"]);
+  layer.sync(office([team("t", [boss("Outside")])]), "large", NOW + 101);
+  expect(heldItems(layer)).toEqual([]);
+  layer.sync(office([team("t", [boss()])]), "large", NOW + 102, { instant: true });
+  expect(heldItems(layer)).toEqual([]);
+});
+
+test("퇴근해도 기존 결재판·서류철·박스를 가방으로 덮지 않는다", () => {
+  for (const room of ["Door", "Archive", "Shipping"] as const) {
+    const layer = itemLayer();
+    const o = office([team("t", [boss(room)])]);
+    layer.sync(o, "large", NOW);
+    const held = heldItems(layer);
+    layer.sync(office([team("t", [boss(room)], { phase: "Off" })]), "large", NOW + 1);
+    expect(heldItems(layer)).toEqual(held);
+  }
+});
+
+test("손전등은 진입 걷기 프레임의 손을 따르고 움직임 줄이기로 버린 뒤 재생하지 않는다", () => {
+  const layer = itemLayer();
+  layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW);
+  layer.sync(
+    withCues(office([team("t", [boss()])]), [cue({ kind: "Enter", agent: "boss" })]),
+    "large",
+    NOW + 1,
+  );
+  for (const dt of [0, 125, 250, 375]) {
+    layer.update(NOW + 1 + dt);
+    const name = bodyOf(layer, "boss")!.split("/").pop()!;
+    const hand = layer
+      .rootOf("t", "boss")!
+      .children.find(
+        (c): c is Sprite => c instanceof Sprite && c.texture.label === "held_flashlight/default",
+      )!;
+    expect([hand.x, hand.y]).toEqual([
+      meta.anchors[name].hand[0] - meta.anchor[0],
+      meta.anchors[name].hand[1] - meta.anchor[1],
+    ]);
+  }
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  try {
+    layer.update(NOW + 500);
+    expect(heldItems(layer)).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  layer.update(NOW + 501);
+  expect(heldItems(layer)).toEqual([]);
+});
+
+test("퇴근한 직원의 새 Rehire도 소등 사무실에서 실제 진입 걷기에만 손전등을 든다", () => {
+  const layer = itemLayer();
+  layer.sync(office([team("t", [boss()])]), "large", NOW);
+  layer.sync(office([team("t", [boss()], { phase: "Off" })]), "large", NOW + 1);
+  layer.update(NOW + 1 + WALK_MAX_MS);
+  expect(layer.rootOf("t", "boss")!.visible).toBe(false);
+  const start = NOW + 2000;
+  layer.sync(
+    withCues(office([team("t", [boss()])]), [cue({ kind: "Rehire", agent: "boss" })]),
+    "large",
+    start,
+  );
+  expect(heldItems(layer)).toEqual(["held_flashlight/default"]);
+  layer.update(start + ENTER_MS);
+  expect(heldItems(layer)).toEqual([]);
 });

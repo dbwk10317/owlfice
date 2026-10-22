@@ -1407,6 +1407,9 @@ fn idle_alive_turns_on_when_the_off_threshold_passes() {
     };
     let now = tick(5, 0);
     e.ipc.poll(&mut sent, now);
+    let now = tick(13, 0);
+    let blanket = e.ipc.poll(&mut sent, now).1.expect("담요 경계를 먼저 발행");
+    assert!(blanket.teams[0].employees[0].items.contains(&Item::Blanket));
     let now = tick(30, 0);
     assert!(e.ipc.poll(&mut sent, now).1.is_none(), "30분 정각은 아직");
 
@@ -1522,6 +1525,7 @@ fn bindings() -> String {
         TeamDto,
         Daylight,
         EmployeeDto,
+        Item,
         Meeting,
         Review,
         SharedPropsDto,
@@ -1741,4 +1745,62 @@ fn rejection_dto_uses_hold_time_even_after_a_compaction_sentence() {
     assert!(!employee_dto(e, t0() + Duration::seconds(4)).rejected);
     e.activity.sentence = "반려: 옛 호출".into();
     assert!(!employee_dto(e, t0() + Duration::seconds(5)).rejected);
+}
+
+#[test]
+fn blanket_boundary_publishes_once_and_off_removes_it() {
+    let e = env(Scale::Large);
+    let k = key("windows", Vendor::Claude, "blanket");
+    let at = |secs| t0() + Duration::seconds(secs);
+    {
+        let mut w = lock(&e.world);
+        w.put_team(k.clone(), team("blanket"), at(779), true);
+        let id = w.office_of(&k);
+        w.select(Some(id));
+    }
+    let mut sent = Sent::default();
+    let before = e.ipc.poll(&mut sent, at(779)).1.unwrap();
+    assert!(!before.teams[0].employees[0].items.contains(&Item::Blanket));
+    lock(&e.world).tick(at(780), "windows");
+    let after = e.ipc.poll(&mut sent, at(780)).1.expect("담요 경계 발행");
+    assert!(after.state_seq > before.state_seq);
+    assert!(after.teams[0].employees[0].items.contains(&Item::Blanket));
+    lock(&e.world).tick(at(781), "windows");
+    assert!(e.ipc.poll(&mut sent, at(781)).1.is_none());
+    lock(&e.world).tick(at(1801), "windows");
+    let off = e.ipc.poll(&mut sent, at(1801)).1.unwrap();
+    assert!(!off.teams[0].employees[0].items.contains(&Item::Blanket));
+}
+
+#[test]
+fn item_candidates_use_employee_state_and_medal_expiry() {
+    let mut t = team("items");
+    let e = &mut t.employees[0];
+    e.medal_until = Some(t0() + Duration::seconds(10));
+    e.activity.room = Room::Incident;
+    e.blanket = true;
+    e.background.push(call(t0()));
+    e.planning = true;
+    assert_eq!(
+        employee_dto(e, t0()).items,
+        [
+            Item::Medal,
+            Item::Helmet,
+            Item::Blanket,
+            Item::Headphones,
+            Item::Scroll
+        ]
+    );
+    assert!(
+        !employee_dto(e, t0() + Duration::seconds(10))
+            .items
+            .contains(&Item::Medal)
+    );
+    e.activity.room = Room::Door;
+    e.blanket = false;
+    e.background.clear();
+    assert_eq!(
+        employee_dto(e, t0() + Duration::seconds(10)).items,
+        [Item::Scroll]
+    );
 }

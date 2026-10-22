@@ -114,6 +114,7 @@ impl Employee {
             planning: false,
             pass_streak: 0,
             medal_until: None,
+            blanket: false,
             last_check_failed: false,
             last_event: at,
             context_used: None,
@@ -156,6 +157,9 @@ impl Employee {
 
     /// 진행 중이거나 머무는 상태 (호출 대표 작업, 대기, 졸음 등). 행적은 끝난 일이라 넣지 않는다 (docs/CONTRACTS.md C3)
     fn set_activity(&mut self, a: Activity) {
+        if a.pose != self.activity.pose || a.since != self.activity.since {
+            self.blanket = false;
+        }
         self.activity = a;
         self.logged = false;
     }
@@ -163,7 +167,7 @@ impl Employee {
     /// 끝난 일 (완료, 사고, 반려, 보고 등). 바로 행적 맨 앞에 넣어 티커가 그때 흘린다
     fn log_activity(&mut self, a: Activity) {
         self.log_past(a.clone());
-        self.activity = a;
+        self.set_activity(a);
         self.logged = true;
     }
 
@@ -957,6 +961,17 @@ impl Team {
             cues.push(Cue::Depart {
                 agent: e.id.clone(),
             });
+        }
+        for e in &mut self.employees {
+            if self.phase == TeamPhase::Off
+                || e.departed_at.is_some()
+                || e.activity.pose != Pose::Sleep
+            {
+                e.blanket = false;
+            } else if now - e.activity.since >= Duration::minutes(10) {
+                // 늦은 사건의 과거 tick은 같은 수면에서 이미 넘은 경계를 되돌리지 않는다.
+                e.blanket = true;
+            }
         }
         // 퇴근 문턱을 넘고도 프로세스가 살아 졸음에 남았다 (S58). 넘는 틱에 팀이 바뀌어 스냅샷이 나간다
         self.idle_alive =

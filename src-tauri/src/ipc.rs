@@ -262,6 +262,7 @@ pub struct EmployeeDto {
     pub planning: bool,
     pub rejected: bool,
     pub medal: bool,
+    pub items: Vec<Item>,
     pub build_test_border: Border,
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
@@ -284,6 +285,15 @@ pub struct EmployeeDto {
     pub meeting: Option<Meeting>,
     /// 리뷰실에 있을 때만
     pub review: Option<Review>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub enum Item {
+    Medal,
+    Helmet,
+    Blanket,
+    Headphones,
+    Scroll,
 }
 
 /// 미팅실 소품 재료 (docs/CONTRACTS.md C3 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
@@ -743,6 +753,16 @@ fn employee_dto(e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
         planning: e.planning,
         rejected: e.rejection_held(now),
         medal: e.medal_until.is_some_and(|until| now < until),
+        items: [
+            (Item::Medal, e.medal_until.is_some_and(|until| now < until)),
+            (Item::Helmet, e.activity.room == Room::Incident),
+            (Item::Blanket, e.blanket),
+            (Item::Headphones, !e.background.is_empty()),
+            (Item::Scroll, e.planning),
+        ]
+        .into_iter()
+        .filter_map(|(item, on)| on.then_some(item))
+        .collect(),
         build_test_border: match e.build_test_light() {
             Light::Yellow => Border::Running,
             Light::Red => Border::Failed,

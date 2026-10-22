@@ -153,7 +153,7 @@ role: Role, model: string | null, description: string | null, activity: Activity
 /**
  * 최근 행적, 최신이 먼저
  */
-recent: Array<Activity>, counters: Counters, uniqueReads: number, pendingCount: number, uniqueEdits: number, planning: boolean, rejected: boolean, medal: boolean, buildTestBorder: Border, lastSay: string | null, hiredAt: string, 
+recent: Array<Activity>, counters: Counters, uniqueReads: number, pendingCount: number, uniqueEdits: number, planning: boolean, rejected: boolean, medal: boolean, items: Array<Item>, buildTestBorder: Border, lastSay: string | null, hiredAt: string, 
 /**
  * 있으면 퇴장한(또는 퇴장으로 짐작한) 직원
  */
@@ -182,6 +182,8 @@ meeting: Meeting | null,
  * 리뷰실에 있을 때만
  */
 review: Review | null, };
+
+export type Item = "Medal" | "Helmet" | "Blanket" | "Headphones" | "Scroll";
 
 /**
  * 미팅실 소품 재료 (docs/CONTRACTS.md C3 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
@@ -311,7 +313,7 @@ export type Rank = "Bujang" | "Gwajang" | "Daeri" | "Sawon";
 /**
  * 담당. 선언 순서가 동률일 때의 우선순위다
  */
-export type Role = "Backend" | "Frontend" | "Qa" | "DevOps" | "Writer" | "Trainee";
+export type Role = "Backend" | "Frontend" | "Qa" | "DevOps" | "Writer" | "Security" | "Data" | "Designer" | "Trainee";
 
 /**
  * 오늘의 업무

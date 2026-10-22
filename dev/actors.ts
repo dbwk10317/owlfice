@@ -52,6 +52,7 @@ function emp(
     planning: false,
     rejected: false,
     medal: false,
+    items: [],
     buildTestBorder: "Plain",
     lastSay: null,
     hiredAt: since,

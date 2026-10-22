@@ -1,7 +1,16 @@
 // 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 겹친 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
-import type { Bubble, CueDto, EmployeeDto, OfficeDto, Pose, Room, TeamDto } from "../types/ipc.ts";
+import type {
+  Bubble,
+  CueDto,
+  EmployeeDto,
+  Item,
+  OfficeDto,
+  Pose,
+  Room,
+  TeamDto,
+} from "../types/ipc.ts";
 import { reducedMotion } from "../loading.ts";
 import { fill, fillElapsed } from "../text.ts";
 import { empKey } from "../ticker.ts";
@@ -431,13 +440,14 @@ interface Body {
   /** actors 맵 키 (empKey) */
   key: string;
   root: Container;
-  /** body, outfit, wear, role. 아틀라스가 없으면 비어 있다 */
+  /** body, outfit, wear, role, item. 아틀라스가 없으면 비어 있다 */
   layers: Sprite[];
   held: Sprite | null;
   heldName: string | undefined;
   species: string;
   outfit: string;
   wear: number;
+  items: Item[];
   role: string | null;
   look: Look;
   spot: string;
@@ -729,6 +739,7 @@ export class ActorLayer {
       shown.add(key);
       const before = old?.spot ? old.emp : null;
       a.emp = p.emp;
+      a.items = p.emp.items;
       if (quiet || !old?.spot || !this.clocks.has(key)) this.recordClock(a, now);
       a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
@@ -760,8 +771,20 @@ export class ActorLayer {
       const back = a.away && !entering && !instant && !reducedMotion();
       a.away = false;
       if (back) this.onDoor?.(now);
+      const flashlight =
+        entering &&
+        fresh &&
+        !!previous &&
+        !quiet &&
+        previous.teams.every((t) => t.phase === "Off") &&
+        !target.look.held;
       if (entering || (old && !instant))
-        a.track.retarget(target, now, entering, back ? "envelope" : undefined);
+        a.track.retarget(
+          target,
+          now,
+          entering,
+          back ? "envelope" : flashlight ? "flashlight" : undefined,
+        );
       for (const c of cues) {
         // 반려는 지나간 일이라 조용한 재구성에서는 다시 보이지 않는다
         if (c.kind === "Reject" && instant) continue;
@@ -777,7 +800,31 @@ export class ActorLayer {
     for (const a of this.actors.values())
       if (!shown.has(a.key)) {
         if (instant || stopped.has(a.key) || this.roomVisits.has(a.key)) a.track.reset(HIDDEN, now);
-        else a.track.retarget(HIDDEN, now);
+        else {
+          const owner = office?.teams.find((t) =>
+            t.employees.some((e) => empKey(t.teamId, e.agentId) === a.key),
+          );
+          const employee = owner?.employees.find((e) => empKey(owner.teamId, e.agentId) === a.key);
+          const before = previous?.teams.find((t) => t.teamId === owner?.teamId);
+          const oldEmployee = before?.employees.find((e) => e.agentId === employee?.agentId);
+          const leaving =
+            fresh &&
+            !!previous &&
+            !quiet &&
+            !!owner &&
+            !!employee &&
+            ((owner.phase === "Off" && before?.phase !== "Off") ||
+              (employee.departedAt !== null && oldEmployee?.departedAt === null));
+          const held =
+            a.look.held &&
+            ["clipboard", "folder", "box_carry", "envelope", "duck"].includes(a.look.held)
+              ? a.look.held
+              : leaving
+                ? "briefcase"
+                : undefined;
+          a.track.retarget(HIDDEN, now, false, held);
+        }
+        a.items = [];
         a.away = away.has(a.key);
         for (const c of cuesOf.get(a.key) ?? []) playCue(c, a.track, now);
         a.zz?.remove();
@@ -1016,6 +1063,19 @@ export class ActorLayer {
   /** 한 몸을 지금 모습으로 그린다. 오버레이를 다시 놓아야 하면 true */
   private draw(a: Body, now: number): boolean {
     const s = a.track.update(now);
+    if (s.look.held === "briefcase") {
+      const owner = this.lastOffice?.teams.find((t) =>
+        t.employees.some((e) => empKey(t.teamId, e.agentId) === a.key),
+      );
+      const emp = owner?.employees.find((e) => e.agentId === a.id);
+      if (owner?.phase !== "Off" && emp?.departedAt == null)
+        s.look = { ...s.look, held: undefined };
+    }
+    if ("emp" in a && !s.look.held && ["idle", "read", "walk"].includes(s.look.pose)) {
+      const emp = (a as Actor).emp;
+      if (a.items.includes("Scroll") && emp.planning && emp.activity.room === "Conference")
+        s.look = { ...s.look, held: "scroll" };
+    }
     if (!s.at) {
       if (a.root.visible && this.hovered === a.key) this.hover(null);
       a.root.visible = false;
@@ -1036,7 +1096,6 @@ export class ActorLayer {
     if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir) a.animStart = now;
     if (s.look.pose !== a.look.pose || s.look.dir !== a.look.dir || s.look.held !== a.look.held) {
       a.look = s.look;
-      this.setHeld(a);
       this.setZz(a);
       moved = true;
     }
@@ -1056,6 +1115,7 @@ export class ActorLayer {
       a.wear = hours >= 6 ? 3 : hours >= 3 ? 2 : hours >= 1 ? 1 : 0;
     }
     this.setFrame(a, frame);
+    this.setHeld(a, frame);
     return moved;
   }
 
@@ -1125,7 +1185,7 @@ export class ActorLayer {
     const layers: Sprite[] = [];
     if (this.owls) {
       const [ax, ay] = this.owls.meta.anchor;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 8; i++) {
         const s = new Sprite();
         s.anchor.set(0);
         s.pivot.set(ax, ay);
@@ -1143,6 +1203,7 @@ export class ActorLayer {
       species: "",
       outfit: "",
       wear: 0,
+      items: [],
       role: null,
       look: IDLE,
       spot: "",
@@ -1309,6 +1370,14 @@ export class ActorLayer {
     const keys = owlFrameKeys(this.owls.textures, a.species, outfit, a.role, a.look, frame);
     const wear = `wear/${a.wear}/${a.look.pose}_${a.look.dir}_${frame}`;
     keys.splice(2, 0, a.wear && this.owls.textures[wear] ? wear : null);
+    for (const item of ["Medal", "Blanket", "Headphones", "Helmet"] as const) {
+      const shown =
+        a.items.includes(item) &&
+        !(item === "Medal" && a.items.includes("Blanket")) &&
+        !(item === "Headphones" && a.items.includes("Helmet"));
+      const key = `item/${item.toLowerCase()}/${a.look.pose}_${a.look.dir}_${frame}`;
+      keys.push(shown && this.owls.textures[key] ? key : null);
+    }
     keys.forEach((k, i) => {
       const s = a.layers[i];
       s.visible = k !== null;
@@ -1316,23 +1385,22 @@ export class ActorLayer {
     });
   }
 
-  private setHeld(a: Body): void {
+  private setHeld(a: Body, frame: number): void {
     const name = this.owls ? a.look.held : undefined;
-    if (name === a.heldName) return;
-    a.held?.destroy();
-    a.held = null;
-    a.heldName = name;
-    if (!name || !this.owls) return;
-    const anchor = this.owls.meta.anchors[`${a.look.pose}_${a.look.dir}_0`];
+    if (name !== a.heldName) {
+      a.held?.destroy();
+      a.held = null;
+      a.heldName = name;
+      if (name) {
+        a.held = placeSprite(this.office, `held_${name}/default`, 0, 0);
+        a.root.addChild(a.held);
+      }
+    }
+    if (!a.held || !this.owls) return;
+    const anchor = this.owls.meta.anchors[`${a.look.pose}_${a.look.dir}_${frame}`];
     if (!anchor) return;
     const [ax, ay] = this.owls.meta.anchor;
-    a.held = placeSprite(
-      this.office,
-      `held_${name}/default`,
-      anchor.hand[0] - ax,
-      anchor.hand[1] - ay,
-    );
-    a.root.addChild(a.held);
+    a.held.position.set(anchor.hand[0] - ax, anchor.hand[1] - ay);
   }
 
   private setZz(a: Body): void {

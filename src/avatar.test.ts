@@ -145,3 +145,29 @@ test.each(["load", "canvas", "frame"])(
     expect(log).toHaveBeenCalledTimes(1);
   },
 );
+
+test.each(["Security", "Data", "Designer"] as const)(
+  "새 담당 %s는 20×22 카드의 같은 자르기 안에 그린다",
+  async (role) => {
+    const { setAvatar } = await import("./avatar.ts");
+    const a = host();
+    setAvatar(a, emp("new", { role, items: ["Helmet", "Blanket"] }), "A");
+    await settle();
+    const source = copied(a);
+    const calls = draws.get(source)!.mock.calls;
+    expect([source.width, source.height]).toEqual([20, 22]);
+    expect(calls).toHaveLength(3);
+    const f = textures[`role/${role.toLowerCase()}/idle_f_0`].frame;
+    expect(calls[2]).toEqual([
+      textures[`role/${role.toLowerCase()}/idle_f_0`].source.resource,
+      f.x,
+      f.y + 2,
+      16,
+      22,
+      2,
+      0,
+      16,
+      22,
+    ]);
+  },
+);

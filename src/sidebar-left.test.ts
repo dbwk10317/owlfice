@@ -427,6 +427,15 @@ test("토스트: 입주·퇴근·재출근·퇴거를 3초씩 차례로", () => 
   s.dispose();
 });
 
+test("업데이트 알림은 근무 상태 점 대신 중립 아이콘을 쓴다", () => {
+  const s = setup(list([office("101")]));
+  s.dispose.notifyUpdate("0.2.1");
+  expect(s.slot.textContent).toContain("0.2.1");
+  expect(s.slot.querySelector(".ow-dot")).toBeNull();
+  expect(s.slot.querySelector(".ow-icon svg")).not.toBeNull();
+  s.dispose();
+});
+
 test("조용한 재구성이면 토스트가 없다", () => {
   const s = setup(list([office("101")]));
   s.store.applyList(list([office("101"), office("102")], "Large", { rebuilt: true }));

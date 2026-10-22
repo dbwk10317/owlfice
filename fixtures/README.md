@@ -15,6 +15,5 @@
 - `codex/ask-reject-compact/rollout-2026-03-02T09-00-00-a9e19951-4ff7-996b-7dfa-2cfe04d16f10.jsonl` → `request_user_input_async` 질문과 `<send_user_message_question_reply>` 답, exec 거부(`Rejected(...)`), `/compact`(`compacted`, `ContextCompaction`). 실제 세션 발췌
 - `codex/aborted/rollout-2026-03-02T09-00-00-fbeee44f-138a-8f82-87fd-61f01dfc0cca.jsonl` → 중단된 턴(`turn_aborted`, `reason: interrupted`). 실제 세션 발췌
 - `codex/exec-cell-wait/rollout-2026-03-02T09-00-00-9394fa16-cc2e-5621-fd1e-7497c4634613.jsonl` → `exec` 결과 `Script running with cell ID <n>` 뒤 `wait` 호출(아직 실행 중 응답 한 번, 이어서 `Script completed` 응답), 두 번째 exec 의 wait 사이에 낀 `item_completed` CommandExecution. 실제 세션 발췌
-
 - `claude/planning-state/11111111-1111-4111-8111-111111111111.jsonl` (+ `subagents/agent-plan-sub.{jsonl,meta.json}`) → 계획 진입·일반 질문과 계획 종료의 겹침·반려/실패·고유 경로·부장/서브 압축. 합성 (계획 진입→종료의 실제 형식은 미확인)
 - `claude/test-streak/22222222-2222-4222-8222-222222222222.jsonl` → 연속 테스트 통과·메달 갱신·실패·반려·Mixed·테스트/커밋 중복 결과. 합성

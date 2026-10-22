@@ -209,7 +209,8 @@ impl SettingsBook {
         }
         if let Some(mode) = dto.night_mode {
             g.map
-                .insert("nightMode".into(), serde_json::to_value(mode)?);
+                .insert("night_mode".into(), serde_json::to_value(mode)?);
+            g.map.remove("nightMode");
         }
         if !g.writable {
             return Err(unwritable(&g.path));
@@ -239,7 +240,8 @@ impl SettingsBook {
             sound: Some(flag("sound", false)),
             night_mode: Some(
                 g.map
-                    .get("nightMode")
+                    .get("night_mode")
+                    .or_else(|| g.map.get("nightMode"))
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                     .unwrap_or(NightMode::Auto),
             ),
@@ -270,8 +272,53 @@ mod tests {
             serde_json::json!({"nightMode": "unknown"}),
             serde_json::json!({"nightMode": true}),
             serde_json::json!({"nightMode": null}),
+            serde_json::json!({"night_mode": "unknown", "nightMode": "on"}),
+            serde_json::json!({"night_mode": true, "nightMode": "on"}),
+            serde_json::json!({"night_mode": null, "nightMode": "on"}),
         ] {
             std::fs::write(dir.path().join("settings.json"), value.to_string()).unwrap();
+            assert_eq!(
+                SettingsBook::load(dir.path()).snapshot().night_mode,
+                Some(NightMode::Auto)
+            );
+        }
+    }
+
+    #[test]
+    fn night_mode_legacy_fallback_canonical_priority_and_patch_preservation() {
+        let dir = tempfile::tempdir().unwrap();
+        for (stored, expected) in [
+            (
+                serde_json::json!({"nightMode": "on", "future": [1, 2]}),
+                NightMode::On,
+            ),
+            (
+                serde_json::json!({"night_mode": "off", "nightMode": "on", "future": [1, 2]}),
+                NightMode::Off,
+            ),
+        ] {
+            std::fs::write(dir.path().join("settings.json"), stored.to_string()).unwrap();
+            let book = SettingsBook::load(dir.path());
+            assert_eq!(book.snapshot().night_mode, Some(expected));
+            let patch = serde_json::from_value(serde_json::json!({
+                "nightMode": null,
+                "sound": true
+            }))
+            .unwrap();
+            book.update(&patch).unwrap();
+            let mut after_partial = stored.clone();
+            after_partial["sound"] = true.into();
+            assert_eq!(read(dir.path()), after_partial);
+            assert_eq!(
+                SettingsBook::load(dir.path()).snapshot().night_mode,
+                Some(expected)
+            );
+
+            let patch = serde_json::from_value(serde_json::json!({"nightMode": "auto"})).unwrap();
+            book.update(&patch).unwrap();
+            after_partial.as_object_mut().unwrap().remove("nightMode");
+            after_partial["night_mode"] = "auto".into();
+            assert_eq!(read(dir.path()), after_partial);
             assert_eq!(
                 SettingsBook::load(dir.path()).snapshot().night_mode,
                 Some(NightMode::Auto)
@@ -287,7 +334,8 @@ mod tests {
             let patch: SettingsDto =
                 serde_json::from_value(serde_json::json!({"nightMode": mode})).unwrap();
             book.update(&patch).unwrap();
-            assert_eq!(read(dir.path())["nightMode"], mode);
+            assert_eq!(read(dir.path())["night_mode"], mode);
+            assert!(read(dir.path()).get("nightMode").is_none());
             assert_eq!(
                 SettingsBook::load(dir.path()).snapshot().night_mode,
                 patch.night_mode

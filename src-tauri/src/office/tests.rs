@@ -3871,11 +3871,22 @@ fn daily_counts_use_completion_date_even_when_past_results_arrive_late() {
 fn review_approval_matches_whole_words_only() {
     for (message, approved) in [
         ("미승인", false),
+        ("불승인", false),
+        ("승인하지 않습니다", false),
         ("disapprove", false),
         ("unapproved", false),
         ("lgtm_extra", false),
         ("LGTM!", true),
         ("승인", true),
+        ("Approved.", true),
+        ("reviewer approves", true),
+        ("승인합니다", true),
+        ("승인했습니다", true),
+        ("승인됐습니다", true),
+        ("승인됨", true),
+        ("승인함", true),
+        ("승인해요", true),
+        ("승인완료", true),
         ("(approve)", true),
     ] {
         let mut s = Sim::new();

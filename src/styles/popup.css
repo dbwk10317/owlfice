@@ -278,6 +278,11 @@
   height: 22px;
   border-radius: 5px;
 }
+.ow-avatar--sm canvas,
+.ow-avatar--sm img {
+  width: 20px;
+  height: 22px;
+}
 /* 세션 상세: 정보 표 */
 .ow-kv {
   margin: 0;

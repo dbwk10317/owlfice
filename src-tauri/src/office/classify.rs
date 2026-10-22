@@ -2037,7 +2037,23 @@ fn is_review(tool: &ToolKind) -> bool {
 fn approves(text: &str) -> bool {
     let t = text.to_lowercase();
     t.split(|c: char| !c.is_alphanumeric() && c != '_')
-        .any(|word| matches!(word, "lgtm" | "승인" | "approve"))
+        .any(|word| {
+            matches!(
+                word,
+                "lgtm"
+                    | "approve"
+                    | "approved"
+                    | "approves"
+                    | "승인"
+                    | "승인합니다"
+                    | "승인했습니다"
+                    | "승인됐습니다"
+                    | "승인됨"
+                    | "승인함"
+                    | "승인해요"
+                    | "승인완료"
+            )
+        })
 }
 
 /// 테스트 결과판: 실패가 하나라도 있으면 실패. 도장(프론트)과 같은 기준

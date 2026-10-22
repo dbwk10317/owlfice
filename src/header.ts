@@ -27,7 +27,7 @@ export function applyNightMode(doc: Document, mode: NightMode, now = Date.now())
 }
 
 type Layout = "wide" | "drawer" | "rail" | "select";
-/** 3.2 표의 너비 구간. 사이드바(900/720)와 현황판(900) 경계가 같다 */
+/** 2.2 표의 너비 구간. 사이드바(900/720)와 현황판(900) 경계가 같다 */
 export function layoutOf(width: number): Layout {
   return width >= 1100 ? "wide" : width >= 900 ? "drawer" : width >= 720 ? "rail" : "select";
 }

@@ -50,7 +50,7 @@ export interface SidebarOptions {
 }
 
 type SidebarMode = "full" | "rail" | "select";
-const RAIL_BELOW = 900; // 3.2: 900 미만 레일
+const RAIL_BELOW = 900; // 2.2: 900 미만 레일
 const HIDE_BELOW = 720; // 720 미만 숨김, 상단 띠 <select>
 const TOAST_MS = 3000;
 const ELAPSED_TICK_MS = 60_000;
@@ -500,6 +500,7 @@ function diffToasts(prev: OfficeListDto, next: OfficeListDto): ToastMsg[] {
 function toastEl(doc: Document, m: ToastMsg): El {
   const el = mk(doc, "div", "ow-toast");
   if (m.kind === "evicted") el.append(svgSpan(doc, evictedSvg, "ow-icon ow-icon--sm"));
+  else if (m.kind === "update") el.append(svgSpan(doc, refreshSvg, "ow-icon ow-icon--sm"));
   else {
     const dot = mk(doc, "span", "ow-dot");
     dot.dataset.state = m.kind === "off" ? "off" : "working";

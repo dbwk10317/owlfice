@@ -128,7 +128,17 @@
   min-width: 0;
 }
 .ow-row__meta {
+  display: flex;
+  gap: 3px;
   white-space: nowrap;
+}
+.ow-row__head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ow-row__elapsed {
+  flex: none;
 }
 .ow-row.is-floor .ow-row__fold {
   margin-top: 6px;
@@ -259,10 +269,10 @@ html:not([data-theme="night"]) .ow-rail__item.is-claude {
   height: 32px;
   flex: 1;
   min-width: 0;
-  border: 1px solid #d4d4d8;
+  border: 1px solid var(--ow-line);
   border-radius: var(--ow-radius-md);
   padding: 0 10px;
-  background: #fff;
+  background: var(--ow-surface);
   font: 500 13px var(--ow-font-sans);
   color: var(--ow-ink);
 }

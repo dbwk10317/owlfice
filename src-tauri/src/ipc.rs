@@ -642,11 +642,14 @@ fn border(light: Light) -> Border {
 }
 
 fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamSummaryDto {
-    let raw_asking_count = t
-        .employees
-        .iter()
-        .filter(|e| e.retired_at.is_none() && t.asking(e, now))
-        .count() as u32;
+    let asking_count = if t.phase == TeamPhase::Off {
+        0
+    } else {
+        t.employees
+            .iter()
+            .filter(|e| e.retired_at.is_none() && t.asking(e, now))
+            .count() as u32
+    };
     TeamSummaryDto {
         team_id: team_id_str(k),
         boss_name: t.employees[0].name.clone(),
@@ -658,12 +661,8 @@ fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> T
         read_failed: w.read_failed_teams.contains(k),
         phase: t.phase,
         dot: team_dot(t, now),
-        asking: raw_asking_count > 0,
-        asking_count: if t.phase == TeamPhase::Off {
-            0
-        } else {
-            raw_asking_count
-        },
+        asking: asking_count > 0,
+        asking_count,
         border: border(t.props.light),
         delayed: w.suspect_hosts.contains(&k.host),
         host_badge: host_badge(w, &k.host),

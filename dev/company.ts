@@ -1,6 +1,8 @@
+import "../design/handoff/tokens.css";
 import "../src/styles/app.css";
 import { mountHeader } from "../src/header.ts";
 import { mountOffice, type OfficeHandle } from "../src/office/renderer.ts";
+import { openSessionDetail } from "../src/popup-session.ts";
 import { openEmployeeDetail } from "../src/popup-employee.ts";
 import type { Invoke } from "../src/scale.ts";
 import { mountSidebar, popupNames } from "../src/sidebar-left.ts";
@@ -15,6 +17,7 @@ import type {
   OfficeListDto,
   OfficeSummaryDto,
   Scale,
+  SessionDetailDto,
   TeamDto,
 } from "../src/types/ipc.ts";
 
@@ -144,8 +147,9 @@ function openEmployee(
   teamId: string,
   agentId: string,
   opener?: HTMLElement,
+  sessionName?: string,
 ): void {
-  const selectedTeam = store.state.office?.teams.find((t) => t.teamId === teamId);
+  const selectedTeam = teams.find((t) => t.teamId === teamId);
   const employee = selectedTeam?.employees.find((e) => e.agentId === agentId);
   if (!selectedTeam || !employee) return;
   // README용 합성 기록이다. 파일 이름과 명령은 표시할 문자열이며 읽거나 실행하지 않는다.
@@ -191,12 +195,47 @@ function openEmployee(
   });
   const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     if (cmd === "open_path") throw new Error("합성 미리보기에서는 원본 파일을 열지 않습니다.");
+    if (cmd === "get_session_detail") {
+      if (args?.officeId !== officeId || args.teamId !== teamId)
+        throw new Error("합성 세션 정보가 일치하지 않습니다.");
+      const session: SessionDetailDto = {
+        sessionId: `synthetic-${teamId}`,
+        title: selectedTeam.title,
+        building: selectedTeam.building,
+        hostLabel: "Windows (합성)",
+        workType: selectedTeam.workType,
+        cwd: "C:/samples/owlfice",
+        gitBranch: "synthetic-preview",
+        model: detail.model,
+        started: selectedTeam.started,
+        lastActivity: selectedTeam.lastActivity,
+        turns: 3,
+        tokens: { input: 1200, output: 300 },
+        headcount: { bujang: 1, gwajang: 0, daeri: 1, sawon: 0 },
+        pr: null,
+        recent: events,
+        recentError: null,
+      };
+      return session as T;
+    }
     if (args?.officeId !== officeId || args.teamId !== teamId || args.agentId !== agentId)
       throw new Error("합성 직원 정보가 일치하지 않습니다.");
     if (cmd === "get_employee_detail") return detail as T;
     if (cmd === "get_employee_timeline") return (args.before === null ? events : []) as T;
     throw new Error(`합성 응답이 없는 명령: ${cmd}`);
   };
+  if (sessionName) {
+    openSessionDetail(
+      {
+        invoke,
+        live: (id, agent) =>
+          teams.find((t) => t.teamId === id)?.employees.find((e) => e.agentId === agent),
+      },
+      { officeId, teamId, name: sessionName },
+      opener,
+    );
+    return;
+  }
   openEmployeeDetail(
     {
       invoke,
@@ -238,6 +277,10 @@ mountSidebar(
   },
   {
     companyName,
+    onDetail: (officeId, teamId, name, opener) => {
+      const boss = teams.find((t) => t.teamId === teamId)?.employees[0];
+      if (boss) openEmployee(officeId, teamId, boss.agentId, opener, name);
+    },
     onTeam: (officeId, teamId) => {
       panel.showTeam(officeId, teamId);
       if (view) view.highlightTeam(officeId, teamId);

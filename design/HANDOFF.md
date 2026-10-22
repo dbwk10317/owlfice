@@ -16,7 +16,7 @@
 | 3 | `design/sprites/ui.png` `ui.json` | 로고, 로딩 건물 부품, 규모 미리보기 | `/ui.json` |
 | 3 | `design/sprites/floorplan.json` | 평면도: 방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색 | `/floorplan.json` |
 | 4 | `design/handoff/phrases.ko.json` | 화면에 보이는 모든 문구와 문장 틀 | `import` |
-| 4 | `design/handoff/icons/*.svg` | 선 아이콘 45개 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
+| 4 | `design/handoff/icons/*.svg` | 선 아이콘 49개 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
 | 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | tokens.css 가 가리킨다 |
 | 5 | `design/assets/office-*.png` | 참조 렌더. 위 시트와 평면도만으로 그린 정답 그림 | 테스트 고정 자료 |
 | 6 | 캔버스 시안 | 19장. 메인 v2 2장, 컴포넌트 v2 3장, 확장안 2장(구현은 PLAN_0.2.0.md 티켓), 토큰 1장, v2 토큰을 적용한 첫 실행·팝업·반응형 11장 | 시각 참조 |
@@ -48,11 +48,12 @@ python design/tools/owlfice_art.py
 
 - 사이드바: 간판 60, 지표 띠 68 (아래 여백 10), 토스트 32 (있을 때, 아래 여백 10), 목록 (세로 스크롤), 바닥 44.
 - 가운데: 머리말 56 아래 무대. 캔버스는 무대 한가운데, 남는 곳은 무대 바탕 (`--ow-stage` + 16px 점 격자 + 가장자리 비네트 `ow-stage::before`). 캔버스 아래 바닥 그림자 `ow-stage__floor` (타원, blur 14, 너비 min(760, 90%)). 무대 오른쪽 아래 `ow-stage__tools`: `center`(사무실 가운데로)·`fullscreen` 버튼, 흰 바탕 + 테두리.
+- 미니맵이 보이면 무대 조작 버튼을 미니맵 위로 옮기고 8px 이상 띄운다.
 - 현황판: 머리 56, 카드 목록 (안쪽 여백 12, 카드 사이 10, 세로 스크롤), 티커 40.
 
 ### 2.2 창 크기 구간
 
-배율은 3.1절 공식이 정한다. 아래 배율은 DPR 100% 기준이다.
+배율은 6.1절 공식이 정한다. 아래 배율은 DPR 100% 기준이다.
 
 | 창 너비 | 사이드바 | 캔버스 | 현황판 | 시안 |
 |---|---|---|---|---|
@@ -107,7 +108,7 @@ python design/tools/owlfice_art.py
 
 | 요소 | 크기 | 내용과 규칙 |
 |---|---|---|
-| 간판 `ow-brand` | 높이 60, 좌 16 우 14, 사이 10 | 흰 32px 타일(`ow-brand__tile`, 반지름 9, 1px 테, elev-1) 안에 로고 `ui.json: logo/default` 를 24×20. 첫 줄 회사 이름(설정값, 기본 "야근불 연구소") 14/700, 둘째 줄 "Owlfice · 대기업" 또는 "Owlfice · 중소기업" 11 흐린 글자. 오른쪽 끝 `settings` 아이콘. 간판 전체가 설정 팝업을 여는 `<button>`. 원문 진단이 켜져 있으면 아이콘 앞에 8px `--ow-ask` 점 |
+| 간판 `ow-brand` | 높이 60, 좌 16 우 14, 사이 10 | 흰 32px 타일(`ow-brand__tile`, 반지름 9, 1px 테, elev-1) 안에 로고 `ui.json: logo/default` 를 24×20. 첫 줄 회사 이름(설정값, 기본 "Owlfice") 14/700, 둘째 줄 "Owlfice · 대기업" 또는 "Owlfice · 중소기업" 11 흐린 글자. 오른쪽 끝 `settings` 아이콘. 간판 전체가 설정 팝업을 여는 `<button>`. 원문 진단이 켜져 있으면 아이콘 앞에 8px `--ow-ask` 점 |
 | 지표 띠 `ow-kpi` | 높이 68, 좌우 바깥 12, 아래 여백 10, 반지름 10 | 흰 칸 3개를 1px 선으로 나눈 띠. 숫자 16/600 (tabular) + 라벨 11 흐린 글자 한 줄 (`kpiOffices`·`kpiWorking`·`kpiAsking`, 중소기업은 첫 칸 `kpiFloors`). 결재 대기 숫자가 0보다 크면 `--ow-ask` 색. 숫자는 불 켜진 사무실(층) 수, 근무 중 직원 수, 결재를 기다리는 직원 수 |
 | 토스트 `ow-toast` | 높이 32, 좌우 바깥 12, 안쪽 12, 반지름 8 | 검은 바탕 흰 글자. 오른쪽 끝 시각은 #D4D4D8. 상태 점 + 굵은 이름 + 동사 + 오른쪽 끝 "방금". 3초 뒤 사라짐. 여러 개면 순서대로 하나씩. 종류: 입주·팀 출근·재출근(초록 점), 퇴근(회색 점), 퇴거(`evicted` 아이콘) |
 | 섹션 라벨 | 11/600, 안쪽 8/10/6 | "불 켜진 사무실" + 오른쪽 개수 (mono). 중소기업은 "본사 건물 · 3개 층" |
@@ -161,6 +162,8 @@ python design/tools/owlfice_art.py
 8. 세그먼트 묶음 `ow-segment` (높이 32, 안쪽 2, 버튼 28, 반지름 9): `room-labels` 토글, 소리 토글 (`sound-off`/`sound-on`), 야근 모드 토글 (`night`). 모두 `aria-pressed`, 켜진 버튼은 흰 바탕 + elev
 9. 배율 칩 `ow-chip.is-line.is-zoom` mono "2×" + `chevron-down` (`title="캔버스 배율"`. 누르면 1×·2×·3× 메뉴, 들어가지 않는 배율은 비활성)
 10. 1100 미만: 맨 오른쪽 `panel` 버튼 ("직원 현황판 열기"). 드로어가 열려 있으면 검은 바탕 (`ow-iconbtn--solid`, `aria-expanded="true"`). 900 미만은 머리말 대신 띠(52·48)에 둔다 (시안 Narrow·Tiny). 900–1099 는 시안 Medium 처럼 사각형·이름·세션 제목·배율 칩·panel 버튼만
+
+wide 구간에서도 창 너비가 1300 미만이면 보조 글자·슬래시·세션 제목·일반 근무 상태 칩을 숨겨 사무실 이름·결재 대기·조작 버튼을 우선한다.
 
 ### 4.4 캔버스 위 DOM 요소
 

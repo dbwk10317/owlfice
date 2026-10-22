@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { BitmapText, Sprite, Texture, type Spritesheet } from "pixi.js";
+import { BitmapText, Graphics, Sprite, Texture, type Spritesheet } from "pixi.js";
 import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
@@ -321,15 +321,18 @@ test("창밖: 06·17·22시 경계, 컵라면은 야근일 때만", () => {
 
 test("TV: 값이 있는 팀 수만큼 점, 같은 값이면 그대로", () => {
   const { scene, props } = layer();
-  const count = () => scene.wall.children.length;
-  const base = count();
+  const dots = () =>
+    scene.wall.children.filter(
+      (c) =>
+        c instanceof Graphics && c.getLocalBounds().width === 1 && c.getLocalBounds().height === 1,
+    );
   props.update(office({}, [team(0, 0.5), team(1, null), team(2, 2)]), NOW);
-  expect(count()).toBe(base + 1);
-  const g = scene.wall.children[base];
+  expect(dots()).toHaveLength(1);
+  const g = dots()[0];
   props.update(office({}, [team(0, 0.5), team(1, null), team(2, 2)]), NOW);
-  expect(scene.wall.children[base]).toBe(g);
+  expect(dots()[0]).toBe(g);
   props.update(null, NOW);
-  expect(count()).toBe(base + 1);
+  expect(dots()).toHaveLength(0);
 });
 
 test("같은 값이면 스프라이트를 다시 만들지 않고, 바뀐 소품만 새로 만든다", () => {
@@ -536,10 +539,10 @@ test("움직임 줄이기: 반복 프레임은 첫 장에 멈춘다", () =>
     }
   }));
 
-test("출고장에 있는 직원마다 포장된 상자가 하나씩, 슬롯 수까지", () => {
+test("출고장 상자는 오늘 확정 커밋 합이며 퇴근 기록도 포함하고 세 자리까지", () => {
   const { scene, props } = layer();
   const n = (k: number) =>
-    crew(...Array.from({ length: k }, (_, i) => emp("Shipping", "Sit", `e${i}`)));
+    testOffice("a", 1, [testTeam("a", [], { commitsToday: k, phase: "Off" })]);
   const boxes = (o: OfficeDto) => {
     props.update(o, NOW);
     return count(scene, "box_taped/default");
@@ -582,23 +585,33 @@ test("작업표: 어느 직원이든 백그라운드 명령이 있으면 보이�
   expect(ticket()).toBe(false);
 });
 
-test("결과판: 공유 test 를 따르고 없으면 평면도 기본. 사무실을 옮겨도 스냅샷 그대로", () => {
+test("전광판은 모든 팀의 오늘 확정 실행 누계이며 마지막 결과·cue와 독립이다", () => {
   const { scene, props } = layer();
-  const base = fp.layouts.large.placements.find((p) => p.id === "test_board")!;
-  props.update(office(), NOW);
-  expect(tex(scene, "test_board")).toBe(base.sprite + "/" + base.state);
-  props.update(office({ test: "Fail" }), NOW);
-  expect(tex(scene, "test_board")).toBe("test_board/fail");
-  props.update(office({ test: "Pass" }), NOW);
-  expect(tex(scene, "test_board")).toBe("test_board/pass");
+  const o = testOffice("a", 1, [
+    testTeam("a", [], { testsToday: { passed: 3, failed: 1 } }),
+    testTeam("off", [], { phase: "Off", testsToday: { passed: 4, failed: 2 } }),
+  ]);
+  const digitFrames = () =>
+    scene.wall.children.filter((c) => c instanceof Sprite).map((s) => frameOf(s));
+  // 통계 벽보 숫자와 혼동하지 않도록 기본 stats를 0으로 유지한다.
+  props.update(o, NOW);
+  expect(tex(scene, "test_board")).toBe("test_board/counts");
+  expect(digitFrames()).toEqual(expect.arrayContaining(["digit/7", "digit/3"]));
+  o.shared.test = "Fail";
+  props.cue(stampCue(300, 20, true), NOW);
+  props.update(o, NOW);
+  expect(digitFrames()).toEqual(expect.arrayContaining(["digit/7", "digit/3"]));
+  o.teams[0].testsToday = { passed: 100, failed: 0 };
+  props.update(o, NOW);
+  expect(digitFrames().filter((f) => f === "digit/9")).toHaveLength(2);
+  expect(o.teams[0].testsToday.passed).toBe(100);
   props.reset();
-  props.update(office({ test: "Pass" }), NOW + 10);
-  expect(tex(scene, "test_board")).toBe("test_board/pass");
-  // 도장 cue 는 결과판을 바꾸지 않는다
-  props.cue(stampCue(1, 1), NOW + 20);
-  expect(tex(scene, "test_board")).toBe("test_board/pass");
-  props.update(office({ test: null }), NOW + 30);
-  expect(tex(scene, "test_board")).toBe(base.sprite + "/" + base.state);
+  props.update(testOffice("b", 1, []), NOW);
+  expect(digitFrames()).not.toContain("digit/9");
+  props.update(o, NOW);
+  expect(digitFrames().filter((f) => f === "digit/9")).toHaveLength(2);
+  props.update(null, NOW);
+  expect(digitFrames().filter((f) => f?.startsWith("digit/"))).toEqual([]);
 });
 
 test("reset: 사무실을 옮기면 진행 중인 효과가 사라진다", () => {
@@ -1020,4 +1033,115 @@ test("ladder: 시작 시각 전엔 숨어 있다가 LADDER_MS 동안 사규 액�
   expect(ladder()).toBeDefined();
   props.tick(NOW + 1000 + LADDER_MS);
   expect(ladder()).toBeUndefined();
+});
+
+test("종이컵은 직원 입사 시각, 서류는 고유 수정 수로 경계마다 바뀌고 퇴근하면 책상을 비운다", () => {
+  const { scene, props } = layer();
+  const boss = testEmp("boss", { hiredAt: ago(120) });
+  const sub = testEmp("sub", { hiredAt: ago(59), seat: 0, uniqueEdits: 9 });
+  const o = testOffice("a", 1, [testTeam("a", [boss, sub])]);
+  props.update(o, NOW);
+  expect(count(scene, "coffee_stack/s2")).toBe(1);
+  expect(count(scene, "coffee_stack/s1")).toBe(0);
+  expect(count(scene, "paper_stack/s1")).toBe(0);
+  sub.activity.since = ago(600);
+  sub.uniqueEdits = 10;
+  props.update(o, NOW + 60_000);
+  expect(count(scene, "coffee_stack/s1")).toBe(1);
+  expect(count(scene, "paper_stack/s1")).toBe(1);
+  sub.uniqueEdits = 20;
+  props.update(o, NOW + 60_000);
+  expect(count(scene, "paper_stack/s1")).toBe(0);
+  expect(count(scene, "paper_stack/s2")).toBe(1);
+  sub.uniqueEdits = 120;
+  props.update(o, NOW + 6 * 3_600_000);
+  expect(count(scene, "coffee_stack/s4")).toBe(2);
+  expect(count(scene, "paper_stack/s4")).toBe(1);
+  expect(sub.uniqueEdits).toBe(120);
+  o.teams[0].phase = "Off";
+  props.update(o, NOW);
+  expect(count(scene, "coffee_stack/s4")).toBe(0);
+  expect(count(scene, "paper_stack/s4")).toBe(0);
+});
+
+test("책장은 퇴근 직원까지 고유 읽기 수를 합하며 호출 횟수를 대신 쓰지 않는다", () => {
+  const { scene, props } = layer();
+  const main = testEmp("boss", { uniqueReads: 24 });
+  const old = testEmp("old", { uniqueReads: 0, retiredAt: ago(1) });
+  const o = testOffice("a", 1, [testTeam("a", [main]), testTeam("off", [old], { phase: "Off" })]);
+  const stages = [0, 1, 26, 76].map((n) => {
+    old.uniqueReads = n;
+    props.update(o, NOW);
+    return tex(scene, "bookshelf");
+  });
+  expect(stages).toEqual(["bookshelf/empty", "bookshelf/s1", "bookshelf/s2", "bookshelf/s3"]);
+  old.uniqueReads = 0;
+  props.update(o, NOW);
+  expect(tex(scene, "bookshelf")).toBe("bookshelf/empty");
+});
+
+test("모니터는 실제 진행 호출 2개부터 늘고 배지·백그라운드·질문 문장과 무관하다", () => {
+  for (const kind of ["large", "small"] as const) {
+    const { scene, props } = layer(kind);
+    const boss = testEmp("boss", { hiredAt: ago(0) });
+    const sub = testEmp("sub", { hiredAt: ago(0), seat: 0 });
+    const o = testOffice("a", 1, [testTeam("a", [boss, sub], { deskSlot: 0 })]);
+    const second = () =>
+      kind === "large"
+        ? scene.driven.get("boss_mon_0_1")!.visible
+        : sprites(scene, "monitor_sm/off").filter((s) => ![...scene.driven.values()].includes(s))
+            .length === 1;
+    boss.jobs = 3;
+    boss.activity.extra = 4;
+    props.update(o, NOW);
+    expect(second()).toBe(false);
+    boss.pendingCount = 2;
+    boss.activity.pose = "Pace";
+    sub.pendingCount = 2;
+    props.update(o, NOW);
+    expect(second()).toBe(true);
+    expect(scene.driven.get("dev_mon_0_1")!.visible).toBe(true);
+    boss.pendingCount = 1;
+    sub.pendingCount = 0;
+    props.update(o, NOW);
+    expect(second()).toBe(false);
+    expect(scene.driven.get("dev_mon_0_1")!.visible).toBe(false);
+  }
+});
+
+test("야근 램프와 PR 주차 트럭은 상태로 복원되고 출하 cue가 주차 상태를 지우지 않는다", () => {
+  const a = layer("small");
+  const t = testTeam(
+    "a",
+    [testEmp("boss", { hiredAt: ago(180), uniqueEdits: 30, pendingCount: 2 })],
+    { deskSlot: 0, commitsToday: 2 },
+  );
+  t.props.night = true;
+  t.props.pr = [1, "https://example.invalid/pr/1"];
+  const o = testOffice("a", 1, [t]);
+  const state = (scene: Built) =>
+    scene.world.children
+      .filter((c): c is Sprite => c instanceof Sprite && c.visible)
+      .map((s) => [frameOf(s), s.x, s.y, s.zIndex]);
+  a.props.update(o, NOW);
+  expect(count(a.scene, "desk_lamp/on")).toBe(1);
+  expect(count(a.scene, "truck/pr")).toBe(1);
+  const original = state(a.scene);
+  a.props.cue({ teamId: "a", kind: "Truck" }, NOW, o);
+  a.props.tick(NOW + TRUCK_MS);
+  expect(state(a.scene)).toEqual(original);
+  a.props.reset();
+  a.props.update(testOffice("b", 1, []), NOW);
+  expect(count(a.scene, "truck/pr")).toBe(0);
+  a.props.update(o, NOW);
+  expect(state(a.scene)).toEqual(original);
+  const b = layer("small");
+  b.props.update(o, NOW);
+  expect(state(b.scene)).toEqual(original);
+  t.props.pr = null;
+  t.props.night = false;
+  a.props.update(o, NOW);
+  expect(count(a.scene, "desk_lamp/on")).toBe(0);
+  expect(count(a.scene, "desk_lamp/off")).toBe(1);
+  expect(count(a.scene, "truck/pr")).toBe(0);
 });

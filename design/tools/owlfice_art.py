@@ -684,7 +684,10 @@ def build_wall_items():
         x, y = p.P(1.4, 0, 21)
         p.d.rectangle([x - 2, y - 2, x + 2, y + 1], outline=c)
         reg(f"test_board/{st}", p.result())
-    prop("test_board", "wall_r", ["pass", "fail"], (1.8, 0), 32, desc="테스트 결과 게시판")
+    p = wall_r(1.8, 32)
+    R(p, 0, 1.8, 16, 32, (34, 40, 48), (160, 160, 160))
+    reg("test_board/counts", p.result())
+    prop("test_board", "wall_r", ["pass", "fail", "counts"], (1.8, 0), 32, desc="오늘 확정 테스트 합격·실패 실행 누계. 숫자는 코드가 덧그린다")
     p = wall_r(0.75, 44)
     R(p, 0, 0.75, 37, 44, (252, 252, 246), (170, 170, 160))
     p.line((0.1, 0, 41), (0.6, 0, 41), (200, 60, 50))
@@ -1059,15 +1062,21 @@ def build_furniture():
     p.box(0, 0, 4.2, 1.3, 9, (210, 184, 140))
     reg("meeting_table/default", p.result())
     prop("meeting_table", "floor", ["default"], (4.2, 1.3), 9, desc="긴 회의 탁자")
-    p = Painter(0.6, 1.4, 22)
-    p.box(0, 0, 0.6, 1.4, 22, (150, 104, 66))
-    for k in range(6):
-        c = [(220, 80, 70), (80, 140, 220), (240, 200, 70), (80, 170, 110), (180, 100, 200), (240, 140, 60)][k]
-        for v in (6, 14):
-            x, y = p.P(0.6, 0.15 + k * 0.2, v)
+    for st, n in (("empty", 0), ("s1", 4), ("s2", 8), ("s3", 12), ("default", 12)):
+        p = Painter(0.6, 1.4, 22)
+        p.box(0, 0, 0.6, 1.4, 22, (150, 104, 66))
+        for i in range(n):
+            k, row = i % 6, i // 6
+            c = [(220, 80, 70), (80, 140, 220), (240, 200, 70), (80, 170, 110), (180, 100, 200), (240, 140, 60)][k]
+            x, y = p.P(0.6, 0.15 + k * 0.2, 6 + row * 8)
             p.d.line([(x, y), (x, y - 4)], fill=c)
-    reg("bookshelf/default", p.result())
-    prop("bookshelf", "floor", ["default"], (0.6, 1.4), 22, desc="외주 매뉴얼 책꽂이")
+        reg(f"bookshelf/{st}", p.result())
+    prop("bookshelf", "floor", ["default", "empty", "s1", "s2", "s3"], (0.6, 1.4), 22,
+         desc="사무실 모든 직원의 고유 읽기 수 합계: 0–24 empty, 25–49 s1, 50–99 s2, 100 이상 s3")
+
+    for name in ("boss_desk_l", "boss_desk_s", "dev_desk", "folding_desk"):
+        w, d = PROPS[name]["footprint"]
+        PROPS[name]["progressSlots"] = dict(coffee=[w - 0.32, d - 0.28], papers=[0.1, d - 0.36], lamp=[w - 0.3, 0.02])
 
 
 def plant_sprite(size=0.6, wilted=False):
@@ -1108,6 +1117,28 @@ def build_fx():
     prop("mug", "floor", ["still", "steam_0", "steam_1"], (0.2, 0.2), 6, fps=3, desc="부장 머그컵. 응답 대기 중 김이 오른다. 책상 위 z=책상 높이")
     reg("duck_desk/default", sprite_from_pix(["..yy.", ".yyyo", "yyyy.", ".yyy."], dict(y=(250, 214, 60), o=(232, 120, 40)), 2, 3))
     prop("duck_desk", "floor", ["default"], (0.2, 0.2), 4, desc="책상 위 러버덕. 부장이 집어 들면 숨기고 held_duck")
+    for n in range(1, 5):
+        p = Painter(0.3, 0.3, 3 + n * 2)
+        for k in range(n):
+            p.box(0, 0, 0.22, 0.22, 3, (250, 246, 232), z=k * 2)
+            p.line((0, 0.22, k * 2 + 1), (0.22, 0.22, k * 2 + 1), (176, 121, 77))
+        reg(f"coffee_stack/s{n}", p.result())
+        p = Painter(0.45, 0.35, n * 2)
+        for k in range(n):
+            p.box(0, 0, 0.45, 0.35, 1, (250, 250, 244), z=k * 2)
+            p.line((0.1, 0.05, k * 2 + 1), (0.35, 0.05, k * 2 + 1), (150, 160, 172))
+        reg(f"paper_stack/s{n}", p.result())
+    prop("coffee_stack", "floor", [f"s{n}" for n in range(1, 5)], (0.3, 0.3), 11,
+         desc="입사 1시간마다 종이컵 한 잔, 최대 4잔. 책상 위")
+    prop("paper_stack", "floor", [f"s{n}" for n in range(1, 5)], (0.45, 0.35), 8,
+         desc="고유 수정 파일 10개마다 서류 한 단. 책상 위 최대 4단")
+    for st in ("off", "on"):
+        p = Painter(0.3, 0.3, 11)
+        p.box(0, 0, 0.3, 0.3, 1, (55, 65, 76))
+        p.line((0.15, 0.15, 1), (0.15, 0.15, 9), (65, 75, 86))
+        p.box(0, 0, 0.3, 0.3, 2, (255, 215, 110) if st == "on" else (90, 100, 110), z=9)
+        reg(f"desk_lamp/{st}", p.result())
+    prop("desk_lamp", "floor", ["off", "on"], (0.3, 0.3), 11, desc="직원 책상 야근 램프")
     # 효과
     reg("sweat/0", sprite_from_pix([".b", "bb", "bb"], dict(b=(120, 190, 250)), 0, 2))
     reg("sweat/1", sprite_from_pix(["..", ".b", "bb"], dict(b=(120, 190, 250)), 0, 2))
@@ -1119,18 +1150,18 @@ def build_fx():
         img = pix(rows, dict(y=(250, 214, 60), r=(240, 90, 90)))
         reg(f"fireworks/{k}", (img.resize((14, 10), Image.NEAREST), (7, 10)))
     prop("fireworks", "fx", ["0", "1", "2"], fps=6, desc="릴리스 폭죽. 출고장 위, 0→1→2 한 번")
-    for k in (0, 1):
+    for st, k, cab in (("drive_0", 0, (220, 70, 60)), ("drive_1", 1, (220, 70, 60)), ("pr", 0, (55, 125, 220))):
         p = Painter(1.2, 3.1, 18)
         p.box(0, 0, 1.2, 2.2, 16, (240, 240, 236))
-        p.box(0, 2.2, 1.2, 0.9, 12, (220, 70, 60))
+        p.box(0, 2.2, 1.2, 0.9, 12, cab)
         p.lq(0, 2.2, 1.2, 0.9, 0, 0.15, 1.05, 6, 10, (150, 200, 230))
         for gy in (0.6, 2.6):
             x, y = p.P(1.2, gy, 0)
             p.d.rectangle([x - 1, y - 2, x + 1, y], fill=(30, 30, 30))
             p.d.point((x - 1 + k * 2, y - 1), fill=(160, 160, 160))
-        reg(f"truck/drive_{k}", p.result())
-    prop("truck", "fx", ["drive_0", "drive_1"], (1.2, 3.1), 18, fps=8,
-         desc="택배 트럭. push 성공 때 출고장 앞 바닥 밖 (gx 1.5, gy 16.6)에서 +gy 쪽으로 빠져나간다")
+        reg(f"truck/{st}", p.result())
+    prop("truck", "fx", ["drive_0", "drive_1", "pr"], (1.2, 3.1), 18, fps=8,
+         desc="push 성공 때 출발하는 트럭. PR 연결이 있으면 파란 pr 트럭 주차")
     p = Painter(0.5, 0.1, 9)
     p.box(0, 0, 0.5, 0.1, 8, (250, 248, 240))
     p.lq(0, 0, 0.5, 0.1, 0, 0.08, 0.42, 3, 6, (220, 80, 70))
@@ -1440,9 +1471,19 @@ def draw_owl(canvas, c):
 
 
 def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=False, incident=False,
-                 kanban=None, magnets=None, safe="0", tv=None, balls=0, pizza=0):
+                 kanban=None, magnets=None, safe="0", tv=None, balls=0, pizza=0, progress=None):
     state, visible, tints = state or {}, visible or {}, tints or {}
     fp = FLOORPLAN["layouts"][kind]
+    if progress is not None:
+        state, visible = dict(state), dict(visible)
+        reads = progress.get("reads", 0)
+        state["bookshelf"] = "s3" if reads >= 100 else "s2" if reads >= 50 else "s1" if reads >= 25 else "empty"
+        state["test_board"] = "counts"
+        for seats in fp["seats"].values():
+            for seat in seats:
+                n = progress.get("desks", {}).get(seat["desk"], {}).get("monitors", 1)
+                for i, m in enumerate(seat.get("monitors", [])):
+                    visible[m] = i == 0 or n > 1
     base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     win = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     world = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -1493,6 +1534,17 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
             y = tvp["y"] + q["bl"][1] + u * (q["br"][1] - q["bl"][1]) + v * (q["tl"][1] - q["bl"][1])
             pts.append(rnd((x, y)))
         d.line(pts, fill=PROPS["tv"]["lineColors"][si])
+    if progress is not None:
+        board = next(p for p, _ in items if p["id"] == "test_board")
+        for row, n in enumerate(progress.get("tests", [0, 0])):
+            x, y = board["x"] + 3, board["y"] - 29 + row * 8
+            color = (54, 154, 96) if row == 0 else (220, 81, 73)
+            d.rectangle([x, y + 1, x + 1, y + 3], fill=color)
+            for i, ch in enumerate(str(min(99, n))):
+                place(base, f"digit/{ch}", x + 4 + i * 4, y + 2 + i * 2)
+            if n > 99:
+                d.rectangle([x + 12, y + 5, x + 14, y + 5], fill=color)
+                d.rectangle([x + 13, y + 4, x + 13, y + 6], fill=color)
     # 4. 깊이 정렬: 바닥 물건 + 직원
     drawn = []
     for pl, key in items:
@@ -1506,6 +1558,28 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
     for k in range(pizza):
         st = PROPS["pizza_box"]["stack"]
         drawn.append((26.21 + k * 0.01, len(drawn), ("pizza", (st["gx"], st["gy"], st["z0"] + st["dz"] * k), None)))
+    if progress is not None:
+        placements = {p["id"]: p for p in fp["placements"]}
+        for seats in fp["seats"].values():
+            for seat in seats:
+                config = progress.get("desks", {}).get(seat["desk"])
+                if config is None:
+                    continue
+                pl = placements[seat["desk"]]
+                meta = PROPS[pl["sprite"]]
+                for name, key in (("coffee", f"coffee_stack/s{config.get('coffee', 0)}"),
+                                  ("papers", f"paper_stack/s{config.get('papers', 0)}"),
+                                  ("lamp", "desk_lamp/on" if config.get("night") else "desk_lamp/off")):
+                    if key.endswith("s0"):
+                        continue
+                    dx, dy = meta["progressSlots"][name]
+                    drawn.append((pl["depth"] + 0.03, 5000 + len(drawn), ("dynamic", (pl["gx"] + dx, pl["gy"] + dy, meta["height"]), key)))
+                for i in range(len(seat.get("monitors", [])), config.get("monitors", 1)):
+                    drawn.append((pl["depth"] + 0.03, 5000 + len(drawn), ("dynamic", (pl["gx"] + 0.05 + i * 0.65, pl["gy"] + 0.05, meta["height"]), "monitor_sm/off")))
+        for gx, gy in [(3.9, 14.6), (3.9, 15.4), (1.5, 15.3)][:min(3, progress.get("commits", 0))]:
+            drawn.append((gx + gy + 0.65, 5000 + len(drawn), ("dynamic", (gx, gy, 0), "box_taped/default")))
+        if progress.get("pr"):
+            drawn.append((80, 5000, ("dynamic", (3.5, 16.6, 0), "truck/pr")))
     owl_pos = {}
     for _, _, (kind_, obj, key) in sorted(drawn, key=lambda t: (t[0], t[1])):
         if kind_ == "prop":
@@ -1516,6 +1590,8 @@ def render_scene(kind, theme, cast, state=None, visible=None, tints=None, night=
                 sx, sy = PROPS["safety_board"]["digitStep"]
                 for n, ch in enumerate(safe):
                     place(world, f"digit/{ch}", obj["x"] + ox + n * sx, obj["y"] + oy + n * sy)
+        elif kind_ == "dynamic":
+            place(world, key, *rnd(iso(*obj)))
         elif kind_ == "owl":
             owl_pos[obj["id"]] = draw_owl(world, obj)
         elif kind_ == "ball":
@@ -1705,7 +1781,7 @@ def write_atlas(name, entries, animations, extra, max_w):
                      "size": {"w": sheet.width, "h": sheet.height}, "scale": "1"},
             "owlfice": extra}
     sheet.save(os.path.join(SPR, f"{name}.png"))
-    with open(os.path.join(SPR, f"{name}.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(SPR, f"{name}.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     return sheet, pos
 
@@ -1762,7 +1838,7 @@ def make_previews():
         for k in keys:
             place(layers, k, i * 24 + 4 + OWL_AX, 2 + OWL_AY)
     layers.save(os.path.join(PREV, "layers.png"))
-    with open(os.path.join(PREV, "owls-20.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(PREV, "owls-20.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(dict(cell=[cw, ch], cols=4, labels=labels, poses=[f"{p}_{d_}_{f_}" for p, d_, f_ in poses]), f, ensure_ascii=False, indent=1)
     # 소품 목록 (3배, 이름 표시)
     scale, pad, label_h = 3, 14, 18
@@ -1809,7 +1885,8 @@ def make_canvas_images():
                                         "dev_mon_0_0": "code_0", "dev_mon_0_1": "code_1", "plant_boss_0": "s3", "trash": "some",
                                         "mug_0": "steam_0", "test_machine": "run_0", "test_board": "pass"},
                                  visible={"duck_0": False}, tints={f"dev_part_{i}": THEMES["claude"]["cubicle"] for i in range(6)},
-                                 kanban=kan, magnets=mags, safe="37", tv=tv1, balls=2)
+                                 kanban=kan, magnets=mags, safe="37", tv=tv1, balls=2,
+                                 progress=dict(desks={"boss_desk_0": dict(coffee=2, papers=1, monitors=2)}, reads=50, commits=2, pr=True, tests=[12, 2]))
     img.save(os.path.join(CANVAS, "office-claude-day.png"))
     T = TEAM_TINTS
     smb_cast = [
@@ -1833,7 +1910,8 @@ def make_canvas_images():
                                 visible={"ramen": True, "glow_incident": True, "plant_boss_0": True, "plant_boss_1": True, "plant_boss_2": True},
                                 tints=tints, kanban=kan[:6], magnets=mags + [(1, 0, "teal"), (1, 1, "violet")], safe="0",
                                 tv=[[0.1, 0.18, 0.14, 0.3, 0.36, 0.46, 0.42, 0.56, 0.2, 0.26, 0.36, 0.42],
-                                    [0.0, 0.06, 0.06, 0.12, 0.24, 0.24, 0.3, 0.36, 0.42, 0.42, 0.48, 0.6]], balls=5, pizza=2)
+                                    [0.0, 0.06, 0.06, 0.12, 0.24, 0.24, 0.3, 0.36, 0.42, 0.42, 0.48, 0.6]], balls=5, pizza=2,
+                                progress=dict(desks={"boss_desk_0": dict(coffee=4, papers=4, monitors=2, night=True)}, reads=100, commits=3, tests=[105, 7]))
     img.save(os.path.join(CANVAS, "office-codex-night-smb.png"))
     for t in ("codex", "gemini"):
         cast = [dict(id="bujang", species="eagle", outfit=f"bujang-{t}", role="backend", pose="idle", gx=20.9, gy=2.15, depth=23.0),
@@ -1842,7 +1920,8 @@ def make_canvas_images():
         img, _ = render_scene("large", t, cast, state={"ci_light": "green", "boss_mon_0_0": "code_0", "dev_mon_0_0": "code_0",
                                                         "dev_mon_0_1": "code_1", "dev_mon_3_0": "read_0", "plant_boss_0": "s1", "trash": "some"},
                               tints={f"dev_part_{i}": THEMES[t]["cubicle"] for i in range(6)}, kanban=kan[:5], magnets=mags[:3],
-                              safe="12", tv=tv1, balls=1)
+                              safe="12", tv=tv1, balls=1,
+                              progress=dict(desks={"boss_desk_0": dict(coffee=1, papers=2)}, reads=25, commits=1, tests=[3, 0]))
         img.save(os.path.join(CANVAS, f"office-{t}-day.png"))
     # 카드 아바타 (20×22, 2배로 40×44 표시)
     avatars = {
@@ -1862,7 +1941,7 @@ def make_canvas_images():
         av = Image.new("RGBA", (20, 22), (0, 0, 0, 0))
         av.alpha_composite(full.crop((0, 2, 16, 24)), (2, 0))
         av.save(os.path.join(CANVAS, f"avatar-{name}.png"))
-    with open(os.path.join(SPR, "preview", "positions.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(SPR, "preview", "positions.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(dict(hero=pos_hero, smb=pos_smb), f, ensure_ascii=False, indent=1)
     for name, im in (("building-loading", building(0.55, 3)), ("building-dark", building(0.0)), ("preview-large", preview_large()),
                      ("preview-small", preview_small()), ("logo", logo())):
@@ -1954,7 +2033,7 @@ def main():
     office_sheet, office_pos = write_atlas("office", OFFICE, {}, dict(props=PROPS), 2048)
     ui, ui_extra = build_ui()
     write_atlas("ui", ui, {}, ui_extra, 512)
-    with open(os.path.join(SPR, "floorplan.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(SPR, "floorplan.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(FLOORPLAN, f, ensure_ascii=False, indent=1)
     make_previews()
     make_canvas_images()

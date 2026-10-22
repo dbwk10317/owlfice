@@ -128,6 +128,21 @@ def main():
                 safe=safe,
                 balls=balls,
                 pizza=pizza,
+                magnets=[(0, 0, "teal" if night else "red")],
+                progress={
+                    "desks": {
+                        "boss_desk_0": {
+                            "coffee": 4 if night else 2,
+                            "papers": 2,
+                            "monitors": 2,
+                            "night": night,
+                        },
+                    },
+                    "reads": 100 if night else 50,
+                    "commits": 2,
+                    "pr": True,
+                    "tests": [105, 7] if night else [12, 2],
+                },
             )
         finally:
             art.OFFICE["stats_board/default"] = original_board

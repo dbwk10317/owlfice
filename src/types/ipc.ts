@@ -51,11 +51,11 @@ room: number | null, label: string,
  */
 phase: TeamPhase,
 /**
- * 팀 중 가장 급한 점 (docs/CONTRACTS.md C3 중소기업 층 점)
+ * 팀 중 가장 급한 점 (design/HANDOFF.md 4.1절 층 행)
  */
 dot: Dot,
 /**
- * 허가 대기는 점이 아니라 결재판 아이콘이라(docs/CONTRACTS.md C3 범례) 점 우선순위에 넣지 않고 따로 둔다
+ * 허가 대기는 점이 아니라 결재판 아이콘이라(design/HANDOFF.md 4.2절) 점 우선순위에 넣지 않고 따로 둔다
  */
 asking: boolean, border: Border, delayed: boolean, teams: Array<TeamSummaryDto>, };
 
@@ -88,17 +88,22 @@ delayed: boolean,
  */
 hostBadge: string | null,
 /**
- * 오늘의 업무 (docs/CONTRACTS.md C3 사무실 한 줄)
+ * 오늘의 업무 (design/HANDOFF.md 4.1절 사무실 행)
  */
 workType: WorkType, };
 
 /**
- * 상태 점 (docs/CONTRACTS.md C3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
+ * 상태 점 (design/HANDOFF.md 4.2절). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
  */
 export type Dot = "Incident" | "Working" | "Waiting" | "Dozing" | "IdleAlive" | "Off";
 
 /**
- * 줄 테두리 (docs/CONTRACTS.md C3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
+ * 직원 카드의 상태 핀. 사무실·팀 집계 점과 별도로 직원 상태에서 계산한다.
+ */
+export type EmployeeState = "Working" | "Waiting" | "Dozing" | "Finished" | "Interrupted" | "Off" | "Incident";
+
+/**
+ * 줄 테두리 (design/HANDOFF.md 4.2절). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
  */
 export type Border = "Plain" | "Failed" | "Running";
 
@@ -128,7 +133,7 @@ building: string, hostBadge: string | null,
  */
 delayed: boolean, folder: string, started: string, lastActivity: string, phase: TeamPhase, workType: WorkType,
 /**
- * 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (docs/CONTRACTS.md C8)
+ * 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (design/HANDOFF.md 6.5절)
  */
 deskSlot: number | null,
 /**
@@ -145,9 +150,9 @@ export type Daylight = "day" | "evening" | "night";
 /**
  * 직원 카드 한 장 (docs/CONTRACTS.md C3)
  */
-export type EmployeeDto = { agentId: string, name: string, rank: Rank,
+export type EmployeeDto = { agentId: string, state: EmployeeState, name: string, rank: Rank,
 /**
- * 담당 (docs/CONTRACTS.md C3 카드)
+ * 담당 (design/HANDOFF.md 4.5절 카드)
  */
 role: Role, model: string | null, description: string | null, activity: Activity,
 /**
@@ -186,12 +191,12 @@ review: Review | null, };
 export type Item = "Medal" | "Helmet" | "Blanket" | "Headphones" | "Scroll";
 
 /**
- * 미팅실 소품 재료 (docs/CONTRACTS.md C3 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
+ * 미팅실 소품 재료 (design/HANDOFF.md 5.1절). MCP 는 화면 상호·명함, 스킬은 매뉴얼
  */
 export type Meeting = { "kind": "Mcp", server: string, } | { "kind": "Skill" };
 
 /**
- * 리뷰실 소품 재료 (docs/CONTRACTS.md C3 리뷰실)
+ * 리뷰실 소품 재료 (design/HANDOFF.md 5.1절)
  */
 export type Review = {
 /**
@@ -265,7 +270,7 @@ at: string, say: BubbleSay, };
 export type BubbleSay = { "kind": "Say", text: string, } | { "kind": "Mcp", server: string, tool: string, } | { "kind": "NewVendor", server: string, } | { "kind": "NewSkill", skill: string, } | { "kind": "Rank" } | { "kind": "Incident" } | { "kind": "AllGreen" } | { "kind": "TooLong" } | { "kind": "ThinkingDuck" } | { "kind": "PlanApproval" } | { "kind": "Scratch" } | { "kind": "Compaction" } | { "kind": "UnknownTool" } | { "kind": "ScriptFallback" } | { "kind": "UnknownResult" };
 
 /**
- * 오늘 실적 (docs/CONTRACTS.md C3 카드의 여섯 칸)
+ * 오늘 실적 (design/HANDOFF.md 4.5절 카드 실적 누계)
  */
 export type Counters = { read: number, edit: number, shell: number, outside: number, meeting: number, errors: number, };
 
@@ -301,7 +306,7 @@ export type TestCounts = { passed: number, failed: number, };
 export type Incident = { since: string, lastError: string, };
 
 /**
- * 프론트 연출 힌트 (docs/CONTRACTS.md C9 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
+ * 프론트 연출 힌트 (docs/CONTRACTS.md C10). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
  */
 export type AnimCue = { "kind": "BossVisit", text: string, } | { "kind": "Clap", agent: string, } | { "kind": "Enter", agent: string, } | { "kind": "Rehire", agent: string, } | { "kind": "Retire", agent: string, } | { "kind": "Depart", agent: string, } | { "kind": "Stamp", agent: string, at: string, passed: number, failed: number, estimated: boolean, confirmedPass: boolean, } | { "kind": "Truck" } | { "kind": "Return" } | { "kind": "Fireworks" } | { "kind": "Reject", agent: string, } | { "kind": "Shake", agent: string, } | { "kind": "Siren", on: boolean, } | { "kind": "FrameSwap", title: string, } | { "kind": "Repot" } | { "kind": "Compaction", agent: string, at: string, } | { "kind": "Paper", agent: string, on: boolean, };
 
@@ -352,7 +357,7 @@ scale: Scale | null,
  */
 companyName: string | null, manualPaths: Array<ManualPath> | null, sound: boolean | null, nightMode: NightMode | null, osNotifications: boolean | null, bossName: string | null, rawDiagnostics: boolean | null,
 /**
- * 없으면 null 이고 프론트가 올빼미로 본다
+ * 없으면 null 이고 프론트가 섞기로 본다
  */
 animal: Animal | null, };
 
@@ -473,7 +478,7 @@ export type Tokens = { input: number, output: number, };
 /**
  * 직원 타임라인(docs/CONTRACTS.md C9)에 남기는 사건 종류. 생각·토큰·메타·칸반은 다른 칸(호출 입력 등)과 겹치거나 팝업에 쓸 게 없다
  */
-export type TimelineKind = "UserMessage" | "AssistantText" | "ToolCall" | "ToolResult" | "SubagentSpawn" | "SubagentDone" | "PermissionRequest" | "ContextCompaction" | "TitleChanged" | "PrLinked";
+export type TimelineKind = "UserMessage" | "AssistantText" | "ToolCall" | "ToolResult" | "SubagentSpawn" | "SubagentDone" | "SubagentInterrupted" | "PermissionRequest" | "ContextCompaction" | "TitleChanged" | "PrLinked";
 
 /**
  * 직원 상세 팝업 (docs/CONTRACTS.md C9) 중 원본을 다시 읽지 않는 부분

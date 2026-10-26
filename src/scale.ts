@@ -38,18 +38,43 @@ export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Pro
   const { app } = phrases;
   let finish!: (choice: ScaleChoice) => void;
   const done = new Promise<ScaleChoice>((resolve) => (finish = resolve));
-  // 저장이 실패해도 백엔드는 이번 실행에 반영하므로 그대로 진행한다
+  let confirmed: ScaleChoice | null = null;
   async function choose(scale: Scale): Promise<void> {
+    error.hidden = true;
+    continueBtn.hidden = true;
+    confirmed = null;
+    const name = input.value.trim();
+    if (Array.from(name).length > 20) {
+      error.textContent = "회사 이름은 20자까지 입력할 수 있습니다.";
+      error.hidden = false;
+      buttons.forEach((b) => (b.disabled = false));
+      input.focus();
+      return;
+    }
     const dto: Pick<SettingsDto, "scale" | "companyName"> = {
       scale,
-      companyName: input.value.trim() || null,
+      companyName: name || null,
     };
     try {
       await invoke("set_settings", { dto });
-    } catch (e) {
-      console.error("set_settings", e);
+      finish({ scale, companyName: dto.companyName });
+    } catch {
+      try {
+        const saved = await invoke<SettingsDto>("get_settings");
+        if (saved.scale === scale) {
+          confirmed = { scale: saved.scale, companyName: saved.companyName };
+          error.textContent = "저장하지 못했습니다. 이번 실행에는 선택한 규모가 반영됐습니다.";
+          continueBtn.hidden = false;
+        } else {
+          error.textContent = "저장하지 못했습니다. 규모를 다시 선택해 주세요.";
+          buttons.forEach((b) => (b.disabled = false));
+        }
+      } catch {
+        error.textContent = "설정을 확인하지 못했습니다. 규모를 다시 선택해 주세요.";
+        buttons.forEach((b) => (b.disabled = false));
+      }
+      error.hidden = false;
     }
-    finish({ scale, companyName: dto.companyName });
   }
   const page = el("main", "sc");
 
@@ -67,7 +92,6 @@ export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Pro
   const company = el("label", "sc__company", t.companyLabel);
   const input = document.createElement("input");
   input.type = "text";
-  input.maxLength = 20;
   input.placeholder = app.brand;
   input.autocomplete = "organization";
   company.append(input);
@@ -93,6 +117,15 @@ export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Pro
     return b;
   });
   group.append(...buttons);
+  const error = el("p", "sc__error");
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  const continueBtn = el("button", "sc__continue", "이번 실행에서 계속") as HTMLButtonElement;
+  continueBtn.type = "button";
+  continueBtn.hidden = true;
+  continueBtn.addEventListener("click", () => {
+    if (confirmed) finish(confirmed);
+  });
 
   const building = sprite(sheet, "building/base", 2);
   building?.classList.add("sc__building");
@@ -102,6 +135,8 @@ export function showScale(root: HTMLElement, invoke: Invoke, sheet?: Sheet): Pro
     head,
     company,
     group,
+    error,
+    continueBtn,
     el("p", "sc__foot", t.footnote),
   );
   root.replaceChildren(page);

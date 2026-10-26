@@ -91,6 +91,20 @@
   justify-content: center;
   gap: 20px;
 }
+.sc__error {
+  margin: 0;
+  color: var(--ow-bad-ink);
+  font-size: 13px;
+}
+.sc__continue {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ow-ink);
+  color: var(--ow-bg);
+  font: inherit;
+  cursor: pointer;
+}
 .sc__opt {
   width: 320px;
   display: flex;

@@ -1,10 +1,13 @@
 //! Codex 기록 파서 (docs/CONTRACTS.md C7)
 
+mod script;
+
+use script::{ExecScan, scan_exec};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use super::{
     Classified, Compound, Confidence, Event, EventKind, Parser, RawRef, ToolKind, ToolOutcome,
@@ -39,6 +42,9 @@ pub struct CodexParser {
     background_calls: HashMap<String, BackgroundCall>,
     /// 이벤트를 내지 않는 호출(`sleep`, `send_message`). 뒤따르는 출력도 버린다
     ignored: HashSet<String>,
+    /// 성공한 followup_task의 Interacted만 기존 직원 재개로 쓴다.
+    followups: HashSet<String>,
+    known_agents: HashSet<String>,
     /// 실행 중인 exec 를 기다리는 `wait` 의 call_id → 그 exec 의 call_id. 이벤트 없이 결과만 원래 exec 로 넘긴다
     cell_waits: HashMap<String, String>,
     /// 내부 에이전트의 rollout. 파일 전체에서 이벤트를 내지 않는다
@@ -72,7 +78,7 @@ struct BackgroundCall {
 }
 
 enum Wait {
-    Exec(ExecWait),
+    Exec(Box<ExecWait>),
     /// `ask` 면 `{accepted: true}` 를 받은 뒤에도 질문 답을 기다린다
     Function {
         ask: bool,
@@ -93,12 +99,61 @@ struct ExecWait {
     cell: Option<String>,
     /// exec 출력보다 먼저 끝난 명령을 뒤늦게 백그라운드로 등록하지 않는다.
     commands: HashSet<String>,
+    /// 중간 출력의 연결 근거만 보관한다. bool은 종료 코드를 확인했는지다.
+    output_sessions: HashMap<String, bool>,
+    output_keys: HashSet<String>,
+    output_rejected: bool,
+    output_failed: bool,
+    output_overflow: bool,
     items: u32,
     completed: u32,
     failed: u32,
 }
 
 impl ExecWait {
+    fn remember_output(&mut self, texts: &[String]) {
+        self.output_rejected |= texts.iter().any(|t| t.contains(REJECTED));
+        for (index, text) in texts.iter().enumerate() {
+            let text = if index == 0 {
+                if !(text.starts_with(CELL_RUNNING)
+                    || text.starts_with("Script completed")
+                    || text.starts_with("Script failed"))
+                {
+                    continue;
+                }
+                let Some((_, body)) = text
+                    .split_once("\nOutput:\n")
+                    .or_else(|| text.split_once("\r\nOutput:\r\n"))
+                else {
+                    continue;
+                };
+                body
+            } else {
+                text.as_str()
+            };
+            let Ok(Value::Object(obj)) = serde_json::from_str(text) else {
+                continue;
+            };
+            self.output_keys
+                .extend(obj.keys().filter(|k| is_known_key(k)).cloned());
+            let exit = obj.get("exit_code").and_then(Value::as_i64);
+            self.output_failed |= self
+                .calls(|tool| tool == "exec_command" || tool == "write_stdin")
+                && exit.is_some_and(|code| code != 0);
+            let Some(id) = obj.get("session_id").and_then(id_string) else {
+                continue;
+            };
+            // ponytail: 호출당 ID 256개·각 128바이트까지만 보존, 더 큰 실제 호출이 확인되면 상한을 올린다.
+            if id.len() > 128
+                || (self.output_sessions.len() >= 256 && !self.output_sessions.contains_key(&id))
+            {
+                self.output_overflow = true;
+                continue;
+            }
+            *self.output_sessions.entry(id).or_default() |= exit.is_some();
+        }
+    }
+
     fn calls(&self, f: impl Fn(&str) -> bool) -> bool {
         self.tools.iter().any(|t| f(t))
     }
@@ -123,6 +178,8 @@ impl CodexParser {
             background: HashMap::new(),
             background_calls: HashMap::new(),
             ignored: HashSet::new(),
+            followups: HashSet::new(),
+            known_agents: HashSet::new(),
             cell_waits: HashMap::new(),
             silent: false,
             last_total: None,
@@ -333,7 +390,7 @@ impl CodexParser {
             self.pending.push(Pending {
                 call_id,
                 tool: name.to_string(),
-                wait: Wait::Exec(ExecWait::default()),
+                wait: Wait::Exec(Box::default()),
             });
             return;
         }
@@ -367,13 +424,13 @@ impl CodexParser {
         self.pending.push(Pending {
             call_id,
             tool: "exec".into(),
-            wait: Wait::Exec(ExecWait {
+            wait: Wait::Exec(Box::new(ExecWait {
                 tools: scan.tools,
                 async_unknown,
                 test,
                 stop_sessions,
                 ..ExecWait::default()
-            }),
+            })),
         });
     }
 
@@ -392,6 +449,9 @@ impl CodexParser {
             return;
         };
         let texts = output_texts(output);
+        if let Wait::Exec(w) = &mut self.pending[i].wait {
+            w.remember_output(&texts);
+        }
         // 시작됨은 완료가 아니다 (docs/CONTRACTS.md C8). 호출을 남겨 두고 cell 의 wait 응답을 기다린다
         if let Some(cell) = texts
             .first()
@@ -418,35 +478,25 @@ impl CodexParser {
             unreachable!("부르는 쪽이 Exec 만 넘긴다")
         };
         let first = texts.first().map(String::as_str).unwrap_or_default();
-        // 둘째 text부터는 모델이 찍은 값이라 모양이 정해져 있지 않다. 백그라운드 판별에만 쓴다
-        let objs: Vec<Map<String, Value>> = texts
-            .iter()
-            .skip(1)
-            .filter_map(|t| match serde_json::from_str(t) {
-                Ok(Value::Object(m)) => Some(m),
-                _ => None,
-            })
-            .collect();
         // 이미 백그라운드인 세션의 폴링 응답은 새 작업이 아니다. 원래 호출의 짝을 덮어쓰면 안 된다
-        let started: HashSet<String> = objs
+        let started: HashSet<String> = w
+            .output_sessions
             .iter()
-            .filter(|m| !m.contains_key("exit_code"))
-            .filter_map(|m| m.get("session_id").and_then(id_string))
+            .filter_map(|(id, finished)| (!finished).then_some(id))
             .filter(|s| {
                 w.calls(|t| t == "exec_command")
-                    && !self.background.contains_key(s)
-                    && !w.commands.contains(s)
+                    && !self.background.contains_key(*s)
+                    && !w.commands.contains(*s)
             })
+            .cloned()
             .collect();
         // 거부 문구는 item 없이 `Script failed` 로 끝난 호출에서만 본다. 성공한 호출이 text() 로 찍은 값에도 있을 수 있다
-        let rejected = w.items == 0
-            && first.starts_with("Script failed")
-            && texts.iter().any(|t| t.contains(REJECTED));
+        let rejected = w.items == 0 && first.starts_with("Script failed") && w.output_rejected;
         let mut outcome = if !started.is_empty() {
             ToolOutcome::Started
         } else if rejected {
             ToolOutcome::Rejected
-        } else if w.failed > 0 {
+        } else if w.failed > 0 || w.output_failed {
             ToolOutcome::Err
         } else if w.items > 0 && w.completed == w.items {
             ToolOutcome::Ok
@@ -455,7 +505,7 @@ impl CodexParser {
         } else {
             ToolOutcome::Unknown
         };
-        if outcome == ToolOutcome::Ok && w.async_unknown {
+        if outcome == ToolOutcome::Ok && (w.async_unknown || w.output_overflow) {
             outcome = ToolOutcome::Unknown;
         }
         if outcome == ToolOutcome::Started {
@@ -465,9 +515,10 @@ impl CodexParser {
                     remaining: started.len(),
                     outcome: if rejected {
                         ToolOutcome::Rejected
-                    } else if w.failed > 0 || first.starts_with("Script failed") {
+                    } else if w.failed > 0 || w.output_failed || first.starts_with("Script failed")
+                    {
                         ToolOutcome::Err
-                    } else if w.async_unknown || w.completed < w.items {
+                    } else if w.async_unknown || w.output_overflow || w.completed < w.items {
                         ToolOutcome::Unknown
                     } else {
                         ToolOutcome::Ok
@@ -500,13 +551,9 @@ impl CodexParser {
             ));
         }
         out.push(ev);
-        if outcome == ToolOutcome::Unknown && !w.polling_only() {
-            let mut result_keys: Vec<String> = objs
-                .iter()
-                .flat_map(|m| m.keys().filter(|k| is_known_key(k)).cloned())
-                .collect();
+        if (outcome == ToolOutcome::Unknown && !w.polling_only()) || w.output_overflow {
+            let mut result_keys: Vec<String> = w.output_keys.iter().cloned().collect();
             result_keys.sort();
-            result_keys.dedup();
             un.push(Unhandled::OutcomeUnknown {
                 tool: p.tool,
                 result_keys,
@@ -543,7 +590,12 @@ impl CodexParser {
         let mut ask = false;
         let tool = match name {
             // `sleep` 은 질문 답을 기다리며 부르고 `send_message` 는 에이전트 사이 배관이다. 연출할 게 없다
-            "sleep" | "send_message" => {
+            "followup_task" => {
+                self.followups.insert(call_id.clone());
+                self.ignored.insert(call_id);
+                return;
+            }
+            "sleep" | "send_message" | "wait_agent" | "interrupt_agent" => {
                 self.ignored.insert(call_id);
                 return;
             }
@@ -552,8 +604,6 @@ impl CodexParser {
                 ToolKind::Ask
             }
             "spawn_agent" => ToolKind::Spawn,
-            // 확인된 협업 배관이라 미대응이 아니다
-            "wait_agent" | "followup_task" => ToolKind::Other(name.to_string()),
             _ if name.starts_with("mcp__") => mcp_kind(name),
             _ => {
                 un.push(Unhandled::ToolName {
@@ -597,22 +647,11 @@ impl CodexParser {
         un: &mut Vec<Unhandled>,
     ) {
         if self.ignored.remove(call_id) {
+            self.followups.remove(call_id);
             return;
         }
         if let Some(exec) = self.cell_waits.remove(call_id) {
-            let texts = output_texts(output);
-            // 아직 실행 중이면 모델이 같은 cell 로 wait 를 다시 부른다
-            if texts.first().is_some_and(|t| t.starts_with(CELL_RUNNING)) {
-                return;
-            }
-            if let Some(i) = self
-                .pending
-                .iter()
-                .position(|p| p.call_id == exec && matches!(p.wait, Wait::Exec(_)))
-            {
-                let p = self.pending.remove(i);
-                self.exec_close(p, texts, out, un);
-            }
+            self.exec_output(&exec, output, out, un);
             return;
         }
         let Some(i) = self
@@ -632,7 +671,7 @@ impl CodexParser {
         let p = self.pending.remove(i);
         // 접수 응답이라 Ok. 실제 성패는 SubAgentActivity 가 말한다. 그 밖은 성패 구조 필드가 없다
         let outcome = match p.tool.as_str() {
-            "spawn_agent" | "wait_agent" | "followup_task" => ToolOutcome::Ok,
+            "spawn_agent" => ToolOutcome::Ok,
             _ => ToolOutcome::Unknown,
         };
         let preview = match output {
@@ -657,7 +696,14 @@ impl CodexParser {
                     Some("CommandExecution" | "FileChange" | "McpToolCall") => {
                         self.exec_item(item, out, un)
                     }
-                    Some("SubAgentActivity") => subagent_activity(item, self.depth, out, un),
+                    Some("SubAgentActivity") => subagent_activity(
+                        item,
+                        self.depth,
+                        &mut self.followups,
+                        &mut self.known_agents,
+                        out,
+                        un,
+                    ),
                     Some("ContextCompaction") => out.push(EventKind::ContextCompaction {
                         pre_tokens: None,
                         post_tokens: None,
@@ -712,9 +758,17 @@ impl CodexParser {
                     out.push(result(p.call_id, ToolOutcome::Unknown, String::new()));
                 }
             }
-            "sub_agent_activity" => subagent_activity(p, self.depth, out, un),
+            "sub_agent_activity" => subagent_activity(
+                p,
+                self.depth,
+                &mut self.followups,
+                &mut self.known_agents,
+                out,
+                un,
+            ),
             "collab_agent_spawn_end" => {
                 if let Some(child) = str_at(p, &["new_thread_id"]) {
+                    self.known_agents.insert(child.to_string());
                     out.push(spawn(child, None, None, self.depth));
                 }
             }
@@ -848,12 +902,14 @@ impl Parser for CodexParser {
         unhandled: &mut Vec<Unhandled>,
     ) -> Vec<Event> {
         let Ok(v) = serde_json::from_slice::<Value>(bytes) else {
+            unhandled.push(Unhandled::InvalidJson);
             return Vec::new();
         };
         if self.silent || !v.is_object() {
             return Vec::new();
         }
-        // 자식 rollout 앞부분은 부모 이력의 복제다. 첫 session_meta 는 이 값을 알기 전에 읽혀 걸리지 않는다
+        // 자식 rollout 앞부분은 부모 이력의 복제다. probe·상세 읽기도 같은 파서를 쓰므로 여기서 중복을 거른다.
+        // 첫 session_meta 는 이 값을 알기 전에 읽혀 걸리지 않는다.
         if let (Some(start), Some(ord)) =
             (self.history_start, v.get("ordinal").and_then(Value::as_u64))
             && ord < start
@@ -902,20 +958,39 @@ impl Parser for CodexParser {
     }
 }
 
-/// `interacted` 는 추가 지시라 연출할 게 없다
-fn subagent_activity(item: &Value, depth: u8, out: &mut Vec<EventKind>, un: &mut Vec<Unhandled>) {
+/// `interacted` 는 메시지 전달과 재개가 같은 형식이므로 확인된 followup 호출만 재개로 낸다.
+fn subagent_activity(
+    item: &Value,
+    depth: u8,
+    followups: &mut HashSet<String>,
+    known_agents: &mut HashSet<String>,
+    out: &mut Vec<EventKind>,
+    un: &mut Vec<Unhandled>,
+) {
     let kind = str_at(item, &["kind"]).unwrap_or_default();
     match (kind, str_at(item, &["agent_thread_id"])) {
-        ("started", Some(child)) => out.push(spawn(
-            child,
-            str_at(item, &["model"]),
-            str_at(item, &["reasoning_effort"]),
-            depth,
-        )),
+        ("started", Some(child)) => {
+            known_agents.insert(child.to_string());
+            out.push(spawn(
+                child,
+                str_at(item, &["model"]),
+                str_at(item, &["reasoning_effort"]),
+                depth,
+            ));
+        }
         ("completed", Some(child)) => out.push(EventKind::SubagentDone {
             child_id: child.to_string(),
         }),
-        ("started" | "completed" | "interacted", _) => {}
+        ("interrupted", Some(child)) => out.push(EventKind::SubagentInterrupted {
+            child_id: child.to_string(),
+        }),
+        ("interacted", Some(child))
+            if known_agents.contains(child)
+                && str_at(item, &["id"]).is_some_and(|id| followups.remove(id)) =>
+        {
+            out.push(spawn(child, None, None, depth));
+        }
+        ("started" | "completed" | "interacted" | "interrupted", _) => {}
         _ => un.push(Unhandled::RecordType {
             type_name: format!("SubAgentActivity.{kind}"),
             keys: keys(item),
@@ -1025,21 +1100,6 @@ fn output_texts(output: Option<&Value>) -> Vec<String> {
     }
 }
 
-#[derive(Default)]
-struct ExecScan {
-    /// `cmd:` 문자열 리터럴. 변수·`${}` 템플릿은 못 뽑는다
-    cmds: Vec<String>,
-    /// `tools.<이름>` 으로 부른 도구
-    tools: Vec<String>,
-    /// 첫 `tools.apply_patch(` 의 리터럴 인자
-    patch: Option<String>,
-    question: Option<String>,
-    /// `sandbox_permissions: "require_escalated"` 리터럴
-    escalated: bool,
-    /// `write_stdin` 의 (session_id, chars)
-    stdin: Vec<(Option<String>, Option<String>)>,
-}
-
 fn exec_tool(s: &ExecScan) -> (ToolKind, ToolSummary, bool) {
     let only = |f: fn(&str) -> bool| !s.tools.is_empty() && s.tools.iter().all(|t| f(t));
     if s.tools
@@ -1113,264 +1173,6 @@ fn patch_target(patch: &str) -> (ToolKind, Option<String>) {
         }
     }
     (ToolKind::FileEdit, None)
-}
-
-#[derive(Debug, PartialEq)]
-enum Tok {
-    /// 식별자와 숫자
-    Word(String),
-    /// `plain` 은 끝까지 닫혔고 `${}` 가 없는 리터럴
-    Str {
-        text: String,
-        plain: bool,
-    },
-    Punct(char),
-}
-
-fn scan_exec(src: &str) -> ExecScan {
-    let t = tokenize(src);
-    let mut s = ExecScan::default();
-    let word = |i: usize, w: &str| matches!(t.get(i), Some(Tok::Word(x)) if x == w);
-    let punct = |i: usize, c: char| t.get(i) == Some(&Tok::Punct(c));
-    // `key: 값` 의 값. 키는 식별자거나 문자열이다
-    let value_of = |i: usize, key: &str| -> Option<&Tok> {
-        let is_key = match t.get(i)? {
-            Tok::Word(w) => w == key,
-            Tok::Str { text, .. } => text == key,
-            Tok::Punct(_) => false,
-        };
-        if is_key && punct(i + 1, ':') {
-            t.get(i + 2)
-        } else {
-            None
-        }
-    };
-    for i in 0..t.len() {
-        if word(i, "tools")
-            && punct(i + 1, '.')
-            && let Some(Tok::Word(name)) = t.get(i + 2)
-        {
-            s.tools.push(name.clone());
-            if name == "apply_patch"
-                && s.patch.is_none()
-                && punct(i + 3, '(')
-                && let Some(Tok::Str { text, .. }) = t.get(i + 4)
-            {
-                s.patch = Some(text.clone());
-            }
-            if name == "write_stdin" {
-                let (mut sid, mut chars) = (None, None);
-                // 이 호출의 짝 괄호 안만 본다. 뒤의 무관한 객체가 이기면 안 된다
-                let (mut j, mut depth) = (i + 3, 0);
-                while j < t.len() {
-                    if punct(j, '(') {
-                        depth += 1;
-                    } else if punct(j, ')') {
-                        depth -= 1;
-                        if depth <= 0 {
-                            break;
-                        }
-                    } else if depth == 0 {
-                        break;
-                    }
-                    match value_of(j, "session_id") {
-                        Some(Tok::Word(n)) => sid = Some(n.clone()),
-                        Some(Tok::Str { text, .. }) => sid = Some(text.clone()),
-                        _ => {}
-                    }
-                    if let Some(Tok::Str { text, .. }) = value_of(j, "chars") {
-                        chars = Some(text.clone());
-                    }
-                    j += 1;
-                }
-                s.stdin.push((sid, chars));
-            }
-        }
-        // 객체 리터럴의 키 자리만 본다. 삼항식의 `"cmd"` 나 `cmd: "git " + sub` 는 값이 아니다
-        if let Some(Tok::Str { text, plain: true }) = value_of(i, "cmd")
-            && i > 0
-            && matches!(t[i - 1], Tok::Punct('{' | ','))
-            && matches!(t.get(i + 3), Some(Tok::Punct(',' | '}' | ')')))
-        {
-            s.cmds.push(text.clone());
-        }
-        if let Some(Tok::Str { text, .. }) = value_of(i, "sandbox_permissions")
-            && text == "require_escalated"
-        {
-            s.escalated = true;
-        }
-        if s.question.is_none()
-            && let Some(Tok::Str { text, .. }) = value_of(i, "question")
-        {
-            s.question = Some(text.clone());
-        }
-    }
-    s
-}
-
-/// 문자열·주석·정규식 리터럴을 건너뛰는 정도의 JS 토큰 나누기
-fn tokenize(src: &str) -> Vec<Tok> {
-    let cs: Vec<char> = src.chars().collect();
-    let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < cs.len() {
-        let c = cs[i];
-        let next = cs.get(i + 1).copied();
-        if c.is_whitespace() {
-            i += 1;
-        } else if c == '/' && next == Some('/') {
-            while i < cs.len() && cs[i] != '\n' {
-                i += 1;
-            }
-        } else if c == '/' && next == Some('*') {
-            i += 2;
-            while i < cs.len() && !(cs[i] == '*' && cs.get(i + 1) == Some(&'/')) {
-                i += 1;
-            }
-            i += 2;
-        } else if c == '/'
-            && !matches!(
-                out.last(),
-                Some(Tok::Word(_) | Tok::Str { .. } | Tok::Punct(')' | ']'))
-            )
-            && let Some(end) = regex_end(&cs, i)
-        {
-            // 안의 따옴표가 문자열로 읽히면 뒤의 `cmd:` 를 삼킨다
-            out.push(Tok::Str {
-                text: String::new(),
-                plain: false,
-            });
-            i = end;
-        } else if matches!(c, '"' | '\'' | '`') {
-            let (text, plain, end) = read_str(&cs, i);
-            out.push(Tok::Str { text, plain });
-            i = end;
-        } else if is_word(c) {
-            let start = i;
-            while i < cs.len() && is_word(cs[i]) {
-                i += 1;
-            }
-            out.push(Tok::Word(cs[start..i].iter().collect()));
-        } else {
-            out.push(Tok::Punct(c));
-            i += 1;
-        }
-    }
-    out
-}
-
-/// `start` 의 `/` 가 여는 정규식의 다음 위치. 한 줄 안에서 안 닫히면 정규식이 아니다
-fn regex_end(cs: &[char], start: usize) -> Option<usize> {
-    let (mut i, mut class) = (start + 1, false);
-    while i < cs.len() {
-        match cs[i] {
-            '\n' => return None,
-            '\\' => i += 1,
-            '[' => class = true,
-            ']' => class = false,
-            '/' if !class => return Some(i + 1),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-fn read_str(cs: &[char], start: usize) -> (String, bool, usize) {
-    let q = cs[start];
-    let mut s = String::new();
-    let mut plain = true;
-    let mut i = start + 1;
-    while i < cs.len() {
-        let c = cs[i];
-        if c == q {
-            return (s, plain, i + 1);
-        }
-        if c == '\\' {
-            let Some(&e) = cs.get(i + 1) else {
-                break;
-            };
-            i += 2;
-            match e {
-                'n' => s.push('\n'),
-                't' => s.push('\t'),
-                'r' => s.push('\r'),
-                'b' => s.push('\u{8}'),
-                'f' => s.push('\u{c}'),
-                'v' => s.push('\u{b}'),
-                '0' => s.push('\0'),
-                'x' => i = push_hex(cs, i, 2, &mut s),
-                'u' if cs.get(i) == Some(&'{') => match cs[i..].iter().position(|&c| c == '}') {
-                    Some(len) => {
-                        let hex: String = cs[i + 1..i + len].iter().collect();
-                        match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-                            Some(ch) => s.push(ch),
-                            None => plain = false,
-                        }
-                        i += len + 1;
-                    }
-                    None => plain = false,
-                },
-                'u' => i = push_hex(cs, i, 4, &mut s),
-                // 줄 잇기
-                '\n' => {}
-                '\r' => {
-                    if cs.get(i) == Some(&'\n') {
-                        i += 1;
-                    }
-                }
-                other => s.push(other),
-            }
-            continue;
-        }
-        if q == '`' && c == '$' && cs.get(i + 1) == Some(&'{') {
-            plain = false;
-        }
-        // 따옴표 문자열 안의 맨 개행은 문법 오류다. 닫히지 않은 것으로 보고 거기서 끊는다
-        if q != '`' && c == '\n' {
-            return (s, false, i);
-        }
-        s.push(c);
-        i += 1;
-    }
-    (s, false, i)
-}
-
-fn hex_at(cs: &[char], i: usize, n: usize) -> Option<u32> {
-    let digits = cs.get(i..i + n)?;
-    digits
-        .iter()
-        .all(char::is_ascii_hexdigit)
-        .then(|| u32::from_str_radix(&digits.iter().collect::<String>(), 16).ok())?
-}
-
-/// `\x`·`\u` 뒤 16진 `n` 자리. 모양이 틀리면 글자를 그대로 둔다
-fn push_hex(cs: &[char], i: usize, n: usize, s: &mut String) -> usize {
-    let code = hex_at(cs, i, n);
-    // 상위 서로게이트 뒤에 `\u` 하위가 오면 한 글자다
-    if let Some(hi) = code.filter(|c| n == 4 && (0xD800..0xDC00).contains(c)) {
-        let lo = (cs.get(i + 4) == Some(&'\\') && cs.get(i + 5) == Some(&'u'))
-            .then(|| hex_at(cs, i + 6, 4))
-            .flatten()
-            .filter(|lo| (0xDC00..0xE000).contains(lo));
-        if let Some(ch) =
-            lo.and_then(|lo| char::from_u32(0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00)))
-        {
-            s.push(ch);
-            return i + 10;
-        }
-    }
-    match code.and_then(char::from_u32) {
-        Some(ch) => {
-            s.push(ch);
-            i + n
-        }
-        None => {
-            s.push(if n == 2 { 'x' } else { 'u' });
-            i
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1951,6 +1753,7 @@ mod tests {
                 rt("tool_search_call", &["q", "type"]),
                 rt("mystery", &["a", "type"]),
                 rt("novel", &["foo", "timestamp", "type"]),
+                Unhandled::InvalidJson,
             ]
         );
     }
@@ -2415,6 +2218,9 @@ mod tests {
             func_out("call_spawn", "{\"task_name\":\"w\"}"),
             act("interacted"),
             func("call_wait", "wait_agent", json!({})),
+            func_out("call_wait", "{\"status\":\"completed\"}"),
+            func("call_followup", "followup_task", json!({"message": "work"})),
+            func_out("call_followup", "{\"status\":\"accepted\"}"),
             act("completed"),
             act("completed"),
         ]);
@@ -2435,12 +2241,69 @@ mod tests {
                 "call Spawn Single".to_string(),
                 tag(&spawn),
                 "result Ok".into(),
-                "call Other(\"wait_agent\") Single".into(),
                 tag(&done),
                 tag(&done),
             ]
         );
-        // wait_agent 는 확인된 배관이라 tool_name 에 넣지 않는다. 접수 응답은 Ok 라 미대응도 없다
+        // 협업 배관의 호출·결과는 업무가 아니지만 실제 자식 생성·종료는 남긴다.
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    #[test]
+    fn interrupted_is_distinct_and_only_successful_followup_activity_restarts() {
+        let act = |id: &str, kind: &str| {
+            rec(
+                "event_msg",
+                json!({"type":"item_completed","item":{"type":"SubAgentActivity",
+                "id":id,"kind":kind,"agent_thread_id":CHILD,"agent_path":"/root/w"}}),
+            )
+        };
+        let (k, un) = feed(&[
+            act("initial", "started"),
+            act("stop", "interrupted"),
+            func(
+                "send",
+                "send_message",
+                json!({"target":"/root/w","message":"m"}),
+            ),
+            act("send", "interacted"),
+            func(
+                "failed",
+                "followup_task",
+                json!({"target":"/root/w","message":"m"}),
+            ),
+            func_out("failed", "error"),
+            act("failed", "interacted"),
+            func(
+                "follow",
+                "followup_task",
+                json!({"target":"/root/w","message":"m"}),
+            ),
+            act("follow", "interacted"),
+            func_out("follow", ""),
+            act("follow", "interacted"),
+            func(
+                "unknown",
+                "followup_task",
+                json!({"target":"/root/unknown","message":"m"}),
+            ),
+            rec(
+                "event_msg",
+                json!({"type":"item_completed","item":{"type":"SubAgentActivity",
+                "id":"unknown","kind":"interacted","agent_thread_id":"unknown","agent_path":"/root/unknown"}}),
+            ),
+            act("other", "interacted"),
+        ]);
+        assert_eq!(
+            k,
+            [
+                spawn(CHILD, None, None, 0),
+                EventKind::SubagentInterrupted {
+                    child_id: CHILD.into()
+                },
+                spawn(CHILD, None, None, 0),
+            ]
+        );
         assert!(un.is_empty(), "{un:?}");
     }
 
@@ -2939,14 +2802,6 @@ mod tests {
     }
 
     #[test]
-    fn write_stdin_args_stop_at_the_closing_paren() {
-        let s = scan_exec(
-            "await tools.write_stdin({session_id:4242}); const o = {session_id: 9, chars: \"\\u0003\"};",
-        );
-        assert_eq!(s.stdin, [(Some("4242".into()), None)]);
-    }
-
-    #[test]
     fn held_item_closes_background_when_stop_fails() {
         let (k, _) = feed(&[
             exec("bg", "tools.exec_command({cmd:\"npm run dev\"})"),
@@ -3111,6 +2966,127 @@ mod tests {
             ]
         );
         assert!(un.is_empty(), "{un:?}");
+    }
+
+    #[test]
+    fn yielded_session_id_connects_later_stdin_completion() {
+        for (in_wait, plain) in [(false, false), (true, false), (false, true), (true, true)] {
+            let yielded = |include: bool| {
+                let header = "Script running with cell ID 7\nOutput:\n";
+                let body = r#"{"session_id":4242,"output":"private-output"}"#;
+                if plain {
+                    json!(format!("{header}{}", if include { body } else { "" }))
+                } else {
+                    let mut blocks = vec![json!({"text":header})];
+                    if include {
+                        blocks.push(json!({"text":body}));
+                    }
+                    json!(blocks)
+                }
+            };
+            let (k, un) = feed(&[
+                exec("bg", "tools.exec_command({cmd:\"npm run dev\"})"),
+                rec(
+                    "response_item",
+                    json!({"type":"custom_tool_call_output","call_id":"bg","output":yielded(!in_wait)}),
+                ),
+                func("w1", "wait", json!({"cell_id":7})),
+                rec(
+                    "response_item",
+                    json!({"type":"function_call_output","call_id":"w1","output":yielded(in_wait)}),
+                ),
+                func("w2", "wait", json!({"cell_id":7})),
+                func_out("w2", "Script completed\n"),
+                exec("poll", "tools.write_stdin({session_id:4242,chars:\"\"})"),
+                cmd_item("completed", Some(0), "4242"),
+                exec_out("poll", &["Script completed\n"]),
+            ]);
+            assert_eq!(
+                outcome_of(&k, "bg"),
+                [ToolOutcome::Started, ToolOutcome::Ok]
+            );
+            assert!(
+                !serde_json::to_string(&k)
+                    .unwrap()
+                    .contains("private-output")
+            );
+            assert!(un.is_empty(), "{un:?}");
+        }
+    }
+
+    #[test]
+    fn yielded_finished_session_is_not_started_again() {
+        let (k, un) = feed(&[
+            exec("c1", "tools.exec_command({cmd:\"cargo build\"})"),
+            exec_out(
+                "c1",
+                &["Script running with cell ID 7\n", r#"{"session_id":4242}"#],
+            ),
+            func("w1", "wait", json!({"cell_id":7})),
+            cmd_item("completed", Some(0), "4242"),
+            func_out("w1", "Script completed\n"),
+        ]);
+        assert_eq!(outcome_of(&k, "c1"), [ToolOutcome::Ok]);
+        assert!(un.is_empty(), "{un:?}");
+    }
+
+    #[test]
+    fn yielded_failure_code_survives_a_final_response_without_it() {
+        for output in [
+            json!(
+                "Script running with cell ID 7\nOutput:\n{\"exit_code\":1,\"output\":\"private-output\"}"
+            ),
+            json!([{"text":"Script running with cell ID 7\n"},{"text":r#"{"exit_code":1,"output":"private-output"}"#}]),
+        ] {
+            let (k, un) = feed(&[
+                exec("c1", "tools.exec_command({cmd:\"cargo build\"})"),
+                exec_out("c1", &["Script running with cell ID 7\n"]),
+                func("w1", "wait", json!({"cell_id":7})),
+                rec(
+                    "response_item",
+                    json!({"type":"function_call_output","call_id":"w1","output":output}),
+                ),
+                func("w2", "wait", json!({"cell_id":7})),
+                func_out("w2", "Script completed\n"),
+            ]);
+            assert_eq!(outcome_of(&k, "c1"), [ToolOutcome::Err]);
+            assert!(
+                !serde_json::to_string(&k)
+                    .unwrap()
+                    .contains("private-output")
+            );
+            assert!(un.is_empty(), "{un:?}");
+        }
+    }
+
+    #[test]
+    fn oversized_yielded_session_keeps_outcome_uncertain_without_raw_diagnostics() {
+        let oversized =
+            json!({"session_id":"s".repeat(129),"private-key":"private-output"}).to_string();
+        let (k, un) = feed(&[
+            exec("c1", "tools.exec_command({cmd:\"cargo build\"})"),
+            exec_out("c1", &["Script running with cell ID 7\n", &oversized]),
+            func("w1", "wait", json!({"cell_id":7})),
+            cmd_item("completed", Some(0), "1"),
+            func_out("w1", "Script completed\n"),
+        ]);
+        assert_eq!(outcome_of(&k, "c1"), [ToolOutcome::Unknown]);
+        assert_eq!(
+            un,
+            [Unhandled::OutcomeUnknown {
+                tool: "exec".into(),
+                result_keys: vec!["session_id".into()]
+            }]
+        );
+        assert!(!serde_json::to_string(&un).unwrap().contains("private"));
+    }
+
+    #[test]
+    fn invalid_json_is_private_and_next_line_still_parses() {
+        let (k, un) = feed(&["private-token {invalid".into(), user("hello")]);
+        assert!(k.iter().any(|k| matches!(k, EventKind::UserMessage { .. })));
+        assert_eq!(un, [Unhandled::InvalidJson]);
+        assert_eq!(serde_json::to_string(&un).unwrap(), r#"["InvalidJson"]"#);
     }
 
     #[test]

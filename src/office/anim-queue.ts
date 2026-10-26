@@ -1,12 +1,12 @@
 // 직원별 연출 큐: 자리 이동 걷기, cue 재생, 건너뛰기, 결재 대기 왕복, 유휴 동작 (docs/CONTRACTS.md C10, HANDOFF 5·6.4·7).
 // 자리는 스냅샷이 정한다. 큐는 "어떻게 거기 갔는지"만 꾸민다 (docs/CONTRACTS.md C10).
 import type { CueDto, Pose, Room } from "../types/ipc.ts";
-import type { Look } from "./actors.ts";
+import type { Look } from "./actor-layout.ts";
 import { gridToScreen, roomAt, type Floorplan } from "./floorplan.ts";
 
-export const WALK_MIN_MS = 500;
-export const WALK_MAX_MS = 1500;
-export const ENTER_MS = 4000;
+export const WALK_MIN_MS = 1000;
+export const WALK_MAX_MS = 3000;
+export const ENTER_MS = 6000;
 export const CLAP_MS = 1000;
 export const REJECT_HOLD_MS = 4000;
 export const SCRATCH_MS = 2000;
@@ -24,16 +24,16 @@ export const RETURN_MS = 5000;
 export const FIREWORKS_MS = 500;
 export const CHEER_MS = 1000;
 /** 사장님이 부장 책상 앞에 도착한 뒤 서 있는 시간 */
-export const VISIT_STAY_MS = 5000;
+export const VISIT_STAY_MS = 8000;
 /** 액자를 바꾸는 직원이 사다리 위에 있는 시간 (HANDOFF 5절 제목 변경) */
 export const LADDER_MS = 4000;
 /** 분갈이 때 화분이 비어 있는 시간. 새 화분(s0)은 그 뒤에 나온다 */
 export const REPOT_MS = 800;
 /** 이보다 많이 쌓이면 중간을 건너뛰고 마지막 상태로 점프 */
 export const MAX_STEPS = 5;
-// 방 사이 거리(약 100~390px, 중앙값 250px)가 0.5~1.5초에 고르게 들어오는 속도.
-// 자리 주변 한두 타일(13~27px)과 boss_pace 왕복(36px)은 0.5초로 올려 잡는다
-const WALK_PX_PER_S = 260;
+// 방 사이 거리(약 100~390px, 중앙값 250px)가 1~3초에 고르게 들어오는 속도.
+// 자리 주변 한두 타일(13~27px)과 boss_pace 왕복(36px)은 1초로 올려 잡는다
+const WALK_PX_PER_S = 130;
 const CLAP: Look = { pose: "clap", dir: "f" };
 const IDLE_LOOK: Look = { pose: "idle", dir: "f" };
 const SCRATCH: Look = { pose: "scratch", dir: "f" };
@@ -135,7 +135,7 @@ function segLen(a: Pt, b: Pt): number {
   return Math.hypot(q.x - p.x, q.y - p.y);
 }
 
-// 0.5–1.5초로 자른다 (HANDOFF 7)
+// 1–3초로 자른다 (HANDOFF 7)
 export function walkMs(path: Pt[]): number {
   let px = 0;
   for (let i = 1; i < path.length; i++) px += segLen(path[i - 1], path[i]);
@@ -195,10 +195,10 @@ export class Track {
   }
 
   /** 새 방문은 지난 큐를 쌓지 않고 지금 보이는 자리에서 시작한다. */
-  visit(target: Target, now: number): void {
+  visit(target: Target, now: number, maxWalkMs?: number): void {
     const shown = this.update(now);
     this.reset({ ...target, at: shown.at }, now);
-    this.retarget(target, now);
+    this.retarget(target, now, false, undefined, maxWalkMs);
   }
 
   /** 장식 자세를 끊고 지금 보이는 위치에서 현재 논리 자리로 돌아간다. */
@@ -226,8 +226,8 @@ export class Track {
     return this.queueEnd(now);
   }
 
-  /** 새 스냅샷 자리. `entering` 이면 문에서 4초 걸어 들어온다 (출근·재출근). `held` 는 숨었다 돌아올 때 들고 오는 물건 */
-  retarget(target: Target, now: number, entering = false, held?: string): void {
+  /** 새 스냅샷 자리. `entering` 이면 문에서 6초 걸어 들어온다 (출근·재출근). `held` 는 숨었다 돌아올 때 들고 오는 물건 */
+  retarget(target: Target, now: number, entering = false, held?: string, maxWalkMs?: number): void {
     this.advance(now);
     const prev = this.target;
     if (
@@ -252,9 +252,19 @@ export class Track {
     const head = from && prev.sitOn && same(from, prev.at) ? prev.depth : undefined;
     if (entering && target.at)
       this.walk(walkPath(fp, stand(fp, "door"), target.at), ENTER_MS, now, false, { tail, held });
-    else if (from && target.at)
-      this.walk(walkPath(fp, from, target.at), undefined, now, false, { head, tail });
-    else if (from) {
+    else if (from && target.at) {
+      const path = walkPath(fp, from, target.at);
+      this.walk(
+        path,
+        maxWalkMs === undefined ? undefined : Math.min(walkMs(path), maxWalkMs),
+        now,
+        false,
+        {
+          head,
+          tail,
+        },
+      );
+    } else if (from) {
       // 외근·퇴장: 출구까지 걸어가 사라진다
       this.walk(walkPath(fp, from, stand(fp, "exit")), undefined, now, false, { head, held });
       this.push({ kind: "hide" }, now);

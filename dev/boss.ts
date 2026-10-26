@@ -16,6 +16,14 @@ const since = new Date().toISOString();
 function boss(room: Room, pose: Pose): EmployeeDto {
   return {
     agentId: "boss",
+    state:
+      room === "Door"
+        ? "Waiting"
+        : room === "Pantry"
+          ? "Dozing"
+          : room === "Incident"
+            ? "Incident"
+            : "Working",
     name: "김부장",
     rank: "Bujang",
     role: "Backend",

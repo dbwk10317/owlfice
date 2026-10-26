@@ -11,7 +11,8 @@ pub mod settings;
 pub mod startup;
 pub mod tail;
 
-use std::path::PathBuf;
+use std::fs::{File, TryLockError};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -37,6 +38,51 @@ fn data_dir() -> Result<PathBuf, String> {
     std::fs::create_dir_all(dir.join("logs"))
         .map_err(|e| format!("{} 를 만들지 못했습니다: {e}", dir.display()))?;
     Ok(dir)
+}
+
+// 설정·이름 파일을 읽기 전에 잠가야 다른 프로세스의 옛 값이 저장을 덮지 않는다.
+#[derive(Default)]
+struct Initialization(Mutex<Option<File>>);
+
+fn lock_data_dir(dir: &Path) -> Result<File, String> {
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join("instance.lock"))
+        .map_err(|e| format!("저장 폴더의 실행 잠금을 열지 못했습니다: {e}"))?;
+    file.try_lock().map_err(|e| match e {
+        TryLockError::WouldBlock => {
+            "같은 저장 폴더를 사용하는 야근불이 이미 실행 중입니다. 기존 창을 사용하거나 기존 앱을 종료한 뒤 다시 시도해 주세요.".into()
+        }
+        TryLockError::Error(e) => format!("저장 폴더의 실행 잠금을 얻지 못했습니다: {e}"),
+    })?;
+    Ok(file)
+}
+
+#[tauri::command]
+async fn initialize_app(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<Initialization>();
+        let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_some() {
+            return Ok(());
+        }
+        let startup = app.state::<Arc<Startup>>();
+        match start(&app, &startup) {
+            Ok(file) => {
+                *guard = Some(file);
+                Ok(())
+            }
+            Err(e) => {
+                startup.report(1, StepState::Error, StartupSummary::None, None);
+                Err(e)
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("앱 준비 작업을 완료하지 못했습니다: {e}"))?
 }
 
 /// 탐색 결과. 호스트·제품·루트 경로만 남긴다
@@ -80,10 +126,16 @@ fn discover_current(
 ) -> ScanResult {
     loop {
         let manual = settings.snapshot().manual_paths.unwrap_or_default();
-        let found = scanner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .scan(&manual);
+        let found = {
+            let mut scanner = scanner.lock().unwrap_or_else(|e| e.into_inner());
+            if runtime
+                .refresh_requested
+                .swap(false, std::sync::atomic::Ordering::Relaxed)
+            {
+                scanner.request_refresh();
+            }
+            scanner.scan(&manual)
+        };
         if settings.snapshot().manual_paths.unwrap_or_default() != manual {
             continue;
         }
@@ -150,15 +202,10 @@ impl Boot for AppBoot {
 
 /// 1단계(설정·이름·방 번호 저장소 읽기)를 하고 나머지 단계를 스레드로 띄운다.
 /// 프론트가 처음 부르는 get_settings·get_world_snapshot 이 바로 답하도록 상태는 여기서 만든다
-fn start(app: &tauri::AppHandle) -> Result<(), String> {
-    let emitter = app.clone();
-    let startup = Arc::new(Startup::new(move |p| {
-        if let Err(e) = emitter.emit(startup::EVENT, p) {
-            crate::oplog!("startup-progress 발행 실패: {e}");
-        }
-    }));
+fn start(app: &tauri::AppHandle, startup: &Arc<Startup>) -> Result<File, String> {
     startup.report(1, StepState::Running, StartupSummary::None, None);
     let dir = data_dir()?;
+    let guard = lock_data_dir(&dir)?;
     oplog::init(&dir.join("logs"));
     let local = Local::now().offset().fix();
     let settings = Arc::new(SettingsBook::load(&dir));
@@ -180,7 +227,7 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
         std::env::var_os("USERPROFILE").map(PathBuf::from),
     ));
     let wake = runtime.clone();
-    let scanner = Arc::new(Mutex::new(Scanner::new(move || wake.request_rescan())));
+    let scanner = Arc::new(Mutex::new(Scanner::new(move || wake.wake_discovery())));
     let ipc = Arc::new(Ipc::new(world.clone(), RoomBook::load(&dir)));
     startup.report(1, StepState::Done, StartupSummary::None, None);
 
@@ -198,10 +245,8 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
     app.manage(settings);
     app.manage(diag);
     app.manage(runtime);
-    app.manage(notification::WindowVisibility::default());
-    app.manage(startup);
     thread::spawn(move || startup::run_guarded(&progress, &boot, &world, &Limits::default()));
-    Ok(())
+    Ok(guard)
 }
 
 pub fn run() {
@@ -209,10 +254,18 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            start(app.handle())?;
+            let emitter = app.handle().clone();
+            app.manage(Arc::new(Startup::new(move |p| {
+                if let Err(e) = emitter.emit(startup::EVENT, p) {
+                    crate::oplog!("startup-progress 발행 실패: {e}");
+                }
+            })));
+            app.manage(Initialization::default());
+            app.manage(notification::WindowVisibility::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            initialize_app,
             ipc::get_world_snapshot,
             ipc::select_office,
             ipc::get_settings,
@@ -231,4 +284,25 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+
+    #[test]
+    fn data_directory_has_one_writer_and_unlocks_after_exit() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let guard = lock_data_dir(first.path()).unwrap();
+        assert!(
+            lock_data_dir(first.path())
+                .unwrap_err()
+                .contains("이미 실행 중")
+        );
+        let separate = lock_data_dir(second.path()).unwrap();
+        drop(guard);
+        assert!(lock_data_dir(first.path()).is_ok());
+        drop(separate);
+    }
 }

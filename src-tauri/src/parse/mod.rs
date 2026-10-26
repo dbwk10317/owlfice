@@ -52,6 +52,8 @@ pub trait Parser {
 /// 상태 기계만 아는 둘(StateConflict·ScenarioGap)도 같은 모양으로 diag 에 넘긴다. 값은 정해진 낱말뿐이다
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Unhandled {
+    /// 완성된 줄이 JSON 문법을 만족하지 않는다. 오류 문장·원문은 보관하지 않는다.
+    InvalidJson,
     /// 이벤트 자기 연출(`masked`)이 docs/CONTRACTS.md C2 우선순위로 더 높은 상태(`winner`)에 가려졌다
     StateConflict {
         winner: &'static str,
@@ -130,6 +132,10 @@ pub enum EventKind {
     },
     /// 완료 기록에서 낸다 (docs/CONTRACTS.md C7). 못 봤으면 추정 (docs/CONTRACTS.md C8)
     SubagentDone {
+        child_id: String,
+    },
+    /// 현재 작업의 중단만 확인됐으며 완료나 에이전트 폐기는 아니다.
+    SubagentInterrupted {
         child_id: String,
     },
     /// 확인됨: AskUserQuestion / ExitPlanMode / Codex request_user_input_async / Antigravity ask_question
@@ -510,11 +516,13 @@ struct SegClass {
     key: String,
     path: Option<String>,
     msg: Option<String>,
+    compound: Compound,
+    async_unknown: bool,
 }
 
 /// 앞의 `FOO=1` 대입과 실행 파일의 경로·`.exe` 는 벗기고 본다. `npx`·`python -m` 같은
 /// 실행기 뒤의 명령은 따라가지 않는다 (표에 없으면 Shell)
-fn classify_segment(toks: &[String]) -> SegClass {
+fn classify_segment(toks: &[String], depth: u8) -> SegClass {
     let start = toks
         .iter()
         .position(|t| !is_env_assign(t))
@@ -526,8 +534,16 @@ fn classify_segment(toks: &[String]) -> SegClass {
             key: String::new(),
             path: None,
             msg: None,
+            compound: Compound::Single,
+            async_unknown: false,
         };
     };
+    // 단순 PowerShell 대입의 오른쪽 명령만 읽고 변수 값은 해석하지 않는다.
+    let first = first
+        .strip_prefix('$')
+        .and_then(|s| s.split_once('='))
+        .filter(|(name, rhs)| is_env_assign(&format!("{name}=x")) && !rhs.is_empty())
+        .map_or(first.as_str(), |(_, rhs)| rhs);
     let base = first.rsplit(['/', '\\']).next().unwrap_or(first);
     let prog = match base.len().checked_sub(4) {
         Some(n) if base.is_char_boundary(n) && base[n..].eq_ignore_ascii_case(".exe") => &base[..n],
@@ -547,6 +563,36 @@ fn classify_segment(toks: &[String]) -> SegClass {
         _ => 0,
     };
     args.drain(..skip);
+    if prog.eq_ignore_ascii_case("wsl") {
+        // ponytail: 고정 exec·셸 payload만 네 겹까지 읽는다, 다른 래퍼가 확인되면 확장한다.
+        let payload = match args.as_slice() {
+            ["-e" | "--exec", "bash" | "sh", "-c" | "-lc", payload]
+                if depth < 4 && !payload.contains(['$', '`']) =>
+            {
+                Some(*payload)
+            }
+            _ => None,
+        };
+        if let Some(payload) = payload {
+            let inner = classify_command_depth(payload, depth + 1);
+            return SegClass {
+                kind: inner.kind,
+                key: inner.command_key,
+                path: inner.path,
+                msg: inner.commit_message,
+                compound: inner.compound,
+                async_unknown: inner.async_unknown,
+            };
+        }
+        return SegClass {
+            kind: ToolKind::Shell,
+            key: prog.to_string(),
+            path: None,
+            msg: None,
+            compound: Compound::Mixed,
+            async_unknown: false,
+        };
+    }
     let sub = args.first().copied().unwrap_or("");
     let sub2 = args.get(1).copied().unwrap_or("");
     let after_sub = args.get(1..).unwrap_or(&[]);
@@ -572,6 +618,15 @@ fn classify_segment(toks: &[String]) -> SegClass {
             _ => ToolKind::Shell,
         },
         "make" | "tsc" | "gradle" | "mvn" => ToolKind::Build,
+        "node"
+            if sub == "--test"
+                && !args
+                    .iter()
+                    .any(|a| matches!(*a, "--version" | "-v" | "--help" | "-h")) =>
+        {
+            ToolKind::Test
+        }
+        "python" | "python3" | "node" | "perl" if script_execution(prog, &args) => ToolKind::Script,
         "git" => match sub {
             "status" | "log" | "show" => ToolKind::GitQuery,
             "branch" if after_sub.iter().all(|a| matches!(*a, "-a" | "--list")) => {
@@ -601,8 +656,14 @@ fn classify_segment(toks: &[String]) -> SegClass {
             _ => ToolKind::Shell,
         },
         // `cat > f <<EOF` 처럼 표준 출력을 파일로 보내면 쓰기다
-        "cat" | "head" | "tail" | "less" if !args.iter().any(|a| redirects_stdout(a)) => {
+        "cat" | "head" | "tail" | "less" | "wc" if !args.iter().any(|a| redirects_stdout(a)) => {
             path = file_arg(&args, false);
+            ToolKind::FileRead
+        }
+        _ if prog.eq_ignore_ascii_case("Get-Content")
+            && !args.iter().any(|a| redirects_stdout(a)) =>
+        {
+            path = content_file_arg(&args);
             ToolKind::FileRead
         }
         "sed" if args.contains(&"-n") && !args.iter().any(|a| is_sed_in_place(a)) => {
@@ -637,13 +698,80 @@ fn classify_segment(toks: &[String]) -> SegClass {
         key,
         path,
         msg,
+        compound: Compound::Single,
+        async_unknown: false,
     }
+}
+
+fn script_execution(prog: &str, args: &[&str]) -> bool {
+    let mut args = args.iter().copied();
+    while let Some(arg) = args.next() {
+        let code = match prog {
+            "python" | "python3" => "-c",
+            _ => "-e",
+        };
+        if arg == code || (prog == "node" && matches!(arg, "--eval" | "-p" | "--print")) {
+            return args.next().is_some();
+        }
+        if (arg.starts_with(code) && arg.len() > code.len())
+            || (prog == "node" && (arg.starts_with("--eval=") || arg.starts_with("--print=")))
+        {
+            return true;
+        }
+        if arg == "--" {
+            return args
+                .next()
+                .is_some_and(|a| !a.is_empty() && !a.contains(['$', '`', '<', '>']));
+        }
+        if arg == "-" {
+            return true;
+        }
+        if matches!(
+            (prog, arg),
+            (
+                "python" | "python3",
+                "-u" | "-B" | "-E" | "-I" | "-s" | "-S"
+            ) | ("perl", "-w" | "-W")
+        ) || (prog == "node" && arg.starts_with("--input-type="))
+        {
+            continue;
+        }
+        return !arg.is_empty() && !arg.starts_with('-') && !arg.contains(['$', '`', '<', '>']);
+    }
+    false
+}
+
+fn content_file_arg(args: &[&str]) -> Option<String> {
+    let mut path = None;
+    let mut args = args.iter().copied();
+    while let Some(arg) = args.next() {
+        match arg.to_ascii_lowercase().as_str() {
+            "-path" | "-literalpath" => path = args.next(),
+            "-encoding" | "-totalcount" | "-head" | "-tail" | "-readcount" | "-delimiter"
+            | "-filter" | "-include" | "-exclude" | "-erroraction" | "-ea" => {
+                args.next();
+            }
+            "-raw" | "-wait" | "-force" | "-asbytestream" => {}
+            _ if arg.starts_with('-') => return None,
+            _ if arg.contains(['<', '>']) => {
+                if arg.ends_with('>') || arg.ends_with('<') {
+                    args.next();
+                }
+            }
+            _ => path = Some(arg),
+        }
+    }
+    path.filter(|p| !p.is_empty() && !p.contains(['$', '`', '<', '>']))
+        .map(str::to_string)
 }
 
 /// 표준 출력 리다이렉트 `>`, `>>`, `1>`, `&>`, `>f`. `2>`, `2>&1`, `>&2` 는 아니다
 fn redirects_stdout(a: &str) -> bool {
-    let r = a.strip_prefix(['1', '&']).unwrap_or(a);
-    r.starts_with('>') && !r.trim_start_matches('>').starts_with('&')
+    let Some((head, tail)) = a.split_once('>') else {
+        return false;
+    };
+    let fd = head.parse::<u32>().ok();
+    fd.is_none_or(|fd| fd == 1) && !tail.trim_start_matches('>').starts_with('&')
 }
 
 /// `-i`, `-i.bak`, `-ni`, `--in-place[=x]`
@@ -671,6 +799,10 @@ fn file_arg(args: &[&str], skip_script: bool) -> Option<String> {
     while let Some(a) = it.next() {
         if *a == "-n" && !skip_script {
             it.next();
+        } else if a.contains(['<', '>']) {
+            if a.ends_with('>') || a.ends_with('<') {
+                it.next();
+            }
         } else if !a.starts_with('-') {
             rest.push(*a);
         }
@@ -678,7 +810,9 @@ fn file_arg(args: &[&str], skip_script: bool) -> Option<String> {
     if skip_script && !rest.is_empty() {
         rest.remove(0);
     }
-    rest.last().map(|s| s.to_string())
+    rest.last()
+        .filter(|s| !s.contains(['$', '`']))
+        .map(|s| s.to_string())
 }
 
 fn commit_message(args: &[&str]) -> Option<String> {
@@ -717,27 +851,35 @@ fn message_value(v: &str) -> String {
 /// 대표 분류 우선순위 (docs/CONTRACTS.md C7). 마지막 명령 기준이 아니다
 fn rank(k: &ToolKind) -> u8 {
     match k {
-        ToolKind::Release => 11,
-        ToolKind::PrCreate => 10,
-        ToolKind::GitPush => 9,
-        ToolKind::GitCommit => 8,
-        ToolKind::Test => 7,
-        ToolKind::Build => 6,
-        ToolKind::GitDiff => 5,
-        ToolKind::PrView => 4,
-        ToolKind::GitQuery => 3,
-        ToolKind::FileSearch => 2,
-        ToolKind::FileRead => 1,
+        ToolKind::Release => 12,
+        ToolKind::PrCreate => 11,
+        ToolKind::GitPush => 10,
+        ToolKind::GitCommit => 9,
+        ToolKind::Test => 8,
+        ToolKind::Build => 7,
+        ToolKind::GitDiff => 6,
+        ToolKind::PrView => 5,
+        ToolKind::GitQuery => 4,
+        ToolKind::FileSearch => 3,
+        ToolKind::FileRead => 2,
+        ToolKind::Script => 1,
         _ => 0,
     }
 }
 
 /// 셸 명령 문자열 하나를 분류한다 (docs/CONTRACTS.md C7)
 pub fn classify_command(cmd: &str) -> Classified {
-    let s = scan(cmd);
+    classify_command_depth(cmd, 0)
+}
+
+fn classify_command_depth(cmd: &str, depth: u8) -> Classified {
+    let mut s = scan(cmd);
     let mut best: Option<SegClass> = None;
     for seg in &s.segs {
-        let c = classify_segment(seg);
+        let c = classify_segment(seg, depth);
+        s.mixed |= c.compound == Compound::Mixed;
+        s.has_and |= c.compound == Compound::AndOnly;
+        s.async_bg |= c.async_unknown;
         // 동률이면 앞 세그먼트가 이긴다
         if best.as_ref().is_none_or(|b| rank(&c.kind) > rank(&b.kind)) {
             best = Some(c);
@@ -748,6 +890,8 @@ pub fn classify_command(cmd: &str) -> Classified {
         key: String::new(),
         path: None,
         msg: None,
+        compound: Compound::Single,
+        async_unknown: false,
     });
     let compound = if s.mixed {
         Compound::Mixed
@@ -795,6 +939,36 @@ pub(crate) fn parse_test_result(text: &str) -> Option<TestResult> {
         .filter(|l| l.contains("test result:"))
         .collect();
     if cargo.is_empty() {
+        for prefix in ["ℹ ", "# "] {
+            let mut counts = [None; 3];
+            for line in text.lines().filter_map(|l| l.trim().strip_prefix(prefix)) {
+                let mut words = line.split_whitespace();
+                let index = match words.next() {
+                    Some("tests") => {
+                        counts = [None; 3];
+                        0
+                    }
+                    Some("pass") => 1,
+                    Some("fail") => 2,
+                    _ => continue,
+                };
+                let count = words.next().and_then(|n| {
+                    (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                        .then(|| n.parse::<u32>().ok())
+                        .flatten()
+                });
+                if words.next().is_some() || count.is_none() || counts[index].is_some() {
+                    counts = [None; 3];
+                    continue;
+                }
+                counts[index] = count;
+            }
+            if let [Some(total), Some(passed), Some(failed)] = counts
+                && passed.checked_add(failed).is_some_and(|n| n <= total)
+            {
+                return Some(TestResult { passed, failed });
+            }
+        }
         // pytest `1 failed, 3 passed in …`, jest `Tests: 1 failed, 3 passed, 4 total`
         return text.lines().rev().find_map(pick);
     }
@@ -1055,7 +1229,7 @@ mod tests {
         assert_ne!(c.kind, Build);
         assert_eq!(c.compound, Compound::Mixed);
         let c = classify_command("python - <<'EOF'\ngit push\nEOF");
-        assert_eq!(c.kind, Shell);
+        assert_eq!(c.kind, Script);
         assert_eq!(c.compound, Compound::Mixed);
         let c = classify_command("cat <<-\"X\"\n\tcargo test\n\tX\ngit push");
         assert_eq!(c.kind, GitPush);
@@ -1148,6 +1322,185 @@ mod tests {
         for (cmd, kind, compound) in cases {
             let c = classify_command(cmd);
             assert_eq!((&c.kind, &c.compound), (kind, compound), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn explicit_scripts_do_not_guess_work_from_their_body() {
+        for cmd in [
+            "python -c 'print(1)'",
+            "python3 -u -c 'cargo test'",
+            "python task.py",
+            "python3 -",
+            "node -e 'npm run build'",
+            "node --eval='git push'",
+            "node --input-type=module -",
+            "node -e 'console.log(\"--test\")'",
+            "node sample.js",
+            "perl -e 'print 1'",
+            "perl -w sample.pl",
+        ] {
+            assert_eq!(classify_command(cmd).kind, Script, "{cmd}");
+        }
+        for cmd in [
+            "python",
+            "python --version",
+            "python -m pytest",
+            "python -c",
+            "node --help",
+            "node --version --test",
+            "node --test --help",
+            "node --check sample.js",
+            "perl -v",
+            "node $file",
+        ] {
+            assert_eq!(classify_command(cmd).kind, Shell, "{cmd}");
+        }
+        for cmd in ["node --test", "node --test sample.test.js"] {
+            assert_eq!(classify_command(cmd).kind, Test, "{cmd}");
+        }
+        assert_eq!(classify_command("cd sample && python task.py").kind, Script);
+        assert_eq!(
+            classify_command("node task.js && cat sample.txt").kind,
+            FileRead
+        );
+    }
+
+    #[test]
+    fn powershell_and_wc_reads_keep_only_literal_paths() {
+        for (cmd, expected) in [
+            ("Get-Content sample.txt", Some("sample.txt")),
+            (
+                "get-content -LiteralPath 'sample text.txt' -Encoding utf8",
+                Some("sample text.txt"),
+            ),
+            (
+                "$a=Get-Content -Encoding UTF8 -Path sample.txt -TotalCount 5",
+                Some("sample.txt"),
+            ),
+            ("Get-Content $path -Encoding utf8", None),
+            ("Get-Content -Encoding utf8", None),
+            ("Get-Content -Unknown value", None),
+            ("wc -l sample.txt", Some("sample.txt")),
+            ("wc -l $path", None),
+            ("wc -l sample.txt 2> errors.txt", Some("sample.txt")),
+        ] {
+            let c = classify_command(cmd);
+            assert_eq!(c.kind, FileRead, "{cmd}");
+            assert_eq!(c.path.as_deref(), expected, "{cmd}");
+        }
+        for cmd in [
+            "Get-Content sample.txt > output.txt",
+            "Get-Content sample.txt>output.txt",
+            "wc -l sample.txt 1> output.txt",
+            "wc -l sample.txt>>output.txt",
+            "Get-Content sample.txt *> output.txt",
+        ] {
+            assert_eq!(classify_command(cmd).kind, Shell, "{cmd}");
+        }
+    }
+
+    #[test]
+    fn literal_wsl_wrappers_preserve_compound_and_background_evidence() {
+        for (cmd, kind, compound, background) in [
+            (
+                "wsl -e bash -lc 'cargo test'",
+                Test,
+                Compound::Single,
+                false,
+            ),
+            (
+                "wsl.exe --exec sh -c 'cargo build && git push'",
+                GitPush,
+                Compound::AndOnly,
+                false,
+            ),
+            (
+                "wsl -e bash -c 'cargo test | tail -20'",
+                Test,
+                Compound::Mixed,
+                false,
+            ),
+            ("wsl -e sh -c 'git push &'", GitPush, Compound::Mixed, true),
+            (
+                "wsl -e sh -c 'echo ok; cargo test' && git status",
+                Test,
+                Compound::Mixed,
+                false,
+            ),
+            (
+                "wsl -e bash -lc 'cargo test $args'",
+                Shell,
+                Compound::Mixed,
+                false,
+            ),
+            ("wsl -e bash -lc $command", Shell, Compound::Mixed, false),
+            (
+                "wsl -e bash -lc 'cargo test' extra",
+                Shell,
+                Compound::Mixed,
+                false,
+            ),
+            ("wsl -e bash -lc '`command`'", Shell, Compound::Mixed, false),
+        ] {
+            let c = classify_command(cmd);
+            assert_eq!(
+                (c.kind, c.compound, c.async_unknown),
+                (kind, compound, background),
+                "{cmd}"
+            );
+        }
+        let mut cmd = "cargo test".to_string();
+        for depth in 1..=5 {
+            cmd = format!(
+                "wsl -e sh -c \"{}\"",
+                cmd.replace('\\', "\\\\").replace('"', "\\\"")
+            );
+            let c = classify_command(&cmd);
+            if depth <= 4 {
+                assert_eq!((c.kind, c.compound), (Test, Compound::Single));
+            } else {
+                assert_eq!((c.kind, c.compound), (Shell, Compound::Mixed));
+            }
+        }
+    }
+
+    #[test]
+    fn complete_node_reporter_counts_and_existing_test_summaries() {
+        for text in [
+            "✔ first\nℹ tests 5\nℹ suites 1\nℹ pass 3\nℹ fail 1\nℹ skipped 1\nℹ duration_ms 10.1",
+            "TAP version 13\n1..5\n# tests 5\n# suites 1\n# pass 3\n# fail 1\n# skipped 1",
+            "1 failed, 3 passed in 0.1s",
+            "Tests: 1 failed, 3 passed, 4 total",
+            "test result: ok. 2 passed; 0 failed;\ntest result: FAILED. 1 passed; 1 failed;",
+        ] {
+            assert_eq!(
+                parse_test_result(text),
+                Some(TestResult {
+                    passed: 3,
+                    failed: 1
+                }),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            parse_test_result("# tests 0\n# pass 0\n# fail 0"),
+            Some(TestResult {
+                passed: 0,
+                failed: 0
+            })
+        );
+        for text in [
+            "✔ first\n▶ group\n✔ second",
+            "ℹ tests 3\nℹ pass 3",
+            "# tests 3\n# pass 3\nℹ fail 0",
+            "# tests 3\n# pass 4\n# fail 0",
+            "# tests 3\n# pass 3x\n# fail 0",
+            "# tests 3\n# pass 3\n# fail 0 trailing",
+            "# tests 3\n# pass 4294967296\n# fail 0",
+            "# tests 3\n# pass 3\n# pass 2\n# fail 0",
+        ] {
+            assert_eq!(parse_test_result(text), None, "{text}");
         }
     }
 }

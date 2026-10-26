@@ -98,24 +98,37 @@ pub struct ScanResult {
 type Roots = Vec<(Vendor, PathBuf)>;
 const REMOTE_LIMIT: Duration = Duration::from_secs(30);
 
-struct PendingScan {
+struct PendingScan<T> {
     roots: Roots,
+    invalidated: bool,
     started: Instant,
-    result: mpsc::Receiver<Option<ScanResult>>,
+    result: mpsc::Receiver<Option<T>>,
 }
 
-/// UNC가 멈춰도 Windows 탐색은 계속한다. 앱의 초기 탐색과 Probe가 같은 인스턴스를 쓴다.
+type DistroStates = Vec<(wsl::LxssEntry, Option<bool>)>;
+
+/// 상태 조회와 배포판별 UNC 탐색을 분리해 한 공유가 멈춰도 다른 호스트를 발견한다.
 pub struct Scanner {
-    pending: Option<PendingScan>,
-    known: Vec<wsl::WslDistro>,
+    status_pending: Option<PendingScan<DistroStates>>,
+    pending: std::collections::HashMap<String, (wsl::LxssEntry, PendingScan<ScanResult>)>,
+    cached: std::collections::HashMap<String, (wsl::LxssEntry, Instant, ScanResult)>,
+    states: DistroStates,
+    checked: Option<Instant>,
+    last_started: Option<Instant>,
+    roots: Roots,
     wake: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl Scanner {
     pub fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
         Self {
-            pending: None,
-            known: Vec::new(),
+            status_pending: None,
+            pending: Default::default(),
+            cached: Default::default(),
+            states: Vec::new(),
+            checked: None,
+            last_started: None,
+            roots: Vec::new(),
             wake: Arc::new(wake),
         }
     }
@@ -125,15 +138,22 @@ impl Scanner {
             input_roots(&|k| std::env::var(k).ok(), manual),
             &Path::is_dir,
             Instant::now(),
-            |roots| {
-                let (distros, candidates) = wsl::discover_with_candidates();
-                scan_roots(distros, candidates, roots, &Path::is_dir)
+            wsl::status_entries,
+            |entry, roots| {
+                let (distro, candidates) = wsl::discover_entry(entry, Some(true));
+                scan_roots(vec![distro], candidates, roots, &Path::is_dir)
             },
         )
     }
 
+    pub fn request_refresh(&mut self) {
+        if self.status_pending.is_none() {
+            self.last_started = None;
+        }
+    }
+
     pub fn is_pending(&self) -> bool {
-        self.pending.is_some()
+        self.status_pending.is_some() || !self.pending.is_empty()
     }
 
     fn scan_with(
@@ -141,78 +161,154 @@ impl Scanner {
         roots: Roots,
         is_dir: &dyn Fn(&Path) -> bool,
         now: Instant,
-        remote: impl FnOnce(Roots) -> ScanResult + Send + 'static,
+        status: impl FnOnce() -> DistroStates + Send + 'static,
+        remote: impl Fn(wsl::LxssEntry, Roots) -> ScanResult + Send + Sync + 'static,
     ) -> ScanResult {
-        let mut found = None;
-        if let Some(pending) = &self.pending {
-            let result = match pending.result.try_recv() {
-                Ok(result) => Some(result),
-                Err(mpsc::TryRecvError::Disconnected) => Some(None),
-                Err(mpsc::TryRecvError::Empty) => None,
-            };
-            if let Some(result) = result {
-                if pending.roots == roots && now.duration_since(pending.started) <= REMOTE_LIMIT {
-                    found = result;
-                }
-                self.pending = None;
-            }
+        let changed = self.roots != roots;
+        self.roots = roots.clone();
+        if changed {
+            self.cached.clear();
         }
-        if let Some(found) = &found {
-            self.known = found.distros.clone();
-        } else if self.pending.is_none() {
-            let (tx, rx) = mpsc::channel();
-            let remote_roots = roots
+        for (_, pending) in self.pending.values_mut() {
+            pending.invalidated |= pending.roots != roots;
+        }
+        let mut received_status = false;
+        if let Some(pending) = &self.status_pending
+            && let Some(result) = receive(&pending.result)
+        {
+            if now.duration_since(pending.started) <= REMOTE_LIMIT
+                && let Some(states) = result
+            {
+                self.states = states;
+                self.checked = Some(pending.started);
+                received_status = true;
+            } else {
+                self.checked = None;
+            }
+            self.status_pending = None;
+        }
+        // 완료 알림은 결과만 소비한다. 다음 Probe 주기나 설정 변경에서 새 라운드를 연다.
+        if !received_status
+            && self.status_pending.is_none()
+            && (changed
+                || self
+                    .last_started
+                    .is_none_or(|t| now.duration_since(t) >= REMOTE_LIMIT))
+        {
+            self.status_pending = Some(start_scan(Vec::new(), now, self.wake.clone(), status));
+            self.last_started = Some(now);
+        }
+        let fresh = self
+            .checked
+            .is_some_and(|t| now.duration_since(t) <= REMOTE_LIMIT);
+        let mut completed = std::collections::HashMap::new();
+        self.pending.retain(|name, (entry, pending)| {
+            let current = fresh
+                && self
+                    .states
+                    .iter()
+                    .any(|(e, on)| e == entry && *on == Some(true));
+            pending.invalidated |= !current;
+            let Some(result) = receive(&pending.result) else {
+                // OS I/O는 취소할 수 없어 기한 뒤에도 receiver를 남겨 중복 작업을 막는다.
+                return true;
+            };
+            if !pending.invalidated
+                && now.duration_since(pending.started) <= REMOTE_LIMIT
+                && let Some(result) = result
+            {
+                completed.insert(name.clone(), (entry.clone(), pending.started, result));
+            }
+            false
+        });
+        self.cached.retain(|_, (entry, started, _)| {
+            fresh
+                && now.duration_since(*started) <= REMOTE_LIMIT
+                && self
+                    .states
+                    .iter()
+                    .any(|(e, on)| e == entry && *on == Some(true))
+        });
+        self.cached
+            .extend(completed.iter().map(|(k, v)| (k.clone(), v.clone())));
+        let remote = Arc::new(remote);
+        let mut distros = Vec::new();
+        let mut candidates = Vec::new();
+        for (entry, running) in &self.states {
+            let name = entry.name.to_lowercase();
+            let running = if fresh { *running } else { None };
+            if received_status
+                && running == Some(true)
+                && !self.pending.contains_key(&name)
+                && !completed.contains_key(&name)
+            {
+                let scoped = roots
+                    .iter()
+                    .filter(|(_, root)| {
+                        wsl_path(root)
+                            .is_some_and(|(distro, _)| distro.eq_ignore_ascii_case(&entry.name))
+                    })
+                    .cloned()
+                    .collect();
+                let config = entry.clone();
+                let entry = entry.clone();
+                let remote = remote.clone();
+                self.pending.insert(
+                    name.clone(),
+                    (
+                        config,
+                        start_scan(roots.clone(), now, self.wake.clone(), move || {
+                            remote(entry, scoped)
+                        }),
+                    ),
+                );
+            }
+            if let Some((_, _, found)) = self.cached.get(&name) {
+                distros.extend(found.distros.clone());
+                candidates.extend(found.candidates.clone());
+                continue;
+            }
+            let host = Host {
+                id: format!("wsl:{}", entry.name),
+                kind: HostKind::Wsl {
+                    distro: entry.name.clone(),
+                },
+                label: entry.name.clone(),
+            };
+            // 켜짐 확인만으로 UNC 탐색의 성공을 선언하지 않는다.
+            let visible = if running == Some(false) {
+                Some(false)
+            } else {
+                None
+            };
+            for vendor in [Vendor::Claude, Vendor::Codex] {
+                candidates.push(Candidate {
+                    host: host.clone(),
+                    vendor,
+                    root: None,
+                    result: if visible == Some(false) {
+                        CandidateResult::Offline
+                    } else {
+                        CandidateResult::Unknown
+                    },
+                });
+            }
+            distros.push(wsl::WslDistro {
+                host,
+                running: visible,
+                sites: Vec::new(),
+            });
+        }
+        let mut out = scan_roots(
+            distros,
+            candidates,
+            roots
                 .iter()
                 .filter(|(_, root)| wsl_path(root).is_some())
-                .cloned()
-                .collect();
-            let wake = self.wake.clone();
-            std::thread::spawn(move || {
-                let result =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| remote(remote_roots)))
-                        .ok();
-                let _ = tx.send(result);
-                wake();
-            });
-            self.pending = Some(PendingScan {
-                roots: roots.clone(),
-                started: now,
-                result: rx,
-            });
-        }
-        // 기한이 지나도 receiver를 버리지 않는다. 취소할 수 없는 OS I/O 뒤에 작업을 쌓지 않기 위함이다.
-        let remote = found.unwrap_or_else(|| {
-            let distros: Vec<_> = self
-                .known
-                .iter()
-                .map(|d| wsl::WslDistro {
-                    host: d.host.clone(),
-                    running: None,
-                    sites: Vec::new(),
-                })
-                .collect();
-            let candidates = distros
-                .iter()
-                .flat_map(|d| {
-                    [Vendor::Claude, Vendor::Codex].map(|vendor| Candidate {
-                        host: d.host.clone(),
-                        vendor,
-                        root: None,
-                        result: CandidateResult::Unknown,
-                    })
-                })
-                .collect();
-            scan_roots(
-                distros,
-                candidates,
-                roots
-                    .iter()
-                    .filter(|(_, root)| wsl_path(root).is_some())
-                    .cloned(),
-                &|_| unreachable!("켜짐을 확인하지 않은 WSL 경로는 열지 않는다"),
-            )
-        });
-        let mut local = scan_roots(
+                .cloned(),
+            &|_| unreachable!("UNC 존재 확인은 배포판 worker만 한다"),
+        );
+        let local = scan_roots(
             Vec::new(),
             Vec::new(),
             roots
@@ -220,9 +316,37 @@ impl Scanner {
                 .filter(|(_, root)| wsl_path(root).is_none()),
             is_dir,
         );
-        local.distros = remote.distros;
-        local.candidates.extend(remote.candidates);
-        local
+        out.sites = local.sites;
+        out.candidates.extend(local.candidates);
+        out
+    }
+}
+
+fn receive<T>(result: &mpsc::Receiver<Option<T>>) -> Option<Option<T>> {
+    match result.try_recv() {
+        Ok(result) => Some(result),
+        Err(mpsc::TryRecvError::Disconnected) => Some(None),
+        Err(mpsc::TryRecvError::Empty) => None,
+    }
+}
+
+fn start_scan<T: Send + 'static>(
+    roots: Roots,
+    started: Instant,
+    wake: Arc<dyn Fn() + Send + Sync>,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> PendingScan<T> {
+    let (tx, result) = mpsc::channel();
+    std::thread::spawn(move || {
+        let found = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).ok();
+        let _ = tx.send(found);
+        wake();
+    });
+    PendingScan {
+        roots,
+        invalidated: false,
+        started,
+        result,
     }
 }
 
@@ -317,7 +441,7 @@ fn wsl_path(root: &Path) -> Option<(String, String)> {
     let unc = root.strip_prefix("\\\\")?;
     let unc = if unc
         .get(..6)
-        .is_some_and(|s| s.eq_ignore_ascii_case("?\\UNC\\"))
+        .is_some_and(|s| s.eq_ignore_ascii_case("?\\UNC\\") || s.eq_ignore_ascii_case(".\\UNC\\"))
     {
         &unc[6..]
     } else {
@@ -365,7 +489,15 @@ fn add_root(
             )
         }
     } else {
-        (windows_host(), CandidateResult::Found, None)
+        (
+            windows_host(),
+            if windows::is_local_path(&root) {
+                CandidateResult::Found
+            } else {
+                CandidateResult::Unknown
+            },
+            None,
+        )
     };
     let mut candidate = Candidate {
         host,
@@ -404,6 +536,7 @@ pub fn discover_all() -> Vec<Site> {
 /// 실제 환경의 Claude 홈에서 살아 있는 세션 등록부 항목
 pub fn live_claude_sessions() -> Vec<registry::RegistryEntry> {
     windows::claude_home(&|k| std::env::var(k).ok())
+        .filter(|h| windows::is_local_path(h))
         .and_then(|h| registry::live_sessions(&h, &Default::default()))
         .map(|m| m.into_values().collect())
         .unwrap_or_default()
@@ -580,6 +713,8 @@ mod tests {
         for root in [
             r"\\?\UNC\wsl.localhost\Off\custom",
             r"\\?\UNC\WSL$\Off\custom",
+            r"\\.\UNC\wsl.localhost\Off\custom",
+            r"\\.\UNC\WSL$\Off\custom",
         ] {
             let env = |k: &str| (k == "CLAUDE_CONFIG_DIR").then(|| root.into());
             let out = scan_with(

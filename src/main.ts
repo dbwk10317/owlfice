@@ -20,7 +20,8 @@ import { detailErrorText } from "./popup-modal.ts";
 import { openSettings, saveSettings } from "./popup-settings.ts";
 import { showScale } from "./scale.ts";
 import phrases from "../design/handoff/phrases.ko.json";
-import { createStore, createUpdateStore } from "./store.ts";
+import { createStore } from "./store.ts";
+import { createUpdateStore } from "./update-store.ts";
 import type {
   EmployeeDto,
   OfficeDto,
@@ -276,6 +277,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
 }
 
 async function start(): Promise<void> {
+  await invoke("initialize_app");
   // 규모를 아직 안 골랐으면(첫 실행, 손상된 설정) 고를 때까지 진행하지 않는다. 그다음 로딩 화면 (docs/CONTRACTS.md C4)
   let settings = await invoke<SettingsDto>("get_settings");
   applyNightMode(document, settings.nightMode ?? "auto");
@@ -312,7 +314,7 @@ start().catch((e) => {
   const message = emptyState(
     document,
     "앱을 시작하지 못했습니다",
-    "설정과 사무실 정보를 불러오지 못했어요. 다시 시도해 주세요.",
+    e instanceof Error ? e.message : String(e),
   );
   message.setAttribute("role", "alert");
   const retry = document.createElement("button");

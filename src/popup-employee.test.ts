@@ -99,6 +99,7 @@ function setup(handlers: Handlers = {}, teamId = "t1") {
 
 test("실시간 직원이 없어도 상세 아바타는 명시한 팀 제조사와 응답 직원을 쓴다", async () => {
   const s = setup({}, "not-live");
+  expect(s.q(".ow-pop__body")?.hasAttribute("aria-live")).toBe(false);
   await flush();
   expect(setAvatar).toHaveBeenLastCalledWith(s.q(".ow-avatar"), detail, "D");
 });
@@ -225,7 +226,7 @@ test("접힌 행은 시각·도구 칩·요약·결과색, 펼치면 입력·결
   expect(res(10).textContent).toBe("반려");
   // 도구가 아닌 사건의 칩은 한글 종류 이름
   const chip = (i: number) => head(i).querySelector(".ow-tool")!.textContent;
-  expect([chip(5), chip(8), chip(9)]).toEqual(["지시", "채용", "PR 등록"]);
+  expect([chip(5), chip(8), chip(9)]).toEqual(["지시", "업무 시작", "PR 등록"]);
 
   head(0).click();
   expect(head(0).getAttribute("aria-expanded")).toBe("true");

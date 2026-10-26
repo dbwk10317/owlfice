@@ -8,9 +8,10 @@ import { openSettings, saveSettings } from "../src/popup-settings.ts";
 import type { Invoke } from "../src/scale.ts";
 import { mountSidebar } from "../src/sidebar-left.ts";
 import { mountPanel } from "../src/sidebar-right.ts";
-import { createStore, createUpdateStore } from "../src/store.ts";
+import { createStore } from "../src/store.ts";
+import { createUpdateStore } from "../src/update-store.ts";
 import { act, emp, office, team } from "../src/test-office.ts";
-import type { OfficeDto, OfficeListDto, SettingsDto } from "../src/types/ipc.ts";
+import type { DiscoveryPathDto, OfficeDto, OfficeListDto, SettingsDto } from "../src/types/ipc.ts";
 
 const get = (id: string) => document.getElementById(id)!;
 let settings: SettingsDto = {
@@ -160,6 +161,22 @@ const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>): P
     }
   } else if (cmd === "get_diagnostics") result = "합성 진단: <home>\\.claude\\projects";
   else if (cmd === "get_log_folder") result = "C:\\samples\\Owlfice\\logs";
+  else if (cmd === "get_discovery")
+    result = [
+      {
+        host: "Windows",
+        vendor: "Claude",
+        path: "C:\\samples\\.claude\\projects",
+        status: "Found",
+      },
+      {
+        host: "Windows",
+        vendor: "Codex",
+        path: "C:\\samples\\.codex\\sessions",
+        status: "Missing",
+      },
+      { host: "WSL · Sample", vendor: "Codex", path: null, status: "Offline" },
+    ] satisfies DiscoveryPathDto[];
   else get("status").textContent = `호출 확인: ${cmd}`;
   return result as T;
 };

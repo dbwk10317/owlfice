@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Duration, FixedOffset, Utc};
 
 use super::classify::{SubMeta, merge, rebuild, replay};
-use super::{Bubble, BubbleSay, Cue, Employee, Light, Pose, Rank, Room, Team, TeamPhase};
+use super::{
+    Bubble, BubbleSay, Cue, Employee, Light, Pose, Rank, Room, Team, TeamPhase, TimelineKind,
+};
 use crate::discover::Product;
 use crate::parse::claude::ClaudeParser;
 use crate::parse::codex::CodexParser;
@@ -853,6 +855,133 @@ fn retired_sub_rehires_only_for_later_events() {
     s.on(SUB, 201, EventKind::Thinking);
     assert!(s.sub().retired_at.is_none());
     assert!(s.cues.contains(&Cue::Rehire { agent: SUB.into() }));
+}
+
+#[test]
+fn interrupted_sub_keeps_background_work_and_resumes_without_retiring() {
+    let mut s = Sim::new();
+    spawn_sub(&mut s, 0, "claude-haiku-4-5", None);
+    s.on(
+        SUB,
+        1,
+        call("foreground", ToolKind::Test, cmd("cargo test")),
+    )
+    .on(SUB, 2, call("background", ToolKind::Shell, cmd("sleep 10")))
+    .on(SUB, 3, result("background", ToolOutcome::Started));
+    assert_eq!((s.sub().pending.len(), s.sub().background.len()), (1, 1));
+    s.team.employees[1].pass_streak = 2;
+    let before = (s.team.tests_today(), s.team.props.trash);
+    s.cues.clear();
+    s.on(
+        MAIN,
+        4,
+        EventKind::SubagentInterrupted {
+            child_id: SUB.into(),
+        },
+    );
+    assert_eq!(s.sub().interrupted_at, Some(at(4)));
+    assert_eq!((s.sub().pending.len(), s.sub().background.len()), (0, 1));
+    assert_eq!(s.sub().pass_streak, 0);
+    assert_eq!((s.team.tests_today(), s.team.props.trash), before);
+    assert!(s.sub().retired_at.is_none());
+    is(s.sub(), Room::Dev, "작업 중단됨 · 재개 대기", Confirmed);
+    assert!(!s.cues.iter().any(|c| matches!(c, Cue::Retire { .. })));
+    let marks = s.boss().record.timeline.len();
+    assert_eq!(
+        s.boss().record.timeline.last().unwrap().kind,
+        TimelineKind::SubagentInterrupted
+    );
+    s.on(
+        MAIN,
+        4,
+        EventKind::SubagentInterrupted {
+            child_id: SUB.into(),
+        },
+    );
+    s.on(
+        MAIN,
+        5,
+        EventKind::SubagentInterrupted {
+            child_id: "unknown".into(),
+        },
+    );
+    assert_eq!(s.boss().record.timeline.len(), marks);
+    assert_eq!(s.team.employees.len(), 2);
+    s.on(SUB, 3, text("늦은 기록"));
+    assert_eq!(s.sub().interrupted_at, Some(at(4)));
+    s.on(SUB, 5, result("background", ToolOutcome::Ok));
+    assert_eq!(s.sub().interrupted_at, Some(at(4)));
+    is(s.sub(), Room::Dev, "작업 중단됨 · 재개 대기", Confirmed);
+    assert!(s.sub().background.is_empty());
+    s.on(
+        SUB,
+        5,
+        EventKind::TokenUsage {
+            input_total: 1,
+            cache_read: 0,
+            output: 0,
+            context_window: None,
+        },
+    );
+    s.on(
+        SUB,
+        5,
+        EventKind::SessionMeta {
+            cwd: PathBuf::new(),
+            model: None,
+            title: None,
+            product: Product::ClaudeCli,
+            product_observed: false,
+            git_branch: None,
+        },
+    );
+    assert_eq!(s.sub().interrupted_at, Some(at(4)));
+    spawn_sub(&mut s, 6, "claude-haiku-4-5", None);
+    assert_eq!(s.sub().interrupted_at, None);
+    assert!(s.sub().retired_at.is_none());
+    s.on(
+        MAIN,
+        7,
+        EventKind::SubagentDone {
+            child_id: SUB.into(),
+        },
+    );
+    assert_eq!(s.sub().retired_at, Some(at(7)));
+}
+
+#[test]
+fn interrupted_sub_rebuild_matches_incremental_before_and_after_resume() {
+    let spawn = EventKind::SubagentSpawn {
+        child_id: SUB.into(),
+        prompt: String::new(),
+        model: None,
+        description: None,
+        effort: None,
+        depth: 1,
+    };
+    let mut events = vec![
+        ev(MAIN, 0, spawn.clone()),
+        ev(SUB, 1, call("work", ToolKind::Shell, cmd("ls"))),
+        ev(
+            MAIN,
+            2,
+            EventKind::SubagentInterrupted {
+                child_id: SUB.into(),
+            },
+        ),
+    ];
+    let a = replayed(MAIN, &events, at(3));
+    let b = stepwise(MAIN, &events, at(3));
+    assert_eq!(final_state(&a), final_state(&b));
+    assert_eq!(emp(&a, SUB).interrupted_at, Some(at(2)));
+    assert_eq!(emp(&a, SUB).interrupted_at, emp(&b, SUB).interrupted_at);
+    events.push(ev(MAIN, 4, spawn));
+    events.push(ev(SUB, 5, text("다시 시작")));
+    let a = replayed(MAIN, &events, at(6));
+    let b = stepwise(MAIN, &events, at(6));
+    assert_eq!(final_state(&a), final_state(&b));
+    assert_eq!(emp(&a, SUB).interrupted_at, None);
+    assert_eq!(emp(&a, SUB).interrupted_at, emp(&b, SUB).interrupted_at);
 }
 
 fn done_sub(s: &mut Sim, secs: i64) {
@@ -3868,6 +3997,31 @@ fn daily_counts_use_completion_date_even_when_past_results_arrive_late() {
 }
 
 #[test]
+fn timezone_change_rebuckets_confirmed_results_without_replaying_events() {
+    let east_nine = FixedOffset::east_opt(9 * 3600).unwrap();
+    let east_eight = FixedOffset::east_opt(8 * 3600).unwrap();
+    let events = [
+        ev(MAIN, 21590, call("old", ToolKind::Test, cmd("cargo test"))),
+        ev(MAIN, 21595, result("old", ToolOutcome::Ok)),
+        ev(MAIN, 21601, call("new", ToolKind::Test, cmd("cargo test"))),
+        ev(MAIN, 21602, result("new", ToolOutcome::Ok)),
+    ];
+    let mut team = Team::new(MAIN, Product::ClaudeCli, t0());
+    for event in &events {
+        team.tick(event.ts.unwrap(), east_nine, &mut Vec::new());
+        team.apply(event, &mut Vec::new());
+    }
+    team.tick(at(21605), east_nine, &mut Vec::new());
+    assert_eq!(team.tests_today().passed, 1);
+    assert!(team.set_local_offset(east_eight, at(21605)));
+    assert_eq!(team.tests_today().passed, 2);
+    assert_eq!(team.daily.len(), 1);
+    assert!(team.set_local_offset(east_nine, at(21605)));
+    assert_eq!(team.tests_today().passed, 1);
+    assert_eq!(team.daily.len(), 2);
+}
+
+#[test]
 fn review_approval_matches_whole_words_only() {
     for (message, approved) in [
         ("미승인", false),
@@ -3875,6 +4029,13 @@ fn review_approval_matches_whole_words_only() {
         ("승인하지 않습니다", false),
         ("disapprove", false),
         ("unapproved", false),
+        ("not approved", false),
+        ("not approve", false),
+        ("can't approve", false),
+        ("cannot approve", false),
+        ("승인 불가", false),
+        ("승인 아님", false),
+        ("승인 안 함", false),
         ("lgtm_extra", false),
         ("LGTM!", true),
         ("승인", true),
@@ -4012,6 +4173,49 @@ fn employee_check_light_is_local_and_running_wins_until_every_call_finishes() {
         assert_extension_state(&live, &rebuilt);
     }
     assert!(!live.employees[0].last_check_failed);
+}
+
+#[test]
+fn uncertain_check_errors_leave_shared_light_and_test_board_unchanged() {
+    for compound in [Compound::AndOnly, Compound::Mixed] {
+        for tool in [ToolKind::Build, ToolKind::Test] {
+            let mut s = Sim::new();
+            s.on(
+                MAIN,
+                0,
+                call(
+                    "check",
+                    tool,
+                    ToolSummary {
+                        compound,
+                        ..summary()
+                    },
+                ),
+            )
+            .on(MAIN, 1, result("check", ToolOutcome::Err));
+            assert_eq!(s.team.props.light, Light::Off, "{compound:?}");
+            assert_eq!(s.team.props.test, None, "{compound:?}");
+            assert!(s.boss().red.is_none(), "{compound:?}");
+        }
+    }
+    let mut confirmed = Sim::new();
+    confirmed
+        .on(
+            MAIN,
+            0,
+            call(
+                "test",
+                ToolKind::Test,
+                ToolSummary {
+                    compound: Compound::AndOnly,
+                    ..summary()
+                },
+            ),
+        )
+        .on(MAIN, 1, with_tests("test", ToolOutcome::Err, 3, 1));
+    assert_eq!(confirmed.team.props.light, Light::Red);
+    assert_eq!(confirmed.team.props.test, Some(super::TestVerdict::Fail));
+    assert!(confirmed.boss().red.is_some());
 }
 
 #[test]

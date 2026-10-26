@@ -106,7 +106,6 @@ export function openEmployeeDetail(
   );
 
   const body = h(doc, "div", "ow-modal__body ow-pop__body ow-emp");
-  body.setAttribute("aria-live", "polite");
   m.modal.append(head, body);
 
   // ----- 타임라인 상태 -----

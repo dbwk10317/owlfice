@@ -1,6 +1,6 @@
 import type { OfficeDto, Room } from "../types/ipc.ts";
 import { durationText, fillElapsed, hhmm } from "../text.ts";
-import { attendanceColumn } from "./props.ts";
+import { attendanceColumn } from "./prop-state.ts";
 
 const ROOMS: Record<string, Room[]> = {
   library: ["Archive"],

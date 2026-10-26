@@ -55,6 +55,10 @@ pub struct Pending {
 }
 
 impl Pending {
+    pub fn generation(&self) -> u32 {
+        self.generation
+    }
+
     /// 끝까지 읽는 반복을 멈출 때인가. 줄이 없어도 끝이 아닐 수 있다 (8MB 넘는 한 줄, 버리는 64MB 줄).
     /// 읽은 끝이 파일 길이에 닿았거나, Reset 이 아닌데 직전보다 나아가지 못했으면 멈춘다
     /// (WSL 9P 처럼 stat 길이보다 적게 읽히면 같은 읽기가 되풀이된다). `prev_end` 는 부르는 쪽이 들고 다닌다
@@ -498,7 +502,7 @@ mod tests {
     fn unchanged_read_keeps_tail_hash_so_append_is_not_reset() {
         let (_d, path, mut r) = setup(b"a\n");
         take(&mut r);
-        take(&mut r); // 변화 없는 읽기 (mtime만 바뀐 파일도 이 길)
+        take(&mut r); // 길이와 mtime 모두 그대로인 읽기
         append(&path, b"b\n");
         let p = take(&mut r);
         assert!(!p.reset);

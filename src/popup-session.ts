@@ -54,7 +54,6 @@ export function openSessionDetail(
   );
 
   const body = h(doc, "div", "ow-modal__body ow-pop__body");
-  body.setAttribute("aria-live", "polite");
 
   // ----- 바닥 -----
   const note = h(doc, "p", "ow-pop__note");

@@ -29,6 +29,14 @@ function emp(
 ): EmployeeDto {
   return {
     agentId,
+    state:
+      room === "Door"
+        ? "Waiting"
+        : room === "Pantry"
+          ? "Dozing"
+          : room === "Incident"
+            ? "Incident"
+            : "Working",
     name,
     rank,
     role,

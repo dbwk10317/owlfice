@@ -31,6 +31,7 @@ pub enum TimelineKind {
     ToolResult,
     SubagentSpawn,
     SubagentDone,
+    SubagentInterrupted,
     PermissionRequest,
     ContextCompaction,
     TitleChanged,
@@ -46,6 +47,7 @@ impl TimelineKind {
             EventKind::ToolResult { .. } => Self::ToolResult,
             EventKind::SubagentSpawn { .. } => Self::SubagentSpawn,
             EventKind::SubagentDone { .. } => Self::SubagentDone,
+            EventKind::SubagentInterrupted { .. } => Self::SubagentInterrupted,
             EventKind::PermissionRequest { .. } => Self::PermissionRequest,
             EventKind::ContextCompaction { .. } => Self::ContextCompaction,
             EventKind::TitleChanged { .. } => Self::TitleChanged,
@@ -66,7 +68,7 @@ pub fn call_hash(call_id: &str) -> u64 {
     h.finish()
 }
 
-/// 타임라인 한 칸 (docs/CONTRACTS.md C8 `timeline`): 원본 줄 위치와, 그 줄만 다시 읽어서는 모르는 값.
+/// 타임라인 한 칸 (docs/CONTRACTS.md C9): 원본 줄 위치와, 그 줄만 다시 읽어서는 모르는 값.
 /// 결과 판정은 앞 줄의 호출·백그라운드 상태에 기대서 줄 하나를 새 파서에 넣으면 달라진다
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Mark {
@@ -251,7 +253,7 @@ pub struct PendingCall {
     pub question: Option<String>,
 }
 
-/// 오늘 실적 (docs/CONTRACTS.md C3 카드의 여섯 칸)
+/// 오늘 실적 (design/HANDOFF.md 4.5절 카드 실적 누계)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 pub struct Counters {
     pub read: u32,
@@ -280,6 +282,8 @@ pub struct Employee {
     pub last_say: Option<String>,
     pub hired_at: DateTime<Utc>,
     pub retired_at: Option<DateTime<Utc>>,
+    /// 중단은 완료가 아니며 다음 실제 활동에서 같은 직원으로 돌아온다.
+    pub interrupted_at: Option<DateTime<Utc>>,
     /// 서브 퇴근 시각 (`retired_at` + 10분, docs/CONTRACTS.md C8). 재출근하면 `retired_at` 과 함께 지운다
     pub departed_at: Option<DateTime<Utc>>,
     /// 개발실·임시 책상 자리 번호. world 가 사무실 단위로 준다 (docs/CONTRACTS.md C8)
@@ -310,7 +314,7 @@ pub struct Employee {
     pub confidence: Confidence,
     /// 서브 종료 추정용: 마지막 레코드가 tool_use 없는 assistant 였나 (docs/CONTRACTS.md C8)
     pub last_was_text: bool,
-    /// 파일별 수정 호출 시각. 반복 수정 문장(docs/CONTRACTS.md C3, S43)이 쓴다
+    /// 파일별 수정 호출 시각. 반복 수정 문장(S43)이 쓴다
     // ponytail: "오늘 n번째"는 직원 수명 동안 센다, 실적 칸의 자정 리셋을 정할 때 같이 올린다
     pub edits: HashMap<String, Vec<DateTime<Utc>>>,
     /// 직전 Test 가 실패했으면 (실패한 테스트, 연속 실패 수). 다음 Test·Edit 이 "빨간불 끄는 중"
@@ -324,7 +328,7 @@ pub struct Employee {
     logged: bool,
     /// 서브가 첫 일을 받아 직급 말풍선을 냈나
     greeted: bool,
-    /// 말풍선을 낸 모르는 도구 이름. 같은 도구는 처음 한 번만 (docs/CONTRACTS.md C3)
+    /// 말풍선을 낸 모르는 도구 이름. 같은 도구는 처음 한 번만
     unknown_tools: HashSet<String>,
     /// Script 의 대체 말풍선을 이미 냈나
     script_said: bool,
@@ -397,7 +401,7 @@ pub struct Incident {
     pub last_error: DateTime<Utc>,
 }
 
-/// 프론트 연출 힌트 (docs/CONTRACTS.md C9 AnimCue). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
+/// 프론트 연출 힌트 (docs/CONTRACTS.md C10). 상태는 Employee·TeamProps 가 진실이고 이것은 "어떻게 거기 갔는지"다
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(tag = "kind")]
 #[ts(rename = "AnimCue")]
@@ -514,10 +518,10 @@ pub struct Team {
     /// 노랑으로 켜기 전 색. 확정 결과 없이 끝나면 이 색으로 돌아간다
     light_before: Light,
     light_at_before: DateTime<Utc>,
-    /// 마지막으로 퇴근에서 깨어난 때와 그때의 피자 수 (docs/CONTRACTS.md C8 피자)
+    /// 마지막으로 퇴근에서 깨어난 때와 그때의 피자 수 (S42)
     awake_since: DateTime<Utc>,
     pizza_at_wake: u32,
-    /// 처음 본 거래처·스킬 말풍선용 (docs/CONTRACTS.md C3)
+    /// 처음 본 거래처·스킬 말풍선용
     seen_vendors: HashSet<String>,
     seen_skills: HashSet<String>,
     /// 이 팀 이벤트가 나온 파일. `Mark.source` 가 가리킨다
@@ -529,6 +533,9 @@ pub struct Team {
     pub commits: u32,
     /// 늦게 도착한 과거 결과가 오늘 실적에 섞이지 않게 날짜별로 보존한다.
     daily: HashMap<NaiveDate, (TestCounts, u32)>,
+    /// 시간대 변경 때만 다시 분류할 확정 결과의 UTC 시각과 누계 증분. 틱 복제는 Arc만 복제한다.
+    /// ponytail: 확정 결과 수만큼 메모리에 둔다, 장기 세션에서 부담이 확인되면 UTC 분 단위로 묶는다.
+    daily_events: Arc<Vec<(DateTime<Utc>, TestCounts, u32)>>,
     date: NaiveDate,
     local: FixedOffset,
     daylight: Daylight,

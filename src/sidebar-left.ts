@@ -356,7 +356,7 @@ function planLarge(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
 function planSmall(offices: OfficeSummaryDto[], isOpen: IsOpen): Plan {
   const items: Item[] = [{ t: "label", key: "label", text: P.sectionHqFloors, count: "" }];
   const selectables: Selectable[] = [];
-  for (const n of [1, 2, 3]) {
+  for (const n of [1, 2]) {
     const o = offices.find((x) => x.floor === n);
     const product = FLOOR_PRODUCT[n - 1];
     const live = o?.teams.filter((t) => t.phase !== "Off") ?? [];

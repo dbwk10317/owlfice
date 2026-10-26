@@ -146,6 +146,98 @@ test("중소기업 퇴근 팀은 접히고 팀 선택·재출근으로 다시 �
   s.panel.destroy();
 });
 
+test("중소기업 토글은 Off 팀 전체만 숨기고 Dozing 팀과 재사용 카드를 유지한다", () => {
+  const teams = [
+    team("work", [emp("w")]),
+    team("doze", [emp("d")], { phase: "Dozing" }),
+    team("off", [emp("boss"), emp("sub", { departedAt: iso(14, 0) })], { phase: "Off" }),
+  ];
+  const s = setup(office("o", 1, teams), "Small");
+  const toggle = s.q<HTMLButtonElement>(".ow-panel__filter")!;
+  const offHead = [...s.root.querySelectorAll<HTMLElement>(".ow-teamhead")].find((h) =>
+    h.textContent?.includes("folder-off"),
+  )!;
+  const offCards = s.cards().filter((c) => ["boss", "sub"].includes(c.dataset.agentId ?? ""));
+  const group = s.q<HTMLElement>(".ow-group-wrap")!;
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(s.q(".ow-panel__count")?.textContent).toContain("4");
+  offHead.focus();
+  toggle.click();
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(offHead.hidden).toBe(true);
+  expect(offCards.every((c) => c.hidden)).toBe(true);
+  expect(group.hidden).toBe(true);
+  expect(
+    s
+      .cards()
+      .filter((c) => !c.hidden)
+      .map((c) => c.dataset.agentId),
+  ).toEqual(["w", "d"]);
+  expect(s.q(".ow-panel__count")?.textContent).toContain("2");
+  expect(document.activeElement).toBe(toggle);
+  s.panel.showTeam("o", "off");
+  expect(offHead.hidden).toBe(true);
+  expect(scrollIntoView).not.toHaveBeenCalled();
+  toggle.click();
+  expect(s.cards().filter((c) => ["boss", "sub"].includes(c.dataset.agentId ?? ""))).toEqual(
+    offCards,
+  );
+  expect(s.q(".ow-panel__toast")).toBeNull();
+  s.push(office("o", 2, [...teams.slice(0, 2), team("off", [emp("boss"), emp("sub")])]));
+  expect(offHead.hidden).toBe(false);
+  expect(s.q(".ow-panel__toast")).toBeNull();
+  s.panel.destroy();
+});
+
+test("대기업은 Off 카드만 숨기고 빈 상태·초점을 맞추며 복원 토스트를 내지 않는다", () => {
+  const off = team("off", [emp("boss")], { phase: "Off" });
+  const s = setup(office("o", 1, [off]));
+  const card = s.cards()[0];
+  const toggle = s.q<HTMLButtonElement>(".ow-panel__filter")!;
+  openButton(card).focus();
+  toggle.click();
+  expect(card.hidden).toBe(true);
+  expect(openButton(card).tabIndex).toBe(-1);
+  expect(document.activeElement).toBe(toggle);
+  expect(s.q(".ow-panel__count")?.textContent).toContain("0");
+  expect(s.q<HTMLElement>(".ow-panel__empty")?.hidden).toBe(false);
+  expect(s.q(".ow-panel__empty")?.textContent).toContain("숨기고 있습니다");
+  s.push(office("o", 2, [off], [{ teamId: "off", kind: "Shake", agent: "boss" }]));
+  toggle.click();
+  expect(s.cards()[0]).toBe(card);
+  expect(card.hidden).toBe(false);
+  expect(card.classList.contains("is-hit")).toBe(false);
+  expect(s.q(".ow-panel__toast")).toBeNull();
+  s.panel.destroy();
+});
+
+test("Off 숨김 중 사무실 선택이 없어지면 기본 빈 상태를 보인다", () => {
+  const s = setup(office("o", 1, [team("off", [emp("boss")], { phase: "Off" })]));
+  s.q<HTMLButtonElement>(".ow-panel__filter")!.click();
+  expect(s.q(".ow-panel__empty")?.textContent).toContain("숨기고 있습니다");
+  s.store.selectOffice("other");
+  expect(s.q<HTMLElement>(".ow-panel__empty")?.hidden).toBe(false);
+  expect(s.q(".ow-panel__empty")?.textContent).toBe("출근한 직원이 없습니다");
+  s.panel.destroy();
+});
+
+test("토글 선택은 사무실 전환과 좁은 드로어에서도 유지한다", () => {
+  const s = setup(office("first", 1, [team("off", [emp("a")], { phase: "Off" })]), "Small");
+  const toggle = s.q<HTMLButtonElement>(".ow-panel__filter")!;
+  toggle.click();
+  s.store.selectOffice("second");
+  s.push(office("second", 1, [team("off2", [emp("b")], { phase: "Off" })]));
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(s.cards().every((c) => c.hidden)).toBe(true);
+  s.vp.set(900, 800);
+  s.panel.openDrawer();
+  expect(s.q<HTMLElement>(".ow-panel")?.hidden).toBe(false);
+  toggle.click();
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(s.q<HTMLElement>(".ow-teamhead")?.hidden).toBe(false);
+  s.panel.destroy();
+});
+
 test("팀 스크롤은 해당 사무실 응답까지 기다리고 다른 선택이 오면 버린다", () => {
   const s = setup(office("vendor/Claude", 1, [team("a", [emp("a")])]), "Small");
   s.store.selectOffice("vendor/Codex");
@@ -313,6 +405,7 @@ test("{elapsed} 는 1초마다 채우고 코드 조각 안은 그대로, 평균�
     office("o", 1, [
       team("t", [
         emp("boss", {
+          state: "Waiting",
           activity: act({
             sentence: "`cargo {elapsed}` 돌리는 중 · {elapsed}째 (평소 40초)",
             since: new Date(NOW.getTime() - sec * 1000).toISOString(),
@@ -712,6 +805,7 @@ test("허가 대기는 경과·질문과 두 동작을 표시하고 원본 열�
     office("o", 1, [
       team("t", [
         emp("boss", {
+          state: "Waiting",
           activity: act({
             room: "Door",
             since: iso(14, 30),
@@ -778,8 +872,9 @@ test("Door 결재 카드가 팀 퇴근·개별 퇴근으로 바뀌면 같은 DOM
       team(
         "t",
         [
-          emp("boss", { activity: act({ room: "Door" }) }),
+          emp("boss", { state: off ? "Off" : "Waiting", activity: act({ room: "Door" }) }),
           emp("sub", {
+            state: off || departed ? "Off" : "Waiting",
             activity: act({ room: "Door" }),
             departedAt: departed ? NOW.toISOString() : null,
           }),
@@ -896,6 +991,8 @@ test("핀은 직원별 빌드·테스트 링을 쓰고 같은 카드에서 복�
   const cards = s.cards();
   const pin = (i: number) => cards[i].querySelector<HTMLElement>(".ow-pin")!;
   const push = (seq: number, delayed = false, off = false) => {
+    a.state = off ? "Off" : "Working";
+    b.state = off || b.departedAt !== null ? "Off" : "Working";
     s.push(office("o", seq, [team("t", [a, b], { delayed, phase: off ? "Off" : "Working" })]));
     expect(s.cards()[0]).toBe(cards[0]);
     expect(s.cards()[1]).toBe(cards[1]);
@@ -945,5 +1042,29 @@ test("핀은 직원별 빌드·테스트 링을 쓰고 같은 카드에서 복�
   push(8, true);
   expect(pin(1).dataset.ring).toBe("run");
   expect(pin(1).getAttribute("aria-label")).toBe("근무 중 · 빌드·테스트 진행 중");
+  s.panel.destroy();
+});
+
+test("핀은 방과 자세가 어긋나도 직원 DTO 상태를 따르고 일 마침에는 링을 숨긴다", () => {
+  const e = emp("boss", {
+    state: "Waiting",
+    activity: act({ room: "TeamLead", pose: "Type" }),
+    buildTestBorder: "Running",
+  });
+  const s = setup(office("o", 1, [team("t", [e])]));
+  const pin = () => s.q<HTMLElement>(".ow-pin")!;
+  expect(pin().dataset.state).toBe("waiting");
+  expect(pin().getAttribute("aria-label")).toContain("대기");
+  e.state = "Interrupted";
+  s.push(office("o", 2, [team("t", [e])]));
+  expect(pin().dataset.state).toBe("interrupted");
+  expect(pin().getAttribute("aria-label")).toBe("중단");
+  expect(pin().hasAttribute("data-ring")).toBe(false);
+  e.state = "Finished";
+  e.activity = act({ room: "Door", pose: "Think" });
+  s.push(office("o", 3, [team("t", [e])]));
+  expect(pin().dataset.state).toBe("finished");
+  expect(pin().getAttribute("aria-label")).toBe("일 마침");
+  expect(pin().hasAttribute("data-ring")).toBe(false);
   s.panel.destroy();
 });

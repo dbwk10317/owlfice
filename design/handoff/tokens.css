@@ -223,6 +223,7 @@
 .ow-dot[data-state="sleepy"], .ow-dot[data-state="idle-alive"], .ow-pin[data-state="sleepy"], .ow-pin[data-state="idle-alive"] { --ow-dot-color: var(--ow-sleep); }
 .ow-dot[data-state="incident"], .ow-pin[data-state="incident"] { --ow-dot-color: var(--ow-fail); }
 .ow-dot[data-state="off"], .ow-pin[data-state="off"] { --ow-dot-color: var(--ow-off); }
+.ow-pin[data-state="finished"] { --ow-dot-color: var(--ow-off); }
 .ow-dot[data-ring="run"], .ow-pin[data-ring="run"] { box-shadow: inset 0 0 0 2px var(--ow-ring-run); }
 .ow-dot[data-ring="fail"], .ow-pin[data-ring="fail"] { box-shadow: inset 0 0 0 2px var(--ow-ring-fail); }
 .ow-dot[data-ring="lag"], .ow-pin[data-ring="lag"] { border: 1.5px dashed var(--ow-ring-lag); }
@@ -441,7 +442,7 @@
 
 /* ---------- 움직임 줄이기 ---------- */
 @media (prefers-reduced-motion: reduce) {
-  .ow-dot[data-state="waiting"]::before { animation: none; box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--ow-ok); }
+  .ow-dot[data-state="waiting"]::before, .ow-pin[data-state="waiting"]::before { animation: none; box-shadow: 0 0 0 2px var(--ow-surface), 0 0 0 3px var(--ow-ok); }
   .ow-card.is-hit, .ow-card.is-new, .ow-toast, .ow-panel.is-drawer, .ow-backdrop { animation: none; }
   .ow-step.is-now .ow-step__mark { animation-duration: 2.4s; }
   .ow-ticker__track { animation: none; } /* 멈춘 목록. 최신 항목이 앞 */

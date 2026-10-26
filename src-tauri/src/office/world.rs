@@ -15,9 +15,9 @@ use crate::parse::{Event, Unhandled};
 /// 비교용 복제본이 기록 자리에 두는 빈 기록
 static NO_RECORD: LazyLock<Arc<Record>> = LazyLock::new(Arc::default);
 
-/// 개발실 6 + 임시 책상 4 (docs/CONTRACTS.md C10 floorplan)
+/// 개발실 6 + 임시 책상 4 (design/HANDOFF.md 6.5절)
 const SEATS: u8 = 10;
-/// 팀장석 4, 그다음 간이 책상 2 (docs/CONTRACTS.md C8)
+/// 팀장석 4, 그다음 간이 책상 2 (design/HANDOFF.md 6.5절)
 const DESKS: u8 = 4;
 const SPARES: u8 = 2;
 
@@ -236,6 +236,8 @@ impl OfficeWorld {
         for e in &mut before.employees {
             e.record = NO_RECORD.clone();
         }
+        // 확정 결과 원장도 현재 이벤트가 추가되는 동안은 비교본과 공유하지 않는다.
+        before.daily_events = Arc::new(Vec::new());
         let mut cues = Vec::new();
         for ev in events {
             if let Some(t) = ev.ts {
@@ -246,6 +248,7 @@ impl OfficeWorld {
         for (b, e) in before.employees.iter_mut().zip(&team.employees) {
             b.record = e.record.clone();
         }
+        before.daily_events = team.daily_events.clone();
         self.settle(key, &before, now, cues.iter().any(Cue::shown));
         for c in cues {
             self.cue(key, c);
@@ -335,9 +338,16 @@ impl OfficeWorld {
         }
         let offices: BTreeSet<OfficeId> = self.teams.keys().map(|k| self.office_of(k)).collect();
         for office in &offices {
-            // 대기업에서 각자 0번이던 자리가 합쳐질 때 겹치지 않게 입사 순으로 다시 준다
+            // 대기업에서 각자 0번이던 자리가 합쳐질 때 최근 활동한 팀부터 다시 준다
             let mut keys = self.keys_in(office);
-            keys.sort_by_key(|k| (self.teams[k].started, k.clone()));
+            keys.sort_by_key(|k| {
+                (
+                    self.teams[k].phase == TeamPhase::Off,
+                    std::cmp::Reverse(self.teams[k].last_activity),
+                    self.teams[k].started,
+                    k.clone(),
+                )
+            });
             for (k, slot) in keys.iter().zip(0..DESKS + SPARES) {
                 if let Some(t) = self.teams.get_mut(k) {
                     t.desk_slot = Some(slot);
@@ -351,6 +361,20 @@ impl OfficeWorld {
         self.outbox.clear();
         self.rebuilt.extend(offices);
         self.list_rebuilt = true;
+    }
+
+    /// 현재 OS 시간대로 날짜·조명 표시를 다시 계산한다. 수집이 멈춘 호스트의 상태 전이는 진행하지 않는다.
+    pub fn set_local_offset(&mut self, local: FixedOffset, now: DateTime<Utc>) {
+        let mut changed = BTreeSet::new();
+        for (key, team) in &mut self.teams {
+            if team.set_local_offset(local, now) {
+                changed.insert(office_for(self.scale, key));
+            }
+        }
+        self.local = local;
+        for office in changed {
+            *self.state_seq.entry(office).or_default() += 1;
+        }
     }
 
     /// 시간 전이 (docs/CONTRACTS.md C8). `host` 의 팀만 돌린다. 다른 호스트의 팀은 그 스레드가 돌리고,
@@ -585,10 +609,10 @@ mod tests {
         w.set_scale(Scale::Small);
         assert_eq!(w.selected, Some(OfficeId::Vendor(Vendor::Claude)));
         assert_no_overlap(&w);
-        // 팀장석은 입사(시작) 순
+        // 팀장석은 최근 활동 순
         let desk = |w: &OfficeWorld, k: &TeamKey| w.teams[k].desk_slot;
         assert_eq!(
-            [desk(&w, &a), desk(&w, &c), desk(&w, &b)],
+            [desk(&w, &b), desk(&w, &c), desk(&w, &a)],
             [Some(0), Some(1), Some(2)]
         );
         assert_eq!(desk(&w, &x), Some(0));
@@ -607,7 +631,7 @@ mod tests {
         assert_eq!(desk(&w, &d), Some(3));
         let e = key(Vendor::Claude, "e");
         w.put_team(e.clone(), team("e", 1, 30), t0(), true);
-        assert_eq!((desk(&w, &e), desk(&w, &a)), (Some(0), Some(4)));
+        assert_eq!((desk(&w, &e), desk(&w, &a)), (Some(2), Some(4)));
         // 새 팀이 가장 조용하면 자기가 간이 책상으로 간다
         let old = key(Vendor::Claude, "old");
         w.put_team(old.clone(), team("old", 0, -60), t0(), true);
@@ -617,7 +641,91 @@ mod tests {
         let before: Vec<Option<u8>> = w.teams[&b].employees.iter().map(|e| e.seat).collect();
         w.put_team(b.clone(), team("b", 2, 10), t0(), true);
         let after: Vec<Option<u8>> = w.teams[&b].employees.iter().map(|e| e.seat).collect();
-        assert_eq!((before, Some(2)), (after, desk(&w, &b)));
+        assert_eq!((before, Some(0)), (after, desk(&w, &b)));
+    }
+
+    #[test]
+    fn scale_change_seats_active_teams_before_older_off_teams() {
+        let mut w = OfficeWorld::new(
+            Scale::Large,
+            NameBook::load(tempfile::tempdir().unwrap().path()),
+            FixedOffset::east_opt(0).unwrap(),
+        );
+        let old = key(Vendor::Claude, "old");
+        let mut off = team("old", 0, 0);
+        off.phase = TeamPhase::Off;
+        w.put_team(old.clone(), off, t0(), true);
+        let active: Vec<_> = (0..6)
+            .map(|i| key(Vendor::Claude, &format!("active-{i}")))
+            .collect();
+        for (i, key) in active.iter().enumerate() {
+            w.put_team(key.clone(), team(&key.session, 0, i as i64 + 1), t0(), true);
+        }
+        w.set_scale(Scale::Small);
+        assert_eq!(w.teams[&old].desk_slot, None);
+        assert_eq!(
+            active
+                .iter()
+                .filter(|k| w.teams[*k].desk_slot.is_some())
+                .count(),
+            6
+        );
+        let before: Vec<_> = active.iter().map(|k| w.teams[k].desk_slot).collect();
+        w.set_scale(Scale::Large);
+        w.set_scale(Scale::Small);
+        assert_eq!(
+            active
+                .iter()
+                .map(|k| w.teams[k].desk_slot)
+                .collect::<Vec<_>>(),
+            before
+        );
+    }
+
+    #[test]
+    fn scale_change_keeps_recent_active_teams_when_desks_are_full() {
+        let mut w = OfficeWorld::new(
+            Scale::Large,
+            NameBook::load(tempfile::tempdir().unwrap().path()),
+            FixedOffset::east_opt(0).unwrap(),
+        );
+        let old = key(Vendor::Claude, "old-dozing");
+        let mut dozing = team("old-dozing", 0, 0);
+        dozing.phase = TeamPhase::Dozing;
+        w.put_team(old.clone(), dozing, t0(), true);
+        let off = key(Vendor::Claude, "off");
+        let mut ended = team("off", 0, 0);
+        ended.phase = TeamPhase::Off;
+        w.put_team(off.clone(), ended, t0(), true);
+        let active: Vec<_> = (0..6)
+            .map(|i| key(Vendor::Claude, &format!("active-{i}")))
+            .collect();
+        for (i, key) in active.iter().enumerate() {
+            w.put_team(key.clone(), team(&key.session, 0, i as i64 + 1), t0(), true);
+        }
+        w.set_scale(Scale::Small);
+        assert_eq!(w.teams[&old].desk_slot, None);
+        assert_eq!(w.teams[&off].desk_slot, None);
+        assert!(active.iter().all(|k| w.teams[k].desk_slot.is_some()));
+    }
+
+    #[test]
+    fn timezone_change_updates_display_without_ticking_suspect_host() {
+        let mut w = OfficeWorld::new(
+            Scale::Large,
+            NameBook::load(tempfile::tempdir().unwrap().path()),
+            FixedOffset::east_opt(0).unwrap(),
+        );
+        let key = key(Vendor::Claude, "t");
+        w.put_team(key.clone(), team("t", 0, 0), t0(), true);
+        w.set_suspect("windows", true);
+        let office = OfficeId::Team(key.clone());
+        let seq = w.state_seq[&office];
+        let phase = w.teams[&key].phase;
+        w.set_local_offset(FixedOffset::west_opt(8 * 3600).unwrap(), t0());
+        assert!(w.state_seq[&office] > seq);
+        assert_eq!(w.teams[&key].phase, phase);
+        assert_eq!(w.teams[&key].daylight(t0()), super::super::Daylight::Night);
     }
 
     fn world(scale: Scale) -> OfficeWorld {

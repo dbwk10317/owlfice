@@ -22,9 +22,9 @@ use crate::office::{
 };
 use crate::parse::{Confidence, TodoItem, ToolKind, ToolOutcome};
 use crate::runtime::Runtime;
-use crate::settings::{ManualPath, SettingsBook};
+use crate::settings::{SettingsBook, SettingsDto};
 
-/// 최대 5회/초 (docs/CONTRACTS.md C9)
+/// 최대 5회/초
 const PUBLISH_EVERY: StdDuration = StdDuration::from_millis(200);
 
 /// `office-list` 페이로드
@@ -40,43 +40,6 @@ pub struct OfficeListDto {
     pub selected_id: Option<String>,
     /// 그 선택을 만든 마지막 `select_office` 요청 번호. store 는 자기 마지막 요청 이상일 때만 선택을 따른다
     pub select_request: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "lowercase")]
-pub enum NightMode {
-    Auto,
-    On,
-    Off,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "lowercase")]
-pub enum Animal {
-    Mixed,
-    Owls,
-    Dogs,
-    Cats,
-}
-
-/// `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct SettingsDto {
-    /// 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
-    pub scale: Option<Scale>,
-    /// 저장된 회사 이름. 없으면 null 이고 프론트가 기본 이름을 쓴다. 보낼 때 ""(공백뿐)는 기본으로 되돌린다
-    pub company_name: Option<String>,
-    // 자동 탐색에 추가한다. 빈 배열은 저장된 수동 경로를 모두 지운다.
-    pub manual_paths: Option<Vec<ManualPath>>,
-    pub sound: Option<bool>,
-    pub night_mode: Option<NightMode>,
-    pub os_notifications: Option<bool>,
-    // 비면 프론트가 기본 호칭을 쓴다. 빈 문자열을 보내면 기본으로 되돌린다.
-    pub boss_name: Option<String>,
-    pub raw_diagnostics: Option<bool>,
-    /// 없으면 null 이고 프론트가 올빼미로 본다
-    pub animal: Option<Animal>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -118,9 +81,9 @@ pub struct OfficeSummaryDto {
     pub label: String,
     /// 팀 중 가장 활발한 단계
     pub phase: TeamPhase,
-    /// 팀 중 가장 급한 점 (docs/CONTRACTS.md C3 중소기업 층 점)
+    /// 팀 중 가장 급한 점 (design/HANDOFF.md 4.1절 층 행)
     pub dot: Dot,
-    /// 허가 대기는 점이 아니라 결재판 아이콘이라(docs/CONTRACTS.md C3 범례) 점 우선순위에 넣지 않고 따로 둔다
+    /// 허가 대기는 점이 아니라 결재판 아이콘이라(design/HANDOFF.md 4.2절) 점 우선순위에 넣지 않고 따로 둔다
     pub asking: bool,
     pub border: Border,
     pub delayed: bool,
@@ -152,11 +115,11 @@ pub struct TeamSummaryDto {
     pub delayed: bool,
     /// 호스트 배지 (`WSL`). Windows 는 null
     pub host_badge: Option<String>,
-    /// 오늘의 업무 (docs/CONTRACTS.md C3 사무실 한 줄)
+    /// 오늘의 업무 (design/HANDOFF.md 4.1절 사무실 행)
     pub work_type: WorkType,
 }
 
-/// 상태 점 (docs/CONTRACTS.md C3 범례). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
+/// 상태 점 (design/HANDOFF.md 4.2절). 선언 순서가 급한 순서다 (장애 > 근무 > 결재·응답 대기 > 졸음 > 대기 중 > 퇴근). 사무실 점은 팀 중 최솟값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Dot {
     Incident,
@@ -169,7 +132,19 @@ pub enum Dot {
     Off,
 }
 
-/// 줄 테두리 (docs/CONTRACTS.md C3 범례). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
+/// 직원 카드의 상태 핀. 사무실·팀 집계 점과 별도로 직원 상태에서 계산한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub enum EmployeeState {
+    Working,
+    Waiting,
+    Dozing,
+    Finished,
+    Interrupted,
+    Off,
+    Incident,
+}
+
+/// 줄 테두리 (design/HANDOFF.md 4.2절). 선언 순서가 약한 순서다. 사무실 테두리는 팀 중 최댓값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 pub enum Border {
     Plain,
@@ -239,7 +214,7 @@ pub struct TeamDto {
     pub last_activity: DateTime<Utc>,
     pub phase: TeamPhase,
     pub work_type: WorkType,
-    /// 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (docs/CONTRACTS.md C8)
+    /// 0~3 팀장석, 4~5 간이 책상, null 은 카드만 (design/HANDOFF.md 6.5절)
     pub desk_slot: Option<u8>,
     /// 첫 번째가 부장
     pub employees: Vec<EmployeeDto>,
@@ -257,9 +232,10 @@ pub struct TeamDto {
 #[serde(rename_all = "camelCase")]
 pub struct EmployeeDto {
     pub agent_id: String,
+    pub state: EmployeeState,
     pub name: String,
     pub rank: Rank,
-    /// 담당 (docs/CONTRACTS.md C3 카드)
+    /// 담당 (design/HANDOFF.md 4.5절 카드)
     pub role: Role,
     pub model: Option<String>,
     pub description: Option<String>,
@@ -307,7 +283,7 @@ pub enum Item {
     Scroll,
 }
 
-/// 미팅실 소품 재료 (docs/CONTRACTS.md C3 거래처 미팅실). MCP 는 화면 상호·명함, 스킬은 매뉴얼
+/// 미팅실 소품 재료 (design/HANDOFF.md 5.1절). MCP 는 화면 상호·명함, 스킬은 매뉴얼
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind")]
 pub enum Meeting {
@@ -315,7 +291,7 @@ pub enum Meeting {
     Skill,
 }
 
-/// 리뷰실 소품 재료 (docs/CONTRACTS.md C3 리뷰실)
+/// 리뷰실 소품 재료 (design/HANDOFF.md 5.1절)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Review {
@@ -746,9 +722,31 @@ fn summaries(
     out
 }
 
-fn employee_dto(e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
+fn employee_state(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeState {
+    if t.phase == TeamPhase::Off || e.departed_at.is_some() {
+        EmployeeState::Off
+    } else if e.retired_at.is_some() {
+        EmployeeState::Finished
+    } else if e.interrupted_at.is_some() {
+        EmployeeState::Interrupted
+    } else if t.awaiting(e, now) || t.needs_boss(e, now) {
+        EmployeeState::Waiting
+    } else if e.activity.room == Room::Incident {
+        EmployeeState::Incident
+    } else if t.phase == TeamPhase::Dozing
+        || e.activity.room == Room::Pantry
+        || e.activity.pose == crate::office::Pose::Sleep
+    {
+        EmployeeState::Dozing
+    } else {
+        EmployeeState::Working
+    }
+}
+
+fn employee_dto(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
     EmployeeDto {
         agent_id: e.id.clone(),
+        state: employee_state(t, e, now),
         name: e.name.clone(),
         rank: e.rank,
         role: e.role,
@@ -823,7 +821,11 @@ fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamD
         phase: t.phase,
         work_type: t.work_type,
         desk_slot: t.desk_slot,
-        employees: t.employees.iter().map(|e| employee_dto(e, now)).collect(),
+        employees: t
+            .employees
+            .iter()
+            .map(|e| employee_dto(t, e, now))
+            .collect(),
         props: t.props.clone(),
         incident: t.incident.clone(),
         idle_alive: t.idle_alive,
@@ -1142,16 +1144,29 @@ pub fn apply_settings(
         .as_ref()
         .map(|_| book.snapshot().manual_paths.unwrap_or_default());
     let saved = book.update(&dto);
-    if let Some(raw) = dto.raw_diagnostics {
-        lock(diag).set_raw(raw);
-    }
+    let purged = dto
+        .raw_diagnostics
+        .map_or(Ok(()), |raw| lock(diag).set_raw(raw));
     if let (Some(old), Some(new)) = (old_paths, &dto.manual_paths) {
         runtime.manual_changed(&old, new);
     }
     if let Some(scale) = dto.scale {
         lock(&ipc.world).set_scale(scale);
     }
-    saved.map_err(|e| format!("설정을 저장하지 못했습니다: {e}"))
+    let mut errors = Vec::new();
+    if let Err(e) = saved {
+        errors.push(format!("설정을 저장하지 못했습니다: {e}"));
+    }
+    if let Err(e) = purged {
+        errors.push(format!(
+            "원문 수집은 중단했지만 기존 진단 파일의 원문을 제거하지 못했습니다. 파일 접근 문제를 해결한 뒤 다시 꺼 주세요: {e}"
+        ));
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("\n"))
+    }
 }
 
 /// `get_settings` 의 몸통. 테스트가 State 없이 부른다
@@ -1165,14 +1180,24 @@ pub fn get_settings(settings: State<'_, Arc<SettingsBook>>) -> SettingsDto {
 }
 
 #[tauri::command]
-pub fn set_settings(
+pub async fn set_settings(
     ipc: State<'_, Arc<Ipc>>,
     settings: State<'_, Arc<SettingsBook>>,
     diag: State<'_, Arc<Mutex<Diag>>>,
     runtime: State<'_, Arc<Runtime>>,
     dto: SettingsDto,
 ) -> Result<(), String> {
-    apply_settings(&ipc, &settings, &diag, &runtime, dto)
+    let (ipc, settings, diag, runtime) = (
+        ipc.inner().clone(),
+        settings.inner().clone(),
+        diag.inner().clone(),
+        runtime.inner().clone(),
+    );
+    tauri::async_runtime::spawn_blocking(move || {
+        apply_settings(&ipc, &settings, &diag, &runtime, dto)
+    })
+    .await
+    .map_err(|e| format!("설정 저장 작업을 완료하지 못했습니다: {e}"))?
 }
 
 #[tauri::command]
@@ -1250,6 +1275,7 @@ pub fn spawn_publisher(app: AppHandle, ipc: Arc<Ipc>) -> thread::JoinHandle<()> 
         loop {
             let start = Instant::now();
             let now = Utc::now();
+            lock(&ipc.world).set_local_offset(*chrono::Local::now().offset(), now);
             let (list, state) = ipc.poll(&mut sent, now);
             let enabled = app.state::<Arc<SettingsBook>>().os_notifications();
             let hidden = app

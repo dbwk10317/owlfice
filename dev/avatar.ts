@@ -1,7 +1,7 @@
 import "../design/handoff/tokens.css";
 import "../src/styles/app.css";
 import { setAvatar } from "../src/avatar.ts";
-import { speciesOf } from "../src/office/actors.ts";
+import { speciesOf } from "../src/office/actor-appearance.ts";
 import { loadOwls } from "../src/office/sprites.ts";
 import { openEmployeeDetail } from "../src/popup-employee.ts";
 import { mountPanel, ROLE_LABEL } from "../src/sidebar-right.ts";

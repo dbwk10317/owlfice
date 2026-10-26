@@ -26,7 +26,8 @@ import roomPantry from "../design/handoff/icons/room-pantry.svg?raw";
 import roomReview from "../design/handoff/icons/room-review.svg?raw";
 import roomShipping from "../design/handoff/icons/room-shipping.svg?raw";
 import roomTest from "../design/handoff/icons/room-test.svg?raw";
-import { createEventCollector, createTicker, empKey, rankLabel, teamName } from "./ticker.ts";
+import { createEventCollector, createTicker, rankLabel, teamName } from "./ticker.ts";
+import { empKey } from "./employee-key.ts";
 import { durationText, fill, fillElapsed, hhmm } from "./text.ts";
 import { setAvatar } from "./avatar.ts";
 import { ringOf } from "./sidebar-left.ts";
@@ -472,25 +473,29 @@ function updateCard(
   c.el.classList.toggle("is-boss", isBoss);
   c.el.classList.toggle("is-idle", act.room === "Pantry" || off || e.departedAt !== null);
   r.rank.classList.toggle("is-boss", isBoss);
-  const state =
-    off || e.departedAt !== null
-      ? "off"
-      : act.room === "Incident"
-        ? "incident"
-        : act.room === "Door" || act.pose === "Pace"
-          ? "waiting"
-          : act.room === "Pantry" || act.pose === "Sleep"
-            ? "sleepy"
-            : "working";
+  const state = {
+    Working: "working",
+    Waiting: "waiting",
+    Dozing: "sleepy",
+    Finished: "finished",
+    Interrupted: "interrupted",
+    Off: "off",
+    Incident: "incident",
+  }[e.state];
   const stateLabel = {
     off: phrases.sidebar.stateOff,
+    finished: "일 마침",
+    interrupted: "중단",
     incident: phrases.sidebar.stateIncident,
     waiting: phrases.sidebar.stateWaiting,
     sleepy: phrases.sidebar.stateSleepy,
     working: phrases.sidebar.stateWorking,
   }[state];
   r.pin.dataset.state = state;
-  const ring = state === "off" ? "" : ringOf(e.buildTestBorder, delayed);
+  const ring =
+    state === "off" || state === "finished" || state === "interrupted"
+      ? ""
+      : ringOf(e.buildTestBorder, delayed);
   if (ring) r.pin.dataset.ring = ring;
   else delete r.pin.dataset.ring;
   const ringLabel =
@@ -717,6 +722,9 @@ export function mountPanel(
   sortBtn.setAttribute("aria-pressed", "false");
   sortBtn.setAttribute("aria-label", `${phrases.card.sort}: ${phrases.card.sortDefault}`);
   const head = h(doc, "div", "ow-panel__head", title, count, officeName, sortBtn, closeBtn);
+  const showOffBtn = h(doc, "button", "ow-panel__filter", "퇴근한 세션 표시");
+  showOffBtn.type = "button";
+  showOffBtn.setAttribute("aria-pressed", "true");
 
   const toasts = h(doc, "div", "ow-panel__toasts");
   toasts.setAttribute("role", "status");
@@ -724,7 +732,7 @@ export function mountPanel(
   const empty = h(doc, "p", "ow-panel__empty", phrases.card.empty);
   const list = h(doc, "div", "ow-panel__list");
   const ticker = createTicker(doc, pick);
-  const aside = h(doc, "aside", "ow-panel", head, toasts, empty, list, ticker.el);
+  const aside = h(doc, "aside", "ow-panel", head, showOffBtn, toasts, empty, list, ticker.el);
   aside.setAttribute("aria-label", phrases.card.panelTitle);
   root.append(aside);
 
@@ -752,6 +760,12 @@ export function mountPanel(
   let narrow = false;
   let drawerOpen = false;
   let byName = false;
+  let showOff = true;
+  showOffBtn.addEventListener("click", () => {
+    showOff = !showOff;
+    showOffBtn.setAttribute("aria-pressed", String(showOff));
+    render();
+  });
   sortBtn.addEventListener("click", () => {
     byName = !byName;
     sortBtn.setAttribute("aria-pressed", String(byName));
@@ -789,7 +803,7 @@ export function mountPanel(
   function applyCue(cue: CueDto): void {
     if (cue.kind !== "Shake" && cue.kind !== "Reject") return;
     const c = cards.get(empKey(cue.teamId, cue.agent));
-    if (!c) return;
+    if (!c || c.el.hidden) return;
     if (cue.kind === "Shake")
       flash(c, "hit", (on) => c.el.classList.toggle("is-hit", on), FLASH_MS);
     else flash(c, "reject", (on) => (c.ref.reject.hidden = !on), FLASH_MS);
@@ -797,7 +811,7 @@ export function mountPanel(
 
   function pick(teamId: string, agentId: string): void {
     const c = cards.get(empKey(teamId, agentId));
-    if (!c) return;
+    if (!c || c.el.hidden) return;
     c.el.scrollIntoView({ block: "nearest" });
     flash(c, "hl", (on) => c.el.classList.toggle("is-highlight", on), HIGHLIGHT_MS);
   }
@@ -823,6 +837,7 @@ export function mountPanel(
     count.hidden = true;
     officeName.textContent = "";
     empty.hidden = false; // 고른 사무실이 없을 때도 "출근한 직원이 없습니다" (HANDOFF 4.7 모두 퇴근)
+    empty.textContent = phrases.card.empty;
   }
 
   function toggleGroup(teamId: string): void {
@@ -860,7 +875,10 @@ export function mountPanel(
     const teams = [...office.teams].sort(
       (a, b) => (Date.parse(b.lastActivity) || 0) - (Date.parse(a.lastActivity) || 0),
     );
-    const total = teams.reduce((n, t) => n + t.employees.length, 0);
+    const total = teams.reduce(
+      (n, t) => n + (showOff || t.phase !== "Off" ? t.employees.length : 0),
+      0,
+    );
 
     const desired: HTMLElement[] = [];
     const liveCards = new Set<string>();
@@ -869,6 +887,7 @@ export function mountPanel(
     const fresh: { c: CardEntry; e: EmployeeDto }[] = [];
 
     for (const t of teams) {
+      const filtered = !showOff && t.phase === "Off";
       if (small) {
         let hd = heads.get(t.teamId);
         if (!hd)
@@ -880,10 +899,11 @@ export function mountPanel(
             })),
           );
         if (changed(hd, "phase", t.phase)) teamOpen.set(t.teamId, t.phase !== "Off");
-        if (pendingTeam?.teamId === t.teamId) teamOpen.set(t.teamId, true);
+        if (pendingTeam?.teamId === t.teamId && !filtered) teamOpen.set(t.teamId, true);
         hd.el.setAttribute("aria-expanded", String(teamOpen.get(t.teamId) ?? true));
         updateHead(hd, t, Math.min(t.deskSlot ?? TEAM_COLORS - 1, TEAM_COLORS - 1) + 1);
         tickHead(hd, Date.now());
+        hd.el.hidden = filtered;
         liveHeads.add(t.teamId);
         desired.push(hd.el);
       }
@@ -907,14 +927,14 @@ export function mountPanel(
             try {
               await opts.onSource?.(t.teamId);
             } catch (error) {
-              card.ref.error.textContent = String(error);
+              card.ref.error.textContent = error instanceof Error ? error.message : String(error);
               card.ref.error.hidden = false;
             } finally {
               card.source.disabled = false;
             }
           });
           c.el.classList.toggle("is-compact", compact);
-          if (!quiet) fresh.push({ c, e });
+          if (!quiet && !filtered) fresh.push({ c, e });
         }
         updateCard(c, e, i === 0, t.phase === "Off", small, byId, t.building, t.delayed);
         tickCard(c, Date.now());
@@ -922,9 +942,15 @@ export function mountPanel(
         // 부장은 퇴근 묶음에 넣지 않는다. 서브만 (docs/CONTRACTS.md C3)
         const off = i > 0 && e.departedAt !== null;
         c.el.classList.toggle("is-departed", off);
+        if (filtered) {
+          c.timers.forEach(clearTimeout);
+          c.timers.clear();
+          c.el.classList.remove("is-new", "is-hit", "is-highlight");
+          c.ref.reject.hidden = true;
+        }
         if (off) departed.push(c.el);
         else {
-          c.el.hidden = small && !teamOpen.get(t.teamId);
+          c.el.hidden = filtered || (small && !teamOpen.get(t.teamId));
           desired.push(c.el);
         }
       });
@@ -934,11 +960,11 @@ export function mountPanel(
         const open = groupOpen.get(t.teamId) ?? false;
         g.btn.setAttribute("aria-expanded", String(open));
         g.count.textContent = String(departed.length);
-        g.el.hidden = small && !teamOpen.get(t.teamId);
+        g.el.hidden = filtered || (small && !teamOpen.get(t.teamId));
         liveGroups.add(t.teamId);
         desired.push(g.el);
         for (const el of departed) {
-          el.hidden = !open || (small && !teamOpen.get(t.teamId));
+          el.hidden = filtered || !open || (small && !teamOpen.get(t.teamId));
           desired.push(el);
         }
       }
@@ -970,8 +996,11 @@ export function mountPanel(
     if (focused instanceof HTMLElement && list.contains(focused) && doc.activeElement !== focused)
       focused.focus({ preventScroll: true });
     rove();
+    if (focused instanceof HTMLElement && list.contains(focused) && focused.closest("[hidden]"))
+      showOffBtn.focus({ preventScroll: true });
     if (pendingTeam) {
-      heads.get(pendingTeam.teamId)?.el.scrollIntoView({ block: "nearest" });
+      const head = heads.get(pendingTeam.teamId)?.el;
+      if (head && !head.hidden) head.scrollIntoView({ block: "nearest" });
       pendingTeam = null;
     }
 
@@ -990,6 +1019,10 @@ export function mountPanel(
     count.hidden = false;
     count.textContent = fill(phrases.card.count, { n: total });
     empty.hidden = total > 0;
+    empty.textContent =
+      !showOff && teams.some((t) => t.phase === "Off")
+        ? "퇴근한 세션을 숨기고 있습니다"
+        : phrases.card.empty;
     if (events.ingest(office, small)) ticker.setEvents(events.events());
     if (switched) {
       switchFade?.cancel();
@@ -1050,7 +1083,7 @@ export function mountPanel(
       for (const b of [c.open, c.detail, c.approval, c.source]) b.tabIndex = index;
     }
     if (focusedCard && list.contains(focusedCard) && focusedCard.hidden)
-      chosen?.querySelector<HTMLButtonElement>(".ow-card__open")?.focus();
+      (chosen?.querySelector<HTMLButtonElement>(".ow-card__open") ?? showOffBtn).focus();
   }
   list.addEventListener("focusin", (ev) => {
     const card = (ev.target as HTMLElement).closest<HTMLElement>(".ow-card");

@@ -167,7 +167,7 @@ test("1000번 갱신해도 노드 수가 늘지 않는다", () => {
   s.dispose();
 });
 
-test("규모가 바뀌면 구조가 바뀐다: 동 머리글 목록에서 층 3개 고정 행으로", () => {
+test("규모가 바뀌면 구조가 바뀐다: 동 머리글 목록에서 층 2개 고정 행으로", () => {
   const s = setup(list([office("101")]));
   expect(byClass(s.root, "ow-group").length).toBe(1);
   expect(s.root.dataset.scale).toBe("large");
@@ -178,10 +178,10 @@ test("규모가 바뀌면 구조가 바뀐다: 동 머리글 목록에서 층 3�
   expect(s.root.dataset.scale).toBe("small");
   expect(byClass(s.root, "ow-group").length).toBe(0);
   const rs = rows(s.root);
-  expect(rs.filter((r) => r.classList.contains("is-floor")).length).toBe(3);
+  expect(rs.filter((r) => r.classList.contains("is-floor")).length).toBe(2);
   expect(rs).not.toContain(oldRow);
   // 팀 행은 층 행 아래, 비어 있는 층은 공실
-  expect(byClass(s.root, "is-vacant").length).toBe(2);
+  expect(byClass(s.root, "is-vacant").length).toBe(1);
   expect(s.listEl.textContent).toContain("공실");
   expect(rowByName(s.root, "김하늘 부장 팀")).toBeTruthy();
   s.dispose();
@@ -261,6 +261,58 @@ test("중소기업 지표는 활성 층 수와 모든 활성 팀의 직원·결�
   expect(byClass(s.root, "ow-kpi__v").map((v) => v.textContent)).toEqual(["2", "6", "3"]);
   expect(byClass(s.root, "ow-kpi__k")[0].textContent).toBe("층");
   expect(s.root.querySelector(".ow-brand__sub")?.textContent).toBe("Owlfice · 중소기업");
+  s.dispose();
+});
+
+test("중소기업은 지원하는 두 층만 목록·레일·드롭다운에 표시한다", () => {
+  const offices = [
+    office("claude", { floor: 1, building: null, label: "1층 Claude 사무실" }),
+    office("codex", { floor: 2, building: null, label: "2층 Codex 사무실" }),
+  ];
+  const s = setup(list(offices, "Small"));
+  expect(s.root.textContent).toContain("본사 건물 · 2개 층");
+  expect(
+    rows(s.root)
+      .filter((r) => r.classList.contains("is-floor"))
+      .map((r) => byClass(r, "ow-row__name")[0].textContent),
+  ).toEqual(["1층 Claude 사무실", "2층 Codex 사무실"]);
+
+  s.widthRef.w = 800;
+  roInstances[0].cb();
+  vi.advanceTimersByTime(100);
+  expect(byClass(s.root, "ow-rail__item").map((i) => i.textContent)).toEqual(["1", "2"]);
+
+  s.widthRef.w = 719;
+  roInstances[0].cb();
+  vi.advanceTimersByTime(100);
+  const sel = byClass(s.root, "ow-side-select")[0] as HTMLSelectElement;
+  expect([...sel.options].map((o) => o.textContent)).toEqual([
+    "1층 Claude 사무실",
+    "2층 Codex 사무실",
+  ]);
+  sel.value = "codex";
+  fire(sel, "change");
+  expect(s.picked).toEqual([["codex", 1]]);
+  s.dispose();
+});
+
+test("대기업은 현재 제품의 A~D동만 실제 사무실에서 만든다", () => {
+  const offices = ["A", "B", "C", "D"].map((building) =>
+    office(building, { building, label: `${building}동 101` }),
+  );
+  const s = setup(list(offices), 800);
+  expect(byClass(s.root, "ow-group").map((g) => g.textContent?.match(/[A-F]동/)?.[0])).toEqual([
+    "A동",
+    "B동",
+    "C동",
+    "D동",
+  ]);
+  expect(byClass(s.root, "ow-rail__item").map((i) => i.textContent)).toEqual(["A", "B", "C", "D"]);
+  s.widthRef.w = 719;
+  roInstances[0].cb();
+  vi.advanceTimersByTime(100);
+  const sel = byClass(s.root, "ow-side-select")[0] as HTMLSelectElement;
+  expect([...sel.options].map((o) => o.value)).toEqual(["A", "B", "C", "D"]);
   s.dispose();
 });
 
@@ -596,11 +648,11 @@ test("공실 층은 행·레일·option 이 모두 고를 수 없고, 선택이 
   const disabledRows = rows(s.root).filter((r) =>
     byClass(r, "ow-row__main")[0].matches(":disabled"),
   );
-  expect(disabledRows.length).toBe(2);
+  expect(disabledRows.length).toBe(1);
   const railItems = byClass(s.root, "ow-rail__item");
-  expect(railItems.map((i) => i.hasAttribute("disabled"))).toEqual([true, false, true]);
+  expect(railItems.map((i) => i.hasAttribute("disabled"))).toEqual([true, false]);
   const sel = byClass(s.root, "ow-side-select")[0] as HTMLSelectElement;
-  expect([...sel.options].map((o) => o.disabled)).toEqual([true, false, true]);
+  expect([...sel.options].map((o) => o.disabled)).toEqual([true, false]);
   expect(sel.selectedIndex).toBe(-1);
   s.dispose();
 });

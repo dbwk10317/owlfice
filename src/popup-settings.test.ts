@@ -2,8 +2,8 @@
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { openSettings, saveSettings } from "./popup-settings.ts";
 import type { Invoke } from "./scale.ts";
-import type { SettingsDto } from "./types/ipc.ts";
-import { createUpdateStore, type UpdateDeps } from "./store.ts";
+import type { DiscoveryPathDto, SettingsDto } from "./types/ipc.ts";
+import { createUpdateStore, type UpdateDeps } from "./update-store.ts";
 import type { DownloadEvent } from "@tauri-apps/plugin-updater";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -27,7 +27,10 @@ const toggle = (name: string) =>
 const errorText = () =>
   document.querySelector<HTMLElement>('.ow-settings__foot [role="alert"]')!.textContent;
 
-function setup(over: Partial<SettingsDto> = {}) {
+function setup(
+  over: Partial<SettingsDto> = {},
+  discovery = Promise.resolve<DiscoveryPathDto[]>([]),
+) {
   let settings = { ...defaults(), ...over };
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
     if (cmd === "get_settings") return structuredClone(settings);
@@ -37,6 +40,7 @@ function setup(over: Partial<SettingsDto> = {}) {
     }
     if (cmd === "get_diagnostics") return "비식별 진단 <home>";
     if (cmd === "get_log_folder") return "C:\\samples\\Owlfice\\logs";
+    if (cmd === "get_discovery") return discovery;
   });
   const onSettings = vi.fn();
   const writeClipboard = vi.fn().mockResolvedValue(undefined);
@@ -130,6 +134,34 @@ test("변경한 필드만 저장하고 다시 읽은 값으로 UI와 호출자�
   expect(button("중소기업").getAttribute("aria-pressed")).toBe("true");
 });
 
+test("원문 제거 실패 뒤 수집을 다시 켜지 않고 제거를 재시도한다", async () => {
+  let settings = { ...defaults(), rawDiagnostics: true };
+  let locked = true;
+  const patches: Partial<SettingsDto>[] = [];
+  const invoke: Invoke = async <T>(cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === "set_settings") {
+      const patch = args?.dto as Partial<SettingsDto>;
+      patches.push(patch);
+      settings = { ...settings, ...patch } as typeof settings;
+      if (locked) throw new Error("원문 수집은 중단했지만 기존 원문을 제거하지 못했습니다.");
+    }
+    return (cmd === "get_discovery" ? [] : settings) as T;
+  };
+  openSettings({ invoke, onSettings() {} });
+  await settle();
+  toggle("원문 진단").click();
+  await settle();
+  expect(toggle("원문 진단").getAttribute("aria-checked")).toBe("false");
+  expect(errorText()).toContain("원문 수집은 중단");
+  expect(errorText()).not.toContain("Error:");
+  expect(button("원문 제거 다시 시도").hidden).toBe(false);
+  locked = false;
+  button("원문 제거 다시 시도").click();
+  await settle();
+  expect(patches).toEqual([{ rawDiagnostics: false }, { rawDiagnostics: false }]);
+  expect(button("원문 제거 다시 시도").hidden).toBe(true);
+});
+
 test("저장 실패여도 바뀐 백엔드 메모리를 다시 읽고 오류를 숨기지 않는다", async () => {
   let settings = defaults();
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
@@ -184,17 +216,121 @@ test("이름은 Unicode 20자를 허용하고 초과는 저장하지 않으며 �
   expect(s.invoke).toHaveBeenCalledWith("set_settings", { dto: { companyName: "" } });
 });
 
+test("제품을 바꾸면 경로 예시와 설명만 바꾸고 직접 입력한 값은 보존한다", async () => {
+  const s = setup();
+  await settle();
+  const input = document.querySelector<HTMLInputElement>("#settings-path")!;
+  const vendor = document.querySelector<HTMLSelectElement>('select[aria-label="세션 제품"]')!;
+  expect(input.value).toBe("");
+  expect(input.placeholder).toContain(".claude\\projects");
+  input.value = "D:\\custom\\projects";
+  vendor.value = "Codex";
+  vendor.dispatchEvent(new Event("change"));
+  expect(input.placeholder).toContain(".codex\\sessions");
+  expect(document.querySelector("#settings-path-hint")!.textContent).toContain("Codex의 sessions");
+  expect(input.value).toBe("D:\\custom\\projects");
+  vendor.value = "Claude";
+  vendor.dispatchEvent(new Event("change"));
+  expect(input.placeholder).toContain(".claude\\projects");
+  expect(document.querySelector("#settings-path-hint")!.textContent).toContain("Claude의 projects");
+  expect(input.value).toBe("D:\\custom\\projects");
+  expect(s.invoke.mock.calls.some(([cmd]) => cmd === "set_settings")).toBe(false);
+});
+
+test("늦게 받은 탐색 후보는 현재 제품만 표시하고 호스트와 모든 상태를 구분한다", async () => {
+  let resolve!: (paths: DiscoveryPathDto[]) => void;
+  const s = setup(
+    {},
+    new Promise<DiscoveryPathDto[]>((done) => {
+      resolve = done;
+    }),
+  );
+  await settle();
+  const vendor = document.querySelector<HTMLSelectElement>('select[aria-label="세션 제품"]')!;
+  vendor.value = "Codex";
+  vendor.dispatchEvent(new Event("change"));
+  resolve([
+    { host: "Windows", vendor: "Claude", path: "C:\\sample\\projects", status: "Found" },
+    { host: "Windows", vendor: "Codex", path: "D:\\sample\\sessions", status: "Found" },
+    { host: "Windows", vendor: "Codex", path: "D:\\missing\\sessions", status: "Missing" },
+    { host: "WSL · Sample", vendor: "Codex", path: null, status: "Offline" },
+    { host: "WSL · Unknown", vendor: "Codex", path: null, status: "Unknown" },
+  ]);
+  await settle();
+  const list = document.querySelector('ul[aria-label="찾아본 경로"]')!;
+  expect(list.textContent).not.toContain("projects");
+  expect(list.textContent).toContain("Windows · 찾음 · D:\\sample\\sessions");
+  expect(list.textContent).toContain("Windows · 없음 · D:\\missing\\sessions");
+  expect(list.textContent).toContain("WSL · Sample · 소등 · 경로 미확인");
+  expect(list.textContent).toContain("WSL · Unknown · 미확인 · 경로 미확인");
+  expect(document.querySelector<HTMLInputElement>("#settings-path")!.value).toBe("");
+  vendor.value = "Claude";
+  vendor.dispatchEvent(new Event("change"));
+  expect(list.textContent).toBe("Windows · 찾음 · C:\\sample\\projects");
+  expect(s.invoke.mock.calls.filter(([cmd]) => cmd === "get_discovery")).toEqual([
+    ["get_discovery"],
+  ]);
+  expect(s.invoke.mock.calls.some(([cmd]) => cmd === "set_settings")).toBe(false);
+});
+
+test("탐색 후보 조회 실패는 표시하고 직접 경로 입력은 유지한다", async () => {
+  setup({}, Promise.reject(new Error("검증용 조회 실패")));
+  await settle();
+  expect(document.querySelector(".ow-settings")!.textContent).toContain(
+    "찾아본 경로를 불러오지 못했습니다: 검증용 조회 실패",
+  );
+  expect(document.querySelector("fieldset")!.disabled).toBe(false);
+});
+
+test("닫은 설정 팝업에는 늦은 탐색 후보를 적용하지 않는다", async () => {
+  let resolve!: (paths: DiscoveryPathDto[]) => void;
+  setup(
+    {},
+    new Promise<DiscoveryPathDto[]>((done) => {
+      resolve = done;
+    }),
+  );
+  await settle();
+  const list = document.querySelector('ul[aria-label="찾아본 경로"]')!;
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  resolve([{ host: "Windows", vendor: "Claude", path: "C:\\sample\\projects", status: "Found" }]);
+  await settle();
+  expect(list.childElementCount).toBe(0);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+test("빈 경로 추가는 입력칸에 초점을 맞추고 Enter로 Codex 경로를 저장한다", async () => {
+  const s = setup();
+  await settle();
+  const input = document.querySelector<HTMLInputElement>("#settings-path")!;
+  button("경로 추가").click();
+  expect(errorText()).toContain("절대 경로");
+  expect(document.activeElement).toBe(input);
+  expect(s.invoke.mock.calls.some(([cmd]) => cmd === "set_settings")).toBe(false);
+  const vendor = document.querySelector<HTMLSelectElement>('select[aria-label="세션 제품"]')!;
+  vendor.value = "Codex";
+  vendor.dispatchEvent(new Event("change"));
+  expect(input.placeholder).toContain(".codex\\sessions");
+  input.value = "D:\\sample\\sessions";
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true }));
+  expect(s.invoke.mock.calls.some(([cmd]) => cmd === "set_settings")).toBe(false);
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  await settle();
+  expect(s.settings().manualPaths).toEqual([{ vendor: "Codex", root: "D:\\sample\\sessions" }]);
+  expect(input.value).toBe("D:\\sample\\sessions");
+});
+
 test("제품과 세션 루트 자체로 경로를 추가·삭제하고 상대 경로는 거절한다", async () => {
   const s = setup({ manualPaths: [{ vendor: "Claude", root: "C:\\samples\\projects" }] });
   await settle();
   const input = document.querySelector<HTMLInputElement>("#settings-path")!;
   input.value = "relative";
-  button("폴더 직접 지정").click();
+  button("경로 추가").click();
   expect(errorText()).toContain("절대 경로");
   expect(s.invoke.mock.calls.filter(([cmd]) => cmd === "set_settings")).toHaveLength(0);
   input.value = "\\\\wsl.localhost\\Sample\\home\\user\\sessions";
   document.querySelector<HTMLSelectElement>('select[aria-label="세션 제품"]')!.value = "Codex";
-  button("폴더 직접 지정").click();
+  button("경로 추가").click();
   await settle();
   expect(s.settings().manualPaths).toEqual([
     { vendor: "Claude", root: "C:\\samples\\projects" },
@@ -216,7 +352,9 @@ test("진단은 요청한 때만 복사하고 클립보드 실패를 화면에 �
   button("진단 정보 복사").click();
   await settle();
   expect(s.writeClipboard).toHaveBeenLastCalledWith("비식별 진단 <home>");
-  expect(document.querySelector('[role="status"]')!.textContent).toContain("복사했습니다");
+  expect(document.querySelector('.ow-settings__foot [role="status"]')!.textContent).toContain(
+    "복사했습니다",
+  );
   button("로그 폴더 열기").click();
   await settle();
   expect(s.invoke).toHaveBeenCalledWith("open_log_folder");
@@ -242,12 +380,16 @@ test("저장 중 팝업을 닫아도 메모리 반영과 저장 실패 알림은
     reject = no;
   });
   const changed = { ...defaults(), sound: true };
-  const invoke = vi
-    .fn()
-    .mockResolvedValueOnce(defaults())
-    .mockResolvedValueOnce("C:\\samples\\logs")
-    .mockReturnValueOnce(pending)
-    .mockResolvedValueOnce(changed);
+  let saving = false;
+  const invoke = vi.fn(async (cmd: string) => {
+    if (cmd === "get_settings") return saving ? changed : defaults();
+    if (cmd === "get_log_folder") return "C:\\samples\\logs";
+    if (cmd === "get_discovery") return [];
+    if (cmd === "set_settings") {
+      saving = true;
+      return pending;
+    }
+  }) as Invoke;
   const onSettings = vi.fn();
   const onError = vi.fn();
   openSettings({ invoke, onSettings, onError });
@@ -299,7 +441,7 @@ test("로그 위치 조회 실패와 지연은 설정 저장을 막지 않고 �
   expect(settings.rawDiagnostics).toBe(true);
   expect(document.querySelector(".ow-settings__log-path")!.textContent).toBe("");
   expect(document.body.textContent).toContain(
-    "로그 위치를 불러오지 못했습니다: Error: 로그 위치 접근 실패",
+    "로그 위치를 불러오지 못했습니다: 로그 위치 접근 실패",
   );
   expect(document.querySelector<HTMLElement>("#settings-log-error")!.hidden).toBe(false);
 });

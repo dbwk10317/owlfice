@@ -615,8 +615,9 @@ fn bounded<T: Send + 'static>(
     r
 }
 
-fn needs_raw(kind: TimelineKind) -> bool {
+fn needs_raw(kind: TimelineKind, vendor: Vendor) -> bool {
     matches!(kind, TimelineKind::ToolCall | TimelineKind::ToolResult)
+        || (vendor == Vendor::Codex && kind == TimelineKind::SubagentSpawn)
 }
 
 /// 칸들의 DTO. 입력 순서 그대로. 줄마다 DTO 를 바로 만들고 원문은 버린다
@@ -644,7 +645,7 @@ fn read_events(wants: &[Want], deadline: Instant) -> Result<Vec<EventDto>, Detai
             if Instant::now() > deadline {
                 return Err(DetailError::Timeout);
             }
-            let raw = idxs.iter().any(|&i| needs_raw(wants[i].mark.kind));
+            let raw = idxs.iter().any(|&i| needs_raw(wants[i].mark.kind, vendor));
             let line = file.as_mut().and_then(|f| f.at(path, mark, raw));
             for i in idxs {
                 out[i] = Some(event_dto(&wants[i], line.as_ref()));
@@ -732,6 +733,13 @@ fn event_dto(w: &Want, line: Option<&Line>) -> EventDto {
             {
                 fill_result(&mut d, w, m, None, l.rec.as_ref());
             }
+            Some(l)
+                if w.vendor == Vendor::Codex
+                    && m.kind == TimelineKind::SubagentSpawn
+                    && l.rec.as_ref().is_some_and(|r| raw_codex_resume(r, m.ts)) =>
+            {
+                d.summary = "작업 재개".to_string();
+            }
             _ => d.summary = UNREADABLE.to_string(),
         }
         return d;
@@ -768,6 +776,36 @@ fn raw_ts_matches(rec: &Value, ts: chrono::DateTime<chrono::Utc>) -> bool {
         .and_then(Value::as_str)
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .is_some_and(|t| t == ts)
+}
+
+fn raw_codex_resume(rec: &Value, ts: chrono::DateTime<chrono::Utc>) -> bool {
+    if !raw_ts_matches(rec, ts) || rec.get("type").and_then(Value::as_str) != Some("event_msg") {
+        return false;
+    }
+    let Some(payload) = rec.get("payload") else {
+        return false;
+    };
+    let item = match payload.get("type").and_then(Value::as_str) {
+        Some("item_completed") => payload.get("item"),
+        Some("sub_agent_activity") => Some(payload),
+        _ => None,
+    };
+    let Some(item) = item else { return false };
+    if item.get("kind").and_then(Value::as_str) != Some("interacted")
+        || item
+            .get("id")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        || payload.get("type").and_then(Value::as_str) == Some("item_completed")
+            && item.get("type").and_then(Value::as_str) != Some("SubAgentActivity")
+    {
+        return false;
+    }
+    let Some(id) = item.get("agent_thread_id").and_then(Value::as_str) else {
+        return false;
+    };
+    id.split('-').map(str::len).eq([8, 4, 4, 4, 12])
+        && id.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
 }
 
 /// 결과 칸 채우기. `ev` 가 없으면(파서가 이 줄만으론 이벤트를 못 냄) 요약과 원문에서 오는 것만 채운다
@@ -870,6 +908,7 @@ fn fill_other(d: &mut EventDto, ev: &EventKind) {
             d.body = body(prompt);
         }
         EventKind::SubagentDone { .. } => d.summary = "업무 완료 보고".to_string(),
+        EventKind::SubagentInterrupted { .. } => d.summary = "작업 중단".to_string(),
         EventKind::PermissionRequest { question, plan } => {
             d.summary = if *plan {
                 "계획 결재 요청".to_string()

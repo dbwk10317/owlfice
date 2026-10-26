@@ -117,12 +117,15 @@ fn read_file(path: &Path, out: &mut impl Write) -> io::Result<()> {
     let mut dropped = 0;
     loop {
         let pending = reader.read_new_lines(MAX_READ_BYTES)?;
+        if pending.reset {
+            parser = make_parser(path);
+        }
         let end = pending.finished(&mut prev_end);
         dropped += pending.dropped_lines;
         for line in &pending.lines {
             let raw = RawRef {
                 path: path.to_path_buf(),
-                generation: u64::from(reader.generation()),
+                generation: u64::from(pending.generation()),
                 byte_offset: line.offset,
                 line_no: line.line_no,
             };
@@ -159,10 +162,10 @@ fn read_file(path: &Path, out: &mut impl Write) -> io::Result<()> {
 // ponytail: docs/CONTRACTS.md C13 은 60초 동안 팀 4개(5MB + 2MB×4)를 재지만 여기는 횟수만 채우고 파일은 100KB 하나다.
 // 나열은 N=50 이라 p99 가 최대와 같다. 실측값을 docs/CONTRACTS.md C13 예산과 직접 견주게 되면 그때 올린다
 const BENCH_N: [usize; 4] = [1000, 100, 200, 50];
-/// 읽기 한 번에 붙이는 양은 이 둘의 곱(100KB). docs/CONTRACTS.md C13 "Hot 틱 (읽기 포함, 100KB)"
+/// 읽기 한 번에 붙이는 양은 이 둘의 곱(100KB). docs/CONTRACTS.md C13 "Hot 읽기 포함 100KB"
 const LINE_BYTES: usize = 1024;
 const LINES_PER_READ: usize = 100;
-/// docs/CONTRACTS.md C13 "Scan 1회 (로컬 프로젝트 폴더 25개)"
+/// docs/CONTRACTS.md C13 "로컬 프로젝트 폴더 25개 Scan"
 const PROJECTS: usize = 25;
 
 struct Stat {
@@ -328,6 +331,72 @@ fn measure(work: &Path, [n_stat, n_read, n_verify, n_list]: [usize; 4]) -> io::R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reset_은_옛_호출을_버리고_새_세대로_출력한다() {
+        struct ReplacingOutput {
+            path: PathBuf,
+            replacement: Option<Vec<u8>>,
+            output: Vec<u8>,
+        }
+        impl Write for ReplacingOutput {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                if let Some(bytes) = self.replacement.take() {
+                    fs::write(&self.path, bytes)?;
+                }
+                self.output.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp
+            .path()
+            .join("rollout-00000000-0000-4000-8000-000000000001.jsonl");
+        let mut initial = concat!(
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"old\",\"cwd\":\"C:/sample\",\"originator\":\"codex_cli_rs\"}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\",\"name\":\"spawn_agent\",\"call_id\":\"old-call\",\"arguments\":\"{}\"}}\n"
+        ).as_bytes().to_vec();
+        initial.resize(MAX_READ_BYTES + 1, b' ');
+        fs::write(&path, initial).unwrap();
+        let replacement = concat!(
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call_output\",\"call_id\":\"old-call\",\"output\":\"{}\"}}\n",
+            "{\"type\":\"response_item\",\"metadata\":{\"user_input_order\":0},\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"new message\"}]}}\n"
+        ).as_bytes().to_vec();
+        let mut out = ReplacingOutput {
+            path: path.clone(),
+            replacement: Some(replacement),
+            output: Vec::new(),
+        };
+        read_file(&path, &mut out).unwrap();
+        let lines: Vec<serde_json::Value> = String::from_utf8(out.output)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(
+            !lines
+                .iter()
+                .any(|v| v["event"]["kind"].get("ToolResult").is_some())
+        );
+        let user = lines
+            .iter()
+            .find(|v| v["event"]["kind"].get("UserMessage").is_some())
+            .unwrap();
+        assert_eq!(user["event"]["raw_ref"]["generation"], 1);
+        assert_eq!(user["event"]["raw_ref"]["line_no"], 2);
+        assert_eq!(
+            user["event"]["session_id"],
+            "00000000-0000-4000-8000-000000000001"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|v| v["event"]["raw_ref"]["generation"] == 0)
+        );
+    }
 
     fn run(rel: &str) -> Vec<serde_json::Value> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))

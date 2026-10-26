@@ -279,6 +279,7 @@
     },
     "company": "회사", "scale": "회사 규모", "scaleHint": "바꾸면 사무실만 다시 배치하고 데이터는 다시 읽지 않아요.", "large": "대기업", "small": "중소기업",
     "bossName": "사장님 이름", "bossNameHint": "비워 두면 “사장님”으로 불러요.", "bossNamePlaceholder": "사장님",
+    "animal": "직원 동물", "animals": { "owls": "올빼미", "dogs": "강아지", "cats": "고양이" }, "animalHint": "바꾸면 직원 그림을 다시 읽어요.",
     "screenSound": "화면과 소리", "sound": "소리", "soundHint": "키보드, 인터폰, 경광등, 무재해 리셋 소리",
     "nightMode": "야근 모드", "nightModes": { "auto": "자동", "on": "켜기", "off": "끄기" },
     "nightModeHint": "자동은 로컬 시각 20시부터 다음 날 06시까지 켜집니다. 사무실 조명은 시각에 따라 바뀝니다.",

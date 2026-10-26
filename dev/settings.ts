@@ -21,6 +21,7 @@ let settings: SettingsDto = {
   nightMode: "auto",
   osNotifications: true,
   rawDiagnostics: false,
+  animal: null,
 };
 // 합성 진행은 버튼으로 한 단계씩 보내 검수 중에도 표시를 유지한다.
 let advanceUpdate: (() => void) | undefined;

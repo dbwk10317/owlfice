@@ -50,6 +50,14 @@ pub enum NightMode {
     Off,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum Animal {
+    Owls,
+    Dogs,
+    Cats,
+}
+
 /// `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +74,8 @@ pub struct SettingsDto {
     // 비면 프론트가 기본 호칭을 쓴다. 빈 문자열을 보내면 기본으로 되돌린다.
     pub boss_name: Option<String>,
     pub raw_diagnostics: Option<bool>,
+    /// 없으면 null 이고 프론트가 올빼미로 본다
+    pub animal: Option<Animal>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]

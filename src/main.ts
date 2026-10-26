@@ -235,6 +235,8 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
       pendingTeam = null;
       o.setRoomLabels(header?.roomLabels() ?? true);
       o.setBossName(settings.bossName);
+      // 마운트 중에 바뀐 동물은 office 가 아직 없어 건너뛰었으므로 여기서 최신 값을 적용한다
+      o.setAnimal(settings.animal ?? "owls");
       checkAfterOffice();
     },
     (e) => {

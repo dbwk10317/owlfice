@@ -351,6 +351,16 @@ mod tests {
         book.update(&patch(serde_json::json!({"animal": null, "sound": true})))
             .unwrap();
         assert_eq!(read(dir.path())["animal"], "dogs");
+        book.update(&patch(serde_json::json!({"animal": "mixed"})))
+            .unwrap();
+        assert_eq!(read(dir.path())["animal"], "mixed");
+        assert_eq!(
+            SettingsBook::load(dir.path()).snapshot().animal,
+            Some(Animal::Mixed)
+        );
+        book.update(&patch(serde_json::json!({"animal": "dogs"})))
+            .unwrap();
+        assert_eq!(read(dir.path())["animal"], "dogs");
         assert_eq!(read(dir.path())["future"], serde_json::json!([1]));
         assert_eq!(
             SettingsBook::load(dir.path()).snapshot().animal,

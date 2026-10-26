@@ -53,6 +53,7 @@ pub enum NightMode {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Animal {
+    Mixed,
     Owls,
     Dogs,
     Cats,

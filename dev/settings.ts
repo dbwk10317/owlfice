@@ -1,6 +1,7 @@
 // 설정과 IPC는 메모리 모형이다. 실제 설정·세션·클립보드를 건드리지 않는다.
 import "../design/handoff/tokens.css";
 import "../src/styles/app.css";
+import { setAvatarAnimal } from "../src/avatar.ts";
 import { mountHeader } from "../src/header.ts";
 import { mountOffice, type OfficeHandle } from "../src/office/renderer.ts";
 import { openSettings, saveSettings } from "../src/popup-settings.ts";
@@ -203,6 +204,8 @@ function applySettings(next: SettingsDto): void {
   sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
   header.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
   canvas?.setBossName(next.bossName);
+  setAvatarAnimal(next.animal ?? "owls");
+  canvas?.setAnimal(next.animal ?? "owls");
   get("status").textContent =
     `회사: ${next.companyName ?? "Owlfice"} · 사장님: ${next.bossName ?? "사장님"} · 소리: ${next.sound} · OS 알림: ${next.osNotifications} · 원문 진단: ${next.rawDiagnostics}`;
 }
@@ -210,6 +213,7 @@ mountOffice(get("stage"), store, { onScale: (n) => header.setScale(n) }).then(
   (handle) => {
     canvas = handle;
     canvas.setBossName(settings.bossName);
+    canvas.setAnimal(settings.animal ?? "owls");
     get("app").dataset.ready = "true";
   },
   (error) => {

@@ -210,3 +210,31 @@ test("동물이 바뀌면 붙어 있는 아바타를 새 시트로 다시 그리
   expect(a.children).toHaveLength(1);
   expect(gone.children).toHaveLength(1);
 });
+
+test("제거된 요소는 동물을 안 바꿔도 다음 setAvatar 뒤 묶음에서 빠진다", async () => {
+  const { setAvatar, mountedCount } = await import("./avatar.ts");
+  const a = host();
+  const gone = host();
+  setAvatar(a, emp("a"), "A");
+  setAvatar(gone, emp("b"), "A");
+  await settle();
+  expect(mountedCount()).toBe(2);
+  gone.remove();
+  setAvatar(a, emp("c"), "A");
+  expect(mountedCount()).toBe(1);
+});
+
+test("시트 로드가 한 번 실패해도 다음 setAvatar 가 다시 시도해 그린다", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.mocked(loadOwls).mockRejectedValueOnce(new Error("일시 오류"));
+  const { setAvatar } = await import("./avatar.ts");
+  const a = host();
+  setAvatar(a, emp("a"), "A");
+  await settle();
+  expect(a.children).toHaveLength(0);
+  setAvatar(a, emp("a"), "A");
+  await settle();
+  expect(loadOwls).toHaveBeenCalledTimes(2);
+  expect(a.querySelector("canvas")).not.toBeNull();
+  expect(log).toHaveBeenCalledTimes(1);
+});

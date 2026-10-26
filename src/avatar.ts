@@ -8,8 +8,20 @@ let animal: Animal = "owls";
 let atlas: ReturnType<typeof loadOwls> | undefined;
 let pictures = new Map<string, HTMLCanvasElement>();
 const requests = new WeakMap<HTMLElement, string>();
-// 붙어 있는 아바타 자리. 동물이 바뀌면 다시 그리려고 둔다. 떨어진 자리는 바꿀 때 지운다
-const mounted = new Map<HTMLElement, { employee: Employee; building?: string }>();
+// 붙어 있는 아바타 자리. 동물이 바뀌면 다시 그리려고 둔다.
+// 요소를 강하게 붙들면 제거된 카드·팝업이 회수되지 않으므로 WeakRef 로 두고 호출 때마다 죽은 자리를 지운다
+type Mount = { ref: WeakRef<HTMLElement>; employee: Employee; building?: string };
+const mounted = new Set<Mount>();
+const mountOf = new WeakMap<HTMLElement, Mount>();
+
+function prune(): void {
+  for (const m of mounted) if (!m.ref.deref()?.isConnected) mounted.delete(m);
+}
+
+/** 테스트용 */
+export function mountedCount(): number {
+  return mounted.size;
+}
 let warned = false;
 
 /** 동물이 바뀌면 시트와 그림 캐시를 버리고 붙어 있는 아바타를 모두 다시 그린다 (HANDOFF 4.6). */
@@ -18,9 +30,10 @@ export function setAvatarAnimal(next: Animal): void {
   animal = next;
   atlas = undefined;
   pictures = new Map();
-  for (const [host, { employee, building }] of mounted) {
-    if (host.isConnected) setAvatar(host, employee, building);
-    else mounted.delete(host);
+  prune();
+  for (const { ref, employee, building } of mounted) {
+    const host = ref.deref();
+    if (host) setAvatar(host, employee, building);
   }
 }
 
@@ -31,7 +44,12 @@ async function picture(
 ): Promise<HTMLCanvasElement> {
   const { agentId, rank, role: duty } = employee;
   const cache = pictures; // await 중 동물이 바뀌어도 옛 그림이 새 캐시에 섞이지 않게
-  const owls = await (atlas ??= loadOwls(animal, 2));
+  const loading = (atlas ??= loadOwls(animal, 2));
+  const owls = await loading.catch((error: unknown) => {
+    // 일시 오류의 거부된 Promise 가 남아 영영 빈 자리표시가 되지 않게 한다
+    if (atlas === loading) atlas = undefined;
+    throw error;
+  });
   const [w, h] = owls.meta.frame;
   if (w !== 32 || h !== 48) throw new Error("아바타 시트가 2× 32×48 이 아니다");
   if (owls.meta.employeeSpecies.length === 0) throw new Error("올빼미 종 목록이 비어 있다");
@@ -70,7 +88,14 @@ export function setAvatar(host: HTMLElement, employee: Employee, building?: stri
   ]);
   if (requests.get(host) === key) return;
   requests.set(host, key);
-  mounted.set(host, { employee, building });
+  prune();
+  const mount = mountOf.get(host);
+  if (mount) Object.assign(mount, { employee, building });
+  else {
+    const added = { ref: new WeakRef(host), employee, building };
+    mountOf.set(host, added);
+    mounted.add(added);
+  }
   host.replaceChildren();
   host.style.setProperty("--ow-avatar-bg", `var(--ow-${themeOf(building)}-tint)`);
   void picture(host.ownerDocument, employee, building)
@@ -85,6 +110,8 @@ export function setAvatar(host: HTMLElement, employee: Employee, building?: stri
       host.replaceChildren(canvas);
     })
     .catch((error: unknown) => {
+      // 다음 setAvatar 가 다시 시도하게 한다. 그 사이 키가 바뀌었으면 건드리지 않는다
+      if (requests.get(host) === key) requests.delete(host);
       if (warned) return;
       warned = true;
       console.error("아바타를 그릴 수 없어 자리표시를 유지한다", error);

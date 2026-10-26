@@ -1,7 +1,8 @@
-// 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 겹친 올빼미로 그린다 (HANDOFF 4.4, 5, 6.4).
+// 직원 액터: 스냅샷의 직원을 방·좌석에 세우고 겹친 직원 그림으로 그린다 (HANDOFF 4.4, 5, 6.4).
 import { Container, Graphics, Rectangle, Sprite, type Spritesheet, type Texture } from "pixi.js";
 import phrases from "../../design/handoff/phrases.ko.json";
 import type {
+  Animal,
   Bubble,
   CueDto,
   EmployeeDto,
@@ -58,8 +59,11 @@ export interface OwlMeta {
   density: number;
   frame: [number, number];
   anchor: [number, number];
-  bossSpecies: string;
+  /** 섞기에서 팀마다 고르는 사장님 종 (동물마다 하나) */
+  bossSpecies: string[];
+  /** 섞기에서 고르는 직원 종 (세 동물의 직원 종을 이은 것) */
   employeeSpecies: string[];
+  animals: Record<Exclude<Animal, "mixed">, { name: string; employees: string[]; boss: string }>;
   poses: Record<string, { dirs: Record<string, number>; fps: number }>;
   anchors: Record<string, { hand: [number, number]; head: [number, number] }>;
 }
@@ -93,6 +97,23 @@ export function fnv1a64(s: string): bigint {
 
 export function speciesOf(agentId: string, species: string[]): string {
   return species[Number(fnv1a64(agentId) % BigInt(species.length))];
+}
+
+/**
+ * 설정의 직원 동물로 고를 직원 종 목록과 팀의 사장님 종 (HANDOFF 6.4 speciesRule).
+ * 캔버스와 카드 아바타가 같이 써야 같은 직원이 같은 종으로 보인다.
+ */
+export function castOf(
+  meta: OwlMeta,
+  animal: Animal,
+): { employees: string[]; bossOf(teamId: string): string } {
+  if (animal === "mixed")
+    return {
+      employees: meta.employeeSpecies,
+      bossOf: (teamId) => speciesOf(teamId, meta.bossSpecies),
+    };
+  const { employees, boss } = meta.animals[animal];
+  return { employees, bossOf: () => boss };
 }
 
 // ---------- 자리와 자세 (HANDOFF 5절) ----------
@@ -387,7 +408,7 @@ export function seatProps(fp: Floorplan, kind: Kind, office: OfficeDto | null): 
   return out;
 }
 
-// ---------- 올빼미 프레임 ----------
+// ---------- 직원 프레임 ----------
 
 /**
  * 세 겹 프레임 이름 (HANDOFF 6.4). 시트에 없는 겹은 null: 수습은 담당 겹이 없고,
@@ -600,6 +621,7 @@ export class ActorLayer {
     private office: Spritesheet,
     private owls: Owls | null,
     private overlay: HTMLElement,
+    private animal: Animal = "mixed",
   ) {
     const doc = overlay.ownerDocument;
     this.nametag = doc.createElement("div");
@@ -624,22 +646,30 @@ export class ActorLayer {
   }
 
   /**
-   * 직원 시트를 바꾼다 (배율에 따른 밀도, 설정의 동물). 자리·자세·위치는 그대로 두고 레이어 크기와 종만 맞춘다.
+   * 직원 시트를 바꾼다 (배율에 따른 밀도). 자리·자세·위치는 그대로 두고 레이어 크기와 종만 맞춘다.
    * 텍스처·손 물건·도장·땀은 다음 update 가 새 시트로 다시 잡는다.
    */
   setOwls(next: Owls): void {
     // ponytail: 대체 몸체(시트 없이 시작)와 시트 사이 전환은 몸을 새로 지어야 해서 안 한다. 시작 때 시트 로드가 실패하는 일이 잦아지면 올린다
     if (!this.owls) return;
     this.owls = next;
-    for (const a of this.actors.values()) {
-      a.species = speciesOf(a.id, next.meta.employeeSpecies);
-      for (const s of a.layers) fitLayer(s, next.meta);
-    }
-    for (const v of this.visitors) {
-      v.body.species = next.meta.bossSpecies;
-      for (const s of v.body.layers) fitLayer(s, next.meta);
-    }
+    for (const a of this.actors.values()) for (const s of a.layers) fitLayer(s, next.meta);
+    for (const v of this.visitors) for (const s of v.body.layers) fitLayer(s, next.meta);
+    this.recast();
     this.placeOverlay();
+  }
+
+  /** 설정의 직원 동물. 시트는 동물마다 같으니 다시 읽지 않고 종만 다시 고른다. 텍스처는 다음 update 가 잡는다 */
+  setAnimal(animal: Animal): void {
+    this.animal = animal;
+    this.recast();
+  }
+
+  private recast(): void {
+    if (!this.owls) return;
+    const cast = castOf(this.owls.meta, this.animal);
+    for (const a of this.actors.values()) a.species = speciesOf(a.id, cast.employees);
+    for (const v of this.visitors) v.body.species = cast.bossOf(v.teamId);
   }
 
   /**
@@ -775,7 +805,7 @@ export class ActorLayer {
       a.emp = p.emp;
       a.items = p.emp.items;
       if (quiet || !old?.spot || !this.clocks.has(key)) this.recordClock(a, now);
-      a.species = this.owls ? speciesOf(a.id, this.owls.meta.employeeSpecies) : "";
+      a.species = this.owls ? speciesOf(a.id, castOf(this.owls.meta, this.animal).employees) : "";
       a.outfit = `${p.emp.rank.toLowerCase()}-${themeOf(p.team.building)}`;
       a.role = p.emp.role === "Trainee" ? null : p.emp.role.toLowerCase();
       const was = a.spot;
@@ -1304,7 +1334,7 @@ export class ActorLayer {
     b.root.cursor = "pointer";
     b.root.on("pointertap", () => this.onBossPick?.(c.teamId, b.root.x, b.root.y));
     if (this.owls) {
-      b.species = this.owls.meta.bossSpecies;
+      b.species = castOf(this.owls.meta, this.animal).bossOf(c.teamId);
       b.outfit = "boss";
     }
     const door = stand(this.fp, "door");

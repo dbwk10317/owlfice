@@ -74,32 +74,30 @@ export function maxFitScale(
 }
 
 /**
- * 직원 시트 교체 (HANDOFF 6.4). 요청이 겹치면 (동물, 밀도) 마지막 것만 적용하고, 로드 중엔 지금 시트를 그대로 그린다.
- * 실패하면 알리고 지금 시트를 유지한다. 같은 요청이 다시 오면 그때 다시 읽는다.
+ * 직원 시트 교체 (HANDOFF 6.4). 시트는 밀도마다 한 장이라 밀도만 본다. 요청이 겹치면 마지막 밀도만 적용하고,
+ * 로드 중엔 지금 시트를 그대로 그린다. 실패하면 알리고 지금 시트를 유지한다. 같은 요청이 다시 오면 그때 다시 읽는다.
  */
 export function sheetSwitcher(
-  animal: Animal,
   density: Density,
-  load: (animal: Animal, density: Density) => Promise<Owls>,
+  load: (density: Density) => Promise<Owls>,
   apply: (owls: Owls) => void,
-): (animal: Animal, density: Density) => void {
-  let shown = `${animal}@${density}`;
+): (density: Density) => void {
+  let shown = density;
   let wanted = shown;
-  return (animal, density) => {
-    const key = `${animal}@${density}`;
-    if (key === wanted) return;
-    wanted = key;
+  return (next) => {
+    if (next === wanted) return;
+    wanted = next;
     // 지금 그리는 시트로 돌아왔으면 읽고 있던 것은 끝나도 버린다
-    if (key === shown) return;
-    load(animal, density).then(
+    if (next === shown) return;
+    load(next).then(
       (owls) => {
-        if (wanted !== key) return;
-        shown = key;
+        if (wanted !== next) return;
+        shown = next;
         apply(owls);
       },
       (e) => {
-        console.error(`직원 시트 ${key} 를 못 읽어 지금 시트를 유지한다`, e);
-        if (wanted === key) wanted = shown;
+        console.error(`직원 시트 ${next}× 를 못 읽어 지금 시트를 유지한다`, e);
+        if (wanted === next) wanted = shown;
       },
     );
   };
@@ -336,11 +334,11 @@ export interface OfficeHandle {
   setRoomLabels(on: boolean): void;
   setBossName(name: string | null): void;
   highlightTeam(officeId: string, teamId: string): void;
-  /** 설정의 직원 동물. 지금 배율의 밀도로 시트를 다시 읽는다 */
+  /** 설정의 직원 동물. 시트는 그대로 두고 종만 다시 고른다 */
   setAnimal(animal: Animal): void;
 }
 export interface OfficeOptions {
-  /** 직원 동물 (기본 올빼미) */
+  /** 직원 동물 (기본 섞기) */
   animal?: Animal;
   season?: boolean;
   sound?: OfficeSound;
@@ -363,7 +361,6 @@ export async function mountOffice(
   await loadWallFont();
   const assets = await loadOfficeAssets();
   const fp = assets.floorplan;
-  let animal: Animal = opts.animal ?? "owls";
   // 첫 layout() 과 같은 배율의 밀도로 읽는다. 아직 고른 배율은 없다
   const dpr0 = window.devicePixelRatio || 1;
   const box0 = stage.getBoundingClientRect();
@@ -375,7 +372,7 @@ export async function mountOffice(
       window.innerWidth,
     ),
   );
-  const owls = await loadOwls(animal, density0).catch((e) => {
+  const owls = await loadOwls(density0).catch((e) => {
     console.error("직원 시트를 못 읽어 대체 몸체로 그린다", e);
     return null;
   });
@@ -390,10 +387,10 @@ export async function mountOffice(
   wrap.append(app.canvas, overlay, actorOverlay);
   // 이름표보다 아래에 깔리게 먼저 만든다
   const screenLabel = new ScreenLabel(actorOverlay);
-  const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay);
+  const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay, opts.animal ?? "mixed");
   // 대체 몸체로 시작했으면 시트를 바꾸지 않는다 (ActorLayer.setOwls)
   const pickSheet = owls
-    ? sheetSwitcher(animal, density0, loadOwls, (next) => actors.setOwls(next))
+    ? sheetSwitcher(density0, loadOwls, (next) => actors.setOwls(next))
     : () => {};
   let bossName = opts.bossName || phrases.ranks.boss;
   const minimap = document.createElement("div");
@@ -666,7 +663,7 @@ export async function mountOffice(
     if (app.renderer.width !== fit.backingW || app.renderer.height !== fit.backingH)
       app.renderer.resize(fit.backingW, fit.backingH);
     app.stage.scale.set(fit.scale);
-    pickSheet(animal, sheetDensity(fit.scale));
+    pickSheet(sheetDensity(fit.scale));
     if (fit.scale !== notifiedScale || maxFit !== notifiedMaxFit) {
       notifiedScale = fit.scale;
       notifiedMaxFit = maxFit;
@@ -851,10 +848,7 @@ export async function mountOffice(
       pendingTeam = { officeId, teamId };
       focusTeam();
     },
-    setAnimal: (next) => {
-      animal = next;
-      pickSheet(animal, sheetDensity(fit.scale));
-    },
+    setAnimal: (next) => actors.setAnimal(next),
   };
 }
 

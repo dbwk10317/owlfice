@@ -13,7 +13,7 @@ import {
   toCss,
 } from "./renderer.ts";
 import type { Owls } from "./actors.ts";
-import { sheetDensity, type Animal, type Density } from "./sprites.ts";
+import { sheetDensity, type Density } from "./sprites.ts";
 
 test("액자 클릭은 포커스 팀을 따르고 팀장석 클릭은 자기 팀을 유지한다", () => {
   const older = testTeam("old", [], { deskSlot: 0, lastActivity: "2026-01-01T00:00:00Z" });
@@ -160,47 +160,43 @@ test("직원 시트 밀도: 배율 1·2 는 2×, 3 은 3×", () => {
 });
 
 test("직원 시트 교체는 겹친 요청 중 마지막 것만 적용하고, 실패하면 지금 시트를 두고 다시 요청하면 또 읽는다", async () => {
-  const pending = new Map<string, { ok: (o: Owls) => void; fail: (e: Error) => void }>();
+  const pending = new Map<Density, { ok: (o: Owls) => void; fail: (e: Error) => void }>();
   const load = vi.fn(
-    (animal: Animal, density: Density) =>
-      new Promise<Owls>((ok, fail) => pending.set(`${animal}@${density}`, { ok, fail })),
+    (density: Density) => new Promise<Owls>((ok, fail) => pending.set(density, { ok, fail })),
   );
   const sheet = (key: string) => ({ key }) as unknown as Owls;
   const applied: unknown[] = [];
-  const pick = sheetSwitcher("owls", 2, load, (o) =>
-    applied.push((o as unknown as { key: string }).key),
-  );
+  const pick = sheetSwitcher(2, load, (o) => applied.push((o as unknown as { key: string }).key));
   const settle = () => new Promise((r) => setTimeout(r));
   // 지금 그리는 시트는 다시 읽지 않는다
-  pick("owls", 2);
+  pick(2);
   expect(load).not.toHaveBeenCalled();
-  // 배율 3 으로 바뀌는 중에 동물도 바뀌면 늦게 끝난 앞 요청은 버린다
-  pick("owls", 3);
-  pick("dogs", 3);
-  pending.get("dogs@3")!.ok(sheet("dogs@3"));
-  pending.get("owls@3")!.ok(sheet("owls@3"));
-  await settle();
-  expect(applied).toEqual(["dogs@3"]);
   // 읽는 중에 지금 시트로 돌아오면 끝난 로드를 버린다
-  pick("dogs", 2);
-  pick("dogs", 3);
-  pending.get("dogs@2")!.ok(sheet("dogs@2"));
+  pick(3);
+  pick(2);
+  pending.get(3)!.ok(sheet("3a"));
   await settle();
-  expect(applied).toEqual(["dogs@3"]);
+  expect(applied).toEqual([]);
+  // 다시 3 으로 가면 새로 읽는다
+  pick(3);
+  expect(load).toHaveBeenCalledTimes(2);
+  pending.get(3)!.ok(sheet("3b"));
+  await settle();
+  expect(applied).toEqual(["3b"]);
   // 실패: 알리고 지금 시트 유지, 같은 요청이 다시 오면 또 읽는다
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   pending.clear();
-  pick("cats", 3);
-  pending.get("cats@3")!.fail(new Error("404"));
+  pick(2);
+  pending.get(2)!.fail(new Error("404"));
   await settle();
-  expect(applied).toEqual(["dogs@3"]);
+  expect(applied).toEqual(["3b"]);
   expect(error).toHaveBeenCalledTimes(1);
   error.mockRestore();
   pending.clear();
-  pick("cats", 3);
-  pending.get("cats@3")!.ok(sheet("cats@3"));
+  pick(2);
+  pending.get(2)!.ok(sheet("2"));
   await settle();
-  expect(applied).toEqual(["dogs@3", "cats@3"]);
+  expect(applied).toEqual(["3b", "2"]);
 });
 
 test("창에 맞는 배율은 3 을 넘지 않고 720 미만 창은 1 이다", () => {

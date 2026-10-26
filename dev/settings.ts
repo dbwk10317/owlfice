@@ -204,8 +204,8 @@ function applySettings(next: SettingsDto): void {
   sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
   header.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
   canvas?.setBossName(next.bossName);
-  setAvatarAnimal(next.animal ?? "owls");
-  canvas?.setAnimal(next.animal ?? "owls");
+  setAvatarAnimal(next.animal ?? "mixed");
+  canvas?.setAnimal(next.animal ?? "mixed");
   get("status").textContent =
     `회사: ${next.companyName ?? "Owlfice"} · 사장님: ${next.bossName ?? "사장님"} · 소리: ${next.sound} · OS 알림: ${next.osNotifications} · 원문 진단: ${next.rawDiagnostics}`;
 }
@@ -213,7 +213,7 @@ mountOffice(get("stage"), store, { onScale: (n) => header.setScale(n) }).then(
   (handle) => {
     canvas = handle;
     canvas.setBossName(settings.bossName);
-    canvas.setAnimal(settings.animal ?? "owls");
+    canvas.setAnimal(settings.animal ?? "mixed");
     get("app").dataset.ready = "true";
   },
   (error) => {

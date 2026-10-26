@@ -37,7 +37,7 @@ const samples: {
   building: string;
   button: HTMLButtonElement;
 }[] = [];
-const owls = await loadOwls();
+const owls = await loadOwls("owls", 2);
 const ids = new Map<string, string>();
 for (let i = 0; ids.size < owls.meta.employeeSpecies.length; i++) {
   const id = `synthetic-avatar-${i}`;

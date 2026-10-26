@@ -126,6 +126,41 @@ test("중소기업 현황판 팀 색은 책상 슬롯을 따르고 활동 재정
   s.panel.destroy();
 });
 
+test("중소기업 팀 머리글 점은 목록의 Rust 요약 상태를 따른다", () => {
+  const t = team("t", [emp("boss")], { phase: "Working" });
+  const s = setup(office("vendor/Claude", 1, [t]), "Small");
+  const current = s.store.state.list!;
+  s.store.applyList({
+    ...current,
+    listSeq: 2,
+    offices: current.offices.map((item) => ({
+      ...item,
+      teams: [
+        {
+          teamId: "t",
+          bossName: "boss",
+          title: t.title,
+          folder: t.folder,
+          others: 0,
+          started: t.started,
+          lastActivity: t.lastActivity,
+          readFailed: false,
+          phase: "Working",
+          dot: "Waiting",
+          asking: false,
+          askingCount: 0,
+          border: "Plain",
+          delayed: false,
+          hostBadge: null,
+          workType: t.workType,
+        },
+      ],
+    })),
+  });
+  expect(s.q<HTMLElement>(".ow-teamhead .ow-dot")?.dataset.state).toBe("waiting");
+  s.panel.destroy();
+});
+
 test("중소기업 퇴근 팀은 접히고 팀 선택·재출근으로 다시 펼쳐진다", () => {
   const state = (seq: number, phase: "Working" | "Off") =>
     office("vendor/Claude", seq, [team("t", [emp("boss"), emp("sub")], { phase })]);
@@ -208,6 +243,22 @@ test("대기업은 Off 카드만 숨기고 빈 상태·초점을 맞추며 복�
   expect(card.hidden).toBe(false);
   expect(card.classList.contains("is-hit")).toBe(false);
   expect(s.q(".ow-panel__toast")).toBeNull();
+  s.panel.destroy();
+});
+
+test("Off 카드를 숨기면 rove가 고른 보이는 카드에 초점을 유지한다", () => {
+  const s = setup(
+    office("o", 1, [
+      team("work", [emp("working")]),
+      team("off", [emp("departed", { state: "Off" })], { phase: "Off" }),
+    ]),
+  );
+  const off = s.cards().find((c) => c.dataset.agentId === "departed")!;
+  const working = s.cards().find((c) => c.dataset.agentId === "working")!;
+  openButton(off).focus();
+  s.q<HTMLButtonElement>(".ow-panel__filter")!.click();
+  expect(off.hidden).toBe(true);
+  expect(document.activeElement).toBe(openButton(working));
   s.panel.destroy();
 });
 
@@ -763,6 +814,7 @@ test("카드는 article이고 머리줄·상세·결재 버튼은 중첩하지 �
       team("t", [
         emp("boss"),
         emp("a", {
+          asking: true,
           activity: act({ room: "Door" }),
         }),
       ]),
@@ -806,10 +858,12 @@ test("허가 대기는 경과·질문과 두 동작을 표시하고 원본 열�
       team("t", [
         emp("boss", {
           state: "Waiting",
+          asking: true,
+          question: "이 명령을 실행할까요?",
           activity: act({
             room: "Door",
             since: iso(14, 30),
-            sentence: "결재판 들고 문 앞 대기: 「이 명령을 실행할까요?」",
+            sentence: "결재를 기다리는 중",
           }),
           lastSay: "이전 발언",
         }),
@@ -839,10 +893,31 @@ test("허가 대기는 경과·질문과 두 동작을 표시하고 원본 열�
   expect(s.q(".ow-card__ask-actions")!.hidden).toBe(true);
 });
 
-test("최근 행적은 세 줄 타임라인이며 확정 실패·반려 접두어만 빨갛게 표시한다", () => {
+test("문 앞 자세만으로 결재를 추론하지 않고 직원의 질문과 오류 판정을 표시한다", () => {
+  const worker = emp("boss", {
+    state: "Waiting",
+    activity: act({ room: "Door", sentence: "반려됨: 일반 설명" }),
+    recent: [act({ sentence: "작업 결과", bad: true })],
+  });
+  const s = setup(office("o", 1, [team("t", [worker])]));
+  expect(s.q(".ow-card")!.classList.contains("is-ask")).toBe(false);
+  expect(s.q<HTMLElement>(".ow-card__ask-actions")!.hidden).toBe(true);
+  expect(s.q(".ow-quote")!.textContent).toBe("");
+  expect(s.q(".ow-trail__item.is-bad:not([hidden])")!.textContent).toContain("작업 결과");
+
+  worker.asking = true;
+  worker.question = "새 문구로 확인할까요?";
+  worker.activity = act({ room: "TeamLead", sentence: "결재 요청을 기다리는 중", bad: true });
+  s.push(office("o", 2, [team("t", [worker])]));
+  expect(s.q(".ow-card")!.classList.contains("is-ask")).toBe(true);
+  expect(s.q(".ow-quote")!.textContent).toBe("“새 문구로 확인할까요?”");
+  expect(s.q(".ow-status")!.classList.contains("is-bad")).toBe(true);
+});
+
+test("최근 행적은 세 줄 타임라인이며 DTO의 오류 판정을 따른다", () => {
   const recent = [
-    act({ sentence: "사고: `cargo test` 실패" }),
-    act({ sentence: "반려됨: `rm` 안 됩니다" }),
+    act({ sentence: "빌드 작업 종료", bad: true }),
+    act({ sentence: "반려됨: `rm` 안 됩니다", bad: true }),
     act({ sentence: "`사고: 반려됨:` 글자 검색" }),
     act({ sentence: "네 번째" }),
   ];
@@ -855,7 +930,7 @@ test("최근 행적은 세 줄 타임라인이며 확정 실패·반려 접두�
       team("t", [
         emp("boss", {
           recent: [
-            act({ sentence: "사고: `cargo test` 실패", confidence: "Inferred" }),
+            act({ sentence: "빌드 작업 종료", confidence: "Inferred" }),
             act({ sentence: "반려됨: `rm` 안 됩니다", confidence: "Inferred" }),
           ],
         }),
@@ -872,9 +947,14 @@ test("Door 결재 카드가 팀 퇴근·개별 퇴근으로 바뀌면 같은 DOM
       team(
         "t",
         [
-          emp("boss", { state: off ? "Off" : "Waiting", activity: act({ room: "Door" }) }),
+          emp("boss", {
+            state: off ? "Off" : "Waiting",
+            asking: !off,
+            activity: act({ room: "Door" }),
+          }),
           emp("sub", {
             state: off || departed ? "Off" : "Waiting",
+            asking: !off && !departed,
             activity: act({ room: "Door" }),
             departedAt: departed ? NOW.toISOString() : null,
           }),

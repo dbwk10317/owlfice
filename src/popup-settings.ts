@@ -368,6 +368,10 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
   if (deps.updates) {
     const updates = deps.updates;
     const update = section(S.update);
+    const updateFieldset = doc.createElement("fieldset");
+    updateFieldset.className = "ow-settings";
+    updateFieldset.append(update);
+    scroll.append(updateFieldset);
     const version = h(doc, "p", "ow-settings__hint");
     const result = h(doc, "p", "ow-settings__status");
     result.setAttribute("role", "status");

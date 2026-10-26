@@ -11,6 +11,7 @@ pub mod registry;
 mod windows;
 pub mod wsl;
 
+pub(crate) use windows::is_local_path;
 pub use windows::windows_host;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -221,13 +222,10 @@ impl Scanner {
             }
             false
         });
-        self.cached.retain(|_, (entry, started, _)| {
-            fresh
-                && now.duration_since(*started) <= REMOTE_LIMIT
-                && self
-                    .states
-                    .iter()
-                    .any(|(e, on)| e == entry && *on == Some(true))
+        self.cached.retain(|_, (entry, _, _)| {
+            self.states
+                .iter()
+                .any(|(e, on)| e == entry && *on != Some(false))
         });
         self.cached
             .extend(completed.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -263,10 +261,14 @@ impl Scanner {
                     ),
                 );
             }
-            if let Some((_, _, found)) = self.cached.get(&name) {
-                distros.extend(found.distros.clone());
+            let cached = self.cached.get(&name);
+            if let Some((_, started, found)) = cached {
+                // 경로를 찾았던 사실은 재조회 동안 유지하되 오래된 켜짐 결과로 UNC 접근을 허용하지 않는다.
                 candidates.extend(found.candidates.clone());
-                continue;
+                if running == Some(true) && now.duration_since(*started) <= REMOTE_LIMIT {
+                    distros.extend(found.distros.clone());
+                    continue;
+                }
             }
             let host = Host {
                 id: format!("wsl:{}", entry.name),
@@ -281,17 +283,19 @@ impl Scanner {
             } else {
                 None
             };
-            for vendor in [Vendor::Claude, Vendor::Codex] {
-                candidates.push(Candidate {
-                    host: host.clone(),
-                    vendor,
-                    root: None,
-                    result: if visible == Some(false) {
-                        CandidateResult::Offline
-                    } else {
-                        CandidateResult::Unknown
-                    },
-                });
+            if cached.is_none() {
+                for vendor in [Vendor::Claude, Vendor::Codex] {
+                    candidates.push(Candidate {
+                        host: host.clone(),
+                        vendor,
+                        root: None,
+                        result: if visible == Some(false) {
+                            CandidateResult::Offline
+                        } else {
+                            CandidateResult::Unknown
+                        },
+                    });
+                }
             }
             distros.push(wsl::WslDistro {
                 host,

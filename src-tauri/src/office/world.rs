@@ -10,7 +10,7 @@ use super::work::WorkType;
 use super::{Cue, Record, Team, TeamPhase};
 use crate::diag::Diag;
 use crate::discover::{Host, Product, Vendor};
-use crate::parse::{Event, Unhandled};
+use crate::parse::{Confidence, Event, EventKind, Unhandled};
 
 /// 비교용 복제본이 기록 자리에 두는 빈 기록
 static NO_RECORD: LazyLock<Arc<Record>> = LazyLock::new(Arc::default);
@@ -61,6 +61,8 @@ pub struct OfficeWorld {
     /// 의심(통신 지연) 상태인 호스트. 목록에 S46 점선으로 나간다 (docs/CONTRACTS.md C5)
     pub suspect_hosts: BTreeSet<String>,
     pub read_failed_teams: BTreeSet<TeamKey>,
+    // 재구성은 과거 로그를 읽으므로 종료 관측은 원본 Team 밖에서 보존한다.
+    registry_ended: HashMap<TeamKey, DateTime<Utc>>,
     /// 야근 판정 시간대 (docs/CONTRACTS.md C8)
     pub local: FixedOffset,
     /// 아직 프론트에 보내지 않은 연출 신호와 그 팀. 상태 번호를 올린 같은 잠금 안에서 넣고 발행기가 비운다 (docs/CONTRACTS.md C9).
@@ -91,6 +93,24 @@ fn list_view(t: &Team) -> ListView {
     )
 }
 
+pub(crate) fn main_activity_time<'a>(
+    session: &str,
+    events: impl Iterator<Item = &'a Event>,
+) -> Option<DateTime<Utc>> {
+    events
+        .filter(|ev| {
+            ev.agent_id == session
+                && matches!(
+                    ev.kind,
+                    EventKind::UserMessage { .. }
+                        | EventKind::AssistantText { .. }
+                        | EventKind::ToolCall { .. }
+                )
+        })
+        .filter_map(|ev| ev.ts)
+        .max()
+}
+
 impl OfficeWorld {
     pub fn new(scale: Scale, names: NameBook, local: FixedOffset) -> Self {
         Self {
@@ -101,6 +121,7 @@ impl OfficeWorld {
             state_seq: HashMap::new(),
             suspect_hosts: BTreeSet::new(),
             read_failed_teams: BTreeSet::new(),
+            registry_ended: HashMap::new(),
             local,
             outbox: Vec::new(),
             unhandled: Vec::new(),
@@ -121,7 +142,9 @@ impl OfficeWorld {
     /// 재구성은 마지막 이벤트 시각에서 끝나므로 여기서 now 까지 조용히 따라잡는다. 안 하면 다음 tick 이 cue 를 낸다.
     /// 다시 만든 팀도 자리는 그대로다. 바꾸면 Reset 마다 부장·직원이 자리를 옮긴다
     pub fn put_team(&mut self, key: TeamKey, mut team: Team, now: DateTime<Utc>, quiet: bool) {
-        team.tick(now, self.local, &mut Vec::new());
+        if self.projected_off(&key).is_none() {
+            team.tick(now, self.local, &mut Vec::new());
+        }
         let arrived = match self.teams.get(&key) {
             Some(old) => {
                 team.desk_slot = old.desk_slot;
@@ -137,9 +160,7 @@ impl OfficeWorld {
             None => true,
         };
         self.teams.insert(key.clone(), team);
-        if arrived {
-            self.place_desk(&key);
-        }
+        self.sync_desks(&self.office_of(&key), arrived.then_some(&key));
         self.name_employees(&key, now);
         self.seat(&self.office_of(&key));
         self.bump(&key, true);
@@ -150,9 +171,11 @@ impl OfficeWorld {
 
     pub fn remove_team(&mut self, key: &TeamKey) {
         self.read_failed_teams.remove(key);
+        self.registry_ended.remove(key);
         if self.teams.remove(key).is_none() {
             return;
         }
+        self.sync_desks(&self.office_of(key), None);
         // 중소기업이면 같은 사무실에 남은 팀이 있어 그 사무실 상태도 바뀐다
         self.bump(key, true);
         // 마지막 팀이 나간 사무실은 선택할 것이 없다
@@ -161,6 +184,60 @@ impl OfficeWorld {
         {
             self.selected = None;
         }
+    }
+
+    /// 연결·읽기 실패와 확인된 종료는 작업을 버리지 않고 화면·좌석·알림에서만 퇴근시킨다.
+    pub fn projected_off(&self, key: &TeamKey) -> Option<Confidence> {
+        if self.registry_ended.contains_key(key) {
+            Some(Confidence::Confirmed)
+        } else if self.suspect_hosts.contains(&key.host) || self.read_failed_teams.contains(key) {
+            Some(Confidence::Inferred)
+        } else {
+            None
+        }
+    }
+
+    pub fn displayed_phase(&self, key: &TeamKey) -> TeamPhase {
+        if self.projected_off(key).is_some() {
+            TeamPhase::Off
+        } else {
+            self.teams.get(key).map_or(TeamPhase::Off, |t| t.phase)
+        }
+    }
+
+    pub fn registry_alive(&mut self, key: &TeamKey, alive: bool, now: DateTime<Utc>) {
+        let Some(team) = self.teams.get_mut(key) else {
+            return;
+        };
+        let ended = team.alive_in_registry && !alive;
+        team.alive_in_registry = alive;
+        if ended {
+            self.registry_ended
+                .insert(key.clone(), now.max(team.last_activity));
+            self.refresh_presence(key);
+        }
+    }
+
+    pub fn resume_registry(&mut self, key: &TeamKey, main_activity: Option<DateTime<Utc>>) -> bool {
+        let resumed = self.registry_ended.get(key).is_some_and(|ended| {
+            self.teams
+                .get(key)
+                .is_some_and(|team| team.alive_in_registry)
+                && main_activity.is_some_and(|at| at > *ended)
+        });
+        if resumed {
+            self.registry_ended.remove(key);
+        }
+        resumed
+    }
+
+    fn refresh_presence(&mut self, key: &TeamKey) {
+        let office = self.office_of(key);
+        self.sync_desks(&office, None);
+        self.seat(&office);
+        self.outbox.retain(|(_, k, _)| k != key);
+        self.rebuilt.insert(office);
+        self.bump(key, true);
     }
 
     pub fn set_read_failed(&mut self, key: &TeamKey, failed: bool) {
@@ -173,7 +250,7 @@ impl OfficeWorld {
             self.read_failed_teams.remove(key)
         };
         if changed {
-            self.list_seq += 1;
+            self.refresh_presence(key);
         }
     }
 
@@ -185,15 +262,17 @@ impl OfficeWorld {
             self.suspect_hosts.remove(host)
         };
         if changed {
-            self.list_seq += 1;
-            let offices: BTreeSet<OfficeId> = self
+            let keys: Vec<_> = self
                 .teams
                 .keys()
                 .filter(|k| k.host == host)
-                .map(|k| self.office_of(k))
+                .cloned()
                 .collect();
-            for o in offices {
-                *self.state_seq.entry(o).or_default() += 1;
+            if keys.is_empty() {
+                self.list_seq += 1;
+            }
+            for key in keys {
+                self.refresh_presence(&key);
             }
         }
     }
@@ -218,7 +297,10 @@ impl OfficeWorld {
                     self.unhandled.push((t.product, u));
                 }
             }
-            cue => self.outbox.push((self.office_of(key), key.clone(), cue)),
+            cue if self.projected_off(key).is_none() => {
+                self.outbox.push((self.office_of(key), key.clone(), cue))
+            }
+            _ => {}
         }
     }
 
@@ -227,6 +309,8 @@ impl OfficeWorld {
     /// 몇 줄씩 묶어 읽혔든 한 줄씩 읽혔든 같은 상태가 된다 (docs/CONTRACTS.md C4 시계)
     pub fn apply(&mut self, key: &TeamKey, events: &[Event], now: DateTime<Utc>) {
         let local = self.local;
+        let resumed = self.resume_registry(key, main_activity_time(&key.session, events.iter()));
+        let projected = self.projected_off(key).is_some();
         let Some(team) = self.teams.get_mut(key) else {
             return;
         };
@@ -240,7 +324,9 @@ impl OfficeWorld {
         before.daily_events = Arc::new(Vec::new());
         let mut cues = Vec::new();
         for ev in events {
-            if let Some(t) = ev.ts {
+            if let Some(t) = ev.ts
+                && !projected
+            {
                 team.tick(t, local, &mut cues);
             }
             team.apply(ev, &mut cues);
@@ -250,8 +336,13 @@ impl OfficeWorld {
         }
         before.daily_events = team.daily_events.clone();
         self.settle(key, &before, now, cues.iter().any(Cue::shown));
-        for c in cues {
-            self.cue(key, c);
+        if resumed {
+            self.refresh_presence(key);
+        }
+        if !projected && !resumed {
+            for c in cues {
+                self.cue(key, c);
+            }
         }
     }
 
@@ -289,12 +380,13 @@ impl OfficeWorld {
     /// 바뀐 팀에 이름·자리를 주고 번호를 올린다. 보낼 상태 전체를 비교해 소품·실적만 바뀌어도 올린다
     fn settle(&mut self, key: &TeamKey, before: &Team, now: DateTime<Utc>, cued: bool) {
         self.name_employees(key, now);
+        let desks_changed = self.sync_desks(&self.office_of(key), None);
         self.seat(&self.office_of(key));
         let Some(team) = self.teams.get(key) else {
             return;
         };
         let list_changed = list_view(before) != list_view(team);
-        if list_changed || before != team || cued {
+        if list_changed || before != team || cued || desks_changed {
             self.bump(key, list_changed);
         }
     }
@@ -340,9 +432,9 @@ impl OfficeWorld {
         for office in &offices {
             // 대기업에서 각자 0번이던 자리가 합쳐질 때 최근 활동한 팀부터 다시 준다
             let mut keys = self.keys_in(office);
+            keys.retain(|k| self.displayed_phase(k) != TeamPhase::Off);
             keys.sort_by_key(|k| {
                 (
-                    self.teams[k].phase == TeamPhase::Off,
                     std::cmp::Reverse(self.teams[k].last_activity),
                     self.teams[k].started,
                     k.clone(),
@@ -382,7 +474,17 @@ impl OfficeWorld {
     pub fn tick(&mut self, now: DateTime<Utc>, host: &str) {
         let mut out = Vec::new();
         let mut bumps = Vec::new();
-        for (key, team) in self.teams.iter_mut().filter(|(k, _)| k.host == host) {
+        let paused: HashSet<_> = self
+            .teams
+            .keys()
+            .filter(|k| self.projected_off(k).is_some())
+            .cloned()
+            .collect();
+        for (key, team) in self
+            .teams
+            .iter_mut()
+            .filter(|(k, _)| k.host == host && !paused.contains(*k))
+        {
             let before = team.clone();
             let mut cues = Vec::new();
             team.tick(now, self.local, &mut cues);
@@ -400,6 +502,7 @@ impl OfficeWorld {
         }
         for (key, list_changed) in bumps {
             // 퇴장·퇴근한 직원의 자리를 비운다
+            self.sync_desks(&self.office_of(&key), None);
             self.seat(&self.office_of(&key));
             self.bump(&key, list_changed);
         }
@@ -438,6 +541,50 @@ impl OfficeWorld {
             .filter(|k| self.office_of(k) == *office)
             .cloned()
             .collect()
+    }
+
+    /// 퇴근 팀은 정원을 쓰지 않는다. 기존 팀은 빈자리만 받아 정상 팀의 자리를 흔들지 않는다.
+    fn sync_desks(&mut self, office: &OfficeId, arriving: Option<&TeamKey>) -> bool {
+        let mut keys = self.keys_in(office);
+        let before: Vec<_> = keys
+            .iter()
+            .map(|k| (k.clone(), self.teams[k].desk_slot))
+            .collect();
+        for key in &keys {
+            if self.displayed_phase(key) == TeamPhase::Off
+                && let Some(team) = self.teams.get_mut(key)
+            {
+                team.desk_slot = None;
+            }
+        }
+        if let Some(key) = arriving
+            && self.displayed_phase(key) != TeamPhase::Off
+        {
+            self.place_desk(key);
+        }
+        let used: HashSet<_> = keys
+            .iter()
+            .filter_map(|k| self.teams[k].desk_slot)
+            .collect();
+        keys.retain(|k| {
+            self.displayed_phase(k) != TeamPhase::Off && self.teams[k].desk_slot.is_none()
+        });
+        keys.sort_by_key(|k| {
+            (
+                std::cmp::Reverse(self.teams[k].last_activity),
+                self.teams[k].started,
+                k.clone(),
+            )
+        });
+        let free = (0..DESKS + SPARES).filter(|s| !used.contains(s));
+        for (key, slot) in keys.iter().zip(free) {
+            if let Some(team) = self.teams.get_mut(key) {
+                team.desk_slot = Some(slot);
+            }
+        }
+        before
+            .iter()
+            .any(|(k, slot)| self.teams[k].desk_slot != *slot)
     }
 
     /// 들어온 팀에 팀장석을 준다. 한 번 준 자리는 활동 순서로 바꾸지 않는다 (docs/CONTRACTS.md C8).
@@ -488,10 +635,10 @@ impl OfficeWorld {
         let mut used = HashSet::new();
         let mut want = Vec::new();
         for k in &keys {
+            let off = self.displayed_phase(k) == TeamPhase::Off;
             let Some(t) = self.teams.get_mut(k) else {
                 continue;
             };
-            let off = t.phase == TeamPhase::Off;
             for (i, e) in t.employees.iter_mut().enumerate() {
                 if i == 0 || off || e.retired_at.is_some() {
                     e.seat = None;
@@ -634,7 +781,7 @@ mod tests {
         assert_eq!((desk(&w, &e), desk(&w, &a)), (Some(2), Some(4)));
         // 새 팀이 가장 조용하면 자기가 간이 책상으로 간다
         let old = key(Vendor::Claude, "old");
-        w.put_team(old.clone(), team("old", 0, -60), t0(), true);
+        w.put_team(old.clone(), team("old", 0, -1), t0(), true);
         assert_eq!(desk(&w, &old), Some(5));
         assert_no_overlap(&w);
         // 다시 만든 팀은 자리를 그대로 둔다
@@ -734,6 +881,225 @@ mod tests {
             NameBook::load(tempfile::tempdir().unwrap().path()),
             FixedOffset::east_opt(0).unwrap(),
         )
+    }
+
+    #[test]
+    fn small_start_does_not_let_off_teams_displace_six_active_teams() {
+        let mut w = world(Scale::Small);
+        let old: Vec<_> = ["old-a", "old-b"]
+            .map(|id| {
+                let key = key(Vendor::Claude, id);
+                w.put_team(key.clone(), team(id, 0, -120), t0(), true);
+                key
+            })
+            .into();
+        let active: Vec<_> = (0..6)
+            .map(|i| {
+                let key = key(Vendor::Claude, &format!("active-{i}"));
+                w.put_team(key.clone(), team(&key.session, 0, i + 1), t0(), true);
+                key
+            })
+            .collect();
+        assert_eq!(
+            active
+                .iter()
+                .filter(|k| w.teams[*k].desk_slot.is_some())
+                .count(),
+            6,
+            "퇴근 팀이 남아 있어도 활성 6팀은 모두 자리 필요"
+        );
+        assert!(
+            old.iter()
+                .all(|k| w.teams[k].phase == TeamPhase::Off && w.teams[k].desk_slot.is_none())
+        );
+        assert_no_overlap(&w);
+        let before: Vec<_> = active.iter().map(|k| w.teams[k].desk_slot).collect();
+        w.put_team(
+            active[0].clone(),
+            team(&active[0].session, 0, 100),
+            t0(),
+            true,
+        );
+        assert_eq!(
+            active
+                .iter()
+                .map(|k| w.teams[k].desk_slot)
+                .collect::<Vec<_>>(),
+            before
+        );
+    }
+
+    fn thinking(key: &TeamKey, at: DateTime<Utc>) -> Event {
+        Event {
+            ts: Some(at),
+            session_id: key.session.clone(),
+            agent_id: key.session.clone(),
+            parent_agent: None,
+            kind: crate::parse::EventKind::Thinking,
+            raw_ref: crate::parse::RawRef {
+                path: std::path::PathBuf::new(),
+                generation: 0,
+                byte_offset: 0,
+                line_no: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn confirmed_exit_survives_rebuild_until_live_main_activity_resumes() {
+        let mut w = world(Scale::Small);
+        let k = key(Vendor::Claude, "exit");
+        w.put_team(k.clone(), team("exit", 1, 0), t0(), true);
+        w.registry_alive(&k, false, t0());
+        assert_eq!(
+            w.projected_off(&k),
+            None,
+            "생존 미확인은 종료 증거가 아니다"
+        );
+        w.registry_alive(&k, true, t0());
+        let ended = t0() + Duration::seconds(10);
+        w.registry_alive(&k, false, ended);
+        assert_eq!(w.projected_off(&k), Some(Confidence::Confirmed));
+        assert_eq!(w.displayed_phase(&k), TeamPhase::Off);
+        assert_eq!(w.teams[&k].phase, TeamPhase::Working);
+        assert!(w.teams[&k].desk_slot.is_none());
+        assert!(w.teams[&k].employees.iter().all(|e| e.seat.is_none()));
+        w.put_team(k.clone(), team("exit", 1, 0), ended, true);
+        assert_eq!(w.displayed_phase(&k), TeamPhase::Off);
+        w.registry_alive(&k, true, ended);
+        let mut event = thinking(&k, ended);
+        event.kind = EventKind::UserMessage {
+            text: "재개".into(),
+        };
+        w.apply(&k, &[event.clone()], ended);
+        assert_eq!(w.displayed_phase(&k), TeamPhase::Off);
+        event.ts = Some(ended + Duration::seconds(1));
+        event.agent_id = "exit-s0".into();
+        w.apply(&k, &[event.clone()], ended + Duration::seconds(1));
+        assert_eq!(w.displayed_phase(&k), TeamPhase::Off);
+        event.agent_id = "exit".into();
+        w.apply(&k, &[event], ended + Duration::seconds(1));
+        assert_eq!(w.projected_off(&k), None);
+        assert_eq!(w.displayed_phase(&k), TeamPhase::Working);
+        assert!(w.teams[&k].desk_slot.is_some());
+    }
+
+    #[test]
+    fn failed_connections_pause_work_and_restore_seats_without_losing_records() {
+        for host_failure in [false, true] {
+            let mut w = world(Scale::Small);
+            let k = key(Vendor::Claude, "failure");
+            w.put_team(k.clone(), team("failure", 1, 0), t0(), true);
+            let original = w.teams[&k].clone();
+            if host_failure {
+                w.set_suspect("windows", true);
+            } else {
+                w.set_read_failed(&k, true);
+            }
+            w.tick(t0() + Duration::hours(1), "windows");
+            let mut expected = original.clone();
+            expected.desk_slot = None;
+            for e in &mut expected.employees {
+                e.seat = None;
+            }
+            assert_eq!(w.teams[&k], expected);
+            assert_eq!(w.projected_off(&k), Some(Confidence::Inferred));
+            if host_failure {
+                w.set_suspect("windows", false);
+            } else {
+                w.set_read_failed(&k, false);
+            }
+            assert_eq!(w.teams[&k], original);
+            assert_eq!(w.projected_off(&k), None);
+        }
+    }
+
+    #[test]
+    fn existing_off_team_gets_a_free_desk_on_append_without_moving_active_teams() {
+        let mut w = world(Scale::Small);
+        let returning = key(Vendor::Claude, "returning");
+        w.put_team(returning.clone(), team("returning", 0, -120), t0(), true);
+        let active: Vec<_> = (0..5)
+            .map(|i| {
+                let key = key(Vendor::Claude, &format!("active-{i}"));
+                w.put_team(key.clone(), team(&key.session, 0, i + 1), t0(), true);
+                key
+            })
+            .collect();
+        w.set_scale(Scale::Large);
+        w.set_scale(Scale::Small);
+        assert_eq!(w.teams[&returning].desk_slot, None);
+        let before: Vec<_> = active.iter().map(|k| w.teams[k].desk_slot).collect();
+        let office = w.office_of(&returning);
+        let seq = w.state_seq[&office];
+        let at = t0() + Duration::seconds(1);
+        w.apply(&returning, &[thinking(&returning, at)], at);
+        assert_eq!(w.teams[&returning].phase, TeamPhase::Working);
+        assert!(w.teams[&returning].desk_slot.is_some());
+        assert_eq!(
+            active
+                .iter()
+                .map(|k| w.teams[k].desk_slot)
+                .collect::<Vec<_>>(),
+            before
+        );
+        assert!(w.state_seq[&office] > seq);
+        assert_no_overlap(&w);
+    }
+
+    #[test]
+    fn desk_vacancies_recover_waiting_teams_after_remove_rebuild_or_tick() {
+        for cause in ["remove", "rebuild", "tick"] {
+            let mut w = world(Scale::Small);
+            let active: Vec<_> = (0..6)
+                .map(|i| {
+                    let key = key(Vendor::Claude, &format!("active-{i}"));
+                    w.put_team(key.clone(), team(&key.session, 0, i + 1), t0(), true);
+                    key
+                })
+                .collect();
+            let waiting = key(Vendor::Claude, "waiting");
+            w.put_team(waiting.clone(), team("waiting", 0, 0), t0(), true);
+            assert_eq!(w.teams[&waiting].desk_slot, None);
+            let vacancy = w.teams[&active[0]].desk_slot;
+            let unchanged: Vec<_> = active[1..].iter().map(|k| w.teams[k].desk_slot).collect();
+            if cause == "tick" {
+                let at = t0() + Duration::minutes(25);
+                w.apply(&waiting, &[thinking(&waiting, at)], at);
+                assert_eq!(w.teams[&waiting].desk_slot, None);
+            }
+            let office = w.office_of(&waiting);
+            let seq = w.state_seq[&office];
+            match cause {
+                "remove" => w.remove_team(&active[0]),
+                "rebuild" => w.put_team(
+                    active[0].clone(),
+                    team(&active[0].session, 0, -120),
+                    t0(),
+                    true,
+                ),
+                "tick" => w.tick(
+                    t0() + Duration::minutes(31) + Duration::seconds(1),
+                    "windows",
+                ),
+                _ => unreachable!(),
+            }
+            assert_eq!(w.teams[&waiting].desk_slot, vacancy, "{cause}");
+            assert_eq!(
+                active[1..]
+                    .iter()
+                    .map(|k| w.teams[k].desk_slot)
+                    .collect::<Vec<_>>(),
+                unchanged,
+                "{cause}"
+            );
+            if cause != "remove" {
+                assert_eq!(w.teams[&active[0]].phase, TeamPhase::Off, "{cause}");
+                assert_eq!(w.teams[&active[0]].desk_slot, None, "{cause}");
+            }
+            assert!(w.state_seq[&office] > seq, "{cause}");
+            assert_no_overlap(&w);
+        }
     }
 
     /// cue 없이 소품(화분)만 바뀌어도 사무실 번호가 오른다

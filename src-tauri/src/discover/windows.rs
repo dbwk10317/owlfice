@@ -13,7 +13,7 @@ pub fn windows_host() -> Host {
     }
 }
 
-pub(super) fn is_local_path(root: &Path) -> bool {
+pub(crate) fn is_local_path(root: &Path) -> bool {
     local_path_with(root, &|drive| {
         let name: Vec<_> = drive.encode_utf16().chain(Some(0)).collect();
         let mut target = vec![0u16; 32768];

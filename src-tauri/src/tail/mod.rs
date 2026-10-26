@@ -220,24 +220,23 @@ impl TailReader {
         let consumed = self.consumed();
         let max = max_bytes as u64;
 
-        let mut reset = swap_handle
-            || len < consumed // (a)
-            || (len == consumed && mtime != self.last_mtime); // (c)
+        let mut reset = swap_handle || len < consumed;
         let mut window = Vec::new();
         let mut w = 0; // window 앞쪽 해시 구간 길이
-        if !reset && len > consumed {
+        if !reset && (len > consumed || mtime != self.last_mtime) {
             // (d) remainder 구간과 offset 직전 4KB를 다시 읽어 캐시와 비교하고, 같은 읽기로 새 바이트도 받는다
             w = self.offset.min(TAIL_HASH_BYTES as u64) as usize;
             let start = self.offset - w as u64;
             window = read_range(file, start, (consumed - start) + (len - consumed).min(max))?;
             let rem_end = w + self.remainder.len();
             if window.len() < rem_end {
-                // 읽는 사이에 줄었다. 상태를 안 건드렸으니 다음 틱에 (a)가 잡는다
-                return Err(io::ErrorKind::UnexpectedEof.into());
+                // stat 뒤 축소도 연결 실패가 아니라 같은 재설정 경로로 처리한다.
+                reset = true;
+            } else {
+                // ponytail: offset 앞 4KB보다 앞쪽만 바뀐 파일은 못 잡는다, 앞부분 재작성이 관찰되면 Scan에서 전체 해시 비교로 올린다
+                reset = hash_bytes(&window[..w]) != self.tail_hash
+                    || window[w..rem_end] != self.remainder[..];
             }
-            // ponytail: offset 앞 4KB보다 앞쪽만 바뀐 파일은 못 잡는다, 앞부분 재작성이 관찰되면 Scan에서 전체 해시 비교로 올린다
-            reset = hash_bytes(&window[..w]) != self.tail_hash
-                || window[w..rem_end] != self.remainder[..];
         }
 
         let unchanged = !reset && len == consumed; // 새 바이트가 없으면 window도 비어 tail을 못 만든다
@@ -476,6 +475,25 @@ mod tests {
         let p = take(&mut r);
         assert!(p.reset);
         assert_eq!(texts(&p), [b"bbbb"]);
+    }
+
+    #[test]
+    fn touching_a_file_keeps_generation_and_unfinished_line() {
+        let (_d, path, mut r) = setup(b"done\npart");
+        take(&mut r);
+        let generation = r.generation();
+        let offset = r.offset();
+        set_mtime(&path, SystemTime::now() + Duration::from_secs(60));
+        assert!(r.changed().unwrap());
+        let touched = take(&mut r);
+        assert!(!touched.reset);
+        assert!(touched.lines.is_empty());
+        assert_eq!((r.generation(), r.offset()), (generation, offset));
+        assert!(!r.changed().unwrap());
+        append(&path, b"ial\nnext\n");
+        let continued = take(&mut r);
+        assert!(!continued.reset);
+        assert_eq!(texts(&continued), [&b"partial"[..], b"next"]);
     }
 
     #[test]

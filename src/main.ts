@@ -47,7 +47,13 @@ function requestSelect(officeId: string, requestId: number): void {
 // ponytail: 첫 사무실을 여기서 고른다, 로딩 화면(T16)이 "첫 사무실 선택"을 맡으면 옮긴다
 store.subscribe(() => {
   const first = firstOffice(store.state.list?.offices ?? []);
-  if (store.state.selectedId !== null || store.state.selectionError || !first) return;
+  if (
+    store.state.selectedId !== null ||
+    store.state.selectionError === "recovering" ||
+    store.state.selectionError === "failed" ||
+    !first
+  )
+    return;
   requestSelect(first.officeId, store.selectOffice(first.officeId));
 });
 
@@ -290,13 +296,23 @@ async function start(): Promise<void> {
   const companyName = settings.companyName ?? undefined;
   await showLoading(root, { invoke, listen }, sheet, companyName);
   root.remove();
-  mountShell(settings, sheet);
   // 구독을 먼저 걸어야 스냅샷과 첫 이벤트 사이의 변경을 놓치지 않는다 (docs/CONTRACTS.md C4 시작 순서)
-  await Promise.all([
+  const subscriptions = await Promise.allSettled([
     listen<OfficeListDto>("office-list", (e) => store.applyList(e.payload)),
     listen<OfficeDto>("office-state", (e) => store.applyOfficeState(e.payload)),
   ]);
-  store.applyWorld(await invoke<WorldDto>("get_world_snapshot"));
+  const unlisten = subscriptions.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  try {
+    const failure = subscriptions.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+    store.applyWorld(await invoke<WorldDto>("get_world_snapshot"));
+    mountShell(settings, sheet);
+  } catch (error) {
+    await Promise.allSettled(unlisten.map(async (stop) => stop()));
+    throw error;
+  }
 }
 
 function sendVisibility(): void {

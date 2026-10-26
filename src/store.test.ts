@@ -373,4 +373,33 @@ describe("선택 실패 복구", () => {
     expect(s.state.office?.tag).toBe("retry");
     expect(s.state.selectionError).toBeNull();
   });
+
+  test("선택 복구가 빈 목록이면 다음 정상 목록의 첫 사무실을 고른다", async () => {
+    const s = started();
+    const picked: string[] = [];
+    s.subscribe(() => {
+      const first = s.state.list?.offices[0];
+      if (
+        s.state.selectedId === null &&
+        s.state.selectionError !== "recovering" &&
+        s.state.selectionError !== "failed" &&
+        first
+      ) {
+        picked.push(first);
+        s.selectOffice(first);
+      }
+    });
+    await s.requestSelect(s.selectOffice("B"), Promise.reject(new Error("실패")), async () => ({
+      ...list(6),
+      selectedId: null,
+      selected: null,
+    }));
+    expect(s.state.selectedId).toBeNull();
+    expect(s.state.selectionError).toBe("restored");
+    expect(picked).toEqual([]);
+    s.applyList({ ...list(7, "C"), selectedId: null, selectRequest: s.state.list!.selectRequest });
+    expect(picked).toEqual(["C"]);
+    expect(s.state.selectedId).toBe("C");
+    expect(s.state.selectionError).toBeNull();
+  });
 });

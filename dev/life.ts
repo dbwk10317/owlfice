@@ -33,6 +33,8 @@ function emp(
           : room === "Incident"
             ? "Incident"
             : "Working",
+    asking: room === "Door",
+    question: null,
     name: rank === "Bujang" ? "김부장" : agentId,
     rank,
     role: "Backend",
@@ -47,6 +49,7 @@ function emp(
       confidence: "Confirmed",
       extra: 0,
       elapsed: false,
+      bad: false,
     },
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },

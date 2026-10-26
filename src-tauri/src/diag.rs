@@ -200,26 +200,30 @@ fn load(path: &Path, raw: bool) -> (BTreeMap<Key, Entry>, bool, bool) {
         if !raw {
             stripped |= e.fields.remove("raw").is_some();
         }
-        match map.entry((e.kind.clone(), e.key.clone())) {
-            Occupied(mut o) => {
-                let m = o.get_mut();
-                m.count = m.count.saturating_add(e.count);
-                if e.first_seen < m.first_seen {
-                    m.first_seen = e.first_seen;
-                }
-                if e.last_seen > m.last_seen {
-                    m.last_seen = e.last_seen;
-                }
-                for (k, v) in e.fields {
-                    m.fields.entry(k).or_insert(v);
-                }
-            }
-            Vacant(v) => {
-                v.insert(e);
-            }
-        }
+        merge_entry(&mut map, e);
     }
     (map, true, stripped)
+}
+
+fn merge_entry(map: &mut BTreeMap<Key, Entry>, e: Entry) {
+    match map.entry((e.kind.clone(), e.key.clone())) {
+        Occupied(mut o) => {
+            let m = o.get_mut();
+            m.count = m.count.saturating_add(e.count);
+            if e.first_seen < m.first_seen {
+                m.first_seen = e.first_seen;
+            }
+            if e.last_seen > m.last_seen {
+                m.last_seen = e.last_seen;
+            }
+            for (k, v) in e.fields {
+                m.fields.entry(k).or_insert(v);
+            }
+        }
+        Vacant(v) => {
+            v.insert(e);
+        }
+    }
 }
 
 /// 임시 파일에 쓴 뒤 이름을 바꾼다. 쓰다 끊겨도 기존 파일이 깨지지 않는다
@@ -267,6 +271,18 @@ impl Diag {
 
     /// 실패해도 dirty 는 그대로라 다음 flush_if_due 가 다시 시도한다
     fn purge_now(&mut self) -> io::Result<()> {
+        if !self.writable {
+            let (mut entries, writable, _) = load(&self.path, false);
+            if writable {
+                // 시작 때 못 읽은 원장을 복구한 뒤, 그동안 메모리에 모은 집계도 보존한다.
+                for entry in std::mem::take(&mut self.entries).into_values() {
+                    merge_entry(&mut entries, entry);
+                }
+                self.entries = entries;
+                self.writable = true;
+                self.dirty = true;
+            }
+        }
         self.flush().inspect_err(|e| {
             crate::oplog_once!("원문 진단 제거 저장 실패 {}: {e}", self.path.display());
         })
@@ -1106,6 +1122,34 @@ mod tests {
         let mut d = Diag::open(dir.path(), true);
         assert!(d.set_raw(false).is_err());
         assert!(!d.raw);
+    }
+
+    #[test]
+    fn purge_retries_an_initially_locked_file_without_losing_counts() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let mut original = Diag::open(dir.path(), true);
+        original.bump("skill", "demo".into(), t(0), json!({}), Some(SECRET.into()));
+        original.flush().unwrap();
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        let mut retry = Diag::open(dir.path(), false);
+        retry.bump("skill", "demo".into(), t(1), json!({}), None);
+        assert!(retry.set_raw(false).is_err());
+        drop(locked);
+        retry.set_raw(false).unwrap();
+        let text = read(dir.path());
+        assert!(!text.contains(SECRET));
+        assert!(!text.contains("\"raw\""));
+        let row: Value = serde_json::from_str(text.trim()).unwrap();
+        assert_eq!(row["count"], 2);
+        retry.set_raw(false).unwrap();
+        assert_eq!(read(dir.path()), text, "재시도로 집계를 중복하지 않는다");
     }
 
     #[test]

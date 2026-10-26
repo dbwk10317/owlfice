@@ -45,6 +45,8 @@ export function createStore<L extends ListMsg, S extends StateMsg>() {
   function applyList(msg: L): void {
     if (buffer) return void buffer.list.push(msg);
     if (state.list && msg.listSeq < state.list.listSeq) return;
+    if (state.selectionError === "restored" && msg.listSeq > (state.list?.listSeq ?? -1))
+      state.selectionError = null;
     state.list = msg;
     // 더 새 요청을 보낸 뒤라면 그 응답 전의 백엔드 선택이 사용자 선택을 덮지 않게
     if (msg.selectRequest >= acceptedRequest && msg.selectedId !== state.selectedId) {
@@ -61,6 +63,11 @@ export function createStore<L extends ListMsg, S extends StateMsg>() {
       recovery.set(msg.officeId, msg);
     if (msg.officeId !== state.selectedId) return;
     if (msg.stateSeq < (lastStateSeq.get(msg.officeId) ?? -1)) return;
+    if (
+      state.selectionError === "restored" &&
+      msg.stateSeq > (lastStateSeq.get(msg.officeId) ?? -1)
+    )
+      state.selectionError = null;
     lastStateSeq.set(msg.officeId, msg.stateSeq);
     state.office = msg;
     notify();

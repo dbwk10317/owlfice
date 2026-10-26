@@ -211,6 +211,7 @@ function canDecorate(team: TeamDto, emp: EmployeeDto, pose: Decoration): boolean
     emp.rejected ||
     emp.retiredAt !== null ||
     emp.departedAt !== null ||
+    emp.state === "Interrupted" ||
     emp.planning ||
     emp.meeting !== null ||
     (emp.activity.room !== "Dev" && emp.activity.room !== "TeamLead")

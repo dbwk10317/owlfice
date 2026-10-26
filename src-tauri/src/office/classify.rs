@@ -53,6 +53,7 @@ impl Activity {
     ) -> Self {
         Self {
             sentence: sentence.into(),
+            bad: false,
             room,
             since,
             expected_secs: None,
@@ -1529,12 +1530,15 @@ impl Team {
         if let Some(since) = incident.filter(|_| working && e.is_boss()) {
             // 들어가는 때는 장애 시작과 앞 일이 끝난 때 중 늦은 쪽
             let entered = (e.activity.room != Room::Incident).then(|| since.max(e.activity.since));
-            e.set_activity(Activity::new(
-                sentence::INCIDENT,
-                Room::Incident,
-                since,
-                Confidence::Confirmed,
-            ));
+            e.set_activity(Activity {
+                bad: true,
+                ..Activity::new(
+                    sentence::INCIDENT,
+                    Room::Incident,
+                    since,
+                    Confidence::Confirmed,
+                )
+            });
             if let Some(at) = entered {
                 e.say(at, BubbleSay::Incident);
             }
@@ -1898,12 +1902,11 @@ fn approves(text: &str) -> bool {
                 | "승인완료"
         ) && !matches!(
             i.checked_sub(1).and_then(|n| words.get(n)).copied(),
-            Some("not" | "no" | "never" | "without" | "cannot" | "cant" | "미" | "불")
-        ) && !(i >= 2 && words[i - 2] == "can" && words[i - 1] == "t")
-            && !matches!(
-                words.get(i + 1).copied(),
-                Some("불가" | "아님" | "취소" | "거부" | "안함" | "안")
-            )
+            Some("not" | "no" | "never" | "without" | "cannot" | "cant" | "t" | "미" | "불")
+        ) && !matches!(
+            words.get(i + 1).copied(),
+            Some("불가" | "아님" | "취소" | "거부" | "안함" | "안" | "못")
+        )
     })
 }
 

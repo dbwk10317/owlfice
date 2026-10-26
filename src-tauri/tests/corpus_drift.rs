@@ -54,6 +54,13 @@ fn corpus_drift() {
                 continue;
             }
         };
+        if !listing.failed_subtrees.is_empty() {
+            failed.push(format!(
+                "{} 하위 폴더 {}곳 나열 실패",
+                vendor.label(),
+                listing.failed_subtrees.len()
+            ));
+        }
         for (path, _) in &listing.files {
             files += 1;
             // 파서가 패닉해도 다음 파일을 계속 본다

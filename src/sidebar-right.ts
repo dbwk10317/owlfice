@@ -30,11 +30,13 @@ import { createEventCollector, createTicker, rankLabel, teamName } from "./ticke
 import { empKey } from "./employee-key.ts";
 import { durationText, fill, fillElapsed, hhmm } from "./text.ts";
 import { setAvatar } from "./avatar.ts";
-import { ringOf } from "./sidebar-left.ts";
+import { DOT_STATE, ringOf } from "./sidebar-left.ts";
 import type {
   Activity,
   CueDto,
+  Dot,
   EmployeeDto,
+  EmployeeState,
   OfficeDto,
   OfficeListDto,
   Role,
@@ -96,6 +98,16 @@ export const ROLE_LABEL: Record<Role, string> = {
   Data: phrases.roles.data,
   Designer: phrases.roles.designer,
   Trainee: phrases.roles.trainee,
+};
+
+export const EMPLOYEE_STATE_LABEL: Record<EmployeeState, string> = {
+  Working: phrases.sidebar.stateWorking,
+  Waiting: phrases.sidebar.stateWaiting,
+  Dozing: phrases.sidebar.stateSleepy,
+  Finished: phrases.card.done,
+  Interrupted: "중단",
+  Off: phrases.sidebar.stateOff,
+  Incident: phrases.sidebar.stateIncident,
 };
 
 const STATS = [
@@ -482,15 +494,7 @@ function updateCard(
     Off: "off",
     Incident: "incident",
   }[e.state];
-  const stateLabel = {
-    off: phrases.sidebar.stateOff,
-    finished: "일 마침",
-    interrupted: "중단",
-    incident: phrases.sidebar.stateIncident,
-    waiting: phrases.sidebar.stateWaiting,
-    sleepy: phrases.sidebar.stateSleepy,
-    working: phrases.sidebar.stateWorking,
-  }[state];
+  const stateLabel = EMPLOYEE_STATE_LABEL[e.state];
   r.pin.dataset.state = state;
   const ring =
     state === "off" || state === "finished" || state === "interrupted"
@@ -547,17 +551,17 @@ function updateCard(
 
   // 상태 칩: 추정이면 점선 + "추정", 허가 대기(출입문)는 결재판
   const estimate = act.confidence === "Inferred";
-  const ask = act.room === "Door" && !off && e.departedAt === null;
+  const ask = e.asking;
   c.asking = ask;
   c.el.classList.toggle("is-ask", ask);
   r.askActions.hidden = !ask;
-  const roomKey = `${act.room}|${small}|${ask}`;
+  const roomKey = `${act.room}|${small}|${ask}|${act.bad}`;
   if (changed(c, "room", roomKey)) {
     c.last.delete("askingFor");
     r.statusIcon.innerHTML = "";
     r.statusIcon.append(icon(c.el.ownerDocument, ask ? iconApproval : ROOM_ICON[act.room]));
     r.statusLabel.textContent = roomLabel(act.room, small);
-    r.status.classList.toggle("is-bad", act.room === "Incident");
+    r.status.classList.toggle("is-bad", act.bad);
     r.status.classList.toggle("is-ask", ask);
     r.status.classList.toggle("is-away", act.room === "Outside");
   }
@@ -577,18 +581,12 @@ function updateCard(
   const trail = e.recent.filter((a) => a.sentence !== act.sentence || a.since !== act.since);
   r.trail.forEach((t, i) => {
     const a = trail[i];
-    const key = a ? `${a.since}|${a.sentence}|${a.room}|${a.confidence}` : "";
+    const key = a ? `${a.since}|${a.sentence}|${a.room}|${a.confidence}|${a.bad}` : "";
     t.row.classList.toggle("is-last", i === Math.min(trail.length, 3) - 1);
     if (!changed(c, `trail${i}`, key)) return;
     t.row.hidden = !a;
     if (!a) return;
-    t.row.classList.toggle(
-      "is-bad",
-      a.confidence === "Confirmed" &&
-        (a.room === "Incident" ||
-          a.sentence.startsWith("사고: ") ||
-          a.sentence.startsWith("반려됨: ")),
-    );
+    t.row.classList.toggle("is-bad", a.bad);
     const at = Date.parse(a.since);
     t.time.textContent = Number.isNaN(at) ? "" : hhmm(at);
     setRich(t.text, a.sentence);
@@ -601,11 +599,7 @@ function updateCard(
     r.stats[i].setAttribute("aria-label", `${s.title} ${value}`);
   });
 
-  const questionPrefix = "결재판 들고 문 앞 대기: 「";
-  const say =
-    ask && !estimate && act.sentence.startsWith(questionPrefix) && act.sentence.endsWith("」")
-      ? act.sentence.slice(questionPrefix.length, -1)
-      : (e.lastSay ?? "");
+  const say = ask && e.question !== null ? e.question : (e.lastSay ?? "");
   if (changed(c, "say", say)) {
     r.quote.hidden = say === "";
     const chars = Array.from(say);
@@ -672,7 +666,7 @@ function createHead(doc: Document, toggle: () => void): HeadEntry {
   return { el, last: new Map(), square, name, meta, host, dot, startedMs: NaN, folder: "" };
 }
 
-function updateHead(hd: HeadEntry, t: TeamDto, color: number): void {
+function updateHead(hd: HeadEntry, t: TeamDto, color: number, dot: Dot | undefined): void {
   const title = teamName(t);
   if (changed(hd, "name", title)) hd.name.textContent = title;
   if (changed(hd, "color", String(color)))
@@ -681,14 +675,11 @@ function updateHead(hd: HeadEntry, t: TeamDto, color: number): void {
     hd.host.textContent = t.hostBadge ?? "";
     hd.host.hidden = t.hostBadge === null;
   }
-  const state = t.incident
-    ? "incident"
-    : t.phase === "Working"
-      ? "working"
-      : t.phase === "Dozing"
-        ? "sleepy"
-        : "off";
-  if (changed(hd, "dot", state)) hd.dot.setAttribute("data-state", state);
+  const state = dot ? DOT_STATE[dot] : "";
+  if (changed(hd, "dot", state)) {
+    if (state) hd.dot.setAttribute("data-state", state);
+    else hd.dot.removeAttribute("data-state");
+  }
   hd.startedMs = Date.parse(t.started);
   hd.folder = t.folder;
 }
@@ -901,7 +892,12 @@ export function mountPanel(
         if (changed(hd, "phase", t.phase)) teamOpen.set(t.teamId, t.phase !== "Off");
         if (pendingTeam?.teamId === t.teamId && !filtered) teamOpen.set(t.teamId, true);
         hd.el.setAttribute("aria-expanded", String(teamOpen.get(t.teamId) ?? true));
-        updateHead(hd, t, Math.min(t.deskSlot ?? TEAM_COLORS - 1, TEAM_COLORS - 1) + 1);
+        updateHead(
+          hd,
+          t,
+          Math.min(t.deskSlot ?? TEAM_COLORS - 1, TEAM_COLORS - 1) + 1,
+          summary?.teams.find((team) => team.teamId === t.teamId)?.dot,
+        );
         tickHead(hd, Date.now());
         hd.el.hidden = filtered;
         liveHeads.add(t.teamId);
@@ -996,7 +992,12 @@ export function mountPanel(
     if (focused instanceof HTMLElement && list.contains(focused) && doc.activeElement !== focused)
       focused.focus({ preventScroll: true });
     rove();
-    if (focused instanceof HTMLElement && list.contains(focused) && focused.closest("[hidden]"))
+    if (
+      focused instanceof HTMLElement &&
+      list.contains(focused) &&
+      focused.closest("[hidden]") &&
+      doc.activeElement === focused
+    )
       showOffBtn.focus({ preventScroll: true });
     if (pendingTeam) {
       const head = heads.get(pendingTeam.teamId)?.el;

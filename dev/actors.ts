@@ -37,6 +37,8 @@ function emp(
           : room === "Incident"
             ? "Incident"
             : "Working",
+    asking: room === "Door",
+    question: null,
     name,
     rank,
     role,
@@ -51,6 +53,7 @@ function emp(
       confidence: "Confirmed",
       extra: 0,
       elapsed: sentence.includes("{elapsed}"),
+      bad: false,
     },
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },

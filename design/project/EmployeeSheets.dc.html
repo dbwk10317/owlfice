@@ -44,23 +44,23 @@ ul.b b{color:#18181B;font-weight:600}
 
   <div style="display: grid; grid-template-columns: 620px 1fr; gap: 40px; align-items: start">
     <section class="k">
-      <h2>파일 구조 · 세 시트, 같은 키</h2>
+      <h2>파일 구조 · 밀도마다 한 장 (0.2.2 섞기 결정 반영)</h2>
       <pre>design/sprites/
-  owls.json  owls.png   ← 다시 생성 (32×48, 얼굴 규칙)
-  dogs.json  dogs.png   ← 새로. 키는 owls.json 과 1:1
-  cats.json  cats.png   ← 새로. 키는 owls.json 과 1:1
+  employees.json     employees.png      ← 18종 몸 + 공용 레이어 (32×48)
+  employees@3x.json  employees@3x.png   ← 키는 employees.json 과 1:1 (48×72)
   office.json / floorplan.json / ui.json   변경 없음
 
-프레임 키 (세 시트 공통, 1,673장)
-  body/&lt;종&gt;/&lt;자세&gt;_&lt;방향&gt;_&lt;번호&gt;     종 6 × 37
+프레임 키 (두 밀도 공통, 2,117장)
+  body/&lt;종&gt;/&lt;자세&gt;_&lt;방향&gt;_&lt;번호&gt;     종 18 × 37 (올빼미·강아지·고양이 각 6)
   outfit/&lt;옷&gt;/…  wear/&lt;1|2|3&gt;/…  role/&lt;담당&gt;/…  item/&lt;소지품&gt;/…
 
 owlfice 메타 (시트마다)
   frame: [32, 48]          anchor: [16, 46]
   density: 2               ← 새 키. 월드 px 당 텍셀 수
   layers / layerRule / wear / outfits / roles / poses   그대로
-  species: { shiba: "시바견", … }      employeeSpecies: [5종]
-  bossSpecies: "samoyed"   ← 새 키 (올빼미 "snowy")
+  species: { 18종 이름 }   animals: { owls|dogs|cats: { name, employees[5], boss } }
+  employeeSpecies: [15종]  ← 섞기면 hash % 15, 한 동물이면 animals[동물].employees 의 hash % 5
+  bossSpecies: ["snowy", "samoyed", "persian"]   ← 섞기면 hash(team_id) % 3
   anchors[자세]: { head: [16, 16], hand: [26, 38] }   ← 텍셀 단위 (×2)</pre>
       <ul class="b">
         <li><b>생성기.</b> <span class="mono">owlfice_art.py</span> 의 종 표에 품종 12개를 더하고, 몸통·날개·옷·소지품 셀을 2×2 블록으로 찍은 뒤 얼굴(눈 상자·눈썹·입·무늬)만 1px 격자로 얹는다. 자세 기하(<span class="mono">pose_geo</span>)와 레이어 함수는 재사용. 시트 3장을 한 번에 만들고 끝에 겹침·누락 검사.</li>

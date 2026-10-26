@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 1 | `design/HANDOFF.md` | 이 문서. 규칙과 수치 | 그대로 |
 | 2 | `design/handoff/tokens.css` | 디자인 토큰과 컴포넌트 클래스 (`ow-` 접두사). 야근 모드 짝은 `[data-theme="night"]` 블록 | `import` (글꼴 상대 경로 `../fonts/` 가 그대로 맞는다) |
-| 3 | `design/sprites/{owls,dogs,cats}.json` `.png`, `{owls,dogs,cats}@3x.json` `.png` | 직원 부품 시트 6장 (PixiJS 스프라이트 시트 형식). 동물 3 × 밀도 2(32×48)·3(48×72). 프레임 키와 메타 구조는 여섯 장이 같다 (6.4절) | Vite `publicDir` 라 `/owls.json` 처럼 읽는다. 설정의 직원 동물로 시트를 고르고, 캔버스 배율 3이면 `@3x`. 카드 아바타는 항상 2× |
+| 3 | `design/sprites/employees.json` `.png`, `employees@3x.json` `.png` | 직원 부품 시트 2장 (PixiJS 스프라이트 시트 형식). 18종 몸 + 공용 옷·근속·담당·소지품. 밀도 2(32×48)·3(48×72). 프레임 키와 메타 구조는 두 장이 같다 (6.4절) | Vite `publicDir` 라 `/employees.json` 처럼 읽는다. 캔버스 배율 3이면 `@3x`. 설정의 직원 동물은 시트가 아니라 종 목록을 고른다. 카드 아바타는 항상 2× |
 | 3 | `design/sprites/office.png` `office.json` | 벽·바닥·가구·소품·효과 시트 | `/office.json` |
 | 3 | `design/sprites/ui.png` `ui.json` | 로고, 로딩 건물 부품, 규모 미리보기 | `/ui.json` |
 | 3 | `design/sprites/floorplan.json` | 평면도: 방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색 | `/floorplan.json` |
@@ -223,7 +223,7 @@ wide 구간에서도 창 너비가 1300 미만이면 보조 글자·슬래시·�
 |---|---|---|
 | 세션 상세 | 780 | 머리 (색 사각형, 이름 20/600, 업무 칩, 제품·호스트 줄) → 정보 2열 표 (세션 ID + 복사, 브랜치, 작업 폴더 전체 폭, 모델, 시작·경과, 턴 수, 토큰, 직원 수, PR) → 최근 사건 20개 (시각 mono, 아바타 20×22, 직원, 요약, 추정 꼬리표) + "더 보기 · 최대 100개" → 바닥 띠 버튼 "원본 파일 폴더 열기", "작업 폴더 열기" |
 | 직원 상세 | 940 | 머리 (아바타 2배 80×88 `ow-avatar--xl` 반지름 16, 이름 22/600 + 직급 칩 + 근무 상태 칩 `is-live`, 칩 줄: 담당·모델(mono)·방(아이콘)·컨텍스트 막대, 입사·근속·상사·사무실 줄 12 흐린 글자, 오른쪽 `open-external`(원본 열기)·닫기) → 왼쪽: 받은 지시 상자 (회색 바탕, 1px 테, 안쪽 10/12), 타임라인 `ow-tl` (접힌 행 38: mono 시각·도구 칩 `ow-tool`·요약·결과색(`ow-tl__ok`/`__run`/`__bad`)·`chevron`, 펼치면 `ow-tl__raw` 회색 바탕 mono 11 로 입력과 결과 원문, 길면 앞뒤 2KB + "가운데 n KB 생략" 점선 구분 + "원본 열기 파일:줄") + "더 보기 · 50개씩" / 오른쪽 280 (`--ow-panel` 바탕): 실적 요약 `ow-stat` 묶음 3개 (읽은 파일, 수정한 파일 n회, 실행한 명령 n회; 머리 13/600 + 오른쪽 mono 합계, 항목 mono 11) |
-| 설정 | 580 | 회사 (규모 세그먼트, 사장님 이름, 직원 동물 세그먼트 올빼미·강아지·고양이 — 바꾸면 시트를 다시 읽고 아바타 캐시를 비운다) · 화면과 소리 (소리 스위치) · 세션 폴더 (자동·직접 지정 경로 목록, 빼기, 폴더 직접 지정, 컨텍스트 창 기본값 200k/1M) · 업데이트 (현재 버전, 새 버전 확인, 명시한 새 버전 설치와 진행 상태) · 진단 (원문 진단 스위치, 진단 정보 복사, 선택 가능한 실제 앱 로그 경로, 로그 폴더 열기). 운영 오류와 미대응 동작 기록의 위치를 함께 안내한다. 바꾸면 바로 저장. "선명 모드" 는 없다 |
+| 설정 | 580 | 회사 (규모 세그먼트, 사장님 이름, 직원 동물 세그먼트 섞기(기본)·올빼미·강아지·고양이 — 바꾸면 종 목록을 다시 정하고 아바타를 다시 그린다) · 화면과 소리 (소리 스위치) · 세션 폴더 (자동·직접 지정 경로 목록, 빼기, 폴더 직접 지정, 컨텍스트 창 기본값 200k/1M) · 업데이트 (현재 버전, 새 버전 확인, 명시한 새 버전 설치와 진행 상태) · 진단 (원문 진단 스위치, 진단 정보 복사, 선택 가능한 실제 앱 로그 경로, 로그 폴더 열기). 운영 오류와 미대응 동작 기록의 위치를 함께 안내한다. 바꾸면 바로 저장. "선명 모드" 는 없다 |
 
 타임라인 결과색: 진행 중 `--ow-ask`, 성공 `--ow-ok-ink`, 실패 `--ow-bad-ink`, 확인 불가 흐린 글자 + 추정 꼬리표.
 
@@ -406,7 +406,7 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 
 직원은 월드 16×24 px(24px 타일 기준 약 14×18)를 차지하며, 시트는 그 안을 밀도 2 또는 3 텍셀/px 로 그린다 (6.4절). 윤곽·몸통·날개·손 물건은 밀도 격자(= 월드 1px)로, 얼굴·표정·무늬·옷 디테일만 1텍셀 격자로 그려 1× 소품과 선 굵기가 같다. 소품 시트는 1× 다. 색은 한 테마에 20색 안팎, 세 테마를 합쳐 약 60색이다. 생성기 부품 시트를 1차 어셋으로 사용하며 손그림 교체는 미정이다.
 
-- 형식은 PixiJS `Spritesheet` JSON (TexturePacker hash). `Assets.load('owls.json')` 로 바로 읽힌다.
+- 형식은 PixiJS `Spritesheet` JSON (TexturePacker hash). `Assets.load('employees.json')` 로 바로 읽힌다.
 - 모든 프레임에 `anchor`(비율)와 `anchorPx`(정수 텍셀)가 있다. **소수 오차를 피하려면 `anchorPx` 를 쓴다**: `sprite.anchor.set(ax / w, ay / h)` 대신 `sprite.pivot.set(ax, ay)`. 직원 시트의 텍셀 값은 `owlfice.density` 로 나눠 월드 좌표로 쓴다 (스프라이트 `scale = 1 / density`).
 - 기준점의 뜻: 그 텍스처 픽셀의 왼쪽 위 모서리가 배치 좌표 `(x, y)` 에 온다. 소품은 발자국 (0,0) 꼭짓점, 직원은 발.
 - 이름 규칙: `office.json` 은 `<소품>/<상태>`, 상태가 하나면 `/default`. 소품별 메타(발자국, 높이, 상태 목록, fps, 슬롯, 설명)는 `office.json → owlfice.props`.
@@ -414,11 +414,11 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 
 ### 6.4 직원 (올빼미 · 강아지 · 고양이)
 
-- 시트 6장: 동물 `owls|dogs|cats` × 밀도 2 (`<동물>.json`, 프레임 32×48, 발 기준점 `(16, 46)`) · 밀도 3 (`<동물>@3x.json`, 48×72, `(24, 69)`). 프레임 키·레이어·자세·메타 구조는 여섯 장이 같고 종 이름만 동물별이다. 메타 `owlfice.density`·`animal`·`bossSpecies`·`faces`·`eyeBoxes` 가 그 시트의 유일한 출처다.
-- 시트 고르기: 동물은 설정(4.6절). 밀도는 캔버스 배율(6.1절)이 3이면 `@3x`, 1·2면 2× 시트. 한 화면에 두 밀도를 섞지 않는다. 배율이 바뀌면 시트를 다시 고르고 로드 중엔 이전 시트를 유지한다. 카드·직원 상세 아바타는 항상 2× 시트.
+- 시트 2장: 밀도 2 (`employees.json`, 프레임 32×48, 발 기준점 `(16, 46)`) · 밀도 3 (`employees@3x.json`, 48×72, `(24, 69)`). 한 장에 18종 몸과 공용 옷·근속·담당·소지품 한 벌이 들어 있고, 프레임 키·레이어·자세·메타 구조는 두 장이 같다. 메타 `owlfice.density`·`species`·`animals`·`employeeSpecies`·`bossSpecies`·`faces`·`eyeBoxes` 가 그 시트의 유일한 출처다.
+- 시트 고르기: 종 목록은 설정(4.6절. 섞기면 15종, 한 동물이면 그 5종), 사장님은 한 동물이면 그 사장님 종, 섞기면 `bossSpecies[hash(team_id) % 3]`. 밀도는 캔버스 배율(6.1절)이 3이면 `@3x`, 1·2면 2× 시트. 한 화면에 두 밀도를 섞지 않는다. 배율이 바뀌면 시트를 다시 고르고 로드 중엔 이전 시트를 유지한다. 카드·직원 상세 아바타는 항상 2× 시트.
 - 레이어를 같은 위치에 겹친다: `body/<종>/…` → `outfit/<옷>/…` → `wear/<단계>/…` → `role/<담당>/…` → `item/<소지품>/…`. 담당 프레임이 없는 자세(예: 날개를 든 자세의 색상표)는 건너뛴다. 수습은 담당 레이어가 없다. 세 동물이 같은 몸통 템플릿과 눈 상자를 쓰므로 옷·근속·담당·소지품은 동물과 무관하게 같은 그림이다.
 - 프레임 이름: `<레이어>/<변형>/<자세>_<방향>_<번호>`, 애니메이션 이름: 번호를 뺀 것 (`body/eagle/walk_f`).
-- 종: 직원 종 = `employeeSpecies[hash(agent_id) % 5]` (이름과 같은 해시). 사장님은 `bossSpecies`. 올빼미 수리부엉이 `eagle`, 칡부엉이 `longeared`, 금눈쇠올빼미 `little`, 가면올빼미 `barn`, 소쩍새 `scops`, 사장님 흰올빼미 `snowy`. 강아지 시바견 `shiba`, 웰시코기 `corgi`, 비글 `beagle`, 푸들 `poodle`, 시베리안허스키 `husky`, 사장님 사모예드 `samoyed`. 고양이 치즈태비 `tabby`, 턱시도 `tuxedo`, 샴 `siamese`, 삼색이 `calico`, 러시안블루 `russianblue`, 사장님 페르시안 `persian`. 품종은 얼굴 실루엣·무늬·눈 색으로만 다르다.
+- 종: 직원 종 = 섞기면 `employeeSpecies[hash(agent_id) % 15]`, 한 동물이면 `animals[<동물>].employees[hash(agent_id) % 5]` (이름과 같은 해시). 사장님 종은 시트 고르기 항목대로. 올빼미 수리부엉이 `eagle`, 칡부엉이 `longeared`, 금눈쇠올빼미 `little`, 가면올빼미 `barn`, 소쩍새 `scops`, 사장님 흰올빼미 `snowy`. 강아지 시바견 `shiba`, 웰시코기 `corgi`, 비글 `beagle`, 푸들 `poodle`, 시베리안허스키 `husky`, 사장님 사모예드 `samoyed`. 고양이 치즈태비 `tabby`, 턱시도 `tuxedo`, 샴 `siamese`, 삼색이 `calico`, 러시안블루 `russianblue`, 사장님 페르시안 `persian`. 품종은 얼굴 실루엣·무늬·눈 색으로만 다르다.
 - 표정: 자세마다 눈·눈썹·입 상태가 정해져 있다 (`owlfice.faces`, 눈 상자 자리는 `owlfice.eyeBoxes`). 눈 상태 open·down·side·half·closed·happy·wide, 눈썹 none·raised·worried·focus·one, 입 neutral·open·smile·yawn·frown·wavy·o. `idle` 1번 프레임은 눈 감음. 2번 프레임이 있는 자세는 몸짓만 바뀌고 얼굴은 같다. 미리보기 `sprites/preview/faces.png`.
 - 옷: `bujang|gwajang|daeri|sawon` × `claude|codex|gemini`, 사장님 `boss`(보라 정장, 금 넥타이, 왕관), 사서 `librarian`(초록 카디건). 직급 구분: 부장 넥타이·안경, 과장 조끼, 대리 소매 걷음, 사원 사원증.
 - 근속: 직원별 `hiredAt` 뒤 1시간은 전원 소매 걷음·부장 넥타이 느슨, 3시간은 눈 밑 1px 그림자 추가, 6시간은 어깨 수건 추가. `outfit/<옷>-worn/…`은 지워야 하는 소매·넥타이를 복구하고 `wear/1|2|3/…`을 누적해 얹는다. 사장님·사서와 카드 아바타에는 적용하지 않는다. 미리보기 `sprites/preview/wear.png`.

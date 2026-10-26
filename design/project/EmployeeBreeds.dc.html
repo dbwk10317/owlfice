@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>품종 라인업</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.5}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;background-repeat:no-repeat;display:block}
+section.k{display:flex;flex-direction:column;gap:14px}
+section.k>h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-0.01em;display:flex;align-items:baseline;gap:12px}
+section.k>h2 small{font-size:12px;font-weight:400;color:#71717A;font-family:'IBM Plex Mono',monospace}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px;border-radius:12px;border:1px solid #E4E4E7}
+.row{display:grid;grid-template-columns:repeat(6, 1fr);gap:0 24px;padding:18px 24px 16px}
+.cell{display:flex;flex-direction:column;align-items:center;gap:8px}
+.sp{width:128px;height:192px;background-image:url(/_blob/3b804367dba7a87cf76c3a3dc25b8190);background-size:768px 576px}
+.nm{font-size:13px;font-weight:600;text-align:center}
+.nm code{display:block;font-family:'IBM Plex Mono',monospace;font-weight:400;font-size:11px;color:#71717A}
+.ft{font-size:11.5px;color:#52525B;text-align:center;line-height:1.4;max-width:200px}
+.sw{display:flex;gap:4px}
+.sw i{display:block;width:14px;height:14px;border-radius:3px;border:1px solid rgba(24,24,27,.12)}
+.boss{position:relative}
+.boss::before{content:"사장님 전용";position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:600;background:#FBF3DC;color:#8A6412;padding:1px 7px;border-radius:4px;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:5px;font-size:11px;font-weight:500;background:#F4F4F5;color:#52525B}
+</style>
+</helmet>
+<div class="ow" style="width: 1760px; height: 1300px; background: #FFFFFF; padding: 56px 64px; display: flex; flex-direction: column; gap: 28px; overflow: hidden">
+
+  <header style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 20px; border-bottom: 1px solid #E4E4E7">
+    <h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em">품종 라인업 · 동물마다 직원 5종 + 사장님 1종</h1>
+    <p style="margin: 0; font-size: 14px; color: #52525B; max-width: 1150px">올빼미 시트가 "직원 5종(agent_id 해시) + 사장님 전용 흰올빼미"인 구성을 강아지·고양이도 그대로 따릅니다. 셋 다 같은 몸통 템플릿·발 기준점·눈 상자를 쓰므로 옷·근속·담당·소지품 레이어가 한 벌로 호환됩니다. 품종은 얼굴 실루엣(귀·주둥이), 무늬, 눈 색으로 구분합니다. 옷은 직급·제조사·담당을 돌려 가며 입혔습니다.</p>
+  </header>
+
+  <section class="k">
+    <h2>올빼미 <small>owls.json · 기존 6종, 얼굴만 다시 그림</small></h2>
+    <div class="stage row">
+      <div class="cell"><div class="px sp" style="background-position: 0 0" role="img" aria-label="수리부엉이 부장"></div><div class="nm">수리부엉이<code>eagle</code></div><div class="ft">귀깃 2단 · 주황 홍채 · 밝은 얼굴판</div><div class="sw"><i style="background:#8B5E3C"></i><i style="background:#6B4630"></i><i style="background:#ECD6B2"></i><i style="background:#F08C28"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -128px 0" role="img" aria-label="칡부엉이 과장"></div><div class="nm">칡부엉이<code>longeared</code></div><div class="ft">긴 귀깃 · 주황 얼굴판 · 노란 홍채</div><div class="sw"><i style="background:#98623A"></i><i style="background:#6E462A"></i><i style="background:#E08E50"></i><i style="background:#FAA028"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -256px 0" role="img" aria-label="금눈쇠올빼미 대리"></div><div class="nm">금눈쇠올빼미<code>little</code></div><div class="ft">둥근 머리 · 흰 눈썹 · 금색 홍채</div><div class="sw"><i style="background:#84705A"></i><i style="background:#60503E"></i><i style="background:#F6F2E6"></i><i style="background:#FAD63C"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -384px 0" role="img" aria-label="가면올빼미 사원"></div><div class="nm">가면올빼미<code>barn</code></div><div class="ft">하트형 흰 얼굴 · 검은 눈</div><div class="sw"><i style="background:#D6A664"></i><i style="background:#B88048"></i><i style="background:#FAF6EC"></i><i style="background:#281E1E"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -512px 0" role="img" aria-label="소쩍새 부장"></div><div class="nm">소쩍새<code>scops</code></div><div class="ft">회색 · 짧은 귀깃 · 노란 홍채</div><div class="sw"><i style="background:#84827C"></i><i style="background:#605E5A"></i><i style="background:#C2BEB4"></i><i style="background:#FAD23C"></i></div></div>
+      <div class="cell boss"><div class="px sp" style="background-position: -640px 0" role="img" aria-label="흰올빼미 사장님"></div><div class="nm">흰올빼미<code>snowy</code></div><div class="ft">흰 깃 · 검은 점무늬 · 왕관은 옷 레이어</div><div class="sw"><i style="background:#F2F0E8"></i><i style="background:#464646"></i><i style="background:#D6D4CC"></i><i style="background:#FAD23C"></i></div></div>
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>강아지 <small>dogs.json · 새로 6종</small></h2>
+    <div class="stage row">
+      <div class="cell"><div class="px sp" style="background-position: 0 -192px" role="img" aria-label="시바견 과장"></div><div class="nm">시바견<code>shiba</code></div><div class="ft">선 귀 · 크림 눈썹점 · 크림 볼·주둥이</div><div class="sw"><i style="background:#D6964E"></i><i style="background:#A86C34"></i><i style="background:#F8ECD4"></i><i style="background:#281E1A"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -128px -192px" role="img" aria-label="웰시코기 대리"></div><div class="nm">웰시코기<code>corgi</code></div><div class="ft">큰 귀 · 흰 블레이즈 · 주황</div><div class="sw"><i style="background:#E28C46"></i><i style="background:#B0642C"></i><i style="background:#FAF6EC"></i><i style="background:#281E1A"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -256px -192px" role="img" aria-label="비글 사원"></div><div class="nm">비글<code>beagle</code></div><div class="ft">늘어진 갈색 귀 · 삼색 · 흰 블레이즈</div><div class="sw"><i style="background:#C89254"></i><i style="background:#5C3E2C"></i><i style="background:#FAF6EC"></i><i style="background:#281E1A"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -384px -192px" role="img" aria-label="푸들 부장"></div><div class="nm">푸들<code>poodle</code></div><div class="ft">곱슬 윤곽 · 살구색 · 1px 컬 점</div><div class="sw"><i style="background:#DEB080"></i><i style="background:#BA8858"></i><i style="background:#FAECD6"></i><i style="background:#281E1A"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -512px -192px" role="img" aria-label="시베리안허스키 과장"></div><div class="nm">시베리안허스키<code>husky</code></div><div class="ft">회색 · 흰 마스크 · 파란 눈</div><div class="sw"><i style="background:#80848C"></i><i style="background:#545862"></i><i style="background:#F6F6F4"></i><i style="background:#4682DC"></i></div></div>
+      <div class="cell boss"><div class="px sp" style="background-position: -640px -192px" role="img" aria-label="사모예드 사장님"></div><div class="nm">사모예드<code>samoyed</code></div><div class="ft">흰 털 · 흰올빼미 자리</div><div class="sw"><i style="background:#F8F6F0"></i><i style="background:#D6D2C8"></i><i style="background:#E2BEBA"></i><i style="background:#281E1A"></i></div></div>
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>고양이 <small>cats.json · 새로 6종</small></h2>
+    <div class="stage row">
+      <div class="cell"><div class="px sp" style="background-position: 0 -384px" role="img" aria-label="치즈태비 대리"></div><div class="nm">치즈태비<code>tabby</code></div><div class="ft">이마 M 무늬 · 볼 줄무늬 · 초록 눈</div><div class="sw"><i style="background:#ECA046"></i><i style="background:#C47028"></i><i style="background:#FAECCE"></i><i style="background:#78C85A"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -128px -384px" role="img" aria-label="턱시도 사원"></div><div class="nm">턱시도<code>tuxedo</code></div><div class="ft">검정 · 흰 주둥이·가슴 · 노란 눈 · 밝은 눈썹</div><div class="sw"><i style="background:#2C2A30"></i><i style="background:#1A181C"></i><i style="background:#F8F6F0"></i><i style="background:#FAD23C"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -256px -384px" role="img" aria-label="샴 부장"></div><div class="nm">샴<code>siamese</code></div><div class="ft">크림 · 갈색 포인트(얼굴·귀) · 파란 눈</div><div class="sw"><i style="background:#F0E2C8"></i><i style="background:#5C4234"></i><i style="background:#F0E2C8"></i><i style="background:#5096E6"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -384px -384px" role="img" aria-label="삼색이 과장"></div><div class="nm">삼색이<code>calico</code></div><div class="ft">흰 바탕 · 주황 왼눈 패치 · 검정 오른귀</div><div class="sw"><i style="background:#FAF8F4"></i><i style="background:#28262A"></i><i style="background:#E68C3C"></i><i style="background:#F0BE3C"></i></div></div>
+      <div class="cell"><div class="px sp" style="background-position: -512px -384px" role="img" aria-label="러시안블루 대리"></div><div class="nm">러시안블루<code>russianblue</code></div><div class="ft">청회색 · 무늬 없음 · 초록 눈</div><div class="sw"><i style="background:#8A94A4"></i><i style="background:#606A7C"></i><i style="background:#AAB2C0"></i><i style="background:#6EC86E"></i></div></div>
+      <div class="cell boss"><div class="px sp" style="background-position: -640px -384px" role="img" aria-label="페르시안 사장님"></div><div class="nm">페르시안<code>persian</code></div><div class="ft">흰 장모 · 주황 눈 · 흰올빼미 자리</div><div class="sw"><i style="background:#FAF8F4"></i><i style="background:#D8D4CC"></i><i style="background:#ECB4AA"></i><i style="background:#F0963C"></i></div></div>
+    </div>
+  </section>
+
+  <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: #52525B">
+    <span class="chip">직원 종 = employeeSpecies[hash(agent_id) % 5] · 규칙 그대로</span>
+    <span class="chip">사장님 = 시트 메타 bossSpecies (올빼미 snowy · 강아지 samoyed · 고양이 persian)</span>
+    <span class="chip">사서(librarian)는 종이 아니라 옷 · 세 시트 모두 있음</span>
+    <span class="chip">종마다 37프레임 · b 방향은 얼굴 없이 뒷머리 색만</span>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

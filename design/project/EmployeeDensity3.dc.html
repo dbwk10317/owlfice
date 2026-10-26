@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>3× 시트</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.5}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;background-repeat:no-repeat;display:block}
+section.k{display:flex;flex-direction:column;gap:14px}
+section.k>h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-0.01em}
+section.k>p{margin:-4px 0 0;font-size:13px;color:#52525B;max-width:1100px}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px;border-radius:12px;border:1px solid #E4E4E7}
+.cell{display:flex;flex-direction:column;align-items:center;gap:8px}
+.lab{font-size:12px;font-weight:600;text-align:center}
+.lab code{display:block;font-family:'IBM Plex Mono',monospace;font-weight:400;font-size:10.5px;color:#71717A}
+.sub{font-size:11.5px;color:#71717A;text-align:center}
+.rl{font-size:12px;font-weight:600}
+.rl small{display:block;font-weight:400;color:#71717A;font-family:'IBM Plex Mono',monospace;font-size:11px}
+.pn{font-size:12px;font-weight:600;text-align:center}
+.pn code{display:block;font-family:'IBM Plex Mono',monospace;font-weight:400;font-size:10.5px;color:#71717A}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:5px;font-size:11px;font-weight:500;background:#F4F4F5;color:#52525B}
+.chip.ok{background:#ECFDF3;color:#166534}
+.chip.no{background:#FEF2F2;color:#991B1B}
+.chip.warn{background:#FEF9C3;color:#854D0E}
+.cap{font-size:12px;color:#71717A}
+table{border-collapse:collapse;font-size:12.5px;width:100%}
+th{font-size:11px;font-weight:600;color:#71717A;text-align:left;padding:6px 10px;border-bottom:1px solid #E4E4E7}
+td{padding:7px 10px;border-bottom:1px solid #F0F0F1;vertical-align:top}
+td.mono{font-family:'IBM Plex Mono',Consolas,monospace;font-size:11.5px;white-space:nowrap}
+ul.b{margin:0;padding-left:16px;font-size:12.5px;color:#3F3F46;display:flex;flex-direction:column;gap:4px}
+ul.b b{color:#18181B;font-weight:600}
+.c1{width:192px;height:288px;background-image:url(/_blob/4bc481c402283e75e1379281acc8a606);background-size:576px 288px}
+.c2{width:192px;height:288px;background-image:url(/_blob/d2ef76560128347626dd0f96cb73b800);background-size:576px 288px}
+.c2d{width:192px;height:288px;background-image:url(/_blob/9fecd34937a652a72ca230e857aece61);background-size:960px 576px}
+.c3{width:192px;height:288px;background-image:url(/_blob/6b78c5375ac78514b2e88d16a90fd08a);background-size:576px 288px}
+.l1{width:256px;height:80px;background-image:url(/_blob/46ee0e8dd850811b8be9843ab6cafee8);background-size:256px 80px}
+.l2{width:512px;height:160px;background-image:url(/_blob/e4a161796b7f1a61dfc86f6399f90acb);background-size:512px 160px}
+.l3{width:768px;height:240px;background-image:url(/_blob/c2a440258c7936c68dde1daec65bdf16);background-size:768px 240px}
+.lu{width:96px;height:144px;background-image:url(/_blob/e28156ed8929d0e4b3f8f87ddf422014);background-size:576px 432px}
+.owl{width:96px;height:144px;background-image:url(/_blob/ddd0e789c659b15c1e28e9232fdb35ed);background-size:1728px 144px}
+.dog{width:96px;height:144px;background-image:url(/_blob/9263fb3099484fff174e26c9674efda5);background-size:1728px 144px}
+.cat{width:96px;height:144px;background-image:url(/_blob/8b51b0c978f6fb3cc998e99b73f3d565);background-size:1728px 144px}
+.fc{width:144px;height:216px;background-image:url(/_blob/3aeee7e175f44efc23780525ca21d6a0);background-size:1008px 648px}
+.g{display:grid;grid-template-columns:100px repeat(9, 96px);gap:10px 14px;align-items:center;padding:16px 20px}
+.fg{display:grid;grid-template-columns:100px repeat(7, 144px);gap:10px 12px;align-items:center;padding:16px 20px}
+</style>
+</helmet>
+<div class="ow" style="width: 1760px; height: 2700px; background: #FFFFFF; padding: 56px 64px; display: flex; flex-direction: column; gap: 36px; overflow: hidden">
+
+  <header style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 24px; border-bottom: 1px solid #E4E4E7">
+    <h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em">3× 시트 · 48×72 · 배율 3 화면용</h1>
+    <p style="margin: 0; font-size: 14px; color: #52525B; max-width: 1150px">2× 시트와 같은 키·같은 규칙으로 밀도만 3으로 올린 벌입니다. 윤곽·몸통·날개·소품은 3px 격자(= 월드 1px), 얼굴은 1px 격자(눈 상자 6×6, 눈동자 3×3, 고양이 세로 동공 2×4). 렌더러는 현재 캔버스 배율이 3이면 이 시트를, 아니면 2× 시트를 읽습니다. 월드 크기·기준점 의미·레이어는 2×와 같습니다.</p>
+  </header>
+
+  <section class="k">
+    <h2>같은 화면 크기 · 현재 / 2× / 3×</h2>
+    <p>세 밀도를 같은 크기(월드 16×24 의 12배)로 놓았습니다. 3×는 눈동자가 둥글어지고 안경테·넥타이·수염·무늬가 가늘어집니다. 다만 이 크기는 배율 3 화면에서 보는 비율이고, 배율 2 화면에서는 오른쪽 아래 "배율 사다리"처럼 3:2 로 줄어듭니다.</p>
+    <div class="stage" style="padding: 20px 24px; display: grid; grid-template-columns: repeat(7, 192px); gap: 12px 28px; justify-content: start">
+      <div class="cell"><div class="px c1" style="background-position: 0 0" role="img" aria-label="현재 수리부엉이 부장 16×24"></div><span class="lab">현재 16×24<code>12배</code></span></div>
+      <div class="cell"><div class="px c2" style="background-position: 0 0" role="img" aria-label="2× 수리부엉이 부장"></div><span class="lab">2× 32×48<code>6배</code></span></div>
+      <div class="cell"><div class="px c3" style="background-position: 0 0" role="img" aria-label="3× 수리부엉이 부장"></div><span class="lab">3× 48×72<code>4배</code></span></div>
+      <div class="cell"><div class="px c2d" style="background-position: -192px 0" role="img" aria-label="2× 시바견 부장"></div><span class="lab">2× 시바견<code>6배</code></span></div>
+      <div class="cell"><div class="px c3" style="background-position: -192px 0" role="img" aria-label="3× 시바견 과장"></div><span class="lab">3× 시바견<code>4배</code></span></div>
+      <div class="cell"><div class="px c2d" style="background-position: -192px -288px" role="img" aria-label="2× 치즈태비 부장"></div><span class="lab">2× 치즈태비<code>6배</code></span></div>
+      <div class="cell"><div class="px c3" style="background-position: -384px 0" role="img" aria-label="3× 치즈태비 대리"></div><span class="lab">3× 치즈태비<code>4배</code></span></div>
+    </div>
+  </section>
+
+  <div style="display: grid; grid-template-columns: 820px 1fr; gap: 40px; align-items: start">
+    <section class="k">
+      <h2>배율 사다리 · 3× 시트를 각 배율에 넣으면 (장치 픽셀 2배 확대)</h2>
+      <p>왼쪽부터 1× 화분, 현재, 2× 시트, 3× 시트(올빼미), 3× 시트(시바견). 배율 3에서만 3× 시트가 원본으로 보이고, 배율 2에서는 3:2 축소로 안경테·눈동자 같은 1px 디테일이 불규칙하게 빠집니다. 그래서 배율마다 시트를 고릅니다.</p>
+      <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start">
+        <div style="display: flex; align-items: center; gap: 12px"><span class="chip">배율 1</span><span class="cap">2× 시트 2:1 · 3× 시트 3:1 — 둘 다 윤곽 격자 덕에 현재 그림과 같은 실루엣</span></div>
+        <div class="px l1 stage" style="border-radius: 6px" role="img" aria-label="배율 1 미리보기"></div>
+        <div style="display: flex; align-items: center; gap: 12px"><span class="chip ok">배율 2 → 2× 시트 사용</span><span class="cap">3× 시트를 쓰면 3:2 축소 (네 번째 올빼미가 세 번째보다 거칠다)</span></div>
+        <div class="px l2 stage" style="border-radius: 6px" role="img" aria-label="배율 2 미리보기"></div>
+        <div style="display: flex; align-items: center; gap: 12px"><span class="chip ok">배율 3 → 3× 시트 사용</span><span class="cap">텍셀 1 → 장치 1. 2× 시트였다면 1.5배 확대</span></div>
+        <div class="px l3 stage" style="border-radius: 6px" role="img" aria-label="배율 3 미리보기"></div>
+      </div>
+    </section>
+
+    <section class="k">
+      <h2>2× 시트와 다른 점</h2>
+      <table>
+        <tr><th>항목</th><th>2× 시트</th><th>3× 시트</th></tr>
+        <tr><td>파일</td><td class="mono">owls.json · dogs.json · cats.json</td><td class="mono">owls@3x.json · dogs@3x.json · cats@3x.json (키 동일)</td></tr>
+        <tr><td>프레임 · 기준점</td><td class="mono">32×48 · (16, 47)</td><td class="mono">48×72 · (24, 71)</td></tr>
+        <tr><td><span class="mono">meta.density</span></td><td class="mono">2</td><td class="mono">3</td></tr>
+        <tr><td>눈 상자</td><td class="mono">4×4 · (8,22) (20,22)</td><td class="mono">6×6 · (12,33) (30,33)</td></tr>
+        <tr><td>눈동자 (올빼미·강아지·고양이)</td><td class="mono">2×2 · 2×3 · 1×3</td><td class="mono">3×3 · 3×4 · 2×4</td></tr>
+        <tr><td>윤곽 격자</td><td>2px</td><td>3px</td></tr>
+        <tr><td>머리·손 기준점</td><td>1× 좌표 ×2</td><td>1× 좌표 ×3 (density 로 나누면 둘 다 같은 월드 좌표)</td></tr>
+        <tr><td>시트 크기 (1,673장)</td><td class="mono">2048×2048 (목표)</td><td class="mono">1,673 × 49×73 ≈ 6.0M 텍셀 → 4096×2048 또는 레이어별 분리 (목표)</td></tr>
+        <tr><td>렌더러</td><td colspan="2">배율이 바뀔 때(리사이즈·배율 메뉴) 시트를 다시 고른다. 로드 중엔 이전 시트를 유지. 기준점 변환은 density 하나로 공통</td></tr>
+        <tr><td>카드 아바타</td><td colspan="2">항상 2× 시트에서 (40×44 원본). 3× 시트는 캔버스 전용</td></tr>
+      </table>
+      <ul class="b">
+        <li><b>비용.</b> 얼굴 규칙을 밀도 매개변수로 두면 생성기 한 벌로 두 시트가 나옵니다 (이 시안이 그렇게 만든 것). 다만 3×에서 더 예뻐지는 디테일(둥근 눈동자, 가는 수염, 무늬)은 밀도별로 손을 봐야 합니다.</li>
+        <li><b>언제 득인가.</b> 배율 3 = 창 1600 이상에 DPR 1.5 이상, 또는 배율 메뉴로 3×를 고른 경우. 그 밖의 화면에서는 2× 시트만 쓰입니다.</li>
+        <li><b>섞지 않는다.</b> 한 화면에 두 밀도를 섞지 않습니다. 배율 1·2 → 2× 시트, 배율 3 → 3× 시트.</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="k">
+    <h2>3× 품종 라인업 · 18종 (2배)</h2>
+    <div class="stage" style="display: grid; grid-template-columns: 100px repeat(6, 96px); gap: 10px 20px; padding: 16px 20px; align-items: center; justify-content: start">
+      <div class="rl">올빼미</div>
+      <div class="px lu" style="background-position: 0 0" role="img" aria-label="3× 수리부엉이"></div><div class="px lu" style="background-position: -96px 0" role="img" aria-label="3× 칡부엉이"></div><div class="px lu" style="background-position: -192px 0" role="img" aria-label="3× 금눈쇠올빼미"></div><div class="px lu" style="background-position: -288px 0" role="img" aria-label="3× 가면올빼미"></div><div class="px lu" style="background-position: -384px 0" role="img" aria-label="3× 소쩍새"></div><div class="px lu" style="background-position: -480px 0" role="img" aria-label="3× 흰올빼미 사장님"></div>
+      <div class="rl">강아지</div>
+      <div class="px lu" style="background-position: 0 -144px" role="img" aria-label="3× 시바견"></div><div class="px lu" style="background-position: -96px -144px" role="img" aria-label="3× 웰시코기"></div><div class="px lu" style="background-position: -192px -144px" role="img" aria-label="3× 비글"></div><div class="px lu" style="background-position: -288px -144px" role="img" aria-label="3× 푸들"></div><div class="px lu" style="background-position: -384px -144px" role="img" aria-label="3× 허스키"></div><div class="px lu" style="background-position: -480px -144px" role="img" aria-label="3× 사모예드 사장님"></div>
+      <div class="rl">고양이</div>
+      <div class="px lu" style="background-position: 0 -288px" role="img" aria-label="3× 치즈태비"></div><div class="px lu" style="background-position: -96px -288px" role="img" aria-label="3× 턱시도"></div><div class="px lu" style="background-position: -192px -288px" role="img" aria-label="3× 샴"></div><div class="px lu" style="background-position: -288px -288px" role="img" aria-label="3× 삼색이"></div><div class="px lu" style="background-position: -384px -288px" role="img" aria-label="3× 러시안블루"></div><div class="px lu" style="background-position: -480px -288px" role="img" aria-label="3× 페르시안 사장님"></div>
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>3× 자세 18 · 표정 규칙은 2×와 같다 (2배)</h2>
+    <div class="stage g">
+      <span></span>
+      <div class="pn">서 있기<code>idle</code></div><div class="pn">걷기<code>walk</code></div><div class="pn">앉기<code>sit</code></div><div class="pn">타이핑<code>type</code></div><div class="pn">열람<code>read</code></div><div class="pn">졸음<code>sleep</code></div><div class="pn">펄쩍<code>jump</code></div><div class="pn">머리 긁기<code>scratch</code></div><div class="pn">패닉<code>panic</code></div>
+      <div class="rl">올빼미</div>
+      <div class="px owl" style="background-position: 0 0" role="img" aria-label="3× 올빼미 서 있기"></div><div class="px owl" style="background-position: -96px 0" role="img" aria-label="3× 올빼미 걷기"></div><div class="px owl" style="background-position: -192px 0" role="img" aria-label="3× 올빼미 앉기"></div><div class="px owl" style="background-position: -288px 0" role="img" aria-label="3× 올빼미 타이핑"></div><div class="px owl" style="background-position: -384px 0" role="img" aria-label="3× 올빼미 열람"></div><div class="px owl" style="background-position: -480px 0" role="img" aria-label="3× 올빼미 졸음"></div><div class="px owl" style="background-position: -576px 0" role="img" aria-label="3× 올빼미 펄쩍"></div><div class="px owl" style="background-position: -672px 0" role="img" aria-label="3× 올빼미 머리 긁기"></div><div class="px owl" style="background-position: -768px 0" role="img" aria-label="3× 올빼미 패닉"></div>
+      <div class="rl">강아지</div>
+      <div class="px dog" style="background-position: 0 0" role="img" aria-label="3× 강아지 서 있기"></div><div class="px dog" style="background-position: -96px 0" role="img" aria-label="3× 강아지 걷기"></div><div class="px dog" style="background-position: -192px 0" role="img" aria-label="3× 강아지 앉기"></div><div class="px dog" style="background-position: -288px 0" role="img" aria-label="3× 강아지 타이핑"></div><div class="px dog" style="background-position: -384px 0" role="img" aria-label="3× 강아지 열람"></div><div class="px dog" style="background-position: -480px 0" role="img" aria-label="3× 강아지 졸음"></div><div class="px dog" style="background-position: -576px 0" role="img" aria-label="3× 강아지 펄쩍"></div><div class="px dog" style="background-position: -672px 0" role="img" aria-label="3× 강아지 머리 긁기"></div><div class="px dog" style="background-position: -768px 0" role="img" aria-label="3× 강아지 패닉"></div>
+      <div class="rl">고양이</div>
+      <div class="px cat" style="background-position: 0 0" role="img" aria-label="3× 고양이 서 있기"></div><div class="px cat" style="background-position: -96px 0" role="img" aria-label="3× 고양이 걷기"></div><div class="px cat" style="background-position: -192px 0" role="img" aria-label="3× 고양이 앉기"></div><div class="px cat" style="background-position: -288px 0" role="img" aria-label="3× 고양이 타이핑"></div><div class="px cat" style="background-position: -384px 0" role="img" aria-label="3× 고양이 열람"></div><div class="px cat" style="background-position: -480px 0" role="img" aria-label="3× 고양이 졸음"></div><div class="px cat" style="background-position: -576px 0" role="img" aria-label="3× 고양이 펄쩍"></div><div class="px cat" style="background-position: -672px 0" role="img" aria-label="3× 고양이 머리 긁기"></div><div class="px cat" style="background-position: -768px 0" role="img" aria-label="3× 고양이 패닉"></div>
+    </div>
+    <div class="stage g">
+      <span></span>
+      <div class="pn">만세<code>cheer</code></div><div class="pn">손뼉<code>clap</code></div><div class="pn">쪼그리기<code>crouch</code></div><div class="pn">들기<code>carry</code></div><div class="pn">턱 괴기<code>think</code></div><div class="pn">하이파이브<code>highfive</code></div><div class="pn">기지개<code>stretch</code></div><div class="pn">커피<code>drink</code></div><div class="pn">수화기<code>phone</code></div>
+      <div class="rl">올빼미</div>
+      <div class="px owl" style="background-position: -864px 0" role="img" aria-label="3× 올빼미 만세"></div><div class="px owl" style="background-position: -960px 0" role="img" aria-label="3× 올빼미 손뼉"></div><div class="px owl" style="background-position: -1056px 0" role="img" aria-label="3× 올빼미 쪼그리기"></div><div class="px owl" style="background-position: -1152px 0" role="img" aria-label="3× 올빼미 들기"></div><div class="px owl" style="background-position: -1248px 0" role="img" aria-label="3× 올빼미 턱 괴기"></div><div class="px owl" style="background-position: -1344px 0" role="img" aria-label="3× 올빼미 하이파이브"></div><div class="px owl" style="background-position: -1440px 0" role="img" aria-label="3× 올빼미 기지개"></div><div class="px owl" style="background-position: -1536px 0" role="img" aria-label="3× 올빼미 커피"></div><div class="px owl" style="background-position: -1632px 0" role="img" aria-label="3× 올빼미 수화기"></div>
+      <div class="rl">강아지</div>
+      <div class="px dog" style="background-position: -864px 0" role="img" aria-label="3× 강아지 만세"></div><div class="px dog" style="background-position: -960px 0" role="img" aria-label="3× 강아지 손뼉"></div><div class="px dog" style="background-position: -1056px 0" role="img" aria-label="3× 강아지 쪼그리기"></div><div class="px dog" style="background-position: -1152px 0" role="img" aria-label="3× 강아지 들기"></div><div class="px dog" style="background-position: -1248px 0" role="img" aria-label="3× 강아지 턱 괴기"></div><div class="px dog" style="background-position: -1344px 0" role="img" aria-label="3× 강아지 하이파이브"></div><div class="px dog" style="background-position: -1440px 0" role="img" aria-label="3× 강아지 기지개"></div><div class="px dog" style="background-position: -1536px 0" role="img" aria-label="3× 강아지 커피"></div><div class="px dog" style="background-position: -1632px 0" role="img" aria-label="3× 강아지 수화기"></div>
+      <div class="rl">고양이</div>
+      <div class="px cat" style="background-position: -864px 0" role="img" aria-label="3× 고양이 만세"></div><div class="px cat" style="background-position: -960px 0" role="img" aria-label="3× 고양이 손뼉"></div><div class="px cat" style="background-position: -1056px 0" role="img" aria-label="3× 고양이 쪼그리기"></div><div class="px cat" style="background-position: -1152px 0" role="img" aria-label="3× 고양이 들기"></div><div class="px cat" style="background-position: -1248px 0" role="img" aria-label="3× 고양이 턱 괴기"></div><div class="px cat" style="background-position: -1344px 0" role="img" aria-label="3× 고양이 하이파이브"></div><div class="px cat" style="background-position: -1440px 0" role="img" aria-label="3× 고양이 기지개"></div><div class="px cat" style="background-position: -1536px 0" role="img" aria-label="3× 고양이 커피"></div><div class="px cat" style="background-position: -1632px 0" role="img" aria-label="3× 고양이 수화기"></div>
+    </div>
+  </section>
+
+  <section class="k">
+    <h2>3× 눈 상태 7가지 (3배)</h2>
+    <div class="stage fg">
+      <span></span>
+      <div class="pn">기본<code>open</code></div><div class="pn">시선 아래<code>down</code></div><div class="pn">시선 위옆<code>side</code></div><div class="pn">반쯤 감음<code>half</code></div><div class="pn">감음<code>closed</code></div><div class="pn">웃는 눈<code>happy</code></div><div class="pn">흰자<code>wide</code></div>
+      <div class="rl">올빼미</div>
+      <div class="px fc" style="background-position: 0 0" role="img" aria-label="3× 올빼미 기본"></div><div class="px fc" style="background-position: -144px 0" role="img" aria-label="3× 올빼미 시선 아래"></div><div class="px fc" style="background-position: -288px 0" role="img" aria-label="3× 올빼미 시선 위옆"></div><div class="px fc" style="background-position: -432px 0" role="img" aria-label="3× 올빼미 반쯤 감음"></div><div class="px fc" style="background-position: -576px 0" role="img" aria-label="3× 올빼미 감음"></div><div class="px fc" style="background-position: -720px 0" role="img" aria-label="3× 올빼미 웃는 눈"></div><div class="px fc" style="background-position: -864px 0" role="img" aria-label="3× 올빼미 흰자"></div>
+      <div class="rl">강아지</div>
+      <div class="px fc" style="background-position: 0 -216px" role="img" aria-label="3× 강아지 기본"></div><div class="px fc" style="background-position: -144px -216px" role="img" aria-label="3× 강아지 시선 아래"></div><div class="px fc" style="background-position: -288px -216px" role="img" aria-label="3× 강아지 시선 위옆"></div><div class="px fc" style="background-position: -432px -216px" role="img" aria-label="3× 강아지 반쯤 감음"></div><div class="px fc" style="background-position: -576px -216px" role="img" aria-label="3× 강아지 감음"></div><div class="px fc" style="background-position: -720px -216px" role="img" aria-label="3× 강아지 웃는 눈"></div><div class="px fc" style="background-position: -864px -216px" role="img" aria-label="3× 강아지 흰자"></div>
+      <div class="rl">고양이</div>
+      <div class="px fc" style="background-position: 0 -432px" role="img" aria-label="3× 고양이 기본"></div><div class="px fc" style="background-position: -144px -432px" role="img" aria-label="3× 고양이 시선 아래"></div><div class="px fc" style="background-position: -288px -432px" role="img" aria-label="3× 고양이 시선 위옆"></div><div class="px fc" style="background-position: -432px -432px" role="img" aria-label="3× 고양이 반쯤 감음"></div><div class="px fc" style="background-position: -576px -432px" role="img" aria-label="3× 고양이 감음"></div><div class="px fc" style="background-position: -720px -432px" role="img" aria-label="3× 고양이 웃는 눈"></div><div class="px fc" style="background-position: -864px -432px" role="img" aria-label="3× 고양이 흰자"></div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":2700}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>해상도 제안</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.5}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+.px{image-rendering:pixelated;background-repeat:no-repeat;display:block}
+section.k{display:flex;flex-direction:column;gap:18px}
+section.k>h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-0.01em}
+section.k>p{margin:-8px 0 0;font-size:13px;color:#52525B;max-width:980px}
+.cap{font-size:12px;color:#71717A}
+.cell{display:flex;flex-direction:column;align-items:center;gap:8px}
+.lab{font-size:12px;font-weight:600;text-align:center}
+.sub{font-size:11.5px;color:#71717A;text-align:center}
+.stage{background-color:#F1F1EE;background-image:radial-gradient(#D9D8D3 1px,transparent 1.3px);background-size:16px 16px;border-radius:12px;border:1px solid #E4E4E7}
+.card{background:#fff;border:1px solid #E4E4E7;border-radius:12px;box-shadow:0 1px 2px rgba(24,24,27,.04)}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:5px;font-size:11px;font-weight:500;background:#F4F4F5;color:#52525B}
+.chip.ok{background:#ECFDF3;color:#166534}
+.chip.no{background:#FEF2F2;color:#991B1B}
+.chip.warn{background:#FEF9C3;color:#854D0E}
+table{border-collapse:collapse;font-size:12.5px}
+th{font-size:11px;font-weight:600;color:#71717A;text-align:left;padding:6px 10px;border-bottom:1px solid #E4E4E7}
+td{padding:7px 10px;border-bottom:1px solid #F0F0F1;vertical-align:top}
+td.mono{font-size:12px}
+.old{width:128px;height:192px;background-image:url(/_blob/4bc481c402283e75e1379281acc8a606);background-size:384px 192px}
+.new{width:128px;height:192px;background-image:url(/_blob/d2ef76560128347626dd0f96cb73b800);background-size:384px 192px}
+.frame{position:relative;width:256px;height:384px;background-image:url(/_blob/d2ef76560128347626dd0f96cb73b800);background-size:768px 384px;background-position:0 0;image-rendering:pixelated;background-color:#fff}
+.grid2{position:absolute;inset:0;background-image:linear-gradient(to right,rgba(24,24,27,.18) 1px,transparent 1px),linear-gradient(to bottom,rgba(24,24,27,.18) 1px,transparent 1px);background-size:16px 16px;pointer-events:none}
+.grid1{position:absolute;inset:0;background-image:linear-gradient(to right,rgba(24,24,27,.07) 1px,transparent 1px),linear-gradient(to bottom,rgba(24,24,27,.07) 1px,transparent 1px);background-size:8px 8px;pointer-events:none}
+.mark{position:absolute;border:2px solid #D97745;pointer-events:none}
+.dot{position:absolute;width:8px;height:8px;background:#3D6FE0;outline:2px solid #fff;pointer-events:none}
+.tagm{position:absolute;font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;background:#18181B;color:#fff;padding:1px 5px;border-radius:4px;white-space:nowrap}
+.ladder{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.l1{width:208px;height:80px;background-image:url(/_blob/ecd2ce9824a687995abc051154f7e82e);background-size:208px 80px}
+.l2{width:416px;height:160px;background-image:url(/_blob/19d17f4edc3fc80bd8abeabd992de960);background-size:416px 160px}
+.l3{width:624px;height:240px;background-image:url(/_blob/7e624c0fafc862ad00b894da55cb26b3);background-size:624px 240px}
+ul.b{margin:0;padding-left:16px;font-size:12.5px;color:#3F3F46;display:flex;flex-direction:column;gap:4px}
+ul.b b{color:#18181B;font-weight:600}
+</style>
+</helmet>
+<div class="ow" style="width: 1760px; height: 1560px; background: #FFFFFF; padding: 56px 64px; display: flex; flex-direction: column; gap: 44px; overflow: hidden">
+
+  <header style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 24px; border-bottom: 1px solid #E4E4E7">
+    <h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em">직원 스프라이트 해상도 · 16×24 → 32×48</h1>
+    <p style="margin: 0; font-size: 14px; color: #52525B; max-width: 1100px">프레임 안의 픽셀 밀도만 2배로 올립니다. 화면에서 차지하는 크기(16×24 월드 px), 좌석·평면도·말풍선 기준점은 그대로입니다. 윤곽과 몸통·날개·손 물건은 2px 격자(= 월드 1px)로 그려 1× 소품과 선 굵기가 같고, 얼굴·표정·무늬·옷 디테일만 1px 격자를 씁니다.</p>
+  </header>
+
+  <div style="display: grid; grid-template-columns: 560px 1fr; gap: 48px; align-items: start">
+
+    <section class="k">
+      <h2>현재 vs 제안 · 같은 화면 크기</h2>
+      <p>위 줄은 현재 16×24를 8배, 아래 줄은 제안 32×48을 4배로 보인 것입니다. 눈·눈동자·부리·안경·넥타이가 모두 한 단계 더 읽힙니다.</p>
+      <div class="stage" style="padding: 20px 24px; display: grid; grid-template-columns: repeat(3, 128px); gap: 20px 40px; justify-content: start">
+        <div class="cell"><div class="px old" style="background-position: 0 0" role="img" aria-label="현재 수리부엉이 부장"></div><span class="sub">현재 · 수리부엉이 부장</span></div>
+        <div class="cell"><div class="px old" style="background-position: -128px 0" role="img" aria-label="현재 금눈쇠올빼미 과장"></div><span class="sub">현재 · 금눈쇠올빼미 과장</span></div>
+        <div class="cell"><div class="px old" style="background-position: -256px 0" role="img" aria-label="현재 가면올빼미 대리"></div><span class="sub">현재 · 가면올빼미 대리</span></div>
+        <div class="cell"><div class="px new" style="background-position: 0 0" role="img" aria-label="제안 수리부엉이 부장"></div><span class="sub">제안 · 눈동자 2×2, 하이라이트, 1px 안경테</span></div>
+        <div class="cell"><div class="px new" style="background-position: -128px 0" role="img" aria-label="제안 금눈쇠올빼미 과장"></div><span class="sub">제안 · 조끼 선, 돋보기</span></div>
+        <div class="cell"><div class="px new" style="background-position: -256px 0" role="img" aria-label="제안 가면올빼미 대리"></div><span class="sub">제안 · 걷은 소매, 색상표</span></div>
+      </div>
+    </section>
+
+    <section class="k">
+      <h2>프레임 규격</h2>
+      <p>32×48, 발 기준점 (16, 47). 굵은 선이 2px 격자(월드 1px), 가는 선이 1px 격자. 주황 상자는 눈 상자 4×4 두 개 — 모든 종이 같은 자리라 안경·선글라스·근속 그늘 레이어를 종과 무관하게 한 벌로 씁니다. 파란 점은 기준점.</p>
+      <div style="display: flex; gap: 28px; align-items: flex-start">
+        <div class="frame" role="img" aria-label="32×48 프레임 격자 위의 수리부엉이 부장">
+          <div class="grid1"></div>
+          <div class="grid2"></div>
+          <div class="mark" style="left: 62px; top: 174px; width: 36px; height: 36px"></div>
+          <div class="mark" style="left: 158px; top: 174px; width: 36px; height: 36px"></div>
+          <div class="dot" style="left: 124px; top: 124px"></div>
+          <div class="dot" style="left: 204px; top: 300px"></div>
+          <div class="dot" style="left: 124px; top: 372px"></div>
+          <div class="tagm" style="left: 136px; top: 118px">head (16, 16)</div>
+          <div class="tagm" style="left: 196px; top: 282px">hand (26, 38)</div>
+          <div class="tagm" style="left: 136px; top: 356px">anchor (16, 47)</div>
+        </div>
+        <table style="width: 100%">
+          <tr><th>항목</th><th>현재</th><th>제안</th></tr>
+          <tr><td>프레임</td><td class="mono">16×24</td><td class="mono">32×48</td></tr>
+          <tr><td>발 기준점 <span class="mono">anchorPx</span></td><td class="mono">(8, 23)</td><td class="mono">(16, 47)</td></tr>
+          <tr><td>월드 크기</td><td class="mono">16×24</td><td class="mono">16×24 (scale 0.5)</td></tr>
+          <tr><td>윤곽·몸통·날개·손 물건</td><td>1px</td><td>2px 격자 (= 월드 1px)</td></tr>
+          <tr><td>눈 상자</td><td class="mono">2×2 ×2</td><td class="mono">4×4 ×2 · (8,22) (20,22)</td></tr>
+          <tr><td>눈동자·하이라이트·눈썹·입</td><td>없음 / 1px</td><td>1px 격자, 자세별 상태</td></tr>
+          <tr><td>머리·손 기준점</td><td class="mono">1× 좌표</td><td class="mono">×2 (meta.anchors)</td></tr>
+          <tr><td>시트 크기 (프레임 1,673장)</td><td class="mono">1024×1024</td><td class="mono">2048×2048 (목표)</td></tr>
+          <tr><td>자세·fps·레이어 규칙</td><td colspan="2">변경 없음 (HANDOFF 6.4 표 그대로)</td></tr>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 700px 1fr; gap: 48px; align-items: start">
+    <section class="k">
+      <h2>캔버스 배율별 실제 모습 (장치 픽셀 2배 확대)</h2>
+      <p>왼쪽부터 1× 화분(소품), 현재 올빼미, 제안 올빼미, 제안 시바견. 배율 2에서 텍셀 1개 = 장치 픽셀 1개로 딱 맞습니다. 배율 1은 2:1로 줄어도 윤곽이 2px 격자라 지금 그림과 같은 실루엣이 남고, 배율 3은 1.5배라 픽셀이 고르지 않지만 소품보다 선이 가늘어지지는 않습니다.</p>
+      <div class="ladder">
+        <div style="display: flex; align-items: center; gap: 12px"><span class="chip">배율 1 · 1100–1599 창, DPR 1</span><span class="cap">텍셀 2 → 장치 1 (nearest 다운샘플)</span></div>
+        <div class="px l1 stage" style="border-radius: 6px" role="img" aria-label="배율 1 미리보기"></div>
+        <div style="display: flex; align-items: center; gap: 12px"><span class="chip ok">배율 2 · 가장 흔한 경우 (DPR 1.25 이상 노트북)</span><span class="cap">텍셀 1 → 장치 1</span></div>
+        <div class="px l2 stage" style="border-radius: 6px" role="img" aria-label="배율 2 미리보기"></div>
+        <div style="display: flex; align-items: center; gap: 12px"><span class="chip warn">배율 3 · 1600 이상 창, DPR 1.5 이상</span><span class="cap">텍셀 1 → 장치 1.5</span></div>
+        <div class="px l3 stage" style="border-radius: 6px" role="img" aria-label="배율 3 미리보기"></div>
+      </div>
+    </section>
+
+    <section class="k">
+      <h2>더 올릴 수 있나? · 밀도의 상한은 캔버스 배율</h2>
+      <p>프레임 밀도를 아무리 높여도 화면에는 "월드 16×24 × 캔버스 배율" 만큼의 장치 픽셀만 보입니다. 배율은 1·2·3 정수이므로 (renderer.ts 의 배율 메뉴가 3에서 끊음) 그 위의 밀도는 그대로 버려집니다.</p>
+      <table style="width: 100%">
+        <tr><th>시트 밀도</th><th>프레임</th><th>배율 1</th><th>배율 2</th><th>배율 3</th><th>평가</th></tr>
+        <tr><td class="mono">1× (현재)</td><td class="mono">16×24</td><td>원본</td><td>2배 확대</td><td>3배 확대</td><td>디테일 부족</td></tr>
+        <tr style="background: #F8FAF8"><td class="mono"><b>2× (제안)</b></td><td class="mono">32×48</td><td>2:1 축소</td><td><b>원본</b></td><td>1.5배 확대</td><td>가장 흔한 배율 2에서 손실 없음. 1×에서 고른 축소</td></tr>
+        <tr><td class="mono">3×</td><td class="mono">48×72</td><td>3:1 축소</td><td>3:2 축소 (고르지 않음)</td><td><b>원본</b></td><td>배율 3 화면에서만 득. 배율 2에서 오히려 픽셀이 깨짐</td></tr>
+        <tr><td class="mono">4×</td><td class="mono">64×96</td><td>4:1</td><td>2:1 축소</td><td>4:3 축소</td><td>어느 배율에서도 원본이 안 나옴</td></tr>
+      </table>
+      <ul class="b">
+        <li><b>권고.</b> 2× 한 벌을 기본으로. 배율 2에서 텍셀이 그대로 보이고, 배율 1에서는 2px 윤곽 덕에 지금 그림으로 돌아갑니다.</li>
+        <li><b>배율 3까지 챙기려면.</b> 같은 키의 3× 시트(<span class="mono">owls@3x.json</span>, 48×72)를 한 벌 더 만들고 렌더러가 현재 배율에 맞춰 둘 중 하나를 읽습니다 (시트 경로 한 줄). 얼굴·무늬 1px 격자를 3× 기준으로 한 번 더 그려야 하므로 그림 작업이 두 벌이 됩니다. 이 시안은 2×만 그렸습니다.</li>
+        <li><b>캐릭터를 월드에서 키우는 길(예: 20×30)</b>은 좌석·통로·말풍선 기준점을 다 손대야 해서 이번 범위 밖입니다.</li>
+        <li><b>그림 품질 요점.</b> 해상도보다 "자세마다 눈·눈썹·입 상태를 바꾸는 규칙"(오른쪽 보드)이 표정 구분에 더 크게 기여합니다. 2×는 그 규칙을 담을 최소 격자입니다.</li>
+      </ul>
+    </section>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

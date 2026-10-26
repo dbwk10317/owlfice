@@ -5,6 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import "../design/handoff/tokens.css";
 import "./styles/app.css"; // 규모 선택·로딩 화면에도 body 여백 0 이 필요해 가장 먼저 부른다
+import { setAvatarAnimal } from "./avatar.ts";
 import { firstOffice } from "./first-office.ts";
 import { mountEmptyOffice } from "./empty-office.ts";
 import { applyNightMode, mountHeader } from "./header.ts";
@@ -62,6 +63,7 @@ async function loadSheet(): Promise<LoadingSheet | undefined> {
 /** 사이드바 · 가운데(머리말 + 무대) · 현황판 (HANDOFF 2.1). 창 너비 구간은 header 가 app.dataset.layout 으로 정한다 */
 function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
   let settings = initialSettings;
+  setAvatarAnimal(settings.animal ?? "owls");
   const sound = new OfficeSound();
   sound.setEnabled(settings.sound ?? false);
   document.addEventListener("pointerdown", () => sound.unlock());
@@ -213,6 +215,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     );
   }
   mountOffice(stage, store, {
+    animal: settings.animal ?? "owls",
     sound,
     bossName: settings.bossName,
     onScale: (n, maxFit) => header?.setScale(n, maxFit),
@@ -264,6 +267,9 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
     header?.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
     office?.setBossName(next.bossName);
+    // 직원 동물: 캔버스는 지금 배율의 밀도로 시트를 다시 읽고, 카드 아바타는 캐시를 비운다
+    setAvatarAnimal(next.animal ?? "owls");
+    office?.setAnimal(next.animal ?? "owls");
   }
 }
 

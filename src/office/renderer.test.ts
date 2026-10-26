@@ -7,6 +7,7 @@ import {
   cueCollector,
   lightOf,
   panLimits,
+  maxFitScale,
   sheetSwitcher,
   teamOfProp,
   toCss,
@@ -200,4 +201,10 @@ test("직원 시트 교체는 겹친 요청 중 마지막 것만 적용하고, �
   pending.get("cats@3")!.ok(sheet("cats@3"));
   await settle();
   expect(applied).toEqual(["dogs@3", "cats@3"]);
+});
+
+test("창에 맞는 배율은 3 을 넘지 않고 720 미만 창은 1 이다", () => {
+  expect(maxFitScale(520 * 5, 320 * 5, 1, 3000)).toBe(3);
+  expect(maxFitScale(520 * 2, 320 * 2, 1, 1300)).toBe(2);
+  expect(maxFitScale(520 * 2, 320 * 2, 1, 700)).toBe(1);
 });

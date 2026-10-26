@@ -192,3 +192,21 @@ test("동물을 바꾸면 해당 시트로 다시 그리고 같은 동물이면 
   expect(a.firstChild).not.toBe(old);
   expect(a.children).toHaveLength(1);
 });
+
+test("동물이 바뀌면 붙어 있는 아바타를 새 시트로 다시 그리고 떨어진 자리는 잊는다", async () => {
+  const { setAvatar, setAvatarAnimal } = await import("./avatar.ts");
+  const a = host();
+  const gone = host();
+  const employee = emp("a");
+  setAvatar(a, employee, "A");
+  setAvatar(gone, emp("b"), "A");
+  await settle();
+  const old = a.firstChild;
+  gone.remove();
+  setAvatarAnimal("cats");
+  await settle();
+  expect(loadOwls).toHaveBeenLastCalledWith("cats", 2);
+  expect(a.firstChild).not.toBe(old);
+  expect(a.children).toHaveLength(1);
+  expect(gone.children).toHaveLength(1);
+});

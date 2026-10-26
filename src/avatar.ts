@@ -8,14 +8,20 @@ let animal: Animal = "owls";
 let atlas: ReturnType<typeof loadOwls> | undefined;
 let pictures = new Map<string, HTMLCanvasElement>();
 const requests = new WeakMap<HTMLElement, string>();
+// 붙어 있는 아바타 자리. 동물이 바뀌면 다시 그리려고 둔다. 떨어진 자리는 바꿀 때 지운다
+const mounted = new Map<HTMLElement, { employee: Employee; building?: string }>();
 let warned = false;
 
-/** 동물이 바뀌면 시트와 그림 캐시를 버려 다음 setAvatar 가 다시 그린다. */
+/** 동물이 바뀌면 시트와 그림 캐시를 버리고 붙어 있는 아바타를 모두 다시 그린다 (HANDOFF 4.6). */
 export function setAvatarAnimal(next: Animal): void {
   if (next === animal) return;
   animal = next;
   atlas = undefined;
   pictures = new Map();
+  for (const [host, { employee, building }] of mounted) {
+    if (host.isConnected) setAvatar(host, employee, building);
+    else mounted.delete(host);
+  }
 }
 
 async function picture(
@@ -64,6 +70,7 @@ export function setAvatar(host: HTMLElement, employee: Employee, building?: stri
   ]);
   if (requests.get(host) === key) return;
   requests.set(host, key);
+  mounted.set(host, { employee, building });
   host.replaceChildren();
   host.style.setProperty("--ow-avatar-bg", `var(--ow-${themeOf(building)}-tint)`);
   void picture(host.ownerDocument, employee, building)

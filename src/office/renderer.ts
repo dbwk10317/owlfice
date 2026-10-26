@@ -63,14 +63,14 @@ export function canvasScale(availDevW: number, availDevH: number, dpr: number) {
   };
 }
 
-/** 창에 맞는 가장 큰 배율. 720 미만 창은 1× 고정에 패닝 (HANDOFF 2.2, 6.1). */
+/** 창에 맞는 가장 큰 배율, 최대 3 (HANDOFF 2.2 의 배율 구간과 배율 메뉴 1·2·3). 720 미만 창은 1× 고정에 패닝 (6.1). */
 export function maxFitScale(
   availDevW: number,
   availDevH: number,
   dpr: number,
   viewportW: number,
 ): number {
-  return viewportW < 720 ? 1 : canvasScale(availDevW, availDevH, dpr).scale;
+  return viewportW < 720 ? 1 : Math.min(3, canvasScale(availDevW, availDevH, dpr).scale);
 }
 
 /**

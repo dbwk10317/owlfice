@@ -103,6 +103,54 @@ fn team(session: &str) -> Team {
 }
 
 #[test]
+fn projected_departure_is_consistent_in_summary_employees_and_shared_props() {
+    for confirmed in [false, true] {
+        let e = env(Scale::Small);
+        let mut w = lock(&e.world);
+        let k = key("windows", Vendor::Claude, "projected");
+        let mut t = team("projected");
+        t.employees[0].pending.push(call(t0()));
+        t.employees[0].asking = Some("질문".into());
+        t.props.light = Light::Yellow;
+        t.props.night = true;
+        w.put_team(k.clone(), t, t0(), true);
+        if confirmed {
+            w.registry_alive(&k, true, t0());
+            w.registry_alive(&k, false, t0() + Duration::seconds(1));
+        } else {
+            w.set_read_failed(&k, true);
+        }
+        let t = &w.teams[&k];
+        assert_eq!(t.employees[0].pending.len(), 1);
+        let summary = team_summary(&w, &k, t, t0());
+        assert_eq!(
+            (summary.phase, summary.dot, summary.border),
+            (TeamPhase::Off, Dot::Off, Border::Plain)
+        );
+        assert_eq!(summary.asking_count, 0);
+        let dto = office_dto(&w, &w.office_of(&k), false, Vec::new(), t0()).unwrap();
+        assert_eq!(dto.shared.light, Light::Off);
+        assert!(!dto.shared.night && !dto.shared.incident);
+        let t = &dto.teams[0];
+        assert_eq!(t.phase, TeamPhase::Off);
+        assert!(t.desk_slot.is_none());
+        assert_eq!(t.props.light, Light::Off);
+        for employee in &t.employees {
+            assert_eq!(employee.state, EmployeeState::Off);
+            assert_eq!(employee.pending_count, 0);
+            assert_eq!(
+                employee.confidence,
+                if confirmed {
+                    Confidence::Confirmed
+                } else {
+                    Confidence::Inferred
+                }
+            );
+        }
+    }
+}
+
+#[test]
 fn daylight_dto_and_night_props_follow_local_boundaries_and_clock_jumps() {
     let e = env(Scale::Large);
     let mut w = lock(&e.world);
@@ -311,48 +359,77 @@ fn employee_state_keeps_individual_waiting_and_finished_separate_from_team_dot()
     t.employees[1].pending.push(call(now));
     assert_eq!(team_summary(&w, &k, &t, now).dot, Dot::Working);
     assert_eq!(
-        employee_dto(&t, &t.employees[0], now).state,
+        employee_dto(&t, &t.employees[0], now, None).state,
         EmployeeState::Waiting
     );
     assert_eq!(
-        employee_dto(&t, &t.employees[1], now).state,
+        employee_dto(&t, &t.employees[1], now, None).state,
         EmployeeState::Working
     );
 
     t.employees[0].activity.pose = Pose::Duck;
     assert_eq!(
-        employee_dto(&t, &t.employees[0], now).state,
+        employee_dto(&t, &t.employees[0], now, None).state,
         EmployeeState::Waiting
     );
     t.employees[0].quiet_since = None;
     t.employees[0].asking = Some("approval".into());
     assert_eq!(
-        employee_dto(&t, &t.employees[0], now).state,
+        employee_dto(&t, &t.employees[0], now, None).state,
         EmployeeState::Waiting
     );
 
     t.employees[1].pending.clear();
     t.employees[1].interrupted_at = Some(now);
     assert_eq!(
-        employee_dto(&t, &t.employees[1], now).state,
+        employee_dto(&t, &t.employees[1], now, None).state,
         EmployeeState::Interrupted
     );
 
     t.employees[1].retired_at = Some(now);
     assert_eq!(
-        employee_dto(&t, &t.employees[1], now).state,
+        employee_dto(&t, &t.employees[1], now, None).state,
         EmployeeState::Finished
     );
     t.employees[1].departed_at = Some(now);
     assert_eq!(
-        employee_dto(&t, &t.employees[1], now).state,
+        employee_dto(&t, &t.employees[1], now, None).state,
         EmployeeState::Off
     );
     t.phase = TeamPhase::Off;
     assert_eq!(
-        employee_dto(&t, &t.employees[0], now).state,
+        employee_dto(&t, &t.employees[0], now, None).state,
         EmployeeState::Off
     );
+}
+
+#[test]
+fn employee_asking_and_question_follow_evidence_even_when_room_disagrees() {
+    let now = t0();
+    let mut t = team("s");
+    let e = &mut t.employees[0];
+    e.activity.room = Room::Door;
+    let dto = employee_dto(&t, &t.employees[0], now, None);
+    assert!(!dto.asking);
+    assert_eq!(dto.question, None);
+
+    t.employees[0].activity.room = Room::Dev;
+    t.employees[0].asking = Some("새 문구의 결재 질문입니다\n둘째 줄은 제외".into());
+    let dto = employee_dto(&t, &t.employees[0], now, None);
+    assert!(dto.asking);
+    assert_eq!(dto.question.as_deref(), Some("새 문구의 결재 질문입니다…"));
+
+    t.employees[0].activity.bad = true;
+    let projected = employee_dto(&t, &t.employees[0], now, Some(Confidence::Inferred));
+    assert_eq!(projected.state, EmployeeState::Off);
+    assert!(!projected.asking);
+    assert_eq!(projected.question, None);
+    assert!(!projected.activity.bad);
+
+    t.phase = TeamPhase::Off;
+    let off = employee_dto(&t, &t.employees[0], now, None);
+    assert!(!off.asking);
+    assert_eq!(off.question, None);
 }
 
 #[test]
@@ -1392,7 +1469,7 @@ fn employee_carries_jobs_meeting_and_review() {
     assert_eq!(live.review, review(0, false));
 
     let rebuilt = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
-    let again = employee_dto(&rebuilt, &rebuilt.employees[0], rebuilt.last_activity);
+    let again = employee_dto(&rebuilt, &rebuilt.employees[0], rebuilt.last_activity, None);
     assert_eq!(
         (again.jobs, again.meeting, again.review),
         (live.jobs, live.meeting, live.review)
@@ -1411,16 +1488,27 @@ fn employee_pending_count_survives_waiting_and_rebuild() {
     let mut team = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
     team.employees[0].asking = Some("계속할까요?".into());
     team.employees[0].pending[0].summary.escalated = true;
-    let dto = employee_dto(&team, &team.employees[0], team.last_activity);
+    let dto = employee_dto(&team, &team.employees[0], team.last_activity, None);
     assert_eq!((dto.pending_count, dto.jobs), (2, 1));
     events.push(ev("a", 5, done("one", ToolOutcome::Ok, None)));
     let restored = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
-    let dto = employee_dto(&restored, &restored.employees[0], restored.last_activity);
+    let dto = employee_dto(
+        &restored,
+        &restored.employees[0],
+        restored.last_activity,
+        None,
+    );
     assert_eq!((dto.pending_count, dto.jobs), (1, 1));
     events.push(ev("a", 6, done("two", ToolOutcome::Ok, None)));
     let restored = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
     assert_eq!(
-        employee_dto(&restored, &restored.employees[0], restored.last_activity).pending_count,
+        employee_dto(
+            &restored,
+            &restored.employees[0],
+            restored.last_activity,
+            None
+        )
+        .pending_count,
         0
     );
 }
@@ -1807,7 +1895,7 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
         let now = event.ts.unwrap();
         team.tick(now, utc(), &mut Vec::new());
         team.apply(event, &mut Vec::new());
-        let current = employee_dto(&team, &team.employees[0], now);
+        let current = employee_dto(&team, &team.employees[0], now, None);
         let expected = match i {
             0..=1 | 4..=7 => Border::Running,
             2..=3 => Border::Failed,
@@ -1821,7 +1909,7 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
         );
         if i >= 1 {
             assert_eq!(
-                employee_dto(&team, &team.employees[1], now).build_test_border,
+                employee_dto(&team, &team.employees[1], now, None).build_test_border,
                 if i < 3 {
                     Border::Running
                 } else {
@@ -1838,8 +1926,8 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
         );
         for (live, restored) in team.employees.iter().zip(&rebuilt.employees) {
             assert_eq!(
-                employee_dto(&team, live, now).build_test_border,
-                employee_dto(&rebuilt, restored, now).build_test_border
+                employee_dto(&team, live, now, None).build_test_border,
+                employee_dto(&rebuilt, restored, now, None).build_test_border
             );
         }
     }
@@ -1850,10 +1938,10 @@ fn rejection_dto_uses_hold_time_even_after_a_compaction_sentence() {
     let mut team = Team::new("a", Product::ClaudeCli, t0());
     team.employees[0].rejected_at = Some(t0());
     team.employees[0].activity.sentence = "분갈이 중".into();
-    assert!(employee_dto(&team, &team.employees[0], t0() + Duration::seconds(1)).rejected);
-    assert!(!employee_dto(&team, &team.employees[0], t0() + Duration::seconds(4)).rejected);
+    assert!(employee_dto(&team, &team.employees[0], t0() + Duration::seconds(1), None).rejected);
+    assert!(!employee_dto(&team, &team.employees[0], t0() + Duration::seconds(4), None).rejected);
     team.employees[0].activity.sentence = "반려: 옛 호출".into();
-    assert!(!employee_dto(&team, &team.employees[0], t0() + Duration::seconds(5)).rejected);
+    assert!(!employee_dto(&team, &team.employees[0], t0() + Duration::seconds(5), None).rejected);
 }
 
 #[test]
@@ -1890,7 +1978,7 @@ fn item_candidates_use_employee_state_and_medal_expiry() {
     t.employees[0].background.push(call(t0()));
     t.employees[0].planning = true;
     assert_eq!(
-        employee_dto(&t, &t.employees[0], t0()).items,
+        employee_dto(&t, &t.employees[0], t0(), None).items,
         [
             Item::Medal,
             Item::Helmet,
@@ -1900,7 +1988,7 @@ fn item_candidates_use_employee_state_and_medal_expiry() {
         ]
     );
     assert!(
-        !employee_dto(&t, &t.employees[0], t0() + Duration::seconds(10))
+        !employee_dto(&t, &t.employees[0], t0() + Duration::seconds(10), None)
             .items
             .contains(&Item::Medal)
     );
@@ -1908,7 +1996,7 @@ fn item_candidates_use_employee_state_and_medal_expiry() {
     t.employees[0].blanket = false;
     t.employees[0].background.clear();
     assert_eq!(
-        employee_dto(&t, &t.employees[0], t0() + Duration::seconds(10)).items,
+        employee_dto(&t, &t.employees[0], t0() + Duration::seconds(10), None).items,
         [Item::Scroll]
     );
 }

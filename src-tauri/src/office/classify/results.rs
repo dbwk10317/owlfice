@@ -150,7 +150,11 @@ impl Team {
                 let e = &mut self.employees[i];
                 match (&call.tool, declares) {
                     (ToolKind::Test, true) => {
-                        self.props.light = Light::Green;
+                        self.props.light = if test_verdict == Some(TestVerdict::Fail) {
+                            Light::Red
+                        } else {
+                            Light::Green
+                        };
                         self.props.light_at = ts;
                         let t = test_result.unwrap_or(TestResult {
                             passed: 0,
@@ -286,22 +290,23 @@ impl Team {
                     inc.last_error = ts;
                 }
                 // 사고 1건은 말풍선이 없다 (HANDOFF 5절). 장애는 상황실 문구가 맡는다
-                self.employees[i].log_activity(Activity::new(
-                    sentence::accident(&call, preview),
-                    home,
-                    ts,
-                    Confidence::Confirmed,
-                ));
+                self.employees[i].log_activity(Activity {
+                    bad: true,
+                    ..Activity::new(
+                        sentence::accident(&call, preview),
+                        home,
+                        ts,
+                        Confidence::Confirmed,
+                    )
+                });
             }
             ToolOutcome::Rejected => {
                 e.rejected_at = Some(ts);
                 cues.push(Cue::Reject { agent });
-                e.log_activity(Activity::new(
-                    sentence::rejected(&call),
-                    home,
-                    ts,
-                    Confidence::Confirmed,
-                ));
+                e.log_activity(Activity {
+                    bad: confirmed,
+                    ..Activity::new(sentence::rejected(&call), home, ts, Confidence::Confirmed)
+                });
                 self.restore_light(&call);
             }
             // Unknown, 또는 본문으로 짐작한 Ok/Err. 신호등·무재해·출고·평균을 건드리지 않는다 (S59)

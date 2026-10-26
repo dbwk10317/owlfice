@@ -87,6 +87,8 @@ function emp(
   return {
     agentId,
     state: "Working",
+    asking: false,
+    question: null,
     name: "박서준",
     rank: "Daeri",
     role: "Backend",
@@ -101,6 +103,7 @@ function emp(
       confidence: "Confirmed",
       extra: 0,
       elapsed: false,
+      bad: false,
     },
     recent: [],
     counters: { read: 0, edit: 0, shell: 0, outside: 0, meeting: 0, errors: 0 },
@@ -569,6 +572,7 @@ test("이름표: head 기준점을 CSS px 로, 이름 직급 + {elapsed} 를 채
       confidence: "Confirmed",
       extra: 0,
       elapsed: true,
+      bad: false,
     },
   });
   layer.sync(office([team("t", [boss(), a])]), "large", NOW);
@@ -2132,6 +2136,7 @@ test.each([
   "off",
   "retired",
   "departed",
+  "interrupted",
   "outside",
   "planning",
   "work",
@@ -2151,6 +2156,7 @@ test.each([
   if (stop === "off") t.phase = "Off";
   if (stop === "retired") e.retiredAt = SINCE;
   if (stop === "departed") e.departedAt = SINCE;
+  if (stop === "interrupted") e.state = "Interrupted";
   if (stop === "outside") e.activity.room = "Outside";
   if (stop === "planning") e.planning = true;
   if (stop === "work") e.activity.pose = "Type";

@@ -188,6 +188,7 @@ pub struct Activity {
     /// 시간이 흐르며 바뀌는 문장은 경과 대신 `{elapsed}` 자리를 둔다. 프론트가 `since` 로 채워야
     /// 매초 상태를 다시 보내지 않는다 (docs/CONTRACTS.md C9)
     pub sentence: String,
+    pub bad: bool,
     pub room: Room,
     pub since: DateTime<Utc>,
     /// 이 명령의 평균 소요 (진행 막대)

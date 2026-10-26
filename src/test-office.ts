@@ -12,6 +12,7 @@ export function act(over: Partial<Activity> = {}): Activity {
     expectedSecs: null,
     pose: "Type",
     confidence: "Confirmed",
+    bad: false,
     extra: 0,
     elapsed: false,
     ...over,
@@ -22,6 +23,8 @@ export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
   return {
     agentId: id,
     state: "Working",
+    asking: false,
+    question: null,
     name: `이름${id}`,
     rank: "Daeri",
     role: "Backend",

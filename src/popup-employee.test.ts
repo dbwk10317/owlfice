@@ -400,8 +400,8 @@ test("처음부터 다시 불러오기마저 실패해도 더 보기는 마지�
 test("근무·일 마침·개별 퇴근·팀 퇴근을 구별하고 기록만 있는 직원은 확인된 상태만 표시한다", async () => {
   const ended = new Date(2026, 0, 1, 14, 30).toISOString();
   for (const [handlers, text, hidden] of [
-    [{ live: emp("a", { retiredAt: ended }) }, phrases.card.done, false],
-    [{ live: emp("a", { departedAt: ended }) }, phrases.sidebar.stateOff, false],
+    [{ live: emp("a", { state: "Finished", retiredAt: ended }) }, phrases.card.done, false],
+    [{ live: emp("a", { state: "Off", departedAt: ended }) }, phrases.sidebar.stateOff, false],
     [{ off: true }, phrases.sidebar.stateOff, false],
     [{ live: null, detail: () => ({ ...detail, retiredAt: ended }) }, phrases.card.done, false],
     [{ live: null }, "", true],
@@ -413,6 +413,19 @@ test("근무·일 마침·개별 퇴근·팀 퇴근을 구별하고 기록만 �
     if (!hidden) expect(work.textContent).toBe(text);
     expect(work.classList.contains("is-live")).toBe(false);
   }
+});
+
+test.each([
+  ["Waiting", phrases.sidebar.stateWaiting],
+  ["Dozing", phrases.sidebar.stateSleepy],
+  ["Incident", phrases.sidebar.stateIncident],
+  ["Interrupted", "중단"],
+] as const)("실시간 직원 %s 상태를 근무 칩에 표시한다", async (state, label) => {
+  const s = setup({ live: emp("a", { state }) });
+  await flush();
+  const work = s.q<HTMLElement>(".ow-emp__work")!;
+  expect(work.textContent).toBe(label);
+  expect(work.classList.contains("is-live")).toBe(false);
 });
 
 test("머리의 원본 폴더 열기는 등록된 팀 SourceFolder를 쓰고 실패 뒤 버튼을 복구한다", async () => {

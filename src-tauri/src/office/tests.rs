@@ -4032,6 +4032,11 @@ fn review_approval_matches_whole_words_only() {
         ("not approved", false),
         ("not approve", false),
         ("can't approve", false),
+        ("don't approve", false),
+        ("won't approve", false),
+        ("isn't approved", false),
+        ("doesn't approve", false),
+        ("승인 못 함", false),
         ("cannot approve", false),
         ("승인 불가", false),
         ("승인 아님", false),
@@ -4553,4 +4558,60 @@ fn retiring_a_sleeping_sub_clears_blanket_before_departure() {
     s.tick(1802);
     assert!(s.sub().departed_at.is_some());
     assert!(!s.sub().blanket);
+}
+
+#[test]
+fn successful_exit_with_failed_tests_keeps_check_displays_consistent() {
+    let mut s = Sim::new();
+    s.on(MAIN, 0, call("test", ToolKind::Test, cmd("cargo test")))
+        .on(MAIN, 1, with_tests("test", ToolOutcome::Ok, 3, 1));
+    assert_eq!(s.team.props.light, Light::Red);
+    assert_eq!(s.team.props.test, Some(super::TestVerdict::Fail));
+    assert_eq!(s.boss().build_test_light(), Light::Red);
+    assert_eq!(
+        s.team.tests_today(),
+        super::TestCounts {
+            passed: 0,
+            failed: 1
+        }
+    );
+    assert_eq!(s.boss().counters.errors, 0);
+    assert_eq!(s.team.props.trash, 0);
+    assert!(s.team.incident.is_none());
+}
+
+#[test]
+fn activity_bad_uses_confirmed_results_and_incidents_not_prose() {
+    for (outcome, confidence, bad) in [
+        (ToolOutcome::Err, Confirmed, true),
+        (ToolOutcome::Rejected, Confirmed, true),
+        (ToolOutcome::Err, Inferred, false),
+        (ToolOutcome::Rejected, Inferred, false),
+    ] {
+        let mut s = Sim::new();
+        let mut done = result("push", outcome);
+        if let EventKind::ToolResult {
+            outcome_confidence, ..
+        } = &mut done
+        {
+            *outcome_confidence = confidence;
+        }
+        s.on(MAIN, 0, call("push", ToolKind::GitPush, cmd("git push")))
+            .on(MAIN, 1, done);
+        assert_eq!(s.boss().activity.bad, bad, "{outcome:?} {confidence:?}");
+        assert_eq!(s.boss().recent.front().unwrap().bad, bad);
+    }
+    for message in ["사고 합성 설명", "반려 합성 설명", "반송 합성 설명"] {
+        let mut s = Sim::new();
+        s.on(MAIN, 0, text(message));
+        assert!(!s.boss().activity.bad);
+        assert!(!s.boss().recent.front().unwrap().bad);
+    }
+    let mut s = Sim::new();
+    for (k, id) in ["a", "b", "c"].into_iter().enumerate() {
+        build_fail(&mut s, id, 1 + 2 * k as i64);
+    }
+    s.tick(7);
+    assert_eq!(s.boss().activity.room, Room::Incident);
+    assert!(s.boss().activity.bad);
 }

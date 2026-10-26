@@ -13,6 +13,7 @@ use ts_rs::TS;
 use crate::detail;
 use crate::diag::{self, Diag};
 use crate::discover::{CandidateResult, Host, HostKind, Product, Vendor};
+use crate::office::classify::sentence;
 use crate::office::names::RoomBook;
 use crate::office::work::{Role, WorkType};
 use crate::office::world::{OfficeId, OfficeWorld, Scale, TeamKey};
@@ -233,6 +234,8 @@ pub struct TeamDto {
 pub struct EmployeeDto {
     pub agent_id: String,
     pub state: EmployeeState,
+    pub asking: bool,
+    pub question: Option<String>,
     pub name: String,
     pub rank: Rank,
     /// 담당 (design/HANDOFF.md 4.5절 카드)
@@ -629,7 +632,12 @@ fn border(light: Light) -> Border {
 }
 
 fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamSummaryDto {
-    let asking_count = if t.phase == TeamPhase::Off {
+    let phase = if w.projected_off(k).is_some() {
+        TeamPhase::Off
+    } else {
+        t.phase
+    };
+    let asking_count = if phase == TeamPhase::Off {
         0
     } else {
         t.employees
@@ -646,11 +654,19 @@ fn team_summary(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> T
         started: t.started,
         last_activity: t.last_activity,
         read_failed: w.read_failed_teams.contains(k),
-        phase: t.phase,
-        dot: team_dot(t, now),
+        phase,
+        dot: if w.projected_off(k).is_some() {
+            Dot::Off
+        } else {
+            team_dot(t, now)
+        },
         asking: asking_count > 0,
         asking_count,
-        border: border(t.props.light),
+        border: if phase == TeamPhase::Off {
+            Border::Plain
+        } else {
+            border(t.props.light)
+        },
         delayed: w.suspect_hosts.contains(&k.host),
         host_badge: host_badge(w, &k.host),
         work_type: t.work_type,
@@ -743,20 +759,59 @@ fn employee_state(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeState {
     }
 }
 
-fn employee_dto(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
+fn employee_dto(
+    t: &Team,
+    e: &Employee,
+    now: DateTime<Utc>,
+    projected: Option<Confidence>,
+) -> EmployeeDto {
+    let mut activity = e.activity.clone();
+    if let Some(confidence) = projected {
+        activity.sentence = if confidence == Confidence::Inferred {
+            "연결을 확인하지 못해 퇴근한 듯"
+        } else {
+            "세션이 종료되어 퇴근했어요"
+        }
+        .into();
+        activity.room = Room::Door;
+        activity.pose = crate::office::Pose::Sit;
+        activity.confidence = confidence;
+        activity.expected_secs = None;
+        activity.extra = 0;
+        activity.elapsed = false;
+        activity.bad = false;
+    }
+    let off = projected.is_some() || t.phase == TeamPhase::Off;
+    let asking = !off && e.departed_at.is_none() && e.retired_at.is_none() && t.asking(e, now);
     EmployeeDto {
         agent_id: e.id.clone(),
-        state: employee_state(t, e, now),
+        state: if off {
+            EmployeeState::Off
+        } else {
+            employee_state(t, e, now)
+        },
+        asking,
+        question: if asking {
+            e.asking
+                .as_deref()
+                .map(|q| sentence::cut(q, sentence::QUOTE))
+        } else {
+            None
+        },
         name: e.name.clone(),
         rank: e.rank,
         role: e.role,
         model: e.model.clone(),
         description: e.description.clone(),
-        activity: e.activity.clone(),
+        activity,
         recent: e.recent.iter().cloned().collect(),
         counters: e.counters,
         unique_reads: u32::try_from(e.record.files_read.items.len()).unwrap_or(u32::MAX),
-        pending_count: u32::try_from(e.pending.len()).unwrap_or(u32::MAX),
+        pending_count: if off {
+            0
+        } else {
+            u32::try_from(e.pending.len()).unwrap_or(u32::MAX)
+        },
         unique_edits: u32::try_from(e.record.files_edited.items.len()).unwrap_or(u32::MAX),
         planning: e.planning,
         rejected: e.rejection_held(now),
@@ -771,7 +826,11 @@ fn employee_dto(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
         .into_iter()
         .filter_map(|(item, on)| on.then_some(item))
         .collect(),
-        build_test_border: match e.build_test_light() {
+        build_test_border: match if off {
+            Light::Off
+        } else {
+            e.build_test_light()
+        } {
             Light::Yellow => Border::Running,
             Light::Red => Border::Failed,
             Light::Off | Light::Green => Border::Plain,
@@ -783,15 +842,19 @@ fn employee_dto(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
         seat: e.seat,
         parent: e.parent.clone(),
         depth: e.depth,
-        confidence: e.confidence,
+        confidence: projected.unwrap_or(e.confidence),
         context_used: e.context_used,
         context_window: e.context_window,
-        bubble: e.bubble.clone(),
-        jobs: u32::try_from(e.background.len()).unwrap_or(u32::MAX),
+        bubble: if off { None } else { e.bubble.clone() },
+        jobs: if off {
+            0
+        } else {
+            u32::try_from(e.background.len()).unwrap_or(u32::MAX)
+        },
         meeting: e
             .pending
             .last()
-            .filter(|_| e.activity.room == Room::Meeting)
+            .filter(|_| !off && e.activity.room == Room::Meeting)
             .and_then(|c| match &c.tool {
                 ToolKind::Mcp { server, .. } => Some(Meeting::Mcp {
                     server: server.clone(),
@@ -800,7 +863,7 @@ fn employee_dto(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
                 ToolKind::Skill { .. } => Some(Meeting::Skill),
                 _ => None,
             }),
-        review: (e.activity.room == Room::Review).then_some(Review {
+        review: (!off && e.activity.room == Room::Review).then_some(Review {
             pens: e.review_pens,
             approved: e.approved,
         }),
@@ -808,6 +871,16 @@ fn employee_dto(t: &Team, e: &Employee, now: DateTime<Utc>) -> EmployeeDto {
 }
 
 fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamDto {
+    let phase = if w.projected_off(k).is_some() {
+        TeamPhase::Off
+    } else {
+        t.phase
+    };
+    let mut props = t.props.clone();
+    if phase == TeamPhase::Off {
+        props.light = Light::Off;
+        props.night = false;
+    }
     TeamDto {
         daylight: t.daylight(now),
         team_id: team_id_str(k),
@@ -818,23 +891,27 @@ fn team_dto(w: &OfficeWorld, k: &TeamKey, t: &Team, now: DateTime<Utc>) -> TeamD
         folder: folder(t),
         started: t.started,
         last_activity: t.last_activity,
-        phase: t.phase,
+        phase,
         work_type: t.work_type,
         desk_slot: t.desk_slot,
         employees: t
             .employees
             .iter()
-            .map(|e| employee_dto(t, e, now))
+            .map(|e| employee_dto(t, e, now, w.projected_off(k)))
             .collect(),
-        props: t.props.clone(),
-        incident: t.incident.clone(),
-        idle_alive: t.idle_alive,
+        props,
+        incident: if phase == TeamPhase::Off {
+            None
+        } else {
+            t.incident.clone()
+        },
+        idle_alive: phase != TeamPhase::Off && t.idle_alive,
         tests_today: t.tests_today(),
         commits_today: t.commits_today(),
     }
 }
 
-fn shared(teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
+fn shared(w: &OfficeWorld, teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
     let latest = teams
         .iter()
         .map(|(_, t)| *t)
@@ -857,6 +934,7 @@ fn shared(teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
     SharedPropsDto {
         light: teams
             .iter()
+            .filter(|(k, _)| w.displayed_phase(k) != TeamPhase::Off)
             .map(|(_, t)| &t.props)
             .filter(|p| p.light != Light::Off)
             .max_by_key(|p| p.light_at)
@@ -870,8 +948,12 @@ fn shared(teams: &[(&TeamKey, &Team)]) -> SharedPropsDto {
         pizza: teams.iter().map(|(_, t)| t.props.pizza).max().unwrap_or(0),
         frame_title: latest.map(|t| t.title.clone()).unwrap_or_default(),
         kanban: latest.map(|t| t.props.kanban.clone()).unwrap_or_default(),
-        incident: teams.iter().any(|(_, t)| t.incident.is_some()),
-        night: teams.iter().any(|(_, t)| t.props.night),
+        incident: teams
+            .iter()
+            .any(|(k, t)| w.displayed_phase(k) != TeamPhase::Off && t.incident.is_some()),
+        night: teams
+            .iter()
+            .any(|(k, t)| w.displayed_phase(k) != TeamPhase::Off && t.props.night),
         test: teams
             .iter()
             .map(|(_, t)| &t.props)
@@ -926,7 +1008,7 @@ pub fn office_dto(
         office_id: office_id_str(id),
         rebuilt,
         teams: teams.iter().map(|(k, t)| team_dto(w, k, t, now)).collect(),
-        shared: shared(&teams),
+        shared: shared(w, &teams),
         room_recent,
         cues,
     })
@@ -1281,7 +1363,7 @@ pub fn spawn_publisher(app: AppHandle, ipc: Arc<Ipc>) -> thread::JoinHandle<()> 
             let hidden = app
                 .state::<crate::notification::WindowVisibility>()
                 .hidden();
-            let notices = notifications.poll(&lock(&ipc.world).teams, now, hidden, enabled);
+            let notices = notifications.poll(&lock(&ipc.world), now, hidden, enabled);
             for notice in notices {
                 crate::notification::show(&app, &notice);
             }

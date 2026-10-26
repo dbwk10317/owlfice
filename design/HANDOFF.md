@@ -15,8 +15,8 @@
 | 3 | `design/sprites/office.png` `office.json` | 벽·바닥·가구·소품·효과 시트 | `/office.json` |
 | 3 | `design/sprites/ui.png` `ui.json` | 로고, 로딩 건물 부품, 규모 미리보기 | `/ui.json` |
 | 3 | `design/sprites/floorplan.json` | 평면도: 방, 소품 배치, 좌석, 서 있을 자리, 통로, 테마, 조명 색 | `/floorplan.json` |
-| 4 | `design/handoff/phrases.ko.json` | 화면에 보이는 모든 문구와 문장 틀 | `import` |
-| 4 | `design/handoff/icons/*.svg` | 선 아이콘 49개 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
+| 4 | `design/handoff/phrases.ko.json` | 여러 화면에서 공유하는 UI 문구와 문장 틀 | `import` |
+| 4 | `design/handoff/icons/*.svg` | 선 아이콘 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
 | 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | tokens.css 가 가리킨다 |
 | 5 | `design/assets/office-*.png` | 참조 렌더. 위 시트와 평면도만으로 그린 정답 그림 | 테스트 고정 자료 |
 | 6 | 캔버스 시안 | 25장. 메인 v2 2장, 컴포넌트 v2 3장, 확장안 2장, 토큰 1장, v2 토큰을 적용한 첫 실행·팝업·반응형 11장, 직원 스프라이트 v3 6장 (`Employee*.dc.html`, 그림은 캔버스 [Owlfice 직원 스프라이트 v3](https://claude.ai/artifact/LKTWr2Pc9sTH8PBdb5dt8N) 에 있다) | 시각 참조 |

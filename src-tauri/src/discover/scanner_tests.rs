@@ -419,11 +419,12 @@ fn completed_round_is_idle_until_next_probe_period() {
         remote,
     );
     assert!(expired.distros[0].sites.is_empty());
+    assert_eq!(expired.distros[0].running, None);
     assert!(
         expired
             .candidates
             .iter()
-            .all(|c| c.result == CandidateResult::Unknown)
+            .any(|c| c.result == CandidateResult::Found && c.root.is_some())
     );
     assert!(scanner.is_pending());
     finished(&wake);
@@ -470,6 +471,63 @@ fn explicit_refresh_starts_before_ttl_and_invalidates_changed_registry_entry() {
     finished(&wake);
     let found = scanner.scan_with(roots, &|_| panic!(), later, state(2), remote);
     assert_eq!(found.distros[0].sites.len(), 1);
+    assert!(!scanner.is_pending());
+}
+
+#[test]
+fn explicit_unknown_state_disables_access_even_with_a_fresh_found_cache() {
+    let (mut scanner, wake) = scanner();
+    let now = Instant::now();
+    let state = |running| {
+        move || {
+            vec![(
+                wsl::LxssEntry {
+                    name: "Healthy".into(),
+                    default_uid: Some(1000),
+                },
+                running,
+            )]
+        }
+    };
+    let root = PathBuf::from(r"\\wsl$\Healthy\projects");
+    let roots = vec![(Vendor::Claude, root.clone())];
+    scanner.scan_with(roots.clone(), &|_| panic!(), now, state(Some(true)), remote);
+    finished(&wake);
+    scanner.scan_with(roots.clone(), &|_| panic!(), now, state(Some(true)), remote);
+    finished(&wake);
+    let found = scanner.scan_with(roots.clone(), &|_| panic!(), now, state(Some(true)), remote);
+    assert_eq!(found.distros[0].running, Some(true));
+    assert_eq!(found.distros[0].sites.len(), 1);
+    assert!(!scanner.is_pending());
+
+    let remote_calls = Arc::new(AtomicUsize::new(0));
+    let count = remote_calls.clone();
+    let unexpected_remote = move |entry, roots| {
+        count.fetch_add(1, Ordering::SeqCst);
+        remote(entry, roots)
+    };
+    scanner.request_refresh();
+    let later = now + Duration::from_secs(1);
+    scanner.scan_with(
+        roots.clone(),
+        &|_| panic!(),
+        later,
+        state(None),
+        unexpected_remote.clone(),
+    );
+    finished(&wake);
+    let unknown = scanner.scan_with(roots, &|_| panic!(), later, state(None), unexpected_remote);
+    assert_eq!(unknown.distros.len(), 1);
+    assert_eq!(unknown.distros[0].running, None);
+    assert!(unknown.distros[0].sites.is_empty());
+    assert!(
+        unknown
+            .candidates
+            .iter()
+            .any(|candidate| candidate.result == CandidateResult::Found
+                && candidate.root.as_ref() == Some(&root))
+    );
+    assert_eq!(remote_calls.load(Ordering::SeqCst), 0);
     assert!(!scanner.is_pending());
 }
 

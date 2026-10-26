@@ -7,7 +7,15 @@ import fileSvg from "../design/handoff/icons/file.svg?raw";
 import terminalSvg from "../design/handoff/icons/terminal.svg?raw";
 import { detailErrorText, hms, openModal, smallIcon, type LiveEmployee } from "./popup-modal.ts";
 import type { Invoke } from "./scale.ts";
-import { ROLE_LABEL, ROOM_ICON, ROOM_LABEL, contextMeter, h, setRich } from "./sidebar-right.ts";
+import {
+  EMPLOYEE_STATE_LABEL,
+  ROLE_LABEL,
+  ROOM_ICON,
+  ROOM_LABEL,
+  contextMeter,
+  h,
+  setRich,
+} from "./sidebar-right.ts";
 import { durationText, fill, hhmm } from "./text.ts";
 import { rankLabel } from "./ticker.ts";
 import { setAvatar } from "./avatar.ts";
@@ -270,15 +278,19 @@ export function openEmployeeDetail(
     }
     const hired = Date.parse(dto.hiredAt);
     const sec = Number.isNaN(hired) ? 0 : Math.max(0, Math.floor((now() - hired) / 1000));
-    const off = deps.isTeamOff?.(teamId) || (emp && emp.departedAt !== null);
-    const done = (emp ? emp.retiredAt : dto.retiredAt) !== null;
+    const off = emp?.state === "Off" || deps.isTeamOff?.(teamId);
+    const done = emp?.state === "Finished" || (!emp && dto.retiredAt !== null);
     work.hidden = !off && !emp && !done;
-    work.classList.toggle("is-live", !off && !!emp && !done);
+    work.classList.toggle("is-live", emp?.state === "Working" && !off && !done);
     work.textContent = off
       ? phrases.sidebar.stateOff
       : done
         ? phrases.card.done
-        : fill(phrases.header.working, { elapsed: durationText(sec, sec < 60) });
+        : emp?.state === "Working"
+          ? fill(phrases.header.working, { elapsed: durationText(sec, sec < 60) })
+          : emp
+            ? EMPLOYEE_STATE_LABEL[emp.state]
+            : "";
     // 상사가 없는(부장) 직원은 "상사 {parent}" 토막을 뺀다
     const text = D.meta
       .split(" · ")

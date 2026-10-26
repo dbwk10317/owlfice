@@ -897,6 +897,41 @@ fn pr_target_opens_only_safe_https() {
     );
 }
 
+#[test]
+fn windows_work_folder_rejects_unknown_device_drives() {
+    use windows_sys::Win32::Storage::FileSystem::QueryDosDeviceW;
+    let drive = ('A'..='Z')
+        .find(|letter| {
+            let name: Vec<u16> = format!("{letter}:").encode_utf16().chain(Some(0)).collect();
+            let mut target = [0u16; 512];
+            unsafe { QueryDosDeviceW(name.as_ptr(), target.as_mut_ptr(), target.len() as u32) == 0 }
+        })
+        .expect("an unused drive letter for synthetic input");
+    let s = Session::fixture(ASYNC, "windows");
+    let e = env();
+    for path in [
+        format!("{drive}:\\synthetic-work"),
+        r"\\wsl.localhost\Stopped\synthetic-work".into(),
+        r"C:\synthetic-work\..\other".into(),
+        r"\\.\C:\synthetic-work".into(),
+    ] {
+        let mut team = s.team(0);
+        team.cwd = PathBuf::from(&path);
+        e.put(&s, team);
+        assert_eq!(
+            open(
+                &e,
+                OpenTarget::WorkFolder {
+                    office_id: s.office(),
+                    team_id: s.team_id(),
+                }
+            ),
+            Err(DetailError::OpenFailed),
+            "{path}"
+        );
+    }
+}
+
 /// WSL 작업 폴더는 세션 파일이 있는 배포판 공유 아래로 옮긴다
 #[test]
 fn wsl_work_folder_maps_under_distro_share() {
@@ -1445,7 +1480,7 @@ fn background_codex_result_paged_alone_is_still_readable() {
 }
 
 #[test]
-fn codex_followup_spawn_paged_alone_requires_matching_raw_activity() {
+fn codex_interaction_does_not_create_resume_details() {
     const CHILD: &str = "00000000-0000-4000-8000-0000000000bb";
     for direct in [false, true] {
         let dir = tempfile::tempdir().unwrap();
@@ -1466,7 +1501,7 @@ fn codex_followup_spawn_paged_alone_requires_matching_raw_activity() {
                 rec(s, "event_msg", json!({"type":"item_completed","item":item}))
             }
         };
-        let mut lines = vec![
+        let lines = vec![
             rec(
                 0,
                 "session_meta",
@@ -1497,36 +1532,15 @@ fn codex_followup_spawn_paged_alone_requires_matching_raw_activity() {
         let e = env();
         e.put(&s, s.team(0));
         let agent = &e.agents(&s)[0];
-        let page = || e.timeline(&s, agent, None, Some(1)).unwrap();
-        assert_eq!(page()[0].kind, TimelineKind::SubagentSpawn);
-        assert_eq!(page()[0].summary, "작업 재개");
-
-        let original = lines[4].clone();
-        lines[4]["timestamp"] = json!("2026-03-02T09:00:05Z");
-        write(&lines);
-        assert_eq!(page()[0].summary, UNREADABLE);
-        lines[4] = original.clone();
-        let item = if direct {
-            &mut lines[4]["payload"]
-        } else {
-            &mut lines[4]["payload"]["item"]
-        };
-        item["kind"] = json!("completed");
-        write(&lines);
-        assert_eq!(page()[0].summary, UNREADABLE);
-        lines[4] = original.clone();
-        let item = if direct {
-            &mut lines[4]["payload"]
-        } else {
-            &mut lines[4]["payload"]["item"]
-        };
-        item["agent_thread_id"] = json!("invalid");
-        write(&lines);
-        assert_eq!(page()[0].summary, UNREADABLE);
-        lines[4] = original;
-        lines[4]["payload"]["type"] = json!("different");
-        write(&lines);
-        assert_eq!(page()[0].summary, UNREADABLE);
+        let page = e.timeline(&s, agent, None, Some(200)).unwrap();
+        let spawns: Vec<_> = page
+            .iter()
+            .filter(|row| row.kind == TimelineKind::SubagentSpawn)
+            .collect();
+        assert_eq!(spawns.len(), 1, "interacted is not a confirmed start");
+        let start = spawns[0];
+        assert_ne!(start.summary, UNREADABLE);
+        assert_ne!(start.summary, "작업 재개");
     }
 }
 

@@ -476,7 +476,7 @@ fn work_dir(cwd: &Path, kind: &HostKind, main: Option<&Path>) -> Option<PathBuf>
             let local = matches!(
                 cwd.components().next(),
                 Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
-            );
+            ) && crate::discover::is_local_path(cwd);
             let up = cwd.components().any(|c| c == Component::ParentDir);
             (local && cwd.is_absolute() && !up).then(|| cwd.to_path_buf())
         }
@@ -733,13 +733,6 @@ fn event_dto(w: &Want, line: Option<&Line>) -> EventDto {
             {
                 fill_result(&mut d, w, m, None, l.rec.as_ref());
             }
-            Some(l)
-                if w.vendor == Vendor::Codex
-                    && m.kind == TimelineKind::SubagentSpawn
-                    && l.rec.as_ref().is_some_and(|r| raw_codex_resume(r, m.ts)) =>
-            {
-                d.summary = "작업 재개".to_string();
-            }
             _ => d.summary = UNREADABLE.to_string(),
         }
         return d;
@@ -776,36 +769,6 @@ fn raw_ts_matches(rec: &Value, ts: chrono::DateTime<chrono::Utc>) -> bool {
         .and_then(Value::as_str)
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .is_some_and(|t| t == ts)
-}
-
-fn raw_codex_resume(rec: &Value, ts: chrono::DateTime<chrono::Utc>) -> bool {
-    if !raw_ts_matches(rec, ts) || rec.get("type").and_then(Value::as_str) != Some("event_msg") {
-        return false;
-    }
-    let Some(payload) = rec.get("payload") else {
-        return false;
-    };
-    let item = match payload.get("type").and_then(Value::as_str) {
-        Some("item_completed") => payload.get("item"),
-        Some("sub_agent_activity") => Some(payload),
-        _ => None,
-    };
-    let Some(item) = item else { return false };
-    if item.get("kind").and_then(Value::as_str) != Some("interacted")
-        || item
-            .get("id")
-            .and_then(Value::as_str)
-            .is_none_or(str::is_empty)
-        || payload.get("type").and_then(Value::as_str) == Some("item_completed")
-            && item.get("type").and_then(Value::as_str) != Some("SubAgentActivity")
-    {
-        return false;
-    }
-    let Some(id) = item.get("agent_thread_id").and_then(Value::as_str) else {
-        return false;
-    };
-    id.split('-').map(str::len).eq([8, 4, 4, 4, 12])
-        && id.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
 }
 
 /// 결과 칸 채우기. `ev` 가 없으면(파서가 이 줄만으론 이벤트를 못 냄) 요약과 원문에서 오는 것만 채운다

@@ -517,6 +517,21 @@ function updateSetup(check: UpdateDeps["check"]) {
   open();
   return { updates, open };
 }
+
+test("설정 조회가 실패해도 독립 업데이트 확인은 사용할 수 있다", async () => {
+  const check = vi.fn(async () => null);
+  const updates = createUpdateStore({ getVersion: async () => "0.1.1", check });
+  const invoke: Invoke = async () => {
+    throw new Error("설정 조회 실패");
+  };
+  openSettings({ invoke, onSettings() {}, updates });
+  await settle();
+  expect(errorText()).toContain("설정을 불러오지 못했습니다");
+  button("새 버전 확인").click();
+  await settle();
+  expect(check).toHaveBeenCalledTimes(1);
+  updates.destroy();
+});
 const updateText = () =>
   [...document.querySelectorAll(".ow-settings__section")].find(
     (el) => el.querySelector("h2")?.textContent === "업데이트",

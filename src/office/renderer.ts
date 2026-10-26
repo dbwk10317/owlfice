@@ -323,7 +323,12 @@ export function cueCollector() {
 
 /** store 에서 렌더러가 읽는 부분만. */
 interface OfficeStore {
-  state: { list: OfficeListDto | null; selectedId: string | null; office: OfficeDto | null };
+  state: {
+    list: OfficeListDto | null;
+    selectedId: string | null;
+    office: OfficeDto | null;
+    selectionError?: "recovering" | "restored" | "failed" | null;
+  };
   subscribe(fn: () => void): () => void;
 }
 
@@ -515,7 +520,7 @@ export async function mountOffice(
     const { list, office, selectedId } = store.state;
     if (!list) return;
     // 사무실을 바꾸는 중(선택은 있고 office 는 아직 null)에는 테마가 잠깐 바뀌어 깜빡이지 않게 지금 화면을 둔다
-    if (!office && selectedId !== null && scene) return;
+    if (!office && selectedId !== null && scene && store.state.selectionError !== "failed") return;
     // 규모는 office 에서 읽는다. 설정 전환과 늦은 선택 응답이 겹쳐도 small 평면도에 대기업 팀이 섞이지 않는다
     const kind: Kind = office
       ? office.officeId.startsWith("vendor/")
@@ -797,18 +802,22 @@ export async function mountOffice(
           console.error("사무실 장면 적용 실패", e);
         }
       }
-      if (lightT < 1) stepLight(t.deltaMS);
-      const now = Date.now();
-      // 무재해 분과 창밖 시각은 상태가 안 와도 흐른다. 바뀐 소품만 다시 그린다
-      const focused = actors.focusedTeam(now);
-      if (now - propsAt >= 1000 || focused !== propsTeam) {
-        propsAt = now;
-        propsTeam = focused;
-        props?.update(shown, now, focused);
+      try {
+        if (lightT < 1) stepLight(t.deltaMS);
+        const now = Date.now();
+        // 무재해 분과 창밖 시각은 상태가 안 와도 흐른다. 바뀐 소품만 다시 그린다
+        const focused = actors.focusedTeam(now);
+        if (now - propsAt >= 1000 || focused !== propsTeam) {
+          propsAt = now;
+          propsTeam = focused;
+          props?.update(shown, now, focused);
+        }
+        props?.tick(now);
+        actors.update(now);
+        opts.sound?.keyboard(actors.isTyping(), now);
+      } catch (e) {
+        console.error("사무실 틱 실패", e);
       }
-      props?.tick(now);
-      actors.update(now);
-      opts.sound?.keyboard(actors.isTyping(), now);
     },
     undefined,
     UPDATE_PRIORITY.HIGH,
@@ -816,9 +825,13 @@ export async function mountOffice(
   // 앱의 렌더(LOW) 뒤라 WebGL 버퍼가 아직 살아 있다 (preserveDrawingBuffer 없이 복사)
   app.ticker.add(
     () => {
-      if (!minimap.hidden && miniCtx) {
-        miniCtx.clearRect(0, 0, MINI_W, MINI_H);
-        miniCtx.drawImage(app.canvas, 0, 0, MINI_W, MINI_H);
+      try {
+        if (!minimap.hidden && miniCtx) {
+          miniCtx.clearRect(0, 0, MINI_W, MINI_H);
+          miniCtx.drawImage(app.canvas, 0, 0, MINI_W, MINI_H);
+        }
+      } catch (e) {
+        console.error("사무실 미니맵 갱신 실패", e);
       }
     },
     undefined,

@@ -799,6 +799,12 @@ fn file_arg(args: &[&str], skip_script: bool) -> Option<String> {
     while let Some(a) = it.next() {
         if *a == "-n" && !skip_script {
             it.next();
+        } else if *a == "<" {
+            continue;
+        } else if let Some(input) = a.strip_prefix('<')
+            && !input.contains(['<', '>'])
+        {
+            rest.push(input);
         } else if a.contains(['<', '>']) {
             if a.ends_with('>') || a.ends_with('<') {
                 it.next();
@@ -1382,6 +1388,9 @@ mod tests {
             ("Get-Content -Encoding utf8", None),
             ("Get-Content -Unknown value", None),
             ("wc -l sample.txt", Some("sample.txt")),
+            ("wc -l < sample.txt", Some("sample.txt")),
+            ("wc -l <sample.txt", Some("sample.txt")),
+            ("wc -l < $path", None),
             ("wc -l $path", None),
             ("wc -l sample.txt 2> errors.txt", Some("sample.txt")),
         ] {

@@ -7,8 +7,8 @@ use chrono::{DateTime, Duration, Utc};
 use tauri::{AppHandle, State};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::office::world::TeamKey;
-use crate::office::{Team, TeamPhase};
+use crate::office::TeamPhase;
+use crate::office::world::{OfficeWorld, TeamKey};
 
 #[derive(Default)]
 pub struct WindowVisibility(AtomicBool);
@@ -38,15 +38,15 @@ impl PendingNotifications {
     /// 화면 선택과 무관하게 모든 직원의 needs_boss 전이를 관찰한다.
     pub fn poll(
         &mut self,
-        teams: &HashMap<TeamKey, Team>,
+        world: &OfficeWorld,
         now: DateTime<Utc>,
         hidden: bool,
         enabled: bool,
     ) -> Vec<String> {
         let mut seen = HashSet::new();
         let mut notices = Vec::new();
-        for (key, team) in teams {
-            if team.phase == TeamPhase::Off {
+        for (key, team) in &world.teams {
+            if world.displayed_phase(key) == TeamPhase::Off {
                 continue;
             }
             for employee in &team.employees {
@@ -95,12 +95,26 @@ pub fn show(app: &AppHandle, team_name: &str) {
 mod tests {
     use super::*;
     use crate::discover::{Product, Vendor};
+    use crate::office::Team;
+    use crate::office::names::NameBook;
+    use crate::office::world::Scale;
+
+    fn world(teams: HashMap<TeamKey, Team>) -> OfficeWorld {
+        let dir = tempfile::tempdir().unwrap();
+        let mut world = OfficeWorld::new(
+            Scale::Large,
+            NameBook::load(dir.path()),
+            chrono::FixedOffset::east_opt(0).unwrap(),
+        );
+        world.teams = teams;
+        world
+    }
 
     fn at(seconds: i64) -> DateTime<Utc> {
         DateTime::UNIX_EPOCH + Duration::seconds(seconds)
     }
 
-    fn waiting() -> (TeamKey, HashMap<TeamKey, Team>) {
+    fn waiting() -> (TeamKey, OfficeWorld) {
         let key = TeamKey {
             host: "windows".into(),
             vendor: Vendor::Claude,
@@ -109,7 +123,7 @@ mod tests {
         let mut team = Team::new("test", Product::ClaudeCli, at(0));
         team.employees[0].name = "김하늘".into();
         team.employees[0].asking = Some("알림에 보내면 안 되는 질문".into());
-        (key.clone(), HashMap::from([(key, team)]))
+        (key.clone(), world(HashMap::from([(key, team)])))
     }
 
     #[test]
@@ -123,6 +137,22 @@ mod tests {
             ["김하늘 부장 팀"]
         );
         assert!(notifications.poll(&teams, at(120), true, true).is_empty());
+    }
+
+    #[test]
+    fn projected_departure_suppresses_notices_and_restarts_wait_on_recovery() {
+        let (key, mut teams) = waiting();
+        let mut notifications = PendingNotifications::default();
+        notifications.poll(&teams, at(0), true, true);
+        teams.set_read_failed(&key, true);
+        assert!(notifications.poll(&teams, at(30), true, true).is_empty());
+        teams.set_read_failed(&key, false);
+        assert!(notifications.poll(&teams, at(31), true, true).is_empty());
+        assert_eq!(notifications.poll(&teams, at(61), true, true).len(), 1);
+        teams.registry_alive(&key, true, at(62));
+        teams.registry_alive(&key, false, at(63));
+        assert!(notifications.poll(&teams, at(100), true, true).is_empty());
+        assert!(teams.teams[&key].employees[0].asking.is_some());
     }
 
     #[test]
@@ -143,17 +173,17 @@ mod tests {
         let mut notifications = PendingNotifications::default();
         notifications.poll(&teams, at(0), true, true);
         assert_eq!(notifications.poll(&teams, at(30), true, true).len(), 1);
-        let employee = &mut teams.get_mut(&key).unwrap().employees[0];
+        let employee = &mut teams.teams.get_mut(&key).unwrap().employees[0];
         employee.asking = None;
         employee.rejected_at = Some(at(31));
         assert!(notifications.poll(&teams, at(32), true, true).is_empty());
-        teams.get_mut(&key).unwrap().employees[0].asking = Some("다시 질문".into());
+        teams.teams.get_mut(&key).unwrap().employees[0].asking = Some("다시 질문".into());
         assert!(notifications.poll(&teams, at(33), true, true).is_empty());
-        let employee = &mut teams.get_mut(&key).unwrap().employees[0];
+        let employee = &mut teams.teams.get_mut(&key).unwrap().employees[0];
         employee.asking = None;
         employee.rejected_at = None;
         notifications.poll(&teams, at(34), true, true);
-        teams.get_mut(&key).unwrap().employees[0].asking = Some("새 질문".into());
+        teams.teams.get_mut(&key).unwrap().employees[0].asking = Some("새 질문".into());
         assert!(notifications.poll(&teams, at(35), true, true).is_empty());
         assert_eq!(notifications.poll(&teams, at(65), true, true).len(), 1);
     }
@@ -163,11 +193,11 @@ mod tests {
         let (key, mut teams) = waiting();
         let mut notifications = PendingNotifications::default();
         notifications.poll(&teams, at(0), true, true);
-        teams.get_mut(&key).unwrap().phase = TeamPhase::Off;
+        teams.teams.get_mut(&key).unwrap().phase = TeamPhase::Off;
         assert!(notifications.poll(&teams, at(30), true, true).is_empty());
-        teams.get_mut(&key).unwrap().phase = TeamPhase::Working;
+        teams.teams.get_mut(&key).unwrap().phase = TeamPhase::Working;
         assert!(notifications.poll(&teams, at(31), true, true).is_empty());
-        teams.clear();
+        teams.teams.clear();
         assert!(notifications.poll(&teams, at(61), true, true).is_empty());
     }
 
@@ -214,11 +244,11 @@ mod tests {
             vendor: Vendor::Codex,
             session: id.into(),
         };
-        let mut teams = HashMap::from([(key, team)]);
+        let mut teams = world(HashMap::from([(key, team)]));
         let mut notifications = PendingNotifications::default();
         for seconds in [0, 29, 30, 60] {
             let now = until + Duration::seconds(seconds);
-            for team in teams.values_mut() {
+            for team in teams.teams.values_mut() {
                 team.tick(now, local, &mut Vec::new());
             }
             let notices = notifications.poll(&teams, now, true, true);

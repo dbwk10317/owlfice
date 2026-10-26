@@ -150,7 +150,7 @@ export type Daylight = "day" | "evening" | "night";
 /**
  * 직원 카드 한 장 (docs/CONTRACTS.md C3)
  */
-export type EmployeeDto = { agentId: string, state: EmployeeState, name: string, rank: Rank,
+export type EmployeeDto = { agentId: string, state: EmployeeState, asking: boolean, question: string | null, name: string, rank: Rank,
 /**
  * 담당 (design/HANDOFF.md 4.5절 카드)
  */
@@ -240,7 +240,7 @@ export type Activity = {
  * 시간이 흐르며 바뀌는 문장은 경과 대신 `{elapsed}` 자리를 둔다. 프론트가 `since` 로 채워야
  * 매초 상태를 다시 보내지 않는다 (docs/CONTRACTS.md C9)
  */
-sentence: string, room: Room, since: string,
+sentence: string, bad: boolean, room: Room, since: string,
 /**
  * 이 명령의 평균 소요 (진행 막대)
  */

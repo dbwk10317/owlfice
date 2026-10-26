@@ -356,6 +356,9 @@ impl HostLoop {
         }
         {
             let mut w = self.lock_world();
+            if fresh {
+                w.set_suspect(&self.host.id, false);
+            }
             w.tick(now, &self.host.id);
             w.drain_unhandled(&self.diag, now);
         }
@@ -585,7 +588,9 @@ impl HostLoop {
                 }
             }
         }
-        self.sync_read_failed(key);
+        if self.read_failures.values().any(|k| k == key) {
+            self.sync_read_failed(key);
+        }
         // 멈췄던 I/O 의 결과는 버리고 commit 하지 않는다. 재개한 첫 틱이 같은 구간을 다시 읽는다 (docs/CONTRACTS.md C5·C13).
         // 파서에 넣기 전에 본다. 넣고 버리면 파서가 같은 줄을 두 번 본다. 이미 본 Reset 은 재구성에 싣는다
         if self.suspect() {
@@ -611,6 +616,7 @@ impl HostLoop {
             self.defer_rebuild(key, true, &reset);
         }
         if batch.is_empty() {
+            self.sync_read_failed(key);
             return;
         }
         let mut per_file = Vec::new();
@@ -653,6 +659,7 @@ impl HostLoop {
                 }
             }
         }
+        self.sync_read_failed(key);
         if let Some(ts) = events.iter().filter_map(|e| e.ts).max() {
             self.clock.observe(ts);
         }
@@ -949,6 +956,8 @@ impl HostLoop {
             return Ok(());
         }
         let local = self.lock_world().local;
+        let main_activity =
+            crate::office::world::main_activity_time(&key.session, files.iter().flatten());
         let mut team = rebuild(
             &key.session,
             default_product(key.vendor),
@@ -984,6 +993,7 @@ impl HostLoop {
                 .unwrap_or_default();
             // 조용한 재구성은 새 세션과 Reset 뿐이다 (docs/CONTRACTS.md C4). 서브 파일이 새로 보인 것은 진행 중 연출을 끊지 않는다.
             // 미뤄졌다 성공한 재구성은 미뤄질 때의 이유(carried_quiet)도 함께 본다
+            w.resume_registry(key, main_activity);
             w.put_team(
                 key.clone(),
                 team,
@@ -1058,7 +1068,7 @@ impl HostLoop {
                 Ok(l) => l,
                 Err(e) => {
                     crate::oplog_once!("세션 폴더 나열 실패 {}: {e}", site.root.display());
-                    if self.is_wsl() {
+                    if self.is_wsl() && e.kind() != io::ErrorKind::PermissionDenied {
                         // Probe 직후인데 나열이 안 된다. 배포판이 꺼졌거나 공유가 끊겼다
                         self.mark_suspect();
                         return;
@@ -1305,6 +1315,7 @@ impl HostLoop {
                 return;
             }
             let previous = self.registry_roots.entry(h.clone()).or_default();
+            let mut io_failed = false;
             let live = match &self.host.kind {
                 HostKind::Windows => {
                     self.path_ops += 1;
@@ -1319,17 +1330,27 @@ impl HostLoop {
                     };
                     let heartbeat = self.heartbeat.clone();
                     let mut ops = 0;
-                    let live = registry::live_wsl_sessions(&h, &proc_root, previous, || {
-                        if heartbeat.suspect.load(Ordering::Relaxed) {
-                            return false;
-                        }
-                        ops += 1;
-                        true
-                    });
+                    let live = registry::live_wsl_sessions(
+                        &h,
+                        &proc_root,
+                        previous,
+                        || {
+                            if heartbeat.suspect.load(Ordering::Relaxed) {
+                                return false;
+                            }
+                            ops += 1;
+                            true
+                        },
+                        &mut io_failed,
+                    );
                     self.path_ops += ops;
                     live
                 }
             };
+            if io_failed {
+                self.mark_suspect();
+                return;
+            }
             // 한 루트의 실패가 다른 루트의 갱신을 막거나 직전 생존 행을 지우지 않는다.
             if let Some(live) = live {
                 *previous = live;
@@ -1355,13 +1376,13 @@ impl HostLoop {
         }
         let mut w = self.world.lock().unwrap_or_else(|e| e.into_inner());
         let mut ours = Vec::new();
-        for (k, t) in w.teams.iter_mut() {
+        for k in w.teams.keys() {
             if k.host == self.host.id && k.vendor == Vendor::Claude {
-                t.alive_in_registry = self.alive.contains_key(&k.session);
                 ours.push(k.clone());
             }
         }
         for k in ours {
+            w.registry_alive(&k, self.alive.contains_key(&k.session), self.clock.now());
             let r = self.alive.get(&k.session);
             w.set_registry(
                 &k,
@@ -1476,12 +1497,8 @@ impl Prober {
                     Some(true) => {
                         // Site 를 먼저 넘긴 뒤 의심을 푼다. 순서가 바뀌면 경로 접근 없이 한 틱이 돈다
                         self.runtime.publish_probe(&d.host, &hb, d.sites);
-                        set_suspect(&self.world, &d.host.id, &hb, false);
-                        // 팝업 읽기가 상한을 넘겨 world 에만 켠 의심(detail)도 켜짐을 본 여기서 푼다
-                        self.world
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .set_suspect(&d.host.id, false);
+                        // 화면 복귀는 호스트가 밀린 결과를 반영한 뒤에 한다.
+                        hb.suspect.store(false, Ordering::Relaxed);
                     }
                     Some(false) => {
                         set_suspect(&self.world, &d.host.id, &hb, true);
@@ -1751,10 +1768,10 @@ pub struct Listing {
     metas: HashSet<PathBuf>,
     /// Claude 프로젝트 폴더 (등록부 세션 기다리기용)
     projects: Vec<PathBuf>,
-    failed_subtrees: Vec<PathBuf>,
+    pub failed_subtrees: Vec<PathBuf>,
 }
 
-/// Site 루트 실패는 Err, 하위 폴더 실패는 기존 파일을 보존할 범위와 정상 발견을 함께 돌려준다.
+/// WSL 연결 실패는 접근을 멈춰야 하므로 전파한다. 로컬·권한 거부는 실패 범위를 보존한다.
 pub fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
     list_site_with(site, ops, &mut entries)
 }
@@ -1763,6 +1780,7 @@ type EntryReader<'a> = dyn FnMut(&Path, bool, &mut u64) -> io::Result<Vec<(PathB
 
 fn list_site_with(site: &Site, ops: &mut u64, read: &mut EntryReader<'_>) -> io::Result<Listing> {
     let mut out = Listing::default();
+    let wsl = matches!(site.host.kind, HostKind::Wsl { .. });
     let roots = read(&site.root, false, ops)?
         .into_iter()
         .filter(|(_, dir)| *dir)
@@ -1770,7 +1788,7 @@ fn list_site_with(site: &Site, ops: &mut u64, read: &mut EntryReader<'_>) -> io:
     match site.vendor {
         Vendor::Claude => {
             for project in roots {
-                for f in partial_entries(&project, false, ops, read, &mut out) {
+                for f in partial_entries(&project, false, ops, read, &mut out, wsl)? {
                     if f.extension().is_none_or(|e| e != "jsonl") {
                         continue;
                     }
@@ -1783,7 +1801,8 @@ fn list_site_with(site: &Site, ops: &mut u64, read: &mut EntryReader<'_>) -> io:
                         ops,
                         read,
                         &mut out,
-                    ) {
+                        wsl,
+                    )? {
                         let name = sub.file_name().map(|n| n.to_string_lossy().into_owned());
                         if name.as_deref().is_some_and(|n| n.ends_with(".meta.json")) {
                             out.metas.insert(sub);
@@ -1798,9 +1817,9 @@ fn list_site_with(site: &Site, ops: &mut u64, read: &mut EntryReader<'_>) -> io:
         }
         Vendor::Codex => {
             for y in roots {
-                for m in partial_entries(&y, true, ops, read, &mut out) {
-                    for d in partial_entries(&m, true, ops, read, &mut out) {
-                        for f in partial_entries(&d, false, ops, read, &mut out) {
+                for m in partial_entries(&y, true, ops, read, &mut out, wsl)? {
+                    for d in partial_entries(&m, true, ops, read, &mut out, wsl)? {
+                        for f in partial_entries(&d, false, ops, read, &mut out, wsl)? {
                             let stem = f.file_stem().map(|s| s.to_string_lossy().into_owned());
                             let jsonl = f.extension().is_some_and(|e| e == "jsonl");
                             if let Some(stem) = stem.filter(|s| jsonl && s.starts_with("rollout-"))
@@ -1824,17 +1843,19 @@ fn partial_entries(
     ops: &mut u64,
     read: &mut EntryReader<'_>,
     out: &mut Listing,
-) -> Vec<PathBuf> {
+    wsl: bool,
+) -> io::Result<Vec<PathBuf>> {
     match read(p, true, ops) {
-        Ok(entries) => entries
+        Ok(entries) => Ok(entries
             .into_iter()
             .filter(|(_, dir)| *dir == dirs)
             .map(|(p, _)| p)
-            .collect(),
+            .collect()),
+        Err(e) if wsl && e.kind() != io::ErrorKind::PermissionDenied => Err(e),
         Err(e) => {
             crate::oplog_once!("세션 하위 폴더 나열 실패 {}: {e}", p.display());
             out.failed_subtrees.push(p.to_owned());
-            Vec::new()
+            Ok(Vec::new())
         }
     }
 }
@@ -2082,7 +2103,7 @@ mod tests {
             sites: sites.to_vec(),
             removed: Vec::new(),
         });
-        set_suspect(&h.world, &h.host.id, &h.heartbeat, false);
+        h.heartbeat.suspect.store(false, Ordering::Relaxed);
     }
 
     #[test]
@@ -2732,7 +2753,8 @@ mod tests {
         h.tick();
         assert!(!e.team(REJECT).alive_in_registry);
         assert_ne!(e.team(REJECT).title, "wsl-name");
-        assert_eq!(e.team(REJECT).phase, TeamPhase::Off);
+        let key = e.key(REJECT);
+        assert_eq!(e.w().displayed_phase(&key), TeamPhase::Off);
     }
 
     #[test]
@@ -2756,6 +2778,75 @@ mod tests {
         }
         assert!(wsl_proc_root(Path::new(r"C:\home\.claude"), "Test").is_none());
         assert!(wsl_proc_root(Path::new(r"\\server\Test\home\.claude"), "Test").is_none());
+    }
+
+    #[test]
+    fn wsl_confirmed_exit_is_immediate_and_rebuild_only_resumes_on_new_live_main_activity() {
+        for remove_registry in [false, true] {
+            let e = env();
+            let root = e.dir("wsl/claude/projects");
+            let reg = root.parent().unwrap().join("sessions/7.json");
+            fs::create_dir_all(reg.parent().unwrap()).unwrap();
+            let row = format!(r#"{{"pid":7,"sessionId":"{REJECT}","procStart":"42"}}"#);
+            fs::write(&reg, &row).unwrap();
+            let proc_root = e.dir("wsl/proc");
+            fs::create_dir(proc_root.join("7")).unwrap();
+            fs::write(proc_root.join("stat"), "btime 10\n").unwrap();
+            let stat = format!("7 (claude) S {} 42 0\n", "0 ".repeat(18));
+            fs::write(proc_root.join("7/stat"), &stat).unwrap();
+            let main = root.join("p1").join(format!("{REJECT}.jsonl"));
+            append(&main, &[user_line(REJECT, t0(), "시작")]);
+            let sites = [site_of(&wsl(), Vendor::Claude, &root)];
+            let mut h = e.host(wsl(), Vec::new());
+            h.proc_root_override = Some(proc_root.clone());
+            e.at(t0() + secs(1));
+            probe_now(&h, &sites);
+            h.tick();
+            let key = e.key(REJECT);
+            assert!(e.team(REJECT).alive_in_registry);
+            fs::write(&reg, "{").unwrap();
+            e.at(t0() + secs(2));
+            probe_now(&h, &sites);
+            h.tick();
+            assert!(e.team(REJECT).alive_in_registry);
+            assert_eq!(
+                e.w().projected_off(&key),
+                None,
+                "파싱 불확실은 종료나 연결 실패가 아니다"
+            );
+            fs::write(&reg, &row).unwrap();
+            if remove_registry {
+                fs::remove_file(&reg).unwrap();
+            } else {
+                fs::remove_file(proc_root.join("7/stat")).unwrap();
+            }
+            e.at(t0() + secs(3));
+            probe_now(&h, &sites);
+            h.tick();
+            assert_eq!(
+                e.w().projected_off(&key),
+                Some(crate::parse::Confidence::Confirmed)
+            );
+            assert_eq!(e.w().displayed_phase(&key), TeamPhase::Off);
+            assert!(e.team(REJECT).desk_slot.is_none());
+            h.try_rebuild(&key, t0() + secs(3), &BTreeSet::new(), &BTreeSet::new());
+            assert_eq!(e.w().displayed_phase(&key), TeamPhase::Off);
+            fs::write(&reg, &row).unwrap();
+            fs::write(proc_root.join("7/stat"), &stat).unwrap();
+            e.at(t0() + secs(4));
+            probe_now(&h, &sites);
+            h.tick();
+            assert_eq!(
+                e.w().displayed_phase(&key),
+                TeamPhase::Off,
+                "등록부 생존만으로는 옛 기록을 재개하지 않는다"
+            );
+            append(&main, &[user_line(REJECT, t0() + secs(5), "재개")]);
+            h.try_rebuild(&key, t0() + secs(5), &BTreeSet::new(), &BTreeSet::new());
+            assert_eq!(e.w().projected_off(&key), None);
+            assert_eq!(e.w().displayed_phase(&key), TeamPhase::Working);
+            assert!(e.team(REJECT).desk_slot.is_some());
+        }
     }
 
     #[test]
@@ -3254,6 +3345,56 @@ mod tests {
     }
 
     #[test]
+    fn wsl_nested_connection_failure_stops_access_until_probe_but_permission_denied_is_partial() {
+        for error in [
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::PermissionDenied,
+        ] {
+            let e = env();
+            let root = e.dir("wsl/projects");
+            let blocked = root.join("a");
+            copy_dir(&fixture("claude/reject"), &blocked);
+            copy_dir(&fixture("claude/sync-subagent"), &root.join("b"));
+            let sites = [site_of(&wsl(), Vendor::Claude, &root)];
+            let mut h = e.host(wsl(), sites.to_vec());
+            e.at(t0() + secs(150));
+            let mut after_failure = 0;
+            let mut failed = false;
+            h.scan_listing(e.clock.now(), |site, ops| {
+                list_site_with(site, ops, &mut |path, missing_ok, ops| {
+                    if failed {
+                        after_failure += 1;
+                    }
+                    if path == blocked {
+                        failed = true;
+                        Err(io::Error::from(error))
+                    } else {
+                        let mut entries = entries(path, missing_ok, ops)?;
+                        entries.sort_by(|a, b| a.0.cmp(&b.0));
+                        Ok(entries)
+                    }
+                })
+            });
+            assert!(failed);
+            if error == io::ErrorKind::ConnectionReset {
+                assert_eq!(after_failure, 0);
+                assert!(e.w().suspect_hosts.contains("wsl:Test"));
+                let ops = h.path_ops;
+                h.tick();
+                assert_eq!(h.path_ops, ops, "새 Probe 없이 접근하지 않는다");
+                probe_now(&h, &sites);
+                h.tick();
+                assert!(!e.w().suspect_hosts.contains("wsl:Test"));
+                assert_eq!(e.w().teams.len(), 2);
+            } else {
+                assert!(after_failure > 0);
+                assert!(!e.w().suspect_hosts.contains("wsl:Test"));
+                assert_eq!(e.w().teams.len(), 1);
+            }
+        }
+    }
+
+    #[test]
     fn codex_partial_listing_continues_after_unreadable_month() {
         let e = env();
         let root = e.dir("sessions");
@@ -3314,7 +3455,7 @@ mod tests {
     #[test]
     fn probe_turns_suspect_on_for_stopped_distro_and_off_when_running() {
         let e = env();
-        let remote = e.host(wsl(), Vec::new());
+        let mut remote = e.host(wsl(), Vec::new());
         let running: Arc<Mutex<Option<bool>>> = Arc::new(Mutex::new(Some(false)));
         let state = running.clone();
         let root = e.dir("wsl/projects");
@@ -3350,6 +3491,8 @@ mod tests {
         let list = e.w().list_seq;
         p.run();
         assert!(!suspect() && probed());
+        assert!(e.w().suspect_hosts.contains("wsl:Test"));
+        remote.tick();
         let w = e.w();
         assert!(w.suspect_hosts.is_empty());
         assert!(w.list_seq > list);
@@ -3610,7 +3753,13 @@ mod tests {
         h.poll_team(&key, &[main.clone(), sub.clone()], now, false);
         assert!(e.w().read_failed_teams.contains(&key));
         assert!(e.w().list_seq > initial_seq);
-        assert_eq!(e.team(SYNC), before);
+        let mut without_seats = before.clone();
+        without_seats.desk_slot = None;
+        for employee in &mut without_seats.employees {
+            employee.seat = None;
+        }
+        assert_eq!(e.team(SYNC), without_seats);
+        assert_eq!(e.w().displayed_phase(&key), TeamPhase::Off);
 
         drop(main_lock);
         h.poll_team(&key, std::slice::from_ref(&main), now + secs(1), false);
@@ -3642,6 +3791,78 @@ mod tests {
             .find(|e| e.id == SYNC_SUB)
             .unwrap();
         assert!(new_sub.record.timeline.len() > old_sub.record.timeline.len());
+    }
+
+    #[test]
+    fn recovered_reads_apply_late_results_before_giving_up_pending_work() {
+        for remote in [false, true] {
+            let e = env();
+            let root = e.dir("projects");
+            let main = root.join("p1").join(format!("{REJECT}.jsonl"));
+            append(
+                &main,
+                &[rec(
+                    REJECT,
+                    None,
+                    t0(),
+                    "assistant",
+                    serde_json::json!([
+                        {"type":"tool_use", "id":"late", "name":"Bash", "input":{"command":"echo done"}}
+                    ]),
+                )],
+            );
+            let host = if remote { wsl() } else { win() };
+            let sites = [site_of(&host, Vendor::Claude, &root)];
+            let mut h = e.host(host, sites.to_vec());
+            e.at(t0() + secs(1));
+            if remote {
+                probe_now(&h, &sites);
+            }
+            h.tick();
+            let key = e.key(REJECT);
+            assert_eq!(e.team(REJECT).employees[0].pending.len(), 1);
+            let later = t0() + Duration::minutes(40);
+            append(
+                &main,
+                &[rec(
+                    REJECT,
+                    None,
+                    later,
+                    "user",
+                    serde_json::json!([
+                        {"type":"tool_result", "tool_use_id":"late", "content":"done", "is_error":false}
+                    ]),
+                )],
+            );
+            if remote {
+                h.mark_suspect();
+            } else {
+                let locked = fs::File::open(&main).unwrap();
+                locked.lock().unwrap();
+                h.poll_team(&key, std::slice::from_ref(&main), t0() + secs(2), false);
+                assert!(e.w().read_failed_teams.contains(&key));
+            }
+            e.at(later);
+            if remote {
+                probe_now(&h, &sites);
+                h.tick();
+            } else {
+                h.poll_team(&key, std::slice::from_ref(&main), later, false);
+            }
+            let team = e.team(REJECT);
+            assert!(team.employees[0].pending.is_empty());
+            assert!(
+                !team.employees[0]
+                    .recent
+                    .iter()
+                    .any(|a| a.sentence.contains("결과 확인 불가"))
+            );
+            assert_eq!(
+                team.employees[0].activity.confidence,
+                crate::parse::Confidence::Confirmed
+            );
+            assert_eq!(e.w().projected_off(&key), None);
+        }
     }
 
     #[test]

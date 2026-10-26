@@ -81,12 +81,13 @@ pub struct RegistryRead {
 /// `<home>\sessions\*.json` 을 모두 읽는다. 폴더를 읽지 못하면(NotFound 아님) None.
 /// 같은 폴더의 `.key` 파일은 용도를 확인하지 않았고 비밀일 수 있어 열지 않는다 (`.json` 만 연다)
 pub fn read_registry(home: &Path) -> Option<RegistryRead> {
-    read_registry_with(home, &mut || true)
+    read_registry_with(home, &mut || true, &mut false)
 }
 
 fn read_registry_with(
     home: &Path,
     path_allowed: &mut impl FnMut() -> bool,
+    io_failed: &mut bool,
 ) -> Option<RegistryRead> {
     if !path_allowed() {
         return None;
@@ -97,6 +98,7 @@ fn read_registry_with(
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Some(RegistryRead::default()),
         Err(e) => {
             // Scan 마다 돌아서 같은 줄은 한 번만 남긴다
+            *io_failed |= e.kind() != io::ErrorKind::PermissionDenied;
             crate::oplog::log_once(&format!("등록부 폴더 읽기 실패 {}: {e}", home.display()));
             return None;
         }
@@ -106,6 +108,7 @@ fn read_registry_with(
         let p = match entry {
             Ok(e) => e.path(),
             Err(e) => {
+                *io_failed |= e.kind() != io::ErrorKind::PermissionDenied;
                 crate::oplog::log_once(&format!("등록부 목록 읽기 실패: {}", e.kind()));
                 return None;
             }
@@ -132,7 +135,11 @@ fn read_registry_with(
             // 목록을 읽은 뒤 세션이 끝나 지워진 건 정상이다
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
             Err(e) => {
+                *io_failed |= e.kind() != io::ErrorKind::PermissionDenied;
                 crate::oplog::log_once(&format!("등록부 파일 읽기 실패 {name}: {}", e.kind()));
+                if *io_failed {
+                    return None;
+                }
                 out.unread.push(stem);
                 continue;
             }
@@ -163,8 +170,12 @@ pub fn live_wsl_sessions(
     proc_root: &Path,
     prev: &HashMap<String, RegistryEntry>,
     mut path_allowed: impl FnMut() -> bool,
+    io_failed: &mut bool,
 ) -> Option<HashMap<String, RegistryEntry>> {
-    let read = read_registry_with(home, &mut path_allowed)?;
+    let read = read_registry_with(home, &mut path_allowed, io_failed)?;
+    if read.unread.iter().any(|stem| stem.parse::<u32>().is_err()) {
+        return None;
+    }
     let kept = prev
         .values()
         .filter(|e| read.unread.contains(&e.pid.to_string()))
@@ -175,6 +186,12 @@ pub fn live_wsl_sessions(
             return None;
         }
         match fs::read_to_string(proc_root.join("stat"))
+            .inspect_err(|e| {
+                *io_failed |= !matches!(
+                    e.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::NotFound
+                )
+            })
             .ok()
             .and_then(|s| boot_time_ms(&s))
         {
@@ -187,6 +204,9 @@ pub fn live_wsl_sessions(
     } else {
         None
     };
+    if *io_failed {
+        return None;
+    }
     let mut out: HashMap<String, RegistryEntry> = HashMap::new();
     for e in entries {
         if e.started_at.zip(boot_ms).is_some_and(|(start, boot)| {
@@ -203,17 +223,24 @@ pub fn live_wsl_sessions(
                 (!alive || e.started_at.is_none() || boot_ms.is_some()).then_some(alive)
             }),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Some(false),
-            Err(_) => None,
+            Err(err) => {
+                *io_failed |= err.kind() != io::ErrorKind::PermissionDenied;
+                None
+            }
         };
+        if *io_failed {
+            return None;
+        }
         let e = match alive {
             Some(true) => e,
             Some(false) => continue,
             None => {
                 crate::oplog::log_once(&format!("WSL 프로세스 확인 실패: {}", e.pid));
-                let Some(old) = prev.get(&e.session_id).filter(|old| old.pid == e.pid) else {
-                    continue;
-                };
-                old.clone()
+                // 프로세스를 못 본 채 등록부 id만 바뀌어도 이전 세션의 종료로 단정하지 않는다.
+                for old in prev.values().filter(|old| old.pid == e.pid) {
+                    out.insert(old.session_id.clone(), old.clone());
+                }
+                continue;
             }
         };
         match out.get(&e.session_id) {
@@ -568,18 +595,25 @@ mod tests {
         for pid in [1, 3, 4, 5, 6, 7] {
             write_proc(proc.path(), pid, if pid == 4 { "Z" } else { "S" }, 42);
         }
-        let got = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true).unwrap();
+        let got = live_wsl_sessions(
+            home.path(),
+            proc.path(),
+            &HashMap::new(),
+            || true,
+            &mut false,
+        )
+        .unwrap();
         let mut ids: Vec<_> = got.keys().map(String::as_str).collect();
         ids.sort();
         assert_eq!(ids, ["idle", "legacy", "text-start"]);
         fs::remove_file(home.path().join("sessions/1.json")).unwrap();
-        let got = live_wsl_sessions(home.path(), proc.path(), &got, || true).unwrap();
+        let got = live_wsl_sessions(home.path(), proc.path(), &got, || true, &mut false).unwrap();
         assert!(
             !got.contains_key("idle"),
             "정상 종료로 등록부가 삭제되면 빠진다"
         );
         fs::remove_file(proc.path().join("6/stat")).unwrap();
-        let got = live_wsl_sessions(home.path(), proc.path(), &got, || true).unwrap();
+        let got = live_wsl_sessions(home.path(), proc.path(), &got, || true, &mut false).unwrap();
         assert!(
             !got.contains_key("legacy"),
             "남은 등록부만으로는 생존하지 않는다"
@@ -595,23 +629,51 @@ mod tests {
         let proc = tempfile::tempdir().unwrap();
         fs::write(proc.path().join("stat"), "btime 10\n").unwrap();
         write_proc(proc.path(), 1, "S", 42);
-        let prev = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true).unwrap();
+        let prev = live_wsl_sessions(
+            home.path(),
+            proc.path(),
+            &HashMap::new(),
+            || true,
+            &mut false,
+        )
+        .unwrap();
         assert_eq!(prev.len(), 1);
         fs::write(home.path().join("sessions/1.json"), r#"{"pid":1,"sessionId":"s","procStart":"42","name":"after","nameSource":"user","startedAt":20000}"#).unwrap();
         for invalid in ["", "1 (claude) S", "2 (other) S", "1 (claude) ?"] {
             fs::write(proc.path().join("1/stat"), invalid).unwrap();
-            let got = live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap();
+            let got =
+                live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false).unwrap();
             assert_eq!(got, prev);
             assert!(
-                live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true)
-                    .unwrap()
-                    .is_empty()
+                live_wsl_sessions(
+                    home.path(),
+                    proc.path(),
+                    &HashMap::new(),
+                    || true,
+                    &mut false
+                )
+                .unwrap()
+                .is_empty()
             );
         }
+        fs::write(
+            home.path().join("sessions/1.json"),
+            r#"{"pid":1,"sessionId":"replacement","procStart":"42"}"#,
+        )
+        .unwrap();
+        let mut io_failed = false;
+        assert_eq!(
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut io_failed).unwrap(),
+            prev
+        );
+        assert!(
+            !io_failed,
+            "같은 PID의 새 sessionId라도 proc 파싱 불확실은 종료나 연결 실패가 아니다"
+        );
         fs::remove_file(proc.path().join("1/stat")).unwrap();
         fs::create_dir(proc.path().join("1/stat")).unwrap();
         assert_eq!(
-            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false).unwrap(),
             prev
         );
         fs::remove_dir(proc.path().join("1/stat")).unwrap();
@@ -622,13 +684,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false).unwrap(),
             prev
         );
         assert!(
-            live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true)
-                .unwrap()
-                .is_empty()
+            live_wsl_sessions(
+                home.path(),
+                proc.path(),
+                &HashMap::new(),
+                || true,
+                &mut false
+            )
+            .unwrap()
+            .is_empty()
         );
         fs::write(
             home.path().join("sessions/1.json"),
@@ -637,7 +705,7 @@ mod tests {
         .unwrap();
         fs::create_dir_all(proc.path().join("2/stat")).unwrap();
         assert!(
-            live_wsl_sessions(home.path(), proc.path(), &prev, || true)
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false)
                 .unwrap()
                 .is_empty()
         );
@@ -652,39 +720,52 @@ mod tests {
         let proc = tempfile::tempdir().unwrap();
         fs::write(proc.path().join("stat"), "btime 10\n").unwrap();
         write_proc(proc.path(), 1, "S", 42);
-        let prev = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true).unwrap();
+        let prev = live_wsl_sessions(
+            home.path(),
+            proc.path(),
+            &HashMap::new(),
+            || true,
+            &mut false,
+        )
+        .unwrap();
         for invalid in ["btime nope", "cpu 0 0", "btime 18446744073709551615"] {
             fs::write(proc.path().join("stat"), invalid).unwrap();
             assert_eq!(
-                live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+                live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false).unwrap(),
                 prev
             );
             assert!(
-                live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || true)
-                    .unwrap()
-                    .is_empty()
+                live_wsl_sessions(
+                    home.path(),
+                    proc.path(),
+                    &HashMap::new(),
+                    || true,
+                    &mut false
+                )
+                .unwrap()
+                .is_empty()
             );
         }
         fs::remove_file(proc.path().join("stat")).unwrap();
         fs::create_dir(proc.path().join("stat")).unwrap();
         assert_eq!(
-            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false).unwrap(),
             prev
         );
         fs::write(home.path().join("sessions/1.json"), "{").unwrap();
         assert_eq!(
-            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false).unwrap(),
             prev
         );
         fs::remove_file(home.path().join("sessions/1.json")).unwrap();
         fs::create_dir(home.path().join("sessions/1.json")).unwrap();
         assert_eq!(
-            live_wsl_sessions(home.path(), proc.path(), &prev, || true).unwrap(),
+            live_wsl_sessions(home.path(), proc.path(), &prev, || true, &mut false).unwrap(),
             prev
         );
         let odd = tempfile::tempdir().unwrap();
         fs::write(odd.path().join("sessions"), "").unwrap();
-        assert!(live_wsl_sessions(odd.path(), proc.path(), &prev, || true).is_none());
+        assert!(live_wsl_sessions(odd.path(), proc.path(), &prev, || true, &mut false).is_none());
     }
 
     #[test]
@@ -693,10 +774,16 @@ mod tests {
         let proc = tempfile::tempdir().unwrap();
         for allowed in 0..4 {
             let mut attempts = 0;
-            let got = live_wsl_sessions(home.path(), proc.path(), &HashMap::new(), || {
-                attempts += 1;
-                attempts <= allowed
-            });
+            let got = live_wsl_sessions(
+                home.path(),
+                proc.path(),
+                &HashMap::new(),
+                || {
+                    attempts += 1;
+                    attempts <= allowed
+                },
+                &mut false,
+            );
             assert!(got.is_none(), "의심 상태가 되면 이번 결과 전체를 버린다");
             assert_eq!(attempts, allowed + 1);
         }

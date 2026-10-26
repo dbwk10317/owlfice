@@ -8,7 +8,12 @@ import { mountOffice } from "./renderer.ts";
 
 const ticks = vi.hoisted(() => [] as ((t: { deltaMS: number }) => void)[]);
 const actors = vi.hoisted(
-  () => [] as { onBossPick?: (team: string, x: number, y: number) => void }[],
+  () =>
+    [] as {
+      onBossPick?: (team: string, x: number, y: number) => void;
+      sync: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    }[],
 );
 const resets = vi.hoisted(() => [] as ReturnType<typeof vi.fn>[]);
 vi.mock("pixi.js", async (original) => {
@@ -62,8 +67,8 @@ vi.mock("./actors.ts", () => ({
       actors.push(this);
     }
     attach() {}
-    sync() {}
-    update() {}
+    sync = vi.fn();
+    update = vi.fn();
     placeOverlay() {}
     focusedTeam() {
       return null;
@@ -139,4 +144,25 @@ test("목록만 바뀌면 rebuilt 장면의 툴팁·소품을 유지하고 새 r
   tick();
   expect(resets[0]).toHaveBeenCalledTimes(2);
   expect(tooltip.hidden).toBe(true);
+
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  actors[0].update.mockImplementationOnce(() => {
+    throw new Error("synthetic tick failure");
+  });
+  expect(() => tick()).not.toThrow();
+  expect(log).toHaveBeenCalledWith("사무실 틱 실패", expect.any(Error));
+  expect(() => tick()).not.toThrow();
+  expect(actors[0].update).toHaveBeenCalledTimes(5);
+
+  const requestId = store.selectOffice("missing");
+  await store.requestSelect(
+    requestId,
+    Promise.reject(new Error("synthetic select failure")),
+    async () => {
+      throw new Error("synthetic snapshot failure");
+    },
+  );
+  expect(store.state.selectionError).toBe("failed");
+  tick();
+  expect(actors[0].sync.mock.lastCall?.[0]).toBeNull();
 });

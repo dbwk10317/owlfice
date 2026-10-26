@@ -42,9 +42,6 @@ pub struct CodexParser {
     background_calls: HashMap<String, BackgroundCall>,
     /// 이벤트를 내지 않는 호출(`sleep`, `send_message`). 뒤따르는 출력도 버린다
     ignored: HashSet<String>,
-    /// 성공한 followup_task의 Interacted만 기존 직원 재개로 쓴다.
-    followups: HashSet<String>,
-    known_agents: HashSet<String>,
     /// 실행 중인 exec 를 기다리는 `wait` 의 call_id → 그 exec 의 call_id. 이벤트 없이 결과만 원래 exec 로 넘긴다
     cell_waits: HashMap<String, String>,
     /// 내부 에이전트의 rollout. 파일 전체에서 이벤트를 내지 않는다
@@ -137,8 +134,9 @@ impl ExecWait {
             self.output_keys
                 .extend(obj.keys().filter(|k| is_known_key(k)).cloned());
             let exit = obj.get("exit_code").and_then(Value::as_i64);
-            self.output_failed |= self
-                .calls(|tool| tool == "exec_command" || tool == "write_stdin")
+            // 혼합 호출의 출력은 출처를 구분할 수 없어 폴링 종료 코드를 래퍼 실패로 세지 않는다.
+            self.output_failed |= self.calls(|tool| tool == "exec_command")
+                && !self.calls(|tool| tool == "write_stdin")
                 && exit.is_some_and(|code| code != 0);
             let Some(id) = obj.get("session_id").and_then(id_string) else {
                 continue;
@@ -178,8 +176,6 @@ impl CodexParser {
             background: HashMap::new(),
             background_calls: HashMap::new(),
             ignored: HashSet::new(),
-            followups: HashSet::new(),
-            known_agents: HashSet::new(),
             cell_waits: HashMap::new(),
             silent: false,
             last_total: None,
@@ -590,12 +586,7 @@ impl CodexParser {
         let mut ask = false;
         let tool = match name {
             // `sleep` 은 질문 답을 기다리며 부르고 `send_message` 는 에이전트 사이 배관이다. 연출할 게 없다
-            "followup_task" => {
-                self.followups.insert(call_id.clone());
-                self.ignored.insert(call_id);
-                return;
-            }
-            "sleep" | "send_message" | "wait_agent" | "interrupt_agent" => {
+            "sleep" | "send_message" | "wait_agent" | "interrupt_agent" | "followup_task" => {
                 self.ignored.insert(call_id);
                 return;
             }
@@ -647,7 +638,6 @@ impl CodexParser {
         un: &mut Vec<Unhandled>,
     ) {
         if self.ignored.remove(call_id) {
-            self.followups.remove(call_id);
             return;
         }
         if let Some(exec) = self.cell_waits.remove(call_id) {
@@ -696,14 +686,7 @@ impl CodexParser {
                     Some("CommandExecution" | "FileChange" | "McpToolCall") => {
                         self.exec_item(item, out, un)
                     }
-                    Some("SubAgentActivity") => subagent_activity(
-                        item,
-                        self.depth,
-                        &mut self.followups,
-                        &mut self.known_agents,
-                        out,
-                        un,
-                    ),
+                    Some("SubAgentActivity") => subagent_activity(item, self.depth, out, un),
                     Some("ContextCompaction") => out.push(EventKind::ContextCompaction {
                         pre_tokens: None,
                         post_tokens: None,
@@ -758,17 +741,9 @@ impl CodexParser {
                     out.push(result(p.call_id, ToolOutcome::Unknown, String::new()));
                 }
             }
-            "sub_agent_activity" => subagent_activity(
-                p,
-                self.depth,
-                &mut self.followups,
-                &mut self.known_agents,
-                out,
-                un,
-            ),
+            "sub_agent_activity" => subagent_activity(p, self.depth, out, un),
             "collab_agent_spawn_end" => {
                 if let Some(child) = str_at(p, &["new_thread_id"]) {
-                    self.known_agents.insert(child.to_string());
                     out.push(spawn(child, None, None, self.depth));
                 }
             }
@@ -958,19 +933,11 @@ impl Parser for CodexParser {
     }
 }
 
-/// `interacted` 는 메시지 전달과 재개가 같은 형식이므로 확인된 followup 호출만 재개로 낸다.
-fn subagent_activity(
-    item: &Value,
-    depth: u8,
-    followups: &mut HashSet<String>,
-    known_agents: &mut HashSet<String>,
-    out: &mut Vec<EventKind>,
-    un: &mut Vec<Unhandled>,
-) {
+/// `interacted` 는 메시지 전달도 같은 형식이므로 작업 재개의 근거로 쓰지 않는다.
+fn subagent_activity(item: &Value, depth: u8, out: &mut Vec<EventKind>, un: &mut Vec<Unhandled>) {
     let kind = str_at(item, &["kind"]).unwrap_or_default();
     match (kind, str_at(item, &["agent_thread_id"])) {
         ("started", Some(child)) => {
-            known_agents.insert(child.to_string());
             out.push(spawn(
                 child,
                 str_at(item, &["model"]),
@@ -984,12 +951,6 @@ fn subagent_activity(
         ("interrupted", Some(child)) => out.push(EventKind::SubagentInterrupted {
             child_id: child.to_string(),
         }),
-        ("interacted", Some(child))
-            if known_agents.contains(child)
-                && str_at(item, &["id"]).is_some_and(|id| followups.remove(id)) =>
-        {
-            out.push(spawn(child, None, None, depth));
-        }
         ("started" | "completed" | "interacted" | "interrupted", _) => {}
         _ => un.push(Unhandled::RecordType {
             type_name: format!("SubAgentActivity.{kind}"),
@@ -2177,7 +2138,13 @@ mod tests {
             exec("stop", stop),
             // 중단으로 죽은 프로세스의 item 은 사고로 세지 않는다
             cmd_item("failed", Some(130), "4242"),
-            exec_out("stop", &["Script completed\n"]),
+            exec_out(
+                "stop",
+                &[
+                    "Script completed\n",
+                    "{\"session_id\":4242,\"exit_code\":130}",
+                ],
+            ),
             cmd_item("failed", Some(130), "4242"),
         ]);
         let (k, _) = feed(&lines);
@@ -2199,6 +2166,62 @@ mod tests {
             outcome_of(&k, "bg"),
             [ToolOutcome::Started, ToolOutcome::Ok]
         );
+    }
+
+    #[test]
+    fn polling_nonzero_exit_only_fails_the_original_background() {
+        let (k, _) = feed(&[
+            exec("bg", "tools.exec_command({cmd:\"npm test\"})"),
+            exec_out("bg", &["Script completed\n", "{\"session_id\":4242}"]),
+            exec("poll", "text(await tools.write_stdin({session_id:4242}))"),
+            cmd_item("failed", Some(1), "4242"),
+            exec_out(
+                "poll",
+                &[
+                    "Script completed\n",
+                    "{\"session_id\":4242,\"exit_code\":1}",
+                ],
+            ),
+        ]);
+        assert_eq!(
+            outcome_of(&k, "bg"),
+            [ToolOutcome::Started, ToolOutcome::Err]
+        );
+        assert_eq!(outcome_of(&k, "poll"), [ToolOutcome::Unknown]);
+    }
+
+    #[test]
+    fn mixed_stdin_exit_does_not_override_command_item_evidence() {
+        for (chars, exit, command_failed, background, wrapper) in [
+            ("", 1, false, ToolOutcome::Err, ToolOutcome::Ok),
+            ("\u{3}", 130, false, ToolOutcome::Unknown, ToolOutcome::Ok),
+            ("", 1, true, ToolOutcome::Err, ToolOutcome::Err),
+        ] {
+            let script = format!(
+                "text(await tools.exec_command({{cmd:\"echo ready\"}})); text(await tools.write_stdin({{session_id:4242,chars:{}}}))",
+                serde_json::to_string(chars).unwrap()
+            );
+            let output = json!({"session_id":4242,"exit_code":exit}).to_string();
+            let (k, _) = feed(&[
+                exec("bg", "tools.exec_command({cmd:\"npm test\"})"),
+                exec_out("bg", &["Script completed\n", "{\"session_id\":4242}"]),
+                exec("mixed", &script),
+                cmd_item(
+                    if command_failed {
+                        "failed"
+                    } else {
+                        "completed"
+                    },
+                    Some(i64::from(command_failed)),
+                    "7000",
+                ),
+                cmd_item("failed", Some(exit), "4242"),
+                exec_out("mixed", &["Script completed\n", &output]),
+                cmd_item("failed", Some(exit), "4242"),
+            ]);
+            assert_eq!(outcome_of(&k, "bg"), [ToolOutcome::Started, background]);
+            assert_eq!(outcome_of(&k, "mixed"), [wrapper]);
+        }
     }
 
     #[test]
@@ -2250,7 +2273,7 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_is_distinct_and_only_successful_followup_activity_restarts() {
+    fn interrupted_is_distinct_and_interaction_does_not_prove_resume() {
         let act = |id: &str, kind: &str| {
             rec(
                 "event_msg",
@@ -2301,7 +2324,6 @@ mod tests {
                 EventKind::SubagentInterrupted {
                     child_id: CHILD.into()
                 },
-                spawn(CHILD, None, None, 0),
             ]
         );
         assert!(un.is_empty(), "{un:?}");

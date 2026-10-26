@@ -2,7 +2,7 @@ import phrases from "../design/handoff/phrases.ko.json";
 import { openModal } from "./popup-modal.ts";
 import { h } from "./sidebar-right.ts";
 import type { Invoke } from "./scale.ts";
-import type { NightMode, SettingsDto } from "./types/ipc.ts";
+import type { Animal, NightMode, SettingsDto } from "./types/ipc.ts";
 import type { UpdateStore } from "./store.ts";
 
 const S = phrases.settings;
@@ -148,6 +148,25 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     ),
   );
   company.append(label(S.bossName, bossName, `${S.bossNameHint} 최대 20자.`));
+  const animals = h(doc, "div", "ow-seg");
+  animals.setAttribute("role", "group");
+  animals.setAttribute("aria-label", S.animal);
+  const animalChoices = (["owls", "dogs", "cats"] as const).map((animal: Animal) => {
+    const control = button(S.animals[animal], () => save({ animal }));
+    control.className = "";
+    animals.append(control);
+    return { animal, control };
+  });
+  company.append(
+    h(
+      doc,
+      "div",
+      "ow-settings__field",
+      S.animal,
+      animals,
+      h(doc, "small", "ow-settings__hint", S.animalHint),
+    ),
+  );
 
   const switches = new Map<"sound" | "osNotifications" | "rawDiagnostics", HTMLButtonElement>();
   function toggle(
@@ -342,6 +361,8 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
       const selected = mode === (current.nightMode ?? "auto");
       control.setAttribute("aria-pressed", String(selected));
     }
+    for (const { animal, control } of animalChoices)
+      control.setAttribute("aria-pressed", String(animal === (current.animal ?? "owls")));
     for (const [key, el] of switches)
       el.setAttribute("aria-checked", String(current[key] ?? key === "osNotifications"));
     paths.replaceChildren(

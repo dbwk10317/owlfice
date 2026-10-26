@@ -43,6 +43,7 @@ let settings: SettingsDto = {
   osNotifications: true,
   bossName: null,
   rawDiagnostics: false,
+  animal: null,
 };
 const candidates: DiscoveryPathDto[] = [
   { host: "Windows", vendor: "Claude", path: "C:\\Preview\\.claude\\projects", status: "Missing" },

@@ -350,9 +350,15 @@ scale: Scale | null,
 /**
  * 저장된 회사 이름. 없으면 null 이고 프론트가 기본 이름을 쓴다. 보낼 때 ""(공백뿐)는 기본으로 되돌린다
  */
-companyName: string | null, manualPaths: Array<ManualPath> | null, sound: boolean | null, nightMode: NightMode | null, osNotifications: boolean | null, bossName: string | null, rawDiagnostics: boolean | null, };
+companyName: string | null, manualPaths: Array<ManualPath> | null, sound: boolean | null, nightMode: NightMode | null, osNotifications: boolean | null, bossName: string | null, rawDiagnostics: boolean | null, 
+/**
+ * 없으면 null 이고 프론트가 올빼미로 본다
+ */
+animal: Animal | null, };
 
 export type NightMode = "auto" | "on" | "off";
+
+export type Animal = "owls" | "dogs" | "cats";
 
 export type DiscoveryPathDto = { host: string, vendor: string, path: string | null, status: DiscoveryStatus, };
 

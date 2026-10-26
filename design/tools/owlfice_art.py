@@ -1,7 +1,8 @@
 """Owlfice 픽셀아트 원본 생성기. 손으로 그림을 고치지 말고 이 파일을 고친다.
 
 한 번 실행하면 아래를 모두 다시 만든다.
-  sprites/owls.png  owls.json     올빼미 부품 시트 (몸통 · 옷 · 담당 소품, 자세별 프레임)
+  sprites/{owls,dogs,cats}.png·json      직원 부품 시트 2× (몸통 · 옷 · 근속 · 담당 · 소지품, 자세별 프레임)
+  sprites/{owls,dogs,cats}@3x.png·json   같은 시트 3×
   sprites/office.png office.json  벽 · 바닥 타일 · 가구 · 소품 · 효과 시트 (상태별 프레임)
   sprites/ui.png    ui.json       로고 · 로딩 건물 부품 · 규모 선택 미리보기
   sprites/floorplan.json          평면도: 방, 배치, 좌석, 서 있을 자리, 통로, 테마
@@ -169,6 +170,9 @@ def tinted(img, tint):
 OWL_W, OWL_H = 16, 24
 OWL_AX, OWL_AY = 8, 23   # 발 기준점. 이 픽셀의 왼쪽 위 모서리가 발 좌표에 온다
 TX, TY = 1, 6            # 템플릿 좌표 -> 프레임 좌표
+# 직원 시트 밀도 = 월드 px 당 텍셀 수. 템플릿 셀은 D×D 블록, 얼굴만 1텍셀 격자로 그린다
+DENSITIES = (2, 3)
+SHEET_MAX = {2: 2048, 3: 4096}
 
 SPECIES = {
     "eagle": dict(name="수리부엉이", top=0, lid="l", lidrow=6, eyes=[(3, 4), (9, 10)], rows=[
@@ -205,6 +209,94 @@ SPECIES = {
 }
 EMPLOYEE_SPECIES = ["eagle", "longeared", "little", "barn", "scops"]  # 흰올빼미는 사장님 전용
 BODY_PAL = dict(k=OUTLINE, p=(26, 26, 26), y=(232, 163, 58), m=(244, 236, 212), M=(110, 70, 42))
+
+# 강아지·고양이 머리: 템플릿 좌표(14열, top 행부터) D×D 블록. k 윤곽 b 바탕 B 어두움 l 밝음 e 귓속 m 무늬.
+# 나머지 색은 1텍셀 얼굴용. 몸통·발·날개는 올빼미 템플릿을 그대로 쓴다
+BREEDS = {
+    "shiba": {"kind": "dog", "name": "시바견", "top": -1, "rows": [
+        "..kk......kk..", ".kebk....kbek.", ".kebbk..kbbek.", "kbbbbbkkbbbbbk", "kbbbbbbbbbbbbk",
+        "kbblbbbbbblbbk", "kblbbbbbbbbblk", "kbllbbbbbbllbk", "kbllllllllllbk", ".kbllllllllbk."],
+        "pal": {"b": (214, 150, 78), "B": (168, 108, 52), "l": (248, 236, 212), "e": (240, 186, 170), "m": (168, 108, 52),
+                "iris": (250, 250, 250), "pupil": (40, 30, 26), "nose": (36, 30, 30), "tongue": (232, 120, 130), "brow": OUTLINE}},
+    "corgi": {"kind": "dog", "name": "웰시코기", "top": -1, "rows": [
+        ".kkk......kkk.", "kebbk....kbbek", "kebbbk..kbbbek", "kbbbbbllbbbbbk", "kbbbbbllbbbbbk",
+        "kbbbbbllbbbbbk", "kbbbbbllbbbbbk", "kblbbbllbbblbk", "kbllllllllllbk", ".kbllllllllbk."],
+        "pal": {"b": (226, 140, 70), "B": (176, 100, 44), "l": (250, 246, 236), "e": (236, 170, 150), "m": (176, 100, 44),
+                "iris": (250, 250, 250), "pupil": (40, 30, 26), "nose": (36, 30, 30), "tongue": (232, 120, 130), "brow": OUTLINE}},
+    "beagle": {"kind": "dog", "name": "비글", "top": 0, "rows": [
+        "...kkkkkkkk...", "..kbbbllbbbk..", ".kBbbbbllbbbBk", "kBBbbbllbbbBBk", "kBBbbbllbbbBBk",
+        "kBBbbbllbbbBBk", "kBBlbbllbblBBk", ".kkllllllllkk.", "..kllllllllk.."],
+        "pal": {"b": (200, 146, 84), "B": (92, 62, 44), "l": (250, 246, 236), "e": (92, 62, 44), "m": (92, 62, 44),
+                "iris": (250, 250, 250), "pupil": (40, 30, 26), "nose": (36, 30, 30), "tongue": (232, 120, 130), "brow": OUTLINE}},
+    "poodle": {"kind": "dog", "name": "푸들", "top": -1, "rows": [
+        "...kk.kk.kk...", "..kbbkbbkbbk..", ".kbbbbbbbbbbk.", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk",
+        "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", ".kbbbbllbbbbk.", "..kbbbllbbbk.."],
+        "pal": {"b": (222, 176, 128), "B": (186, 136, 88), "l": (250, 236, 214), "e": (186, 136, 88), "m": (186, 136, 88),
+                "iris": (250, 250, 250), "pupil": (40, 30, 26), "nose": (36, 30, 30), "tongue": (232, 120, 130), "brow": OUTLINE}},
+    "husky": {"kind": "dog", "name": "시베리안허스키", "top": -1, "rows": [
+        "..kk......kk..", ".kebk....kbek.", ".kebbk..kbbek.", "kbbbbbkkbbbbbk", "kbbbbbbbbbbbbk",
+        "kbblbbbbbblbbk", "kbllbbllbbllbk", "kbllbbllbbllbk", "kbllllllllllbk", ".kbllllllllbk."],
+        "pal": {"b": (128, 132, 140), "B": (84, 88, 98), "l": (246, 246, 244), "e": (200, 170, 170), "m": (84, 88, 98),
+                "iris": (250, 250, 250), "pupil": (70, 130, 220), "nose": (36, 30, 30), "tongue": (232, 120, 130), "brow": OUTLINE}},
+    "samoyed": {"kind": "dog", "name": "사모예드", "top": -1, "rows": [
+        "..kk......kk..", ".kebk....kbek.", ".kbbbk..kbbbk.", "kbbbbbkkbbbbbk", "kbbbbbbbbbbbbk",
+        "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", ".kbbbbbbbbbbk."],
+        "pal": {"b": (248, 246, 240), "B": (214, 210, 200), "l": (248, 246, 240), "e": (226, 190, 186), "m": (214, 210, 200),
+                "iris": (250, 250, 250), "pupil": (40, 30, 26), "nose": (36, 30, 30), "tongue": (232, 120, 130), "brow": OUTLINE}},
+    "tabby": {"kind": "cat", "name": "치즈태비", "top": -1, "rows": [
+        ".kk........kk.", ".kek......kek.", ".kbek....kebk.", "kbbbbkkkkbbbbk", "kbbmbbbbbbmbbk",
+        "kbbbmbbbbmbbbk", "kmbbbbbbbbbbmk", "kmbbbbbbbbbbmk", "kbbbbllllbbbbk", ".kbbbllllbbbk."],
+        "pal": {"b": (236, 160, 70), "B": (196, 112, 40), "l": (250, 236, 206), "e": (240, 186, 170), "m": (196, 112, 40),
+                "iris": (120, 200, 90), "pupil": (30, 26, 26), "nose": (232, 130, 130), "tongue": (232, 120, 130), "brow": OUTLINE,
+                "wh": (196, 112, 40)}},
+    "tuxedo": {"kind": "cat", "name": "턱시도", "top": -1, "rows": [
+        ".kk........kk.", ".kek......kek.", ".kbek....kebk.", "kbbbbkkkkbbbbk", "kbbbbbbbbbbbbk",
+        "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbllllbbbbk", "kbbbllllllbbbk", ".kbbllllllbbk."],
+        "pal": {"b": (44, 42, 48), "B": (26, 24, 28), "l": (248, 246, 240), "e": (200, 150, 150), "m": (26, 24, 28),
+                "iris": (250, 210, 60), "pupil": (30, 26, 26), "nose": (232, 130, 130), "tongue": (232, 120, 130),
+                "brow": (248, 246, 240), "wh": (200, 200, 200)}},
+    "siamese": {"kind": "cat", "name": "샴", "top": -1, "rows": [
+        ".kk........kk.", ".kBk......kBk.", ".kBBk....kBBk.", "kbBBbkkkkbBBbk", "kbbbbbbbbbbbbk",
+        "kbbbbBBBBbbbbk", "kbbbBBBBBBbbbk", "kbbbBBBBBBbbbk", "kbbbbBBBBbbbbk", ".kbbbbBBbbbbk."],
+        "pal": {"b": (240, 226, 200), "B": (92, 66, 52), "l": (240, 226, 200), "e": (92, 66, 52), "m": (92, 66, 52),
+                "iris": (80, 150, 230), "pupil": (30, 26, 26), "nose": (120, 80, 70), "tongue": (232, 120, 130), "brow": OUTLINE,
+                "wh": (200, 180, 160)}},
+    "calico": {"kind": "cat", "name": "삼색이", "top": -1, "rows": [
+        ".kk........kk.", ".kmk......kBk.", ".kmmk....kBBk.", "kmmmmkkkkBBBbk", "kmmmbbbbbbBbbk",
+        "kmmmbbbbbbbbbk", "kbmbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", ".kbbbbbbbbbbk."],
+        "pal": {"b": (250, 248, 244), "B": (40, 38, 42), "l": (250, 248, 244), "e": (236, 180, 170), "m": (230, 140, 60),
+                "iris": (240, 190, 60), "pupil": (30, 26, 26), "nose": (232, 130, 130), "tongue": (232, 120, 130), "brow": OUTLINE,
+                "wh": (180, 176, 170)}},
+    "russianblue": {"kind": "cat", "name": "러시안블루", "top": -1, "rows": [
+        ".kk........kk.", ".kek......kek.", ".kbek....kebk.", "kbbbbkkkkbbbbk", "kbbbbbbbbbbbbk",
+        "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", ".kbbbbbbbbbbk."],
+        "pal": {"b": (138, 148, 164), "B": (96, 106, 124), "l": (170, 178, 192), "e": (200, 170, 180), "m": (96, 106, 124),
+                "iris": (110, 200, 110), "pupil": (30, 26, 26), "nose": (120, 100, 110), "tongue": (232, 120, 130), "brow": OUTLINE,
+                "wh": (200, 206, 214)}},
+    "persian": {"kind": "cat", "name": "페르시안", "top": -1, "rows": [
+        ".kk........kk.", ".kek......kek.", ".kbek....kebk.", "kbbbbkkkkbbbbk", "kbbbbbbbbbbbbk",
+        "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", "kbbbbbbbbbbbbk", ".kbbbbbbbbbbk."],
+        "pal": {"b": (250, 248, 244), "B": (216, 212, 204), "l": (250, 248, 244), "e": (236, 180, 170), "m": (216, 212, 204),
+                "iris": (240, 150, 60), "pupil": (30, 26, 26), "nose": (232, 130, 130), "tongue": (232, 120, 130), "brow": OUTLINE,
+                "wh": (190, 186, 180)}},
+}
+OWL_FINE = {   # 올빼미 1텍셀 얼굴 색: 홍채는 종 색, 눈동자 검정
+    "eagle": {"iris": (240, 140, 40), "pupil": (26, 26, 26), "brow": OUTLINE},
+    "longeared": {"iris": (250, 160, 40), "pupil": (26, 26, 26), "brow": OUTLINE},
+    "little": {"iris": (250, 214, 60), "pupil": (26, 26, 26), "brow": OUTLINE},
+    "barn": {"iris": (40, 30, 30), "pupil": (26, 26, 26), "brow": OUTLINE},
+    "scops": {"iris": (250, 210, 60), "pupil": (26, 26, 26), "brow": OUTLINE},
+    "snowy": {"iris": (250, 210, 60), "pupil": (26, 26, 26), "brow": (70, 70, 70)},
+}
+for _k, _b in BREEDS.items():   # 머리 행이 없는 종으로 등록해 몸통 템플릿·옷 레이어를 올빼미와 같이 쓴다
+    _p = _b["pal"]
+    SPECIES[_k] = {"name": _b["name"], "top": 0, "lid": "b", "lidrow": 6, "eyes": [(3, 4), (9, 10)], "rows": [],
+                   "pal": {"b": _p["b"], "B": _p["B"], "d": _p["B"], "l": _p["l"], "i": _p["b"], "o": _p["b"], "c": _p["l"], "y": _p["B"]}}
+ANIMALS = {   # 시트 이름 -> 한국어 이름, 직원 5종 (hash % 5), 사장님 전용 종
+    "owls": {"name": "올빼미", "employees": EMPLOYEE_SPECIES, "boss": "snowy"},
+    "dogs": {"name": "강아지", "employees": ["shiba", "corgi", "beagle", "poodle", "husky"], "boss": "samoyed"},
+    "cats": {"name": "고양이", "employees": ["tabby", "tuxedo", "siamese", "calico", "russianblue"], "boss": "persian"},
+}
 
 TORSO = ["kdccccccccccdk", "kdccccccccccdk", "kdccccccccccdk", "kddccccccccddk", ".kdccccccccdk.",
          ".kdccccccccdk.", "..kkcccccckk..", "...kkkkkkkk..."]   # 템플릿 9~16행
@@ -369,9 +461,6 @@ def owl_body(sp, pose, dirn, f):
     return cells, g
 
 
-GLASSES_EYES = [(3, 4), (9, 10)]   # 모든 종의 눈 위치가 같다 (옷 레이어를 종과 무관하게 쓰기 위해)
-
-
 def owl_outfit(outfit, g, dirn, chest, worn=False):
     """옷 레이어. outfit = '<rank>-<vendor>' | 'boss' | 'librarian'."""
     cells = {}
@@ -408,14 +497,6 @@ def owl_outfit(outfit, g, dirn, chest, worn=False):
         if rank == "librarian":
             for yt in (10, 12, 14):
                 T(6, yt, (240, 236, 220))
-        if rank == "bujang":
-            for x0, x1 in GLASSES_EYES:
-                for y in (5, 6):
-                    cells[(x0 - 1, y + g["hy"])] = (30, 30, 30)
-                    cells[(x1 + 1, y + g["hy"])] = (30, 30, 30)
-            (a0, a1), (b0, b1) = GLASSES_EYES
-            for x in range(a1 + 2, b0 - 1):
-                cells[(x, 5 + g["hy"])] = (30, 30, 30)
     else:
         if rank == "gwajang":
             for p in chest:
@@ -442,15 +523,11 @@ def owl_outfit(outfit, g, dirn, chest, worn=False):
     return cells
 
 
-def owl_wear(stage, g, dirn, chest):
+def owl_wear(stage, g, chest):
     cells = {}
     for side, x in (("l", 1), ("r", 12)):
         if g["w" + side][0] == "down" and not g["crouch"]:
             cells[(x, torso_y(10, g))] = (250, 250, 250)
-    if stage >= 2 and dirn == "f":
-        for x0, x1 in GLASSES_EYES:
-            for x in range(x0, x1 + 1):
-                cells[(x, 7 + g["hy"])] = (106, 88, 98)
     if stage >= 3:
         for x, yt in ((3, 9), (4, 9), (3, 10), (4, 10), (3, 11), (4, 11), (3, 12)):
             y = torso_y(yt, g)
@@ -552,16 +629,6 @@ def owl_item(item, g, dirn, chest):
     return cells
 
 
-def cells_to_img(cells, lift, pal=None):
-    img = Image.new("RGBA", (OWL_W, OWL_H), (0, 0, 0, 0))
-    for (x, y), v in cells.items():
-        c = pal[v] if pal is not None else v
-        px, py = x + TX, y + TY - lift
-        if 0 <= px < OWL_W and 0 <= py < OWL_H:
-            img.putpixel((px, py), tuple(c) + (255,))
-    return img
-
-
 OUTFITS = [f"{r}-{v}" for r in ("bujang", "gwajang", "daeri", "sawon") for v in THEMES] + ["boss", "librarian"]
 ROLES = ["backend", "frontend", "qa", "devops", "writer", "security", "data", "designer"]   # 수습(trainee)은 레이어 없음
 RANK_KO = {"bujang": "부장", "gwajang": "과장", "daeri": "대리", "sawon": "사원", "boss": "사장님",
@@ -577,31 +644,286 @@ def pose_frames():
                 yield pose, dirn, f
 
 
-def build_owls():
-    """모든 종이 같은 뼈대(몸통 템플릿, 눈 위치)를 써서 옷·역할 레이어는 종과 무관하게 한 벌이다."""
-    frames, anchors = {}, {}
-    for pose, dirn, f in pose_frames():
-        name = f"{pose}_{dirn}_{f}"
-        for sp in SPECIES:
-            pal = dict(BODY_PAL, **SPECIES[sp]["pal"])
-            cells, g = owl_body(sp, pose, dirn, f)
-            frames[f"body/{sp}/{name}"] = cells_to_img(cells, g["lift"], pal)
-        cells, g = owl_body("eagle", pose, dirn, f)
-        chest = {p for p, ch in cells.items() if ch == "c"}
-        for of in OUTFITS:
-            frames[f"outfit/{of}/{name}"] = cells_to_img(owl_outfit(of, g, dirn, chest), g["lift"])
-            if of not in ("boss", "librarian"):
+WHITE, PINK, MOUTH = (255, 255, 255), (240, 150, 150), (60, 30, 30)
+GLASSES, SHADOW = (30, 30, 30), (106, 88, 98)
+# 자세 -> (눈, 눈썹, 입). 눈: open down side wide half closed happy / 눈썹: none raised worried focus one /
+# 입: neutral open smile yawn frown wavy o. idle_f_1 은 pose_geo 가 눈을 감긴다
+FACES = {
+    "idle": ("open", "none", "neutral"), "walk": ("open", "none", "neutral"), "sit": ("open", "none", "neutral"),
+    "type": ("down", "focus", "neutral"), "read": ("half", "none", "neutral"), "sleep": ("closed", "none", "o"),
+    "jump": ("wide", "raised", "open"), "scratch": ("side", "one", "wavy"), "panic": ("wide", "worried", "open"),
+    "cheer": ("happy", "none", "smile"), "clap": ("happy", "none", "smile"), "crouch": ("half", "worried", "frown"),
+    "carry": ("open", "none", "neutral"), "think": ("side", "one", "neutral"), "highfive": ("happy", "none", "smile"),
+    "stretch": ("closed", "none", "yawn"), "drink": ("happy", "none", "neutral"), "phone": ("open", "raised", "o"),
+}
+
+
+def kind_of(sp):
+    return BREEDS[sp]["kind"] if sp in BREEDS else "owl"
+
+
+def foot(D):
+    return [D * OWL_AX, D * OWL_AY]   # 1× 발 픽셀의 D×D 블록 왼쪽 위. 밀도가 바뀌어도 월드 좌표가 같다
+
+
+def eye_boxes(D):
+    """idle_f_0 의 두 눈 상자 [x, y, w, h] (텍셀). 모든 종이 같은 자리라 옷 레이어를 종과 무관하게 쓴다."""
+    return [[D * (3 + TX), D * (5 + TY), 2 * D, 2 * D], [D * (9 + TX), D * (5 + TY), 2 * D, 2 * D]]
+
+
+def new_frame(D):
+    return Image.new("RGBA", (OWL_W * D, OWL_H * D), (0, 0, 0, 0))
+
+
+def tex(img, x, y, w, h, c):
+    x0, y0, x1, y1 = max(0, x), max(0, y), min(img.width, x + w), min(img.height, y + h)
+    if x0 < x1 and y0 < y1:
+        img.paste(tuple(c) + (255,), (x0, y0, x1, y1))
+
+
+def paint_cells(img, D, cells, lift, pal=None):
+    for (x, y), v in cells.items():
+        tex(img, D * (x + TX), D * (y + TY - lift), D, D, pal[v] if pal is not None else v)
+
+
+def wing_cells(g):
+    """날개 셀만. 얼굴 위로 올라오는 날개를 얼굴 다음에 다시 덮는다."""
+    cells = {}
+    for side in ("l", "r"):
+        st, dy = g["w" + side]
+        if st == "down" or g["crouch"]:
+            continue
+        mirror = (lambda x: 13 - x) if side == "r" else (lambda x: x)
+        base = g["hy"] if st in HEAD_BLOBS else g["by"]
+        for x, yt, ch in WING_BLOBS[st]:
+            cells[(mirror(x), yt + base + dy)] = ch
+    return cells
+
+
+def arc(n, depth):
+    """너비 n 의 ∪ 곡선 점 (dx, dy). depth 만큼 가운데가 내려간다."""
+    return [(dx, min(min(dx, n - 1 - dx), depth)) for dx in range(n)]
+
+
+def face(img, D, sp, pose, g, hy_px, expr=None):
+    """정면 얼굴을 1텍셀 격자로 얹는다. hy_px = (머리 오르내림 - 들어올림) × D."""
+    def put(x, y, c):
+        tex(img, x, y, 1, 1, c)
+
+    def box(x, y, w, h, c):
+        tex(img, x, y, w, h, c)
+
+    W, E = img.width, 2 * D
+    kind = kind_of(sp)
+    P = dict(BREEDS[sp]["pal"]) if sp in BREEDS else dict(SPECIES[sp]["pal"], **OWL_FINE[sp])
+    eye, brow, mouth = expr or FACES[pose]
+    if pose == "idle" and g["eyes"] == "closed":
+        eye = "closed"
+    (ex0, ey, _, _), (ex1, _, _, _) = eye_boxes(D)
+    ey += hy_px
+    fur = P["b"] if kind != "owl" else SPECIES[sp]["pal"][SPECIES[sp]["lid"]]
+    for i, ex in enumerate((ex0, ex1)):
+        base = P["iris"] if kind != "dog" else WHITE
+        if eye == "wide":
+            base = WHITE
+        box(ex, ey, E, E, base)
+        if eye in ("open", "down", "side", "wide", "half"):
+            if kind == "cat" and eye != "wide":
+                pw, ph = D - 1, D + 1
+                px = ex + (D - 1 if i == 0 else D)
+                py = ey + (1 if eye == "down" else 0)
+                if eye == "side":
+                    px += 1
+                box(px, py, pw, ph, P["pupil"])
+                put(ex if i == 0 else ex + E - 1, ey, WHITE)
+            else:
+                pw, ph = (D, D) if kind != "dog" else (D, D + 1)
+                px, py = ex + D - 1, ey + D - 1
+                if eye == "down":
+                    py, ph = ey + D, D
+                elif eye == "side":
+                    px, py, ph = ex + D, ey, D
+                elif eye == "wide":
+                    pw = ph = max(1, D - 1)
+                    px, py = ex + D - 1 + (1 if i == 1 and D == 2 else 0), ey + D - 1
+                    if kind == "cat":
+                        pw = ph = D
+                box(px, py, pw, ph, P["pupil"])
+                if eye != "wide":
+                    put(px, py, WHITE)
+        if eye == "half":
+            box(ex, ey, E, D, fur)
+            box(ex, ey + D - 1, E, 1, P["brow"] if kind != "owl" else OUTLINE)
+        if eye in ("closed", "happy"):
+            box(ex, ey, E, E, fur)
+            if eye == "closed":
+                box(ex, ey + D, E, 1, P["brow"])
+            else:
+                for dx, dy in arc(E, D - 1):
+                    put(ex + dx, ey + E - 1 - D - dy + (0 if D == 2 else 1), P["brow"])
+        c = P["brow"]
+        by = ey - D - 1
+        if brow == "raised" or (brow == "one" and i == 1):
+            box(ex, by, E, 1, c)
+        elif brow in ("worried", "focus"):
+            for dx in range(E):
+                inner = dx >= D if i == 0 else dx < D
+                high = inner if brow == "worried" else not inner
+                put(ex + dx, by if high else by + 1, c)
+    cx = D * (6 + TX)
+    dk = MOUTH
+    if kind == "owl":
+        by = ey + E
+        if mouth in ("open", "yawn"):
+            box(cx, by + D, E, D, dk)
+        elif mouth == "o":
+            box(cx + D // 2, by + E - 1 - (D - 2), D, D - 1, dk)
+    elif kind == "dog":
+        box(cx, ey, E, D, P["nose"])
+        put(cx, ey, (90, 80, 80))
+        my = ey + D + 1
+        tx, tw = cx + D // 2, D
+        if mouth == "neutral":
+            box(tx, my, tw, 1, dk)
+        elif mouth == "smile":
+            for dx, dy in arc(E + 2, D):
+                put(cx - 1 + dx, my + dy, dk)
+            box(tx, my + D, tw, D - 1, P["tongue"])
+        elif mouth in ("open", "yawn"):
+            box(cx, my, E, D, dk)
+            box(tx, my + D - 1, tw, 1, P["tongue"])
+        elif mouth == "frown":
+            for dx, dy in arc(E, 1):
+                put(cx + dx, my + 1 - dy, dk)
+        elif mouth == "wavy":
+            for dx in range(E + 2):
+                put(cx - 1 + dx, my + (dx % 2), dk)
+        elif mouth == "o":
+            box(tx, my, tw, D, dk)
+    else:
+        box(cx + D // 2, ey, D, max(1, D - 1), P["nose"])
+        my = ey + D
+        dk = P["brow"] if sum(P["b"]) < 300 else MOUTH   # 털이 어두우면 입을 눈썹 색(밝은 색)으로
+        half = E // 2 + 1
+        if mouth in ("neutral", "o"):
+            for dx, dy in arc(half, D - 1):   # ω = ∪ 두 개
+                put(cx - 1 + dx, my + dy, dk)
+                put(cx - 1 + half - 1 + dx, my + dy, dk)
+            if mouth == "o":
+                box(cx + D // 2, my + 1, D, D, dk)
+        elif mouth == "smile":
+            for dx, dy in arc(E + 2, D):
+                put(cx - 1 + dx, my + dy, dk)
+        elif mouth in ("open", "yawn"):
+            box(cx, my + 1, E, D, dk)
+            box(cx + D // 2, my + D, D, 1, P["tongue"])
+        elif mouth == "frown":
+            for dx, dy in arc(E + 2, 1):
+                put(cx - 1 + dx, my + 1 - dy, dk)
+        elif mouth == "wavy":
+            for dx in range(E + 2):
+                put(cx - 1 + dx, my + (dx % 2), dk)
+        for x in range(D + 1, 2 * D + 2):   # 수염
+            put(x, my, P["wh"])
+            put(W - 1 - x, my, P["wh"])
+    if mouth == "smile" or pose == "drink":   # 볼 발그레
+        yy = ey + E if kind != "cat" else ey + E + 1
+        for x in range(E, E + D):
+            put(x, yy, PINK)
+            put(W - 1 - x, yy, PINK)
+    s = D / 2
+    if sp == "tabby":
+        pts = [(0, -7), (1, -8), (2, -9), (3, -8), (4, -7), (0, -5), (1, -6), (3, -6), (4, -5)]
+        if D == 3:
+            pts = [(0, -10), (1, -11), (2, -12), (3, -13), (4, -12), (5, -11), (6, -12), (7, -13), (8, -12), (9, -11),
+                   (10, -10), (0, -8), (1, -9), (2, -10), (3, -9), (4, -8), (6, -8), (7, -9), (8, -10), (9, -9), (10, -8)]
+        for dx, dy in pts:
+            put(W // 2 + dx - 5, ey + dy, P["m"])
+    if sp == "poodle":
+        for x, y in ((6, 10), (10, 9), (14, 10), (18, 9), (22, 10), (26, 11), (5, 14), (27, 14), (8, 18), (24, 18)):
+            put(round(x * s), round(y * s) + hy_px, P["B"])
+    if sp in ("samoyed", "persian"):
+        for x, y in ((2, 24), (2, 26), (29, 24), (29, 26), (6, 30), (25, 30)):
+            put(round(x * s), round(y * s) + hy_px, P["B"])
+
+
+def glasses(img, D, hy_px, c=GLASSES):
+    (ex0, ey, E, _), (ex1, _, _, _) = eye_boxes(D)
+    ey += hy_px
+    for ex in (ex0, ex1):
+        tex(img, ex - 1, ey - 1, E + 2, 1, c)
+        tex(img, ex - 1, ey + E, E + 2, 1, c)
+        tex(img, ex - 1, ey, 1, E, c)
+        tex(img, ex + E, ey, 1, E, c)
+    tex(img, ex0 + E + 1, ey + D // 2, ex1 - 1 - (ex0 + E + 1), 1, c)
+
+
+def body_img(D, sp, pose, dirn, f, expr=None):
+    img = new_frame(D)
+    pal = dict(BODY_PAL, **SPECIES[sp]["pal"])
+    cells, g = owl_body(sp, pose, dirn, f)
+    lift = g["lift"]
+    if sp in BREEDS:   # 머리를 먼저 깔고 몸통이 덮는다 (올빼미 머리 행과 같은 순서)
+        b = BREEDS[sp]
+        hp = dict(pal, **{k: v for k, v in b["pal"].items() if len(k) == 1})
+        for r, row in enumerate(b["rows"]):
+            for x, ch in enumerate(row):
+                if ch != ".":
+                    if dirn == "b" and ch in "le":
+                        ch = "b"
+                    paint_cells(img, D, {(x, b["top"] + r + g["hy"]): hp[ch]}, lift)
+    paint_cells(img, D, cells, lift, pal)
+    if dirn == "f":
+        face(img, D, sp, pose, g, D * (g["hy"] - lift), expr)
+        paint_cells(img, D, wing_cells(g), lift, pal)
+    return img
+
+
+def build_sheets():
+    """밀도마다 동물 시트 세 장. 모든 종이 같은 뼈대(몸통 템플릿, 눈 위치)라 옷·근속·담당·소지품 레이어는
+    한 벌을 세 시트가 같이 쓴다."""
+    sheets = {}
+    for D in DENSITIES:
+        bodies, shared, anchors = {}, {}, {}
+        for pose, dirn, f in pose_frames():
+            name = f"{pose}_{dirn}_{f}"
+            for sp in SPECIES:
+                bodies[f"body/{sp}/{name}"] = body_img(D, sp, pose, dirn, f)
+            cells, g = owl_body("eagle", pose, dirn, f)
+            chest = {p for p, ch in cells.items() if ch == "c"}
+            lift, hy_px = g["lift"], D * (g["hy"] - g["lift"])
+
+            def layer(cells, D=D, lift=lift):
+                img = new_frame(D)
+                paint_cells(img, D, cells, lift)
+                return img
+
+            for of in OUTFITS:
                 # 투명한 근속 겹으로는 기존 소매·넥타이를 지울 수 없어 옷 생성기를 재사용한다.
-                frames[f"outfit/{of}-worn/{name}"] = cells_to_img(owl_outfit(of, g, dirn, chest, worn=True), g["lift"])
-        for stage in (1, 2, 3):
-            frames[f"wear/{stage}/{name}"] = cells_to_img(owl_wear(stage, g, dirn, chest), g["lift"])
-        for role in ROLES:
-            frames[f"role/{role}/{name}"] = cells_to_img(owl_role(role, g, dirn, chest), g["lift"])
-        for item in ("medal", "helmet", "blanket", "headphones"):
-            frames[f"item/{item}/{name}"] = cells_to_img(owl_item(item, g, dirn, chest), g["lift"])
-        hx, hy = g["hands"]["r"]
-        anchors[name] = dict(hand=[hx + TX, hy + TY - g["lift"]], head=[OWL_AX, 2 + g["hy"] + TY - g["lift"]])
-    return frames, anchors
+                for worn in ((False,) if of in ("boss", "librarian") else (False, True)):
+                    img = layer(owl_outfit(of, g, dirn, chest, worn=worn))
+                    if dirn == "f" and of.startswith("bujang"):
+                        glasses(img, D, hy_px)
+                    shared[f"outfit/{of}{'-worn' if worn else ''}/{name}"] = img
+            for stage in (1, 2, 3):
+                img = layer(owl_wear(stage, g, chest))
+                if stage >= 2 and dirn == "f":
+                    for ex, ey, e, _ in eye_boxes(D):
+                        tex(img, ex, ey + hy_px + e, e, 1, SHADOW)
+                shared[f"wear/{stage}/{name}"] = img
+            for role in ROLES:
+                shared[f"role/{role}/{name}"] = layer(owl_role(role, g, dirn, chest))
+            for item in ("medal", "helmet", "blanket", "headphones"):
+                shared[f"item/{item}/{name}"] = layer(owl_item(item, g, dirn, chest))
+            hx, hy = g["hands"]["r"]
+            anchors[name] = {"hand": [D * (hx + TX), D * (hy + TY - lift)], "head": [D * OWL_AX, D * (2 + g["hy"] + TY - lift)]}
+        for animal, a in ANIMALS.items():
+            mine = set(a["employees"]) | {a["boss"]}
+            entries = {k: {"img": img, "anchor": foot(D)} for k, img in bodies.items() if k.split("/")[1] in mine}
+            # 빈 레이어 프레임은 시트에 넣지 않는다 (코드는 없으면 건너뛴다)
+            entries.update({k: {"img": img, "anchor": foot(D)} for k, img in shared.items() if img.getbbox() is not None})
+            sheets[(animal, D)] = {"density": D, "entries": entries, "anchors": anchors}
+    return sheets
 
 
 # =====================================================================
@@ -2023,71 +2345,95 @@ def write_atlas(name, entries, animations, extra, max_w):
 # =====================================================================
 # 미리보기와 캔버스용 참조 렌더
 # =====================================================================
-def owl_composite(species, outfit, role="trainee", pose="idle", dirn="f", frame=0, held=None, wear=0):
-    img = Image.new("RGBA", (OWL_W + 8, OWL_H), (0, 0, 0, 0))
-    draw_owl_local(img, dict(species=species, outfit=outfit, role=role, pose=pose, dir=dirn, frame=frame, held=held, wear=wear), 4 + OWL_AX, OWL_AY)
+def owl_composite(sheet, species, outfit, role="trainee", pose="idle", dirn="f", frame=0, held=None, wear=0):
+    D = sheet["density"]
+    img = Image.new("RGBA", ((OWL_W + 8) * D, OWL_H * D), (0, 0, 0, 0))
+    ax, ay = foot(D)
+    draw_owl_local(img, dict(species=species, outfit=outfit, role=role, pose=pose, dir=dirn, frame=frame, held=held, wear=wear),
+                   4 * D + ax, ay, sheet)
     return img
 
 
-def draw_owl_local(img, c, x, y):
+def draw_owl_local(img, c, x, y, sheet=None):
+    """sheet 를 주면 그 밀도 시트로, 없으면 참조 렌더용 1× 사본으로 그린다."""
+    entries, anchors, D = (sheet["entries"], sheet["anchors"], sheet["density"]) if sheet else (OWLS, OWL_META["anchors"], 1)
     keys, name = owl_keys(c)
     for k in keys:
-        if k in OWLS:
-            place(img, k, x, y)
+        if k in entries:
+            e = entries[k]
+            img.alpha_composite(e["img"], (int(x - e["anchor"][0]), int(y - e["anchor"][1])))
     if c.get("held"):
-        hx, hy = OWL_META["anchors"][name]["hand"]
-        place(img, f"held_{c['held']}/default", x - OWL_AX + hx, y - OWL_AY + hy)
+        hx, hy = anchors[name]["hand"]
+        fx, fy = entries[keys[0]]["anchor"]
+        e = OFFICE[f"held_{c['held']}/default"]
+        held = e["img"].resize((e["img"].width * D, e["img"].height * D), Image.NEAREST)   # 소품 시트는 1×
+        img.alpha_composite(held, (int(x - fx + hx - D * e["anchor"][0]), int(y - fy + hy - D * e["anchor"][1])))
 
 
-SHOWCASE = [  # 5종 × 4직급 = 20
-    ("eagle", "claude", ["backend", "devops", "frontend", "trainee"]),
-    ("longeared", "codex", ["qa", "backend", "writer", "frontend"]),
-    ("little", "gemini", ["frontend", "qa", "trainee", "writer"]),
-    ("barn", "claude", ["devops", "writer", "qa", "backend"]),
-    ("scops", "codex", ["writer", "frontend", "backend", "qa"]),
+SHOWCASE = [  # 행 = employeeSpecies 순서 (5종) × 4직급 = 20
+    ("claude", ["backend", "devops", "frontend", "trainee"]),
+    ("codex", ["qa", "backend", "writer", "frontend"]),
+    ("gemini", ["frontend", "qa", "trainee", "writer"]),
+    ("claude", ["devops", "writer", "qa", "backend"]),
+    ("codex", ["writer", "frontend", "backend", "qa"]),
 ]
 
 
 def make_previews():
     os.makedirs(PREV, exist_ok=True)
-    cw, ch = 24, 28
-    sheet = Image.new("RGBA", (cw * 4, ch * 5), (0, 0, 0, 0))
+    D = 2   # 미리보기는 2× 시트로 그린다
+    S = SHEETS[("owls", D)]
+    cw, ch, top = 24 * D, 28 * D, 2 * D
     labels = []
-    for r, (sp, vendor, roles) in enumerate(SHOWCASE):
-        for c, rank in enumerate(("bujang", "gwajang", "daeri", "sawon")):
-            img = owl_composite(sp, f"{rank}-{vendor}", roles[c])
-            sheet.alpha_composite(img, (c * cw, r * ch + 2))
-            labels.append(dict(species=SPECIES[sp]["name"], rank=RANK_KO[rank], role=ROLE_KO[roles[c]], vendor=THEMES[vendor]["label"]))
-    sheet.save(os.path.join(PREV, "owls-20.png"))
+    for animal, a in ANIMALS.items():
+        sheet = Image.new("RGBA", (cw * 4, ch * 5), (0, 0, 0, 0))
+        for r, (sp, (vendor, roles)) in enumerate(zip(a["employees"], SHOWCASE)):
+            for c, rank in enumerate(("bujang", "gwajang", "daeri", "sawon")):
+                img = owl_composite(SHEETS[(animal, D)], sp, f"{rank}-{vendor}", roles[c])
+                sheet.alpha_composite(img, (c * cw, r * ch + top))
+                if animal == "owls":
+                    labels.append(dict(species=SPECIES[sp]["name"], rank=RANK_KO[rank], role=ROLE_KO[roles[c]], vendor=THEMES[vendor]["label"]))
+        sheet.save(os.path.join(PREV, f"{animal}-20.png"))
     poses = [(p, "f", f) for p, d_, f in pose_frames() if d_ == "f"] + [(p, "b", f) for p, d_, f in pose_frames() if d_ == "b"]
-    strip = Image.new("RGBA", (24 * 12, 28 * ((len(poses) + 11) // 12)), (0, 0, 0, 0))
+    strip = Image.new("RGBA", (cw * 12, ch * ((len(poses) + 11) // 12)), (0, 0, 0, 0))
     for i, (pose, dirn, f) in enumerate(poses):
         held = "clipboard" if pose == "carry" else None
-        img = owl_composite("eagle", "bujang-claude", "backend", pose, dirn, f, held)
-        strip.alpha_composite(img, ((i % 12) * 24, (i // 12) * 28 + 2))
+        img = owl_composite(S, "eagle", "bujang-claude", "backend", pose, dirn, f, held)
+        strip.alpha_composite(img, ((i % 12) * cw, (i // 12) * ch + top))
     strip.save(os.path.join(PREV, "poses.png"))
-    layers = Image.new("RGBA", (24 * 4, 28), (0, 0, 0, 0))
+    layers = Image.new("RGBA", (cw * 4, ch), (0, 0, 0, 0))
     for i, keys in enumerate([["body/barn/idle_f_0"], ["outfit/gwajang-claude/idle_f_0"], ["role/qa/idle_f_0"],
                               ["body/barn/idle_f_0", "outfit/gwajang-claude/idle_f_0", "role/qa/idle_f_0"]]):
         for k in keys:
-            place(layers, k, i * 24 + 4 + OWL_AX, 2 + OWL_AY)
+            layers.alpha_composite(S["entries"][k]["img"], (i * cw + 4 * D, top))
     layers.save(os.path.join(PREV, "layers.png"))
     with open(os.path.join(PREV, "owls-20.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(dict(cell=[cw, ch], cols=4, labels=labels, poses=[f"{p}_{d_}_{f_}" for p, d_, f_ in poses]), f, ensure_ascii=False, indent=1)
-    wear_sheet = Image.new("RGBA", (24 * 4, 28 * 4), (0, 0, 0, 0))
+    wear_sheet = Image.new("RGBA", (cw * 4, ch * 4), (0, 0, 0, 0))
     for row, outfit in enumerate(("bujang-claude", "gwajang-codex", "daeri-gemini", "sawon-claude")):
         for stage in range(4):
-            wear_sheet.alpha_composite(owl_composite("barn", outfit, wear=stage), (stage * 24, row * 28 + 2))
+            wear_sheet.alpha_composite(owl_composite(S, "barn", outfit, wear=stage), (stage * cw, row * ch + top))
     wear_sheet.save(os.path.join(PREV, "wear.png"))
-    roles = Image.new("RGBA", (24 * 3, 28 * 5), (0, 0, 0, 0))
+    roles = Image.new("RGBA", (cw * 3, ch * 5), (0, 0, 0, 0))
     for row, sp in enumerate(EMPLOYEE_SPECIES):
         for col, role in enumerate(("security", "data", "designer")):
-            roles.alpha_composite(owl_composite(sp, "bujang-claude", role), (col * 24, row * 28 + 2))
+            roles.alpha_composite(owl_composite(S, sp, "bujang-claude", role), (col * cw, row * ch + top))
     roles.save(os.path.join(PREV, "roles.png"))
-    items = Image.new("RGBA", (24 * 6, 28), (0, 0, 0, 0))
+    items = Image.new("RGBA", (cw * 6, ch), (0, 0, 0, 0))
+    ax, ay = foot(D)
     for col, equipped in enumerate((["medal"], ["helmet"], ["blanket"], ["headphones"], ["helmet", "headphones"], ["blanket", "medal"])):
-        draw_owl_local(items, dict(species="barn", outfit="bujang-claude", role="designer", pose="idle", items=equipped, wear=3), col * 24 + 4 + OWL_AX, OWL_AY)
+        draw_owl_local(items, dict(species="barn", outfit="bujang-claude", role="designer", pose="idle", items=equipped, wear=3),
+                       col * cw + 4 * D + ax, ay, S)
     items.save(os.path.join(PREV, "items.png"))
+    # 눈 상태 7 × 올빼미·강아지·고양이 (옷 없이)
+    states = ["open", "down", "side", "half", "closed", "happy", "wide"]
+    reps = ("eagle", "shiba", "tabby")
+    faces = Image.new("RGBA", (OWL_W * D * len(states), OWL_H * D * len(reps)), (0, 0, 0, 0))
+    for r, sp in enumerate(reps):
+        for c, st in enumerate(states):
+            expr = (st, "raised" if st == "wide" else "none", "open" if st == "wide" else ("smile" if st == "happy" else "neutral"))
+            faces.alpha_composite(body_img(D, sp, "idle", "f", 0, expr), (c * OWL_W * D, r * OWL_H * D))
+    faces.save(os.path.join(PREV, "faces.png"))
     # 소품 목록 (3배, 이름 표시)
     scale, pad, label_h = 3, 14, 18
     font = ImageFont.truetype("consola.ttf", 13) if os.path.exists(r"C:\Windows\Fonts\consola.ttf") else ImageFont.load_default()
@@ -2174,7 +2520,9 @@ def make_canvas_images():
                               safe="12", tv=tv1, balls=1,
                               progress=dict(desks={"boss_desk_0": dict(coffee=1, papers=2)}, reads=25, commits=1, tests=[3, 0]))
         img.save(os.path.join(CANVAS, f"office-{t}-day.png"))
-    # 카드 아바타 (20×22, 2배로 40×44 표시)
+    # 카드 아바타 (2× 시트에서 위 4줄을 잘라 40×44 원본, HANDOFF 6.4)
+    two = SHEETS[("owls", 2)]
+    ax, ay = foot(2)
     avatars = {
         "claude-bujang": ("eagle", "bujang-claude", "backend"), "claude-gwajang": ("barn", "gwajang-claude", "backend"),
         "claude-daeri": ("little", "daeri-claude", "frontend"), "claude-sawon": ("scops", "sawon-claude", "trainee"),
@@ -2187,10 +2535,10 @@ def make_canvas_images():
         "boss": ("snowy", "boss", "trainee"),
     }
     for name, (sp, of, role) in avatars.items():
-        full = Image.new("RGBA", (OWL_W, OWL_H), (0, 0, 0, 0))
-        draw_owl_local(full, dict(species=sp, outfit=of, role=role, pose="idle"), OWL_AX, OWL_AY)
-        av = Image.new("RGBA", (20, 22), (0, 0, 0, 0))
-        av.alpha_composite(full.crop((0, 2, 16, 24)), (2, 0))
+        full = new_frame(2)
+        draw_owl_local(full, dict(species=sp, outfit=of, role=role, pose="idle"), ax, ay, two)
+        av = Image.new("RGBA", (40, 44), (0, 0, 0, 0))
+        av.alpha_composite(full.crop((0, 4, 32, 48)), (4, 0))
         av.save(os.path.join(CANVAS, f"avatar-{name}.png"))
     with open(os.path.join(SPR, "preview", "positions.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(dict(hero=pos_hero, smb=pos_smb), f, ensure_ascii=False, indent=1)
@@ -2202,9 +2550,10 @@ def make_canvas_images():
 # =====================================================================
 # 검사
 # =====================================================================
-def check(owl_sheet_pos, office_pos):
+def check(office_pos):
     errors = []
-    for name, pos, entries in (("owls", owl_sheet_pos, OWLS), ("office", office_pos, OFFICE)):
+    atlases = [(s["name"], s["pos"], s["entries"]) for s in SHEETS.values()] + [("office", office_pos, OFFICE)]
+    for name, pos, entries in atlases:
         occ = Image.new("L", (4096, 4096), 0)
         for k, e in entries.items():
             x, y = pos[k]
@@ -2213,10 +2562,34 @@ def check(owl_sheet_pos, office_pos):
                 errors.append(f"{name}: {k} 자리가 다른 프레임과 겹침")
             occ.paste(255, (x, y, x + w, y + h))
     expected = sum(spec.get("f", 0) + spec.get("b", 0) for spec in POSES.values())
-    for sp in SPECIES:
-        n = sum(1 for k in OWLS if k.startswith(f"body/{sp}/"))
-        if n != expected:
-            errors.append(f"body/{sp}: 프레임 {n}개, 기대 {expected}개")
+    keysets, world_anchors = {}, {}
+    for (animal, D), s in SHEETS.items():
+        fw, fh = OWL_W * D, OWL_H * D
+        if s["sheet"].width > SHEET_MAX[D] or s["sheet"].height > SHEET_MAX[D]:
+            errors.append(f"{s['name']}: 시트 {s['sheet'].size} 가 {SHEET_MAX[D]} 초과")
+        order = ANIMALS[animal]["employees"] + [ANIMALS[animal]["boss"]]
+        for sp in order:
+            n = sum(1 for k in s["entries"] if k.startswith(f"body/{sp}/"))
+            if n != expected:
+                errors.append(f"{s['name']} body/{sp}: 프레임 {n}개, 기대 {expected}개")
+        for name, an in s["anchors"].items():
+            hx, hy = an["hand"]
+            if not (0 <= hx < fw and 0 <= hy < fh):
+                errors.append(f"{s['name']}: 손 기준점 {name} 이 프레임 밖")
+        for role in ("security", "data", "designer"):
+            frame = s["entries"][f"role/{role}/idle_f_0"]["img"]
+            if frame.crop((0, 2 * D, fw, fh)).getbbox() is None or frame.crop((0, 0, fw, 2 * D)).getbbox() is not None:
+                errors.append(f"{s['name']} role/{role}: 카드 자르기 안에 담당 그림이 온전히 들어오지 않음")
+        # 종 이름은 동물마다 달라서 직원 순번(사장님은 5)으로 바꿔 비교한다
+        keysets[s["name"]] = {k if not k.startswith("body/") else f"body/{order.index(k.split('/')[1])}/{k.split('/')[2]}"
+                              for k in s["entries"]}
+        world_anchors[s["name"]] = {n: {p: [v / D for v in xy] for p, xy in an.items()} for n, an in s["anchors"].items()}
+    ref = next(iter(keysets))
+    for name, keys in keysets.items():
+        if keys != keysets[ref]:
+            errors.append(f"{name}: 프레임 키 집합이 {ref} 와 다름 ({len(keys ^ keysets[ref])}개)")
+        if world_anchors[name] != world_anchors[ref]:
+            errors.append(f"{name}: anchors / density 가 {ref} 와 다름")
     for i in range(COLS):
         for j in range(ROWS):
             matches = [k for k, (_, a, b, c, d, _) in ROOMS.items() if a <= i < c and b <= j < d]
@@ -2234,52 +2607,55 @@ def check(owl_sheet_pos, office_pos):
             for s in ss:
                 if not any(a <= s["gx"] < c and b <= s["gy"] < e for _, a, b, c, e, _ in ROOMS.values()):
                     errors.append(f"{kind}: 좌석 {s['id']} 가 방 밖")
-    for name in ("idle_f_0", "walk_b_3", "carry_f_0"):
-        hx, hy = OWL_META["anchors"][name]["hand"]
-        if not (0 <= hx < OWL_W and 0 <= hy < OWL_H):
-            errors.append(f"손 기준점 {name} 이 프레임 밖")
-    for role in ("security", "data", "designer"):
-        frame = OWLS[f"role/{role}/idle_f_0"]["img"]
-        if frame.crop((0, 2, 16, 24)).getbbox() is None or frame.crop((0, 0, 16, 2)).getbbox() is not None:
-            errors.append(f"role/{role}: 카드 자르기 안에 담당 그림이 온전히 들어오지 않음")
     assert not errors, "\n".join(errors)
-    print(f"검사 통과: 올빼미 {len(OWLS)} 프레임, 사무실 {len(OFFICE)} 프레임, 소품 {len(PROPS)} 종")
+    sizes = ", ".join(f"{s['name']} {len(s['entries'])}" for s in SHEETS.values())
+    print(f"검사 통과: 직원 시트 {len(SHEETS)}장 ({sizes} 프레임), 사무실 {len(OFFICE)} 프레임, 소품 {len(PROPS)} 종")
 
 
 # =====================================================================
-OWLS, OWL_META, FLOORPLAN = {}, {}, {}
+# OWLS: 참조 렌더용 1× 올빼미 사본 (2× 시트를 nearest 로 2:1 축소). SHEETS: (동물, 밀도) -> 직원 시트
+OWLS, OWL_META, FLOORPLAN, SHEETS = {}, {}, {}, {}
 
 
-def main():
-    os.makedirs(SPR, exist_ok=True)
-    os.makedirs(CANVAS, exist_ok=True)
-    frames, anchors = build_owls()
-    for k, img in frames.items():
-        if img.getbbox() is None and not k.startswith("body/"):
-            continue   # 빈 레이어 프레임은 시트에 넣지 않는다 (코드는 없으면 건너뛴다)
-        OWLS[k] = dict(img=img, anchor=[OWL_AX, OWL_AY])
-    OWL_META.update(anchors=anchors)
-    anims = {}
-    for k in OWLS:
-        group = k.rsplit("_", 1)[0]
-        anims.setdefault(group, []).append(k)
-    for g in anims:
-        anims[g].sort(key=lambda s: int(s.rsplit("_", 1)[1]))
-    owl_extra = dict(
-        frame=[OWL_W, OWL_H], anchor=[OWL_AX, OWL_AY],
+def employee_meta(animal, D, anchors):
+    a = ANIMALS[animal]
+    return dict(
+        density=D, animal=animal, animalName=a["name"], bossSpecies=a["boss"],
+        frame=[OWL_W * D, OWL_H * D], anchor=foot(D),
         layers=["body", "outfit", "wear", "role", "item", "held"],
         layerRule="body → outfit → wear → role → item 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
         wear={"1": "1시간 · 소매 걷음·부장 넥타이 느슨", "2": "3시간 · 눈 밑 그림자 추가", "3": "6시간 · 어깨 수건 추가"},
-        species={k: v["name"] for k, v in SPECIES.items()}, employeeSpecies=EMPLOYEE_SPECIES,
-        speciesRule="직원 종 = EMPLOYEE_SPECIES[hash(agent_id) % 5]. 흰올빼미는 사장님 전용",
+        species={sp: SPECIES[sp]["name"] for sp in a["employees"] + [a["boss"]]}, employeeSpecies=a["employees"],
+        speciesRule=f"직원 종 = employeeSpecies[hash(agent_id) % 5]. bossSpecies({SPECIES[a['boss']]['name']})는 사장님 전용",
         outfits={o: (RANK_KO.get(o.split('-')[0]) + (' · ' + THEMES[o.split('-')[1]]['label'] if '-' in o else '')) for o in OUTFITS},
         roles={r: ROLE_KO[r] for r in ROLES}, trainee="수습은 role 레이어 없음",
         poses={p: dict(dirs={d_: s.get(d_, 0) for d_ in ("f", "b") if s.get(d_)}, fps=s["fps"], loop=s["loop"], note=s["note"])
                for p, s in POSES.items()},
         anchors=anchors,
-        anchorNote="hand = 오른쪽 날개 끝 (held 물건 기준점을 여기에), head = 머리 윗선 가운데 (말풍선·배지 기준). 프레임 좌표 px",
+        anchorNote="hand = 오른쪽 날개 끝 (held 물건 기준점을 여기에), head = 머리 윗선 가운데 (말풍선·배지 기준). 시트 텍셀 좌표. 월드 좌표 = 값 / density",
+        faces={p: {"eye": e, "brow": b, "mouth": m} for p, (e, b, m) in FACES.items()},
+        faceNote="얼굴은 body 레이어의 정면(f) 프레임에 그려져 있다. idle_f_1 은 eye closed (눈 깜빡임)",
+        eyeBoxes=eye_boxes(D),
+        eyeBoxNote="[x, y, w, h] 텍셀. idle_f_0 기준이며 다른 자세는 head 기준점의 y 차이만큼 옮긴다",
     )
-    owl_sheet, owl_pos = write_atlas("owls", OWLS, anims, owl_extra, 1024)
+
+
+def main():
+    os.makedirs(SPR, exist_ok=True)
+    os.makedirs(CANVAS, exist_ok=True)
+    SHEETS.update(build_sheets())
+    for (animal, D), s in SHEETS.items():
+        anims = {}
+        for k in s["entries"]:
+            anims.setdefault(k.rsplit("_", 1)[0], []).append(k)
+        for g in anims:
+            anims[g].sort(key=lambda k: int(k.rsplit("_", 1)[1]))
+        s["name"] = animal if D == 2 else f"{animal}@{D}x"
+        s["sheet"], s["pos"] = write_atlas(s["name"], s["entries"], anims, employee_meta(animal, D, s["anchors"]), SHEET_MAX[D])
+    two = SHEETS[("owls", 2)]
+    for k, e in two["entries"].items():
+        OWLS[k] = dict(img=e["img"].resize((OWL_W, OWL_H), Image.NEAREST), anchor=[OWL_AX, OWL_AY])
+    OWL_META.update(anchors={n: {p: [v // 2 for v in xy] for p, xy in an.items()} for n, an in two["anchors"].items()})
     build_tiles()
     build_shell()
     build_wall_items()
@@ -2299,8 +2675,8 @@ def main():
         json.dump(FLOORPLAN, f, ensure_ascii=False, indent=1)
     make_previews()
     make_canvas_images()
-    check(owl_pos, office_pos)
-    print(f"owls.png {owl_sheet.size}, office.png {office_sheet.size}")
+    check(office_pos)
+    print(", ".join(f"{s['name']}.png {s['sheet'].size}" for s in SHEETS.values()) + f", office.png {office_sheet.size}")
 
 
 if __name__ == "__main__":

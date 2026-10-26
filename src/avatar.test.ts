@@ -49,7 +49,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-test("몸·직급·담당을 위 두 줄 잘라 가운데 합성하며 같은 외형은 캐시한다", async () => {
+test("몸·직급·담당을 위 네 줄 잘라 가운데 합성하며 같은 외형은 캐시한다", async () => {
   const { setAvatar } = await import("./avatar.ts");
   const a = host();
   const b = host();
@@ -59,7 +59,7 @@ test("몸·직급·담당을 위 두 줄 잘라 가운데 합성하며 같은 �
   await settle();
   const source = copied(a);
   expect(copied(b)).toBe(source);
-  expect([source.width, source.height]).toEqual([20, 22]);
+  expect([source.width, source.height]).toEqual([40, 44]);
   const keys = [
     `body/${speciesOf("a", owls.meta.employeeSpecies)}/idle_f_0`,
     "outfit/gwajang-codex/idle_f_0",
@@ -68,7 +68,7 @@ test("몸·직급·담당을 위 두 줄 잘라 가운데 합성하며 같은 �
   expect(draws.get(source)!.mock.calls).toEqual(
     keys.map((key) => {
       const f = textures[key].frame;
-      return [textures[key].source.resource, f.x, f.y + 2, 16, 22, 2, 0, 16, 22];
+      return [textures[key].source.resource, f.x, f.y + 4, 32, 44, 4, 0, 32, 44];
     }),
   );
   expect(a.style.getPropertyValue("--ow-avatar-bg")).toBe("var(--ow-codex-tint)");
@@ -122,7 +122,7 @@ test("로딩 중 직원 교체와 닫힌 팝업에는 옛 그림을 붙이지 �
   expect(a.children).toHaveLength(1);
   const source = copied(a);
   const frame = textures["outfit/bujang-gemini/idle_f_0"].frame;
-  expect(draws.get(source)!.mock.calls[1].slice(1, 3)).toEqual([frame.x, frame.y + 2]);
+  expect(draws.get(source)!.mock.calls[1].slice(1, 3)).toEqual([frame.x, frame.y + 4]);
   expect(closed.children).toHaveLength(0);
 });
 
@@ -147,7 +147,7 @@ test.each(["load", "canvas", "frame"])(
 );
 
 test.each(["Security", "Data", "Designer"] as const)(
-  "새 담당 %s는 20×22 카드의 같은 자르기 안에 그린다",
+  "새 담당 %s는 40×44 카드의 같은 자르기 안에 그린다",
   async (role) => {
     const { setAvatar } = await import("./avatar.ts");
     const a = host();
@@ -155,19 +155,86 @@ test.each(["Security", "Data", "Designer"] as const)(
     await settle();
     const source = copied(a);
     const calls = draws.get(source)!.mock.calls;
-    expect([source.width, source.height]).toEqual([20, 22]);
+    expect([source.width, source.height]).toEqual([40, 44]);
     expect(calls).toHaveLength(3);
     const f = textures[`role/${role.toLowerCase()}/idle_f_0`].frame;
     expect(calls[2]).toEqual([
       textures[`role/${role.toLowerCase()}/idle_f_0`].source.resource,
       f.x,
-      f.y + 2,
-      16,
-      22,
-      2,
+      f.y + 4,
+      32,
+      44,
+      4,
       0,
-      16,
-      22,
+      32,
+      44,
     ]);
   },
 );
+
+test("동물을 바꾸면 해당 시트로 다시 그리고 같은 동물이면 캐시를 유지한다", async () => {
+  const { setAvatar, setAvatarAnimal } = await import("./avatar.ts");
+  const a = host();
+  const employee = emp("a");
+  setAvatar(a, employee, "A");
+  await settle();
+  expect(loadOwls).toHaveBeenLastCalledWith("owls", 2);
+  setAvatarAnimal("owls");
+  setAvatar(host(), employee, "A");
+  await settle();
+  expect(loadOwls).toHaveBeenCalledTimes(1);
+  const old = a.firstChild;
+  setAvatarAnimal("dogs");
+  setAvatar(a, employee, "A");
+  await settle();
+  expect(loadOwls).toHaveBeenCalledTimes(2);
+  expect(loadOwls).toHaveBeenLastCalledWith("dogs", 2);
+  expect(a.firstChild).not.toBe(old);
+  expect(a.children).toHaveLength(1);
+});
+
+test("동물이 바뀌면 붙어 있는 아바타를 새 시트로 다시 그리고 떨어진 자리는 잊는다", async () => {
+  const { setAvatar, setAvatarAnimal } = await import("./avatar.ts");
+  const a = host();
+  const gone = host();
+  const employee = emp("a");
+  setAvatar(a, employee, "A");
+  setAvatar(gone, emp("b"), "A");
+  await settle();
+  const old = a.firstChild;
+  gone.remove();
+  setAvatarAnimal("cats");
+  await settle();
+  expect(loadOwls).toHaveBeenLastCalledWith("cats", 2);
+  expect(a.firstChild).not.toBe(old);
+  expect(a.children).toHaveLength(1);
+  expect(gone.children).toHaveLength(1);
+});
+
+test("제거된 요소는 동물을 안 바꿔도 다음 setAvatar 뒤 묶음에서 빠진다", async () => {
+  const { setAvatar, mountedCount } = await import("./avatar.ts");
+  const a = host();
+  const gone = host();
+  setAvatar(a, emp("a"), "A");
+  setAvatar(gone, emp("b"), "A");
+  await settle();
+  expect(mountedCount()).toBe(2);
+  gone.remove();
+  setAvatar(a, emp("c"), "A");
+  expect(mountedCount()).toBe(1);
+});
+
+test("시트 로드가 한 번 실패해도 다음 setAvatar 가 다시 시도해 그린다", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.mocked(loadOwls).mockRejectedValueOnce(new Error("일시 오류"));
+  const { setAvatar } = await import("./avatar.ts");
+  const a = host();
+  setAvatar(a, emp("a"), "A");
+  await settle();
+  expect(a.children).toHaveLength(0);
+  setAvatar(a, emp("a"), "A");
+  await settle();
+  expect(loadOwls).toHaveBeenCalledTimes(2);
+  expect(a.querySelector("canvas")).not.toBeNull();
+  expect(log).toHaveBeenCalledTimes(1);
+});

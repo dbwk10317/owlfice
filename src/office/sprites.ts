@@ -33,12 +33,23 @@ export async function loadOfficeAssets(): Promise<OfficeAssets> {
   return { sheet, floorplan: parseFloorplan(raw) };
 }
 
-/** 올빼미 시트. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (design/HANDOFF.md 11절). */
-export async function loadOwls(): Promise<Owls> {
+export type Animal = "owls" | "dogs" | "cats";
+export type Density = 2 | 3;
+
+/** 캔버스 배율 1·2 는 2× 시트, 3 은 3× 시트 (design/HANDOFF.md 6.4). */
+export function sheetDensity(scale: number): Density {
+  return scale >= 3 ? 3 : 2;
+}
+
+/** 직원 시트. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (design/HANDOFF.md 11절). */
+export async function loadOwls(animal: Animal = "owls", density: Density = 2): Promise<Owls> {
   await initAssets();
-  const sheet = await Assets.load<Spritesheet>("/owls.json");
+  const path = `/${animal}${density === 3 ? "@3x" : ""}.json`;
+  const sheet = await Assets.load<Spritesheet>(path);
   const meta = (sheet.data as { owlfice?: OwlMeta }).owlfice;
-  if (!meta) throw new Error("owls.json 에 owlfice 메타 없음");
+  if (!meta) throw new Error(`${path} 에 owlfice 메타 없음`);
+  // 밀도를 잘못 읽으면 직원이 두 배·반 크기로 그려진다
+  if (meta.density !== density) throw new Error(`${path} 밀도 ${meta.density}, 요청 ${density}`);
   return { textures: sheet.textures, meta };
 }
 

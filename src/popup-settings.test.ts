@@ -16,6 +16,7 @@ const defaults = (): SettingsDto => ({
   nightMode: "auto",
   osNotifications: null,
   rawDiagnostics: null,
+  animal: null,
 });
 const button = (text: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -65,6 +66,16 @@ test.each(["auto", "on", "off"] as const)(
     }
   },
 );
+
+test("직원 동물 세그먼트를 누르면 animal 만 부분 저장한다", async () => {
+  const s = setup();
+  await settle();
+  expect(button("올빼미").getAttribute("aria-pressed")).toBe("true");
+  button("강아지").click();
+  await settle();
+  expect(s.invoke).toHaveBeenCalledWith("set_settings", { dto: { animal: "dogs" } });
+  expect(button("강아지").getAttribute("aria-pressed")).toBe("true");
+});
 
 test("불러온 설정과 기본값을 표시하고 원문 진단 설명은 항상 보인다", async () => {
   const s = setup({ companyName: "야근상사", bossName: "김사장" });

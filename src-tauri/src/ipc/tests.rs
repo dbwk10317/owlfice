@@ -884,6 +884,7 @@ fn set_settings_company_name_alone() {
         sound: Some(false),
         night_mode: Some(NightMode::Auto),
         os_notifications: Some(true),
+        animal: None,
         boss_name: None,
         raw_diagnostics: Some(false),
     };
@@ -1563,6 +1564,7 @@ fn bindings() -> String {
         Scale,
         SettingsDto,
         NightMode,
+        Animal,
         DiscoveryPathDto,
         DiscoveryStatus,
         ManualPath,

@@ -212,6 +212,9 @@ impl SettingsBook {
                 .insert("night_mode".into(), serde_json::to_value(mode)?);
             g.map.remove("nightMode");
         }
+        if let Some(animal) = dto.animal {
+            g.map.insert("animal".into(), serde_json::to_value(animal)?);
+        }
         if !g.writable {
             return Err(unwritable(&g.path));
         }
@@ -248,6 +251,10 @@ impl SettingsBook {
             os_notifications: Some(flag("os_notifications", true)),
             boss_name: name("boss_name"),
             raw_diagnostics: Some(flag("raw_diagnostics", false)),
+            animal: g
+                .map
+                .get("animal")
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
         }
     }
 }
@@ -255,6 +262,7 @@ impl SettingsBook {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc::Animal;
 
     fn read(dir: &Path) -> Value {
         serde_json::from_slice(&std::fs::read(dir.join("settings.json")).unwrap()).unwrap()
@@ -324,6 +332,30 @@ mod tests {
                 Some(NightMode::Auto)
             );
         }
+    }
+
+    #[test]
+    fn animal_defaults_to_none_ignores_unknown_and_survives_partial_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(SettingsBook::load(dir.path()).snapshot().animal, None);
+        std::fs::write(
+            dir.path().join("settings.json"),
+            br#"{"animal": "fish", "future": [1]}"#,
+        )
+        .unwrap();
+        let book = SettingsBook::load(dir.path());
+        assert_eq!(book.snapshot().animal, None);
+        let patch = |v| serde_json::from_value::<SettingsDto>(v).unwrap();
+        book.update(&patch(serde_json::json!({"animal": "dogs"})))
+            .unwrap();
+        book.update(&patch(serde_json::json!({"animal": null, "sound": true})))
+            .unwrap();
+        assert_eq!(read(dir.path())["animal"], "dogs");
+        assert_eq!(read(dir.path())["future"], serde_json::json!([1]));
+        assert_eq!(
+            SettingsBook::load(dir.path()).snapshot().animal,
+            Some(Animal::Dogs)
+        );
     }
 
     #[test]

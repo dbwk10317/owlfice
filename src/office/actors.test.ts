@@ -6,12 +6,15 @@ import {
   Graphics,
   Sprite,
   Texture,
+  TextureSource,
   type Spritesheet,
 } from "pixi.js";
 import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
 import owlsJson from "../../design/sprites/owls.json";
+import owls3Json from "../../design/sprites/owls@3x.json";
+import dogsJson from "../../design/sprites/dogs.json";
 import phrases from "../../design/handoff/phrases.ko.json";
 import type {
   Bubble,
@@ -57,6 +60,17 @@ const meta = owlsJson.owlfice as unknown as OwlMeta;
 const textures = (keys: string[]) =>
   Object.fromEntries(keys.map((k) => [k, Texture.EMPTY])) as Record<string, Texture>;
 const owls: Owls = { textures: textures(Object.keys(owlsJson.frames)), meta };
+/** 레이어가 시트 밀도와 상관없이 월드 16×24 를 차지하는 배치 (HANDOFF 6.3) */
+const fitsWorld = (s: Sprite, m: OwlMeta = meta) =>
+  s.pivot.x === m.anchor[0] &&
+  s.pivot.y === m.anchor[1] &&
+  s.scale.x === 1 / m.density &&
+  s.scale.y === 1 / m.density;
+/** head 기준점(텍셀)의 발 기준 월드 좌표 */
+const headOffset = (name: string, m: OwlMeta = meta) => [
+  (m.anchors[name].head[0] - m.anchor[0]) / m.density,
+  (m.anchors[name].head[1] - m.anchor[1]) / m.density,
+];
 const officeSheet = {
   data: officeJson,
   textures: textures(Object.keys(officeJson.frames)),
@@ -374,8 +388,8 @@ test("탕비실: 첫째 콘솔 sit, 둘째 안마의자 sleep, 그다음은 서 
   expect(badge[0].textContent).toBe("+1");
   const d = got[3];
   const head = meta.anchors.idle_f_0.head;
-  expect(badge[0].style.left).toBe(`${d.x + head[0] - meta.anchor[0] + 14}px`);
-  expect(badge[0].style.top).toBe(`${d.y + head[1] - meta.anchor[1] - 6}px`);
+  expect(badge[0].style.left).toBe(`${d.x + (head[0] - meta.anchor[0]) / meta.density + 14}px`);
+  expect(badge[0].style.top).toBe(`${d.y + (head[1] - meta.anchor[1]) / meta.density - 6}px`);
 });
 
 test("자리 초과: 서브 12명이면 개발실 6 + 임시 4 만 겹치지 않게 그리고 마지막 임시 책상 위에 +2", () => {
@@ -398,8 +412,8 @@ test("자리 초과: 서브 12명이면 개발실 6 + 임시 4 만 겹치지 않
   const last = at("large", o, "s9")!;
   expect(last.spot).toBe("temp_3");
   const head = meta.anchors.sit_f_0.head;
-  expect(badge[0].style.left).toBe(`${last.x + head[0] - meta.anchor[0] + 14}px`);
-  expect(badge[0].style.top).toBe(`${last.y + head[1] - meta.anchor[1] - 6}px`);
+  expect(badge[0].style.left).toBe(`${last.x + (head[0] - meta.anchor[0]) / meta.density + 14}px`);
+  expect(badge[0].style.top).toBe(`${last.y + (head[1] - meta.anchor[1]) / meta.density - 6}px`);
   // 만석 쪽지는 그대로
   expect(seatProps(fp, "large", o)).toEqual(new Set([...TEMP_DESKS, "note_full"]));
   // 줄면 숫자가 따라 줄고, 자리가 남으면 배지가 없다
@@ -528,7 +542,7 @@ test("기본·착용 겹을 같은 자리에, 수습은 담당·근속·소품 �
     false,
     false,
   ]);
-  expect(sprites.every((s) => s.pivot.x === 8 && s.pivot.y === 23)).toBe(true);
+  expect(sprites.every((s) => fitsWorld(s))).toBe(true);
   // 의자(8.7) 뒤, 책상(9.2) 앞
   const n = fp.layouts.large.placements.length;
   expect(root.zIndex).toBe(8900 * 10000 + n + 1);
@@ -567,9 +581,10 @@ test("이름표: head 기준점을 CSS px 로, 이름 직급 + {elapsed} 를 채
   expect(tag.hidden).toBe(false);
   expect(tag.querySelector("b")!.textContent).toBe("박서준 과장");
   expect(tag.querySelector("span")!.textContent).toBe("`sleep {elapsed}` 돌리는 중 · 1분 15초째");
-  // idle_f_0 의 head 는 (8, 8): 발 (x, y) 에서 (0, −15)
+  // idle_f_0 의 head 기준점 (텍셀) 을 발 기준 월드 좌표로
   const foot = screen(...(fp.stands.test[0] as [number, number]));
-  const head = toCss(foot.x, foot.y - 15, 2, 1.25);
+  const [hx, hy] = headOffset("idle_f_0");
+  const head = toCss(foot.x + hx, foot.y + hy, 2, 1.25);
   expect(tag.style.left).toBe(`${head.left}px`);
   expect(tag.style.top).toBe(`${head.top}px`);
   layer.hover(null);
@@ -625,11 +640,12 @@ test("짧은 열람은 자리에서 read 자세, 병렬 호출은 +n 배지", ()
   });
   const badge = overlay.querySelector<HTMLElement>(".ow-parallel")!;
   expect(badge.textContent).toBe("+2");
-  // read_f_0 의 head 는 (8, 9): 발 (x, y) 에서 (0, −14), 배지는 거기서 (+14, +6)
+  // read_f_0 의 head 기준점에서 배지는 (+14, +6)
   const seat = fp.layouts.large.seats.dev[0];
   const foot = screen(seat.gx, seat.gy);
-  expect(badge.style.left).toBe(`${foot.x + 14}px`);
-  expect(badge.style.top).toBe(`${foot.y - 14 + 6}px`);
+  const [hx, hy] = headOffset("read_f_0");
+  expect(badge.style.left).toBe(`${foot.x + hx + 14}px`);
+  expect(badge.style.top).toBe(`${foot.y + hy + 6}px`);
   a.activity.extra = 0;
   layer.sync(office([team("t", [boss(), a])]), "large", NOW);
   expect(overlay.querySelectorAll(".ow-parallel")).toHaveLength(0);
@@ -1043,7 +1059,9 @@ test("BossVisit cue 로 사장님 액터가 생기고 도착 5초 뒤 나가 사
   expect(ring).toHaveBeenCalledWith(NOW, expect.objectContaining({ kind: "BossVisit" }));
   expect(bodyOf(layer, "boss")).toBe(`body/${sp}/jump_f_0`);
   const visitor = world.children[base] as Container;
-  expect((visitor.children[0] as Sprite).texture.label).toMatch(/^body\/snowy\/walk_[fb]_/);
+  expect((visitor.children[0] as Sprite).texture.label).toMatch(
+    new RegExp(`^body/${meta.bossSpecies}/walk_[fb]_`),
+  );
   expect((visitor.children[1] as Sprite).texture.label).toMatch(/^outfit\/boss\/walk_[fb]_/);
   // 걷는 동안은 말풍선이 없고, 도착하면 보인다
   const bubble = overlay.querySelector<HTMLElement>(".ow-bubble")!;
@@ -1907,7 +1925,7 @@ test("근속: 직원 hiredAt의 1·3·6시간 경계를 update에 반영하고 �
     expect(sprites[2].visible).toBe(stage > 0);
     if (stage) expect(sprites[2].texture.label).toMatch(new RegExp(`^wear/${stage}/`));
     expect(sprites[3].texture.label).toContain("role/backend/");
-    expect(sprites.every((s) => s.pivot.x === 8 && s.pivot.y === 23)).toBe(true);
+    expect(sprites.every((s) => fitsWorld(s))).toBe(true);
   }
   const lateSprites = layer.rootOf("t", "late")!.children as Sprite[];
   expect(lateSprites[2].visible).toBe(false);
@@ -2534,8 +2552,8 @@ test("손전등은 진입 걷기 프레임의 손을 따르고 움직임 줄이�
         (c): c is Sprite => c instanceof Sprite && c.texture.label === "held_flashlight/default",
       )!;
     expect([hand.x, hand.y]).toEqual([
-      meta.anchors[name].hand[0] - meta.anchor[0],
-      meta.anchors[name].hand[1] - meta.anchor[1],
+      (meta.anchors[name].hand[0] - meta.anchor[0]) / meta.density,
+      (meta.anchors[name].hand[1] - meta.anchor[1]) / meta.density,
     ]);
   }
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
@@ -2627,4 +2645,70 @@ test("움직임 줄이기를 켜면 진행 중인 idle 눈 깜빡임도 0프레�
     random.mockRestore();
     vi.unstubAllGlobals();
   }
+});
+
+// ---------- 시트 밀도·동물 (HANDOFF 6.3·6.4) ----------
+
+/** 프레임 크기 텍스처로 채운 시트. 레이어가 차지하는 월드 크기를 재려고 */
+function sized(json: { frames: object; owlfice: unknown }): Owls {
+  const m = json.owlfice as OwlMeta;
+  const source = new TextureSource({ width: m.frame[0], height: m.frame[1] });
+  const textures = Object.fromEntries(
+    Object.keys(json.frames).map((k) => [k, new Texture({ source, label: k })]),
+  );
+  return { textures, meta: m };
+}
+
+test("2× 시트를 3× 로 바꿔도 직원은 같은 자리에서 월드 16×24 를 차지하고 머리 오버레이가 그대로다", () => {
+  const two = sized(owlsJson);
+  const three = sized(owls3Json);
+  const { layer, overlay } = newLayer({ owls: two });
+  const a = emp("a", "Dev", "Read", { seat: 0 });
+  a.activity.extra = 2;
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW);
+  layer.placeOverlay((x, y) => toCss(x, y, 3, 1));
+  layer.update(NOW);
+  const root = layer.rootOf("t", "a")!;
+  const badge = overlay.querySelector<HTMLElement>(".ow-parallel")!;
+  const seen = () => ({ x: root.x, y: root.y, left: badge.style.left, top: badge.style.top });
+  const layers = () => root.children.filter((c): c is Sprite => c instanceof Sprite);
+  const size = () => {
+    const b = root.getLocalBounds();
+    return [b.x, b.width, b.height];
+  };
+  const before = seen();
+  expect(layers().every((s) => fitsWorld(s, two.meta))).toBe(true);
+  expect(size()).toEqual([-8, 16, 24]);
+  layer.setOwls(three);
+  layer.update(NOW + 1);
+  expect(layer.rootOf("t", "a")).toBe(root);
+  expect(seen()).toEqual(before);
+  expect(layers().every((s) => fitsWorld(s, three.meta) && s.scale.x === 1 / 3)).toBe(true);
+  const body = layers()[0].texture;
+  expect(body).toBe(three.textures[body.label!]);
+  expect(size()).toEqual([-8, 16, 24]);
+});
+
+test("동물을 바꾸면 직원 종은 새 시트의 employeeSpecies, 사장님 방문 몸체는 bossSpecies 다", () => {
+  const dogs = sized(dogsJson);
+  const visitorBody = (world: Container, i: number) =>
+    ((world.children[i] as Container).children[0] as Sprite).texture.label;
+  const { layer, world } = newLayer({ owls: labeled });
+  layer.sync(office(BOSS_IN), "large", NOW);
+  const base = world.children.length;
+  layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+  layer.update(NOW + 1);
+  expect(visitorBody(world, base)).toMatch(new RegExp(`^body/${meta.bossSpecies}/`));
+  layer.setOwls(dogs);
+  layer.update(NOW + 2);
+  expect(visitorBody(world, base)).toMatch(new RegExp(`^body/${dogs.meta.bossSpecies}/`));
+  const sp = speciesOf("boss", dogs.meta.employeeSpecies);
+  expect(bodyOf(layer, "boss")).toMatch(new RegExp(`^body/${sp}/`));
+  // 처음부터 강아지 시트면 방문 몸체도 강아지 사장님
+  const fresh = newLayer({ owls: dogs });
+  fresh.layer.sync(office(BOSS_IN), "large", NOW);
+  const n = fresh.world.children.length;
+  fresh.layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+  fresh.layer.update(NOW + 1);
+  expect(visitorBody(fresh.world, n)).toMatch(new RegExp(`^body/${dogs.meta.bossSpecies}/`));
 });

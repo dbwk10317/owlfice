@@ -94,15 +94,16 @@ async function setup(w: number, h: number) {
 }
 
 test("최초 자동맞춤 뒤 선택 배율은 줄어든 창에 맞추고 커지면 복귀하며 한도 변화도 알린다", async () => {
+  // 창이 더 커도 자동 배율은 3 까지다 (HANDOFF 2.2, 배율 메뉴 1·2·3)
   const s = await setup(2080, 1280);
-  expect(s.onScale).toHaveBeenLastCalledWith(4, 4);
-  s.handle.setScale(3);
-  expect(s.onScale).toHaveBeenLastCalledWith(3, 4);
-  s.resize(1040, 640);
-  expect(s.onScale).toHaveBeenLastCalledWith(2, 2);
-  expect(s.wrap.style.width).toBe("1040px");
-  s.resize(1560, 960);
   expect(s.onScale).toHaveBeenLastCalledWith(3, 3);
+  s.handle.setScale(2);
+  expect(s.onScale).toHaveBeenLastCalledWith(2, 3);
+  s.resize(520, 320);
+  expect(s.onScale).toHaveBeenLastCalledWith(1, 1);
+  expect(s.wrap.style.width).toBe("520px");
+  s.resize(1560, 960);
+  expect(s.onScale).toHaveBeenLastCalledWith(2, 3);
   s.handle.setScale(1);
   s.onScale.mockClear();
   s.resize(1040, 640);

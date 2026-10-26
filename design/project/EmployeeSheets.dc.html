@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>시트 규격</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#18181B}a:hover{color:#52525B}
+.ow{font-family:'IBM Plex Sans KR','Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;color:#18181B;-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.5}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace}
+section.k{display:flex;flex-direction:column;gap:14px}
+section.k>h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-0.01em}
+section.k>p{margin:-4px 0 0;font-size:13px;color:#52525B;max-width:1100px}
+.card{background:#fff;border:1px solid #E4E4E7;border-radius:12px;box-shadow:0 1px 2px rgba(24,24,27,.04);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.card h3{margin:0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card h3 .tag{margin-left:auto;font-size:10px;font-weight:600;border-radius:4px;padding:0 6px;line-height:17px;background:#F4F4F5;color:#52525B}
+.tag.new{background:#ECFDF3;color:#166534}
+.tag.chg{background:#FEF9C3;color:#854D0E}
+.tag.same{background:#F4F4F5;color:#52525B}
+pre{margin:0;font-family:'IBM Plex Mono',Consolas,monospace;font-size:11.5px;line-height:1.5;background:#FAFAFA;border:1px solid #F0F0F1;border-radius:8px;padding:10px 12px;white-space:pre;overflow:hidden;color:#27272A}
+table{border-collapse:collapse;font-size:12.5px;width:100%}
+th{font-size:11px;font-weight:600;color:#71717A;text-align:left;padding:6px 10px;border-bottom:1px solid #E4E4E7}
+td{padding:7px 10px;border-bottom:1px solid #F0F0F1;vertical-align:top}
+td.mono{font-family:'IBM Plex Mono',Consolas,monospace;font-size:11.5px;white-space:nowrap}
+ul.b{margin:0;padding-left:16px;font-size:12.5px;color:#3F3F46;display:flex;flex-direction:column;gap:4px}
+ul.b b{color:#18181B;font-weight:600}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:5px;font-size:11px;font-weight:500;background:#F4F4F5;color:#52525B}
+.chip.ask{background:#FFF7ED;color:#B45309}
+</style>
+</helmet>
+<div class="ow" style="width: 1760px; height: 1500px; background: #FFFFFF; padding: 56px 64px; display: flex; flex-direction: column; gap: 30px; overflow: hidden">
+
+  <header style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 20px; border-bottom: 1px solid #E4E4E7">
+    <h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em">시트 규격 · 파일 구조 · 코드 접점</h1>
+    <p style="margin: 0; font-size: 14px; color: #52525B; max-width: 1150px">동물은 시트 단위로 바꿉니다. 세 시트가 프레임 키·메타 구조를 똑같이 가지므로 앱은 "어느 시트를 읽을지" 한 줄만 바꾸고, 나머지는 이미 메타를 읽는 코드가 그대로 돕니다. 밀도 2배에 닿는 코드는 네 군데입니다.</p>
+  </header>
+
+  <div style="display: grid; grid-template-columns: 620px 1fr; gap: 40px; align-items: start">
+    <section class="k">
+      <h2>파일 구조 · 세 시트, 같은 키</h2>
+      <pre>design/sprites/
+  owls.json  owls.png   ← 다시 생성 (32×48, 얼굴 규칙)
+  dogs.json  dogs.png   ← 새로. 키는 owls.json 과 1:1
+  cats.json  cats.png   ← 새로. 키는 owls.json 과 1:1
+  office.json / floorplan.json / ui.json   변경 없음
+
+프레임 키 (세 시트 공통, 1,673장)
+  body/&lt;종&gt;/&lt;자세&gt;_&lt;방향&gt;_&lt;번호&gt;     종 6 × 37
+  outfit/&lt;옷&gt;/…  wear/&lt;1|2|3&gt;/…  role/&lt;담당&gt;/…  item/&lt;소지품&gt;/…
+
+owlfice 메타 (시트마다)
+  frame: [32, 48]          anchor: [16, 46]
+  density: 2               ← 새 키. 월드 px 당 텍셀 수
+  layers / layerRule / wear / outfits / roles / poses   그대로
+  species: { shiba: "시바견", … }      employeeSpecies: [5종]
+  bossSpecies: "samoyed"   ← 새 키 (올빼미 "snowy")
+  anchors[자세]: { head: [16, 16], hand: [26, 38] }   ← 텍셀 단위 (×2)</pre>
+      <ul class="b">
+        <li><b>생성기.</b> <span class="mono">owlfice_art.py</span> 의 종 표에 품종 12개를 더하고, 몸통·날개·옷·소지품 셀을 2×2 블록으로 찍은 뒤 얼굴(눈 상자·눈썹·입·무늬)만 1px 격자로 얹는다. 자세 기하(<span class="mono">pose_geo</span>)와 레이어 함수는 재사용. 시트 3장을 한 번에 만들고 끝에 겹침·누락 검사.</li>
+        <li><b>시트 크기.</b> 1,673장 × 33×49 ≈ 2.7M 텍셀 → 2048×2048 한 장 (목표). 셋 합쳐 PNG 약 150KB (목표).</li>
+        <li><b>미리보기·참조 렌더.</b> <span class="mono">preview/*.png</span> 와 <span class="mono">assets/office-*.png</span> 는 올빼미 2×를 반영해 다시 만든다. 참조 렌더는 1× 장면에 0.5 배 nearest 합성 — 배율 1 픽셀 비교(HANDOFF 6.7)는 그대로 유효.</li>
+      </ul>
+    </section>
+
+    <section class="k">
+      <h2>코드 접점 · 컴포넌트 수준</h2>
+      <table>
+        <tr><th>파일</th><th>지금</th><th>바뀌는 것</th><th></th></tr>
+        <tr><td class="mono">office/sprites.ts</td><td>loadOwls 이 <span class="mono">/owls.json</span> 고정</td><td>설정값 <span class="mono">animal: "owls"|"dogs"|"cats"</span> 로 경로 선택. 실패 시 대체 몸체 규칙 그대로</td><td><span class="tag chg">경로 1줄</span></td></tr>
+        <tr><td class="mono">office/actors.ts</td><td>직원 root 에 프레임을 1:1 로 둠. 사장님 종 <span class="mono">"snowy"</span> 하드코딩. 머리·손 기준점을 1× 좌표로 더함</td><td>root 안 스프라이트 scale = 1/density. 사장님 종 = <span class="mono">meta.bossSpecies</span>. <span class="mono">anchors.head/hand</span> 를 density 로 나눠 월드 좌표로 (headAt · held · stamp · sweat 4곳이 한 헬퍼를 쓰게)</td><td><span class="tag chg">4곳</span></td></tr>
+        <tr><td class="mono">avatar.ts</td><td>16×24 검사, 위 2줄 잘라 20×22</td><td>meta.frame 검사, 위 4줄 잘라 40×44 칸에 원본. 카드 1배, 직원 상세 2배</td><td><span class="tag chg">숫자</span></td></tr>
+        <tr><td class="mono">설정 팝업 · phrases</td><td>회사 이름, 원문 진단</td><td>"직원 동물" 선택 (올빼미·강아지·고양이). 바꾸면 시트 재로드, 아바타 캐시 비움</td><td><span class="tag new">새 항목</span></td></tr>
+        <tr><td class="mono">hitArea · 좌석 · 통로 · 말풍선</td><td>월드 16×24 기준</td><td>변경 없음 (월드 크기 그대로)</td><td><span class="tag same">유지</span></td></tr>
+        <tr><td class="mono">office.json held_* · sweat · cloud_lag</td><td>1× 소품</td><td>변경 없음. 손·머리 기준점만 월드 단위로 받음</td><td><span class="tag same">유지</span></td></tr>
+        <tr><td class="mono">HANDOFF 6.3 · 6.4</td><td>16×24, (8,23), 5종 표</td><td>프레임·기준점·밀도·눈 상자·표정 규칙·시트 선택·bossSpecies 를 적는다</td><td><span class="tag chg">문서</span></td></tr>
+      </table>
+    </section>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; align-items: start">
+    <div class="card">
+      <h3>바꾸지 않는 것 <span class="tag same">계약 유지</span></h3>
+      <ul class="b">
+        <li>자세 18가지, 프레임 수, fps, 우선순위 (HANDOFF 5.3 · 6.4)</li>
+        <li>레이어 5개와 겹치는 순서, worn 옷, 근속 1·2·3 규칙</li>
+        <li>직원 종 해시 규칙, 담당 8 + 수습, 소지품 4 + held 3</li>
+        <li>평면도·좌석·서 있을 자리·조명·창문 등 사무실 전부</li>
+        <li>카드·행·팝업 UI 와 토큰. 아바타 칸 크기(44 · 88)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>작업 순서 제안 <span class="tag">티켓</span></h3>
+      <ul class="b">
+        <li><b>1.</b> 생성기: 올빼미 6종 2× + 얼굴 규칙 + 메타 (density · bossSpecies · anchors ×2). 미리보기 재생성</li>
+        <li><b>2.</b> 렌더러·아바타 접점 4곳. 참조 렌더 비교 녹색</li>
+        <li><b>3.</b> 강아지·고양이 종 표 12개, dogs/cats 시트 생성, 겹침·누락 검사</li>
+        <li><b>4.</b> 설정 "직원 동물" + 시트 경로 선택 + 재로드</li>
+        <li><b>5.</b> 1×·2×·3× 실제 창에서 눈·표정 가독 검수 (사람)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>가정 · 확인 필요 <span class="tag chg">미확인</span></h3>
+      <ul class="b">
+        <li><span class="chip ask">가정</span> 동물은 사무실 전체가 하나 (설정). 한 사무실에 섞지 않는다. 섞으려면 세 시트를 함께 읽고 employeeSpecies 를 잇는 변형이 되며 이번 범위 밖</li>
+        <li><span class="chip ask">가정</span> 배율 3 에서 1.5배 확대(고르지 않은 픽셀)를 받아들인다. 싫으면 3× 시트 한 벌 추가 (해상도 보드)</li>
+        <li><span class="chip ask">미확인</span> 2048×2048 텍스처가 대상 GPU 전부에서 안전한지 (목표값). 넘치면 레이어별 시트 분리</li>
+        <li><span class="chip ask">미확인</span> 품종 이름·색은 시안. 사용자 확인 뒤 생성기에 옮긴다</li>
+        <li><span class="chip ask">가정</span> 올빼미 품종 실루엣은 지금 것을 2× 그대로 (사용자가 알아보는 얼굴 유지), 얼굴만 다시 그림</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

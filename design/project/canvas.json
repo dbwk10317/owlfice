@@ -23,7 +23,13 @@
     "Medium.dc.html": {"x": 0, "y": 8000, "w": 960, "h": 720, "title": "반응형 · 960 · 현황판 드로어"},
     "Narrow.dc.html": {"x": 1040, "y": 8000, "w": 800, "h": 600, "title": "반응형 · 800 · 아이콘 레일"},
     "Tiny.dc.html": {"x": 1920, "y": 8000, "w": 480, "h": 400, "title": "반응형 · 480 · 최소 이하 (패닝)"},
-    "Sprites.dc.html": {"x": 0, "y": 9080, "w": 1760, "h": 4900, "title": "스프라이트 시트"}
+    "Sprites.dc.html": {"x": 0, "y": 9080, "w": 1760, "h": 4900, "title": "스프라이트 시트"},
+    "EmployeeRes.dc.html": {"x": 0, "y": 14340, "w": 1760, "h": 1560, "title": "직원 v3 · 해상도 16×24 → 32×48 (2× 밀도, 2px 윤곽)"},
+    "EmployeeFaces.dc.html": {"x": 1840, "y": 14340, "w": 1760, "h": 2200, "title": "직원 v3 · 표정 · 자세 18 × 올빼미·강아지·고양이"},
+    "EmployeeDensity3.dc.html": {"x": 3680, "y": 14340, "w": 1760, "h": 2700, "title": "직원 v3 · 3× 시트 · 48×72 · 배율 3 화면용"},
+    "EmployeeBreeds.dc.html": {"x": 0, "y": 17400, "w": 1760, "h": 1300, "title": "직원 v3 · 품종 라인업 · 3동물 × (직원 5 + 사장님 1)"},
+    "EmployeeLayers.dc.html": {"x": 1840, "y": 17400, "w": 1760, "h": 1300, "title": "직원 v3 · 레이어 호환 · 옷 · 근속 · 담당 · 소지품 · 아바타"},
+    "EmployeeSheets.dc.html": {"x": 0, "y": 19060, "w": 1760, "h": 1500, "title": "직원 v3 · 시트 규격 · 파일 구조 · 코드 접점"}
   },
   "order": [
     "Main.dc.html", "MainNight.dc.html",
@@ -33,7 +39,9 @@
     "Onboarding.dc.html", "Loading.dc.html", "Empty.dc.html", "NoFolders.dc.html",
     "SessionDetail.dc.html", "EmployeeDetail.dc.html", "Settings.dc.html",
     "Medium.dc.html", "Narrow.dc.html", "Tiny.dc.html",
-    "Sprites.dc.html"
+    "Sprites.dc.html",
+    "EmployeeRes.dc.html", "EmployeeFaces.dc.html", "EmployeeDensity3.dc.html",
+    "EmployeeBreeds.dc.html", "EmployeeLayers.dc.html", "EmployeeSheets.dc.html"
   ],
   "notes": {
     "t-main": {"x": 0, "y": -240, "text": "메인 화면 v2 · 주간과 야근 모드", "kind": "title1", "maxW": 3280},
@@ -43,7 +51,8 @@
     "t-first": {"x": 0, "y": 5240, "text": "첫 실행 · 로딩 · 빈 상태 · 실패 (v2 토큰 적용)", "kind": "title1", "maxW": 5360},
     "t-popup": {"x": 0, "y": 6400, "text": "팝업 (v2 토큰 적용)", "kind": "title1", "maxW": 2760},
     "t-resp": {"x": 0, "y": 7760, "text": "반응형 (v2 토큰 적용)", "kind": "title1", "maxW": 2400},
-    "t-sprites": {"x": 0, "y": 8840, "text": "스프라이트 시트", "kind": "title1", "maxW": 1760}
+    "t-sprites": {"x": 0, "y": 8840, "text": "스프라이트 시트", "kind": "title1", "maxW": 1760},
+    "t-emp3": {"x": 0, "y": 14100, "text": "직원 스프라이트 v3 · 해상도 · 표정 · 강아지·고양이 (0.2.1)", "kind": "title1", "maxW": 5440}
   },
   "designSystems": []
 }

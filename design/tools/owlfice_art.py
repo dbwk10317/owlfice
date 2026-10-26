@@ -727,6 +727,9 @@ def face(img, D, sp, pose, g, hy_px, expr=None):
         if eye == "wide":
             base = WHITE
         box(ex, ey, E, E, base)
+        if D == 3:   # 3× 만: 6×6 눈 상자 네 모서리를 털색으로 덮어 눈을 둥글게
+            for qx, qy in ((0, 0), (E - 1, 0), (0, E - 1), (E - 1, E - 1)):
+                put(ex + qx, ey + qy, fur)
         if eye in ("open", "down", "side", "wide", "half"):
             if kind == "cat" and eye != "wide":
                 pw, ph = D - 1, D + 1
@@ -780,7 +783,12 @@ def face(img, D, sp, pose, g, hy_px, expr=None):
             box(cx + D // 2, by + E - 1 - (D - 2), D, D - 1, dk)
     elif kind == "dog":
         box(cx, ey, E, D, P["nose"])
-        put(cx, ey, (90, 80, 80))
+        hx = cx
+        if D == 3:   # 3× 만: 윗줄 양 끝을 털색으로 덮어 코를 둥글린다. 하이라이트는 한 칸 안쪽으로
+            put(cx, ey, P["b"])
+            put(cx + E - 1, ey, P["b"])
+            hx = cx + 1
+        put(hx, ey, (90, 80, 80))
         my = ey + D + 1
         tx, tw = cx + D // 2, D
         if mouth == "neutral":
@@ -801,7 +809,11 @@ def face(img, D, sp, pose, g, hy_px, expr=None):
         elif mouth == "o":
             box(tx, my, tw, D, dk)
     else:
-        box(cx + D // 2, ey, D, max(1, D - 1), P["nose"])
+        if D == 3:   # 3× 만: 윗줄 3텍셀, 아랫줄 가운데 1텍셀인 삼각형 코
+            box(cx + 1, ey, 3, 1, P["nose"])
+            put(cx + 2, ey + 1, P["nose"])
+        else:
+            box(cx + D // 2, ey, D, max(1, D - 1), P["nose"])
         my = ey + D
         dk = P["brow"] if sum(P["b"]) < 300 else MOUTH   # 털이 어두우면 입을 눈썹 색(밝은 색)으로
         half = E // 2 + 1

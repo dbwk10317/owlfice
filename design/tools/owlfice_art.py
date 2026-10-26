@@ -663,7 +663,7 @@ def kind_of(sp):
 
 
 def foot(D):
-    return [D * OWL_AX, D * (OWL_AY + 1) - 1]
+    return [D * OWL_AX, D * OWL_AY]   # 1× 발 픽셀의 D×D 블록 왼쪽 위. 밀도가 바뀌어도 월드 좌표가 같다
 
 
 def eye_boxes(D):

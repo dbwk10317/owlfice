@@ -292,7 +292,7 @@ for _k, _b in BREEDS.items():   # 머리 행이 없는 종으로 등록해 몸�
     _p = _b["pal"]
     SPECIES[_k] = {"name": _b["name"], "top": 0, "lid": "b", "lidrow": 6, "eyes": [(3, 4), (9, 10)], "rows": [],
                    "pal": {"b": _p["b"], "B": _p["B"], "d": _p["B"], "l": _p["l"], "i": _p["b"], "o": _p["b"], "c": _p["l"], "y": _p["B"]}}
-ANIMALS = {   # 시트 이름 -> 한국어 이름, 직원 5종 (hash % 5), 사장님 전용 종
+ANIMALS = {   # 설정 animal 값 -> 한국어 이름, 직원 5종 (hash % 5), 사장님 전용 종
     "owls": {"name": "올빼미", "employees": EMPLOYEE_SPECIES, "boss": "snowy"},
     "dogs": {"name": "강아지", "employees": ["shiba", "corgi", "beagle", "poodle", "husky"], "boss": "samoyed"},
     "cats": {"name": "고양이", "employees": ["tabby", "tuxedo", "siamese", "calico", "russianblue"], "boss": "persian"},
@@ -727,6 +727,9 @@ def face(img, D, sp, pose, g, hy_px, expr=None):
         if eye == "wide":
             base = WHITE
         box(ex, ey, E, E, base)
+        if D == 3:   # 3× 만: 6×6 눈 상자 네 모서리를 털색으로 덮어 눈을 둥글게
+            for qx, qy in ((0, 0), (E - 1, 0), (0, E - 1), (E - 1, E - 1)):
+                put(ex + qx, ey + qy, fur)
         if eye in ("open", "down", "side", "wide", "half"):
             if kind == "cat" and eye != "wide":
                 pw, ph = D - 1, D + 1
@@ -780,7 +783,12 @@ def face(img, D, sp, pose, g, hy_px, expr=None):
             box(cx + D // 2, by + E - 1 - (D - 2), D, D - 1, dk)
     elif kind == "dog":
         box(cx, ey, E, D, P["nose"])
-        put(cx, ey, (90, 80, 80))
+        hx = cx
+        if D == 3:   # 3× 만: 윗줄 양 끝을 털색으로 덮어 코를 둥글린다. 하이라이트는 한 칸 안쪽으로
+            put(cx, ey, P["b"])
+            put(cx + E - 1, ey, P["b"])
+            hx = cx + 1
+        put(hx, ey, (90, 80, 80))
         my = ey + D + 1
         tx, tw = cx + D // 2, D
         if mouth == "neutral":
@@ -801,7 +809,11 @@ def face(img, D, sp, pose, g, hy_px, expr=None):
         elif mouth == "o":
             box(tx, my, tw, D, dk)
     else:
-        box(cx + D // 2, ey, D, max(1, D - 1), P["nose"])
+        if D == 3:   # 3× 만: 윗줄 3텍셀, 아랫줄 가운데 1텍셀인 삼각형 코
+            box(cx + 1, ey, 3, 1, P["nose"])
+            put(cx + 2, ey + 1, P["nose"])
+        else:
+            box(cx + D // 2, ey, D, max(1, D - 1), P["nose"])
         my = ey + D
         dk = P["brow"] if sum(P["b"]) < 300 else MOUTH   # 털이 어두우면 입을 눈썹 색(밝은 색)으로
         half = E // 2 + 1
@@ -880,8 +892,8 @@ def body_img(D, sp, pose, dirn, f, expr=None):
 
 
 def build_sheets():
-    """밀도마다 동물 시트 세 장. 모든 종이 같은 뼈대(몸통 템플릿, 눈 위치)라 옷·근속·담당·소지품 레이어는
-    한 벌을 세 시트가 같이 쓴다."""
+    """밀도마다 시트 한 장에 18종 몸을 다 담는다. 모든 종이 같은 뼈대(몸통 템플릿, 눈 위치)라 옷·근속·담당·소지품
+    레이어는 한 벌을 모든 종이 같이 쓴다."""
     sheets = {}
     for D in DENSITIES:
         bodies, shared, anchors = {}, {}, {}
@@ -917,12 +929,10 @@ def build_sheets():
                 shared[f"item/{item}/{name}"] = layer(owl_item(item, g, dirn, chest))
             hx, hy = g["hands"]["r"]
             anchors[name] = {"hand": [D * (hx + TX), D * (hy + TY - lift)], "head": [D * OWL_AX, D * (2 + g["hy"] + TY - lift)]}
-        for animal, a in ANIMALS.items():
-            mine = set(a["employees"]) | {a["boss"]}
-            entries = {k: {"img": img, "anchor": foot(D)} for k, img in bodies.items() if k.split("/")[1] in mine}
-            # 빈 레이어 프레임은 시트에 넣지 않는다 (코드는 없으면 건너뛴다)
-            entries.update({k: {"img": img, "anchor": foot(D)} for k, img in shared.items() if img.getbbox() is not None})
-            sheets[(animal, D)] = {"density": D, "entries": entries, "anchors": anchors}
+        entries = {k: {"img": img, "anchor": foot(D)} for k, img in bodies.items()}
+        # 빈 레이어 프레임은 시트에 넣지 않는다 (코드는 없으면 건너뛴다)
+        entries.update({k: {"img": img, "anchor": foot(D)} for k, img in shared.items() if img.getbbox() is not None})
+        sheets[D] = {"density": D, "entries": entries, "anchors": anchors}
     return sheets
 
 
@@ -2382,14 +2392,14 @@ SHOWCASE = [  # 행 = employeeSpecies 순서 (5종) × 4직급 = 20
 def make_previews():
     os.makedirs(PREV, exist_ok=True)
     D = 2   # 미리보기는 2× 시트로 그린다
-    S = SHEETS[("owls", D)]
+    S = SHEETS[D]
     cw, ch, top = 24 * D, 28 * D, 2 * D
     labels = []
     for animal, a in ANIMALS.items():
         sheet = Image.new("RGBA", (cw * 4, ch * 5), (0, 0, 0, 0))
         for r, (sp, (vendor, roles)) in enumerate(zip(a["employees"], SHOWCASE)):
             for c, rank in enumerate(("bujang", "gwajang", "daeri", "sawon")):
-                img = owl_composite(SHEETS[(animal, D)], sp, f"{rank}-{vendor}", roles[c])
+                img = owl_composite(S, sp, f"{rank}-{vendor}", roles[c])
                 sheet.alpha_composite(img, (c * cw, r * ch + top))
                 if animal == "owls":
                     labels.append(dict(species=SPECIES[sp]["name"], rank=RANK_KO[rank], role=ROLE_KO[roles[c]], vendor=THEMES[vendor]["label"]))
@@ -2521,7 +2531,7 @@ def make_canvas_images():
                               progress=dict(desks={"boss_desk_0": dict(coffee=1, papers=2)}, reads=25, commits=1, tests=[3, 0]))
         img.save(os.path.join(CANVAS, f"office-{t}-day.png"))
     # 카드 아바타 (2× 시트에서 위 4줄을 잘라 40×44 원본, HANDOFF 6.4)
-    two = SHEETS[("owls", 2)]
+    two = SHEETS[2]
     ax, ay = foot(2)
     avatars = {
         "claude-bujang": ("eagle", "bujang-claude", "backend"), "claude-gwajang": ("barn", "gwajang-claude", "backend"),
@@ -2563,12 +2573,11 @@ def check(office_pos):
             occ.paste(255, (x, y, x + w, y + h))
     expected = sum(spec.get("f", 0) + spec.get("b", 0) for spec in POSES.values())
     keysets, world_anchors = {}, {}
-    for (animal, D), s in SHEETS.items():
+    for D, s in SHEETS.items():
         fw, fh = OWL_W * D, OWL_H * D
         if s["sheet"].width > SHEET_MAX[D] or s["sheet"].height > SHEET_MAX[D]:
             errors.append(f"{s['name']}: 시트 {s['sheet'].size} 가 {SHEET_MAX[D]} 초과")
-        order = ANIMALS[animal]["employees"] + [ANIMALS[animal]["boss"]]
-        for sp in order:
+        for sp in SPECIES:
             n = sum(1 for k in s["entries"] if k.startswith(f"body/{sp}/"))
             if n != expected:
                 errors.append(f"{s['name']} body/{sp}: 프레임 {n}개, 기대 {expected}개")
@@ -2580,9 +2589,7 @@ def check(office_pos):
             frame = s["entries"][f"role/{role}/idle_f_0"]["img"]
             if frame.crop((0, 2 * D, fw, fh)).getbbox() is None or frame.crop((0, 0, fw, 2 * D)).getbbox() is not None:
                 errors.append(f"{s['name']} role/{role}: 카드 자르기 안에 담당 그림이 온전히 들어오지 않음")
-        # 종 이름은 동물마다 달라서 직원 순번(사장님은 5)으로 바꿔 비교한다
-        keysets[s["name"]] = {k if not k.startswith("body/") else f"body/{order.index(k.split('/')[1])}/{k.split('/')[2]}"
-                              for k in s["entries"]}
+        keysets[s["name"]] = set(s["entries"])
         world_anchors[s["name"]] = {n: {p: [v / D for v in xy] for p, xy in an.items()} for n, an in s["anchors"].items()}
     ref = next(iter(keysets))
     for name, keys in keysets.items():
@@ -2613,20 +2620,21 @@ def check(office_pos):
 
 
 # =====================================================================
-# OWLS: 참조 렌더용 1× 올빼미 사본 (2× 시트를 nearest 로 2:1 축소). SHEETS: (동물, 밀도) -> 직원 시트
+# OWLS: 참조 렌더용 1× 올빼미 사본 (2× 시트를 nearest 로 2:1 축소). SHEETS: 밀도 -> 직원 시트
 OWLS, OWL_META, FLOORPLAN, SHEETS = {}, {}, {}, {}
 
 
-def employee_meta(animal, D, anchors):
-    a = ANIMALS[animal]
+def employee_meta(D, anchors):
     return dict(
-        density=D, animal=animal, animalName=a["name"], bossSpecies=a["boss"],
+        density=D, bossSpecies=[a["boss"] for a in ANIMALS.values()],
         frame=[OWL_W * D, OWL_H * D], anchor=foot(D),
         layers=["body", "outfit", "wear", "role", "item", "held"],
         layerRule="body → outfit → wear → role → item 순서로 같은 위치에 겹친다. role 프레임이 없으면 건너뛴다 (그 자세에선 소품이 안 보임). held 는 office 시트의 held_* 를 hand 기준점에",
         wear={"1": "1시간 · 소매 걷음·부장 넥타이 느슨", "2": "3시간 · 눈 밑 그림자 추가", "3": "6시간 · 어깨 수건 추가"},
-        species={sp: SPECIES[sp]["name"] for sp in a["employees"] + [a["boss"]]}, employeeSpecies=a["employees"],
-        speciesRule=f"직원 종 = employeeSpecies[hash(agent_id) % 5]. bossSpecies({SPECIES[a['boss']]['name']})는 사장님 전용",
+        species={sp: SPECIES[sp]["name"] for sp in SPECIES}, animals=ANIMALS,
+        employeeSpecies=[sp for a in ANIMALS.values() for sp in a["employees"]],
+        speciesRule="설정 animal 이 mixed 면 employeeSpecies[hash(agent_id) % 15], 한 동물이면 animals[animal].employees[hash % 5]. "
+                    "사장님은 한 동물이면 animals[animal].boss, mixed 면 bossSpecies[hash(team_id) % 3]",
         outfits={o: (RANK_KO.get(o.split('-')[0]) + (' · ' + THEMES[o.split('-')[1]]['label'] if '-' in o else '')) for o in OUTFITS},
         roles={r: ROLE_KO[r] for r in ROLES}, trainee="수습은 role 레이어 없음",
         poses={p: dict(dirs={d_: s.get(d_, 0) for d_ in ("f", "b") if s.get(d_)}, fps=s["fps"], loop=s["loop"], note=s["note"])
@@ -2644,15 +2652,15 @@ def main():
     os.makedirs(SPR, exist_ok=True)
     os.makedirs(CANVAS, exist_ok=True)
     SHEETS.update(build_sheets())
-    for (animal, D), s in SHEETS.items():
+    for D, s in SHEETS.items():
         anims = {}
         for k in s["entries"]:
             anims.setdefault(k.rsplit("_", 1)[0], []).append(k)
         for g in anims:
             anims[g].sort(key=lambda k: int(k.rsplit("_", 1)[1]))
-        s["name"] = animal if D == 2 else f"{animal}@{D}x"
-        s["sheet"], s["pos"] = write_atlas(s["name"], s["entries"], anims, employee_meta(animal, D, s["anchors"]), SHEET_MAX[D])
-    two = SHEETS[("owls", 2)]
+        s["name"] = "employees" if D == 2 else f"employees@{D}x"
+        s["sheet"], s["pos"] = write_atlas(s["name"], s["entries"], anims, employee_meta(D, s["anchors"]), SHEET_MAX[D])
+    two = SHEETS[2]
     for k, e in two["entries"].items():
         OWLS[k] = dict(img=e["img"].resize((OWL_W, OWL_H), Image.NEAREST), anchor=[OWL_AX, OWL_AY])
     OWL_META.update(anchors={n: {p: [v // 2 for v in xy] for p, xy in an.items()} for n, an in two["anchors"].items()})

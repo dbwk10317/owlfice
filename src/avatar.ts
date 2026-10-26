@@ -1,10 +1,10 @@
-import { owlFrameKeys, speciesOf } from "./office/actors.ts";
+import { castOf, owlFrameKeys, speciesOf } from "./office/actors.ts";
 import { themeOf } from "./office/floorplan.ts";
 import { loadOwls, type Animal } from "./office/sprites.ts";
 import type { EmployeeDto } from "./types/ipc.ts";
 
 type Employee = Pick<EmployeeDto, "agentId" | "rank" | "role">;
-let animal: Animal = "owls";
+let animal: Animal = "mixed";
 let atlas: ReturnType<typeof loadOwls> | undefined;
 let pictures = new Map<string, HTMLCanvasElement>();
 const requests = new WeakMap<HTMLElement, string>();
@@ -24,11 +24,10 @@ export function mountedCount(): number {
 }
 let warned = false;
 
-/** 동물이 바뀌면 시트와 그림 캐시를 버리고 붙어 있는 아바타를 모두 다시 그린다 (HANDOFF 4.6). */
+/** 동물이 바뀌면 그림 캐시를 버리고 붙어 있는 아바타를 모두 다시 그린다 (HANDOFF 4.6). 시트는 동물과 무관해 그대로 둔다 */
 export function setAvatarAnimal(next: Animal): void {
   if (next === animal) return;
   animal = next;
-  atlas = undefined;
   pictures = new Map();
   prune();
   for (const { ref, employee, building } of mounted) {
@@ -44,7 +43,7 @@ async function picture(
 ): Promise<HTMLCanvasElement> {
   const { agentId, rank, role: duty } = employee;
   const cache = pictures; // await 중 동물이 바뀌어도 옛 그림이 새 캐시에 섞이지 않게
-  const loading = (atlas ??= loadOwls(animal, 2));
+  const loading = (atlas ??= loadOwls(2));
   const owls = await loading.catch((error: unknown) => {
     // 일시 오류의 거부된 Promise 가 남아 영영 빈 자리표시가 되지 않게 한다
     if (atlas === loading) atlas = undefined;
@@ -52,8 +51,9 @@ async function picture(
   });
   const [w, h] = owls.meta.frame;
   if (w !== 32 || h !== 48) throw new Error("아바타 시트가 2× 32×48 이 아니다");
-  if (owls.meta.employeeSpecies.length === 0) throw new Error("올빼미 종 목록이 비어 있다");
-  const species = speciesOf(agentId, owls.meta.employeeSpecies);
+  const { employees } = castOf(owls.meta, animal);
+  if (employees.length === 0) throw new Error("직원 종 목록이 비어 있다");
+  const species = speciesOf(agentId, employees);
   const outfit = `${rank.toLowerCase()}-${themeOf(building)}`;
   const role = duty === "Trainee" ? null : duty.toLowerCase();
   const keys = owlFrameKeys(owls.textures, species, outfit, role, { pose: "idle", dir: "f" }, 0);

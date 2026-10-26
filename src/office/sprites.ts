@@ -33,7 +33,7 @@ export async function loadOfficeAssets(): Promise<OfficeAssets> {
   return { sheet, floorplan: parseFloorplan(raw) };
 }
 
-export type Animal = "owls" | "dogs" | "cats";
+export type { Animal } from "../types/ipc.ts";
 export type Density = 2 | 3;
 
 /** 캔버스 배율 1·2 는 2× 시트, 3 은 3× 시트 (design/HANDOFF.md 6.4). */
@@ -41,10 +41,10 @@ export function sheetDensity(scale: number): Density {
   return scale >= 3 ? 3 : 2;
 }
 
-/** 직원 시트. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (design/HANDOFF.md 11절). */
-export async function loadOwls(animal: Animal = "owls", density: Density = 2): Promise<Owls> {
+/** 직원 시트. 동물과 상관없이 밀도마다 한 장이다. 실패는 부르는 쪽이 받아 대체 몸체로 그린다 (design/HANDOFF.md 11절). */
+export async function loadOwls(density: Density = 2): Promise<Owls> {
   await initAssets();
-  const path = `/${animal}${density === 3 ? "@3x" : ""}.json`;
+  const path = `/employees${density === 3 ? "@3x" : ""}.json`;
   const sheet = await Assets.load<Spritesheet>(path);
   const meta = (sheet.data as { owlfice?: OwlMeta }).owlfice;
   if (!meta) throw new Error(`${path} 에 owlfice 메타 없음`);

@@ -358,7 +358,7 @@ animal: Animal | null, };
 
 export type NightMode = "auto" | "on" | "off";
 
-export type Animal = "owls" | "dogs" | "cats";
+export type Animal = "mixed" | "owls" | "dogs" | "cats";
 
 export type DiscoveryPathDto = { host: string, vendor: string, path: string | null, status: DiscoveryStatus, };
 

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { mountOffice } from "./renderer.ts";
+import { loadOwls } from "./sprites.ts";
 
 // WebGL·에셋 로딩만 대신하고 실제 mountOffice의 배율·패닝과 DOM을 검증한다.
 vi.mock("pixi.js", async (original) => {
@@ -26,14 +27,19 @@ vi.mock("pixi.js", async (original) => {
 vi.mock("./sprites.ts", async (original) => ({
   ...(await original<typeof import("./sprites.ts")>()),
   loadOfficeAssets: async () => ({ floorplan: {}, sheet: {} }),
-  loadOwls: async () => null,
+  loadOwls: vi.fn(async () => null),
 }));
 vi.mock("./props.ts", async (original) => ({
   ...(await original<typeof import("./props.ts")>()),
   loadWallFont: async () => {},
 }));
+const layers = vi.hoisted(() => [] as { args: unknown[]; setAnimal: ReturnType<typeof vi.fn> }[]);
 vi.mock("./actors.ts", () => ({
   ActorLayer: class {
+    setAnimal = vi.fn();
+    constructor(...args: unknown[]) {
+      layers.push({ args, setAnimal: this.setAnimal });
+    }
     placeOverlay() {}
   },
 }));
@@ -152,4 +158,18 @@ test("1×가 안 들어가는 무대는 패닝하고 가운데로는 이동만 �
   expect(s.wrap.style.transform).toBe("");
   expect(s.stage.querySelector<HTMLElement>(".ow-minimap")!.hidden).toBe(false);
   expect(s.onScale).not.toHaveBeenCalled();
+});
+
+test("동물은 기본 섞기로 액터 층에 넘기고, 바꿔도 시트를 다시 읽지 않고 액터 층의 종만 바꾼다", async () => {
+  vi.mocked(loadOwls)
+    .mockClear()
+    .mockResolvedValueOnce({ textures: {}, meta: {} } as never);
+  layers.length = 0;
+  const s = await setup(1040, 640);
+  expect(loadOwls).toHaveBeenCalledExactlyOnceWith(2);
+  expect(layers[0].args[4]).toBe("mixed");
+  s.handle.setAnimal("owls");
+  s.handle.setAnimal("cats");
+  expect(layers[0].setAnimal.mock.calls).toEqual([["owls"], ["cats"]]);
+  expect(loadOwls).toHaveBeenCalledTimes(1);
 });

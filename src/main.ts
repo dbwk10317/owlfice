@@ -63,7 +63,7 @@ async function loadSheet(): Promise<LoadingSheet | undefined> {
 /** 사이드바 · 가운데(머리말 + 무대) · 현황판 (HANDOFF 2.1). 창 너비 구간은 header 가 app.dataset.layout 으로 정한다 */
 function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
   let settings = initialSettings;
-  setAvatarAnimal(settings.animal ?? "owls");
+  setAvatarAnimal(settings.animal ?? "mixed");
   const sound = new OfficeSound();
   sound.setEnabled(settings.sound ?? false);
   document.addEventListener("pointerdown", () => sound.unlock());
@@ -215,7 +215,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     );
   }
   mountOffice(stage, store, {
-    animal: settings.animal ?? "owls",
+    animal: settings.animal ?? "mixed",
     sound,
     bossName: settings.bossName,
     onScale: (n, maxFit) => header?.setScale(n, maxFit),
@@ -236,7 +236,7 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
       o.setRoomLabels(header?.roomLabels() ?? true);
       o.setBossName(settings.bossName);
       // 마운트 중에 바뀐 동물은 office 가 아직 없어 건너뛰었으므로 여기서 최신 값을 적용한다
-      o.setAnimal(settings.animal ?? "owls");
+      o.setAnimal(settings.animal ?? "mixed");
       checkAfterOffice();
     },
     (e) => {
@@ -269,9 +269,9 @@ function mountShell(initialSettings: SettingsDto, sheet?: LoadingSheet): void {
     sidebar.setSettings(next.companyName, next.rawDiagnostics ?? false);
     header?.setSettings(next.companyName, next.sound ?? false, next.nightMode ?? "auto");
     office?.setBossName(next.bossName);
-    // 직원 동물: 캔버스는 지금 배율의 밀도로 시트를 다시 읽고, 카드 아바타는 캐시를 비운다
-    setAvatarAnimal(next.animal ?? "owls");
-    office?.setAnimal(next.animal ?? "owls");
+    // 직원 동물: 시트는 동물과 무관해 다시 읽지 않는다. 캔버스는 종만 다시 고르고, 카드 아바타는 그림 캐시를 비운다
+    setAvatarAnimal(next.animal ?? "mixed");
+    office?.setAnimal(next.animal ?? "mixed");
   }
 }
 

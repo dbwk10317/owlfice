@@ -12,9 +12,8 @@ import {
 import { expect, test, vi } from "vite-plus/test";
 import rawFloorplan from "../../design/sprites/floorplan.json";
 import officeJson from "../../design/sprites/office.json";
-import owlsJson from "../../design/sprites/owls.json";
-import owls3Json from "../../design/sprites/owls@3x.json";
-import dogsJson from "../../design/sprites/dogs.json";
+import owlsJson from "../../design/sprites/employees.json";
+import owls3Json from "../../design/sprites/employees@3x.json";
 import phrases from "../../design/handoff/phrases.ko.json";
 import type {
   Bubble,
@@ -29,6 +28,7 @@ import type {
 import {
   ActorLayer,
   bubbleText,
+  castOf,
   fnv1a64,
   layoutActors,
   owlFrameKeys,
@@ -235,8 +235,8 @@ test("종 해시는 백엔드 fnv1a64 와 같은 값이다 (names.rs 테스트 �
   // UTF-8 바이트로 센다 (Rust str::bytes)
   expect(fnv1a64("김")).toBe(0x97638a1bac074b24n);
   // 0xaf63dc4c8601ec8c % 5 = 1, 0xcbf29ce484222325 % 5 = 2
-  expect(speciesOf("a", meta.employeeSpecies)).toBe("longeared");
-  expect(speciesOf("", meta.employeeSpecies)).toBe("little");
+  expect(speciesOf("a", meta.animals.owls.employees)).toBe("longeared");
+  expect(speciesOf("", meta.animals.owls.employees)).toBe("little");
 });
 
 // ---------- 자리 ----------
@@ -1060,7 +1060,7 @@ test("BossVisit cue 로 사장님 액터가 생기고 도착 5초 뒤 나가 사
   expect(bodyOf(layer, "boss")).toBe(`body/${sp}/jump_f_0`);
   const visitor = world.children[base] as Container;
   expect((visitor.children[0] as Sprite).texture.label).toMatch(
-    new RegExp(`^body/${meta.bossSpecies}/walk_[fb]_`),
+    new RegExp(`^body/${castOf(meta, "mixed").bossOf("t")}/walk_[fb]_`),
   );
   expect((visitor.children[1] as Sprite).texture.label).toMatch(/^outfit\/boss\/walk_[fb]_/);
   // 걷는 동안은 말풍선이 없고, 도착하면 보인다
@@ -2689,26 +2689,69 @@ test("2× 시트를 3× 로 바꿔도 직원은 같은 자리에서 월드 16×2
   expect(size()).toEqual([-8, 16, 24]);
 });
 
-test("동물을 바꾸면 직원 종은 새 시트의 employeeSpecies, 사장님 방문 몸체는 bossSpecies 다", () => {
-  const dogs = sized(dogsJson);
+test("섞기: 직원 종은 15종 중 해시 자리, 사장님 방문 몸체는 bossSpecies[hash(teamId) % 3] 이고 팀마다 다를 수 있다", () => {
   const visitorBody = (world: Container, i: number) =>
     ((world.children[i] as Container).children[0] as Sprite).texture.label;
   const { layer, world } = newLayer({ owls: labeled });
-  layer.sync(office(BOSS_IN), "large", NOW);
+  // boss·a·m 은 고양이·올빼미·강아지 자리에 떨어진다
+  const ids = ["boss", "a", "m"];
+  const staff = [
+    boss(),
+    emp("a", "Dev", "Read", { seat: 0 }),
+    emp("m", "Dev", "Read", { seat: 1 }),
+  ];
+  layer.sync(office([team("t", staff)]), "large", NOW);
   const base = world.children.length;
-  layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+  layer.sync(withCues(office([team("t", staff)]), [visitCue()]), "large", NOW);
   layer.update(NOW + 1);
-  expect(visitorBody(world, base)).toMatch(new RegExp(`^body/${meta.bossSpecies}/`));
-  layer.setOwls(dogs);
-  layer.update(NOW + 2);
-  expect(visitorBody(world, base)).toMatch(new RegExp(`^body/${dogs.meta.bossSpecies}/`));
-  const sp = speciesOf("boss", dogs.meta.employeeSpecies);
-  expect(bodyOf(layer, "boss")).toMatch(new RegExp(`^body/${sp}/`));
-  // 처음부터 강아지 시트면 방문 몸체도 강아지 사장님
-  const fresh = newLayer({ owls: dogs });
-  fresh.layer.sync(office(BOSS_IN), "large", NOW);
-  const n = fresh.world.children.length;
-  fresh.layer.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
-  fresh.layer.update(NOW + 1);
-  expect(visitorBody(fresh.world, n)).toMatch(new RegExp(`^body/${dogs.meta.bossSpecies}/`));
+  const species = ids.map((id) => bodyOf(layer, id)!.split("/")[1]);
+  expect(species).toEqual(ids.map((id) => meta.employeeSpecies[Number(fnv1a64(id) % 15n)]));
+  const animalOf = (sp: string) =>
+    Object.entries(meta.animals).find(([, v]) => v.employees.includes(sp))?.[0];
+  expect(new Set(species.map(animalOf))).toEqual(new Set(["owls", "dogs", "cats"]));
+  expect(visitorBody(world, base)).toMatch(
+    new RegExp(`^body/${meta.bossSpecies[Number(fnv1a64("t") % 3n)]}/`),
+  );
+  expect(castOf(meta, "mixed").bossOf("t0")).not.toBe(castOf(meta, "mixed").bossOf("t1"));
+});
+
+test("한 동물을 고르면 시트를 그대로 두고 모든 직원이 그 동물 5종, 사장님 방문 몸체는 그 동물 사장님이다", () => {
+  const visitorBody = (world: Container, i: number) =>
+    ((world.children[i] as Container).children[0] as Sprite).texture.label;
+  const { layer, world } = newLayer({ owls: labeled });
+  const ids = ["boss", "a", "m", "d"];
+  const staff = [
+    boss(),
+    emp("a", "Dev", "Read", { seat: 0 }),
+    emp("m", "Dev", "Read", { seat: 1 }),
+    emp("d", "Dev", "Read", { seat: 2 }),
+  ];
+  layer.sync(office([team("t", staff)]), "large", NOW);
+  const base = world.children.length;
+  layer.sync(withCues(office([team("t", staff)]), [visitCue()]), "large", NOW);
+  layer.update(NOW + 1);
+  for (const animal of ["owls", "dogs", "cats"] as const) {
+    layer.setAnimal(animal);
+    layer.update(NOW + 2);
+    const { employees, boss: chief } = meta.animals[animal];
+    for (const id of ids) {
+      const body = layer.rootOf("t", id)!.children[0] as Sprite;
+      expect(body.texture.label).toMatch(new RegExp(`^body/${speciesOf(id, employees)}/`));
+      // 같은 시트의 텍스처다 (다시 읽지 않는다)
+      expect(body.texture).toBe(labeled.textures[body.texture.label!]);
+    }
+    expect(visitorBody(world, base)).toMatch(new RegExp(`^body/${chief}/`));
+  }
+  // 처음부터 강아지면 새 방문 몸체도 강아지 사장님
+  const fresh = new ActorLayer(fp, officeSheet, labeled, document.createElement("div"), "dogs");
+  const freshWorld = new Container();
+  fresh.attach(freshWorld);
+  fresh.sync(office(BOSS_IN), "large", NOW);
+  const n = freshWorld.children.length;
+  fresh.sync(withCues(office(BOSS_IN), [visitCue()]), "large", NOW);
+  fresh.update(NOW + 1);
+  expect(visitorBody(freshWorld, n)).toMatch(new RegExp(`^body/${meta.animals.dogs.boss}/`));
+  expect(bodyOf(fresh, "boss")).toMatch(
+    new RegExp(`^body/${speciesOf("boss", meta.animals.dogs.employees)}/`),
+  );
 });

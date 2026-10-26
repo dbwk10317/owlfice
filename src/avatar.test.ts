@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Rectangle, Texture } from "pixi.js";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import raw from "../design/sprites/owls.json";
+import raw from "../design/sprites/employees.json";
 import { speciesOf, type OwlMeta, type Owls } from "./office/actors.ts";
 import { loadOwls } from "./office/sprites.ts";
 import { emp } from "./test-office.ts";
@@ -31,6 +31,11 @@ const host = () => {
 };
 const copied = (el: HTMLElement): HTMLCanvasElement =>
   draws.get(el.firstChild as HTMLCanvasElement)!.mock.calls[0][0] as HTMLCanvasElement;
+/** 그 자리에 그린 몸 겹의 시트 위치가 이 종의 idle_f_0 인가 */
+const bodyAt = (el: HTMLElement, species: string) => {
+  const f = textures[`body/${species}/idle_f_0`].frame;
+  return draws.get(copied(el))!.mock.calls[0].slice(1, 3).join() === [f.x, f.y + 4].join();
+};
 
 beforeEach(() => {
   vi.resetModules();
@@ -172,28 +177,28 @@ test.each(["Security", "Data", "Designer"] as const)(
   },
 );
 
-test("동물을 바꾸면 해당 시트로 다시 그리고 같은 동물이면 캐시를 유지한다", async () => {
+test("동물을 바꾸면 시트는 다시 읽지 않고 그 동물의 종으로 다시 그리며 같은 동물이면 캐시를 유지한다", async () => {
   const { setAvatar, setAvatarAnimal } = await import("./avatar.ts");
   const a = host();
   const employee = emp("a");
   setAvatar(a, employee, "A");
   await settle();
-  expect(loadOwls).toHaveBeenLastCalledWith("owls", 2);
-  setAvatarAnimal("owls");
+  expect(loadOwls).toHaveBeenLastCalledWith(2);
+  expect(bodyAt(a, speciesOf("a", owls.meta.employeeSpecies))).toBe(true);
+  setAvatarAnimal("mixed");
   setAvatar(host(), employee, "A");
   await settle();
-  expect(loadOwls).toHaveBeenCalledTimes(1);
   const old = a.firstChild;
   setAvatarAnimal("dogs");
   setAvatar(a, employee, "A");
   await settle();
-  expect(loadOwls).toHaveBeenCalledTimes(2);
-  expect(loadOwls).toHaveBeenLastCalledWith("dogs", 2);
+  expect(loadOwls).toHaveBeenCalledTimes(1);
   expect(a.firstChild).not.toBe(old);
   expect(a.children).toHaveLength(1);
+  expect(bodyAt(a, speciesOf("a", owls.meta.animals.dogs.employees))).toBe(true);
 });
 
-test("동물이 바뀌면 붙어 있는 아바타를 새 시트로 다시 그리고 떨어진 자리는 잊는다", async () => {
+test("동물이 바뀌면 붙어 있는 아바타를 다시 그리고 떨어진 자리는 잊는다", async () => {
   const { setAvatar, setAvatarAnimal } = await import("./avatar.ts");
   const a = host();
   const gone = host();
@@ -202,13 +207,15 @@ test("동물이 바뀌면 붙어 있는 아바타를 새 시트로 다시 그리
   setAvatar(gone, emp("b"), "A");
   await settle();
   const old = a.firstChild;
+  const goneOld = gone.firstChild;
   gone.remove();
   setAvatarAnimal("cats");
   await settle();
-  expect(loadOwls).toHaveBeenLastCalledWith("cats", 2);
+  expect(loadOwls).toHaveBeenCalledTimes(1);
   expect(a.firstChild).not.toBe(old);
   expect(a.children).toHaveLength(1);
-  expect(gone.children).toHaveLength(1);
+  expect(bodyAt(a, speciesOf("a", owls.meta.animals.cats.employees))).toBe(true);
+  expect(gone.firstChild).toBe(goneOld);
 });
 
 test("제거된 요소는 동물을 안 바꿔도 다음 setAvatar 뒤 묶음에서 빠진다", async () => {

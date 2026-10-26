@@ -7,7 +7,7 @@
 <p align="center"><strong>AI는 일하고, 사무실은 살아납니다.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/dbwk10317/owlfice/releases/latest/download/Owlfice_0.2.1_x64-setup.exe">Windows 설치 파일 다운로드</a>
+  <a href="https://github.com/dbwk10317/owlfice/releases/latest/download/Owlfice_0.2.2_x64-setup.exe">Windows 설치 파일 다운로드</a>
   · <a href="https://github.com/dbwk10317/owlfice/releases">모든 버전</a>
 </p>
 

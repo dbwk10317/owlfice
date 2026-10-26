@@ -151,7 +151,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
   const animals = h(doc, "div", "ow-seg");
   animals.setAttribute("role", "group");
   animals.setAttribute("aria-label", S.animal);
-  const animalChoices = (["owls", "dogs", "cats"] as const).map((animal: Animal) => {
+  const animalChoices = (["mixed", "owls", "dogs", "cats"] as const).map((animal: Animal) => {
     const control = button(S.animals[animal], () => save({ animal }));
     control.className = "";
     animals.append(control);
@@ -362,7 +362,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
       control.setAttribute("aria-pressed", String(selected));
     }
     for (const { animal, control } of animalChoices)
-      control.setAttribute("aria-pressed", String(animal === (current.animal ?? "owls")));
+      control.setAttribute("aria-pressed", String(animal === (current.animal ?? "mixed")));
     for (const [key, el] of switches)
       el.setAttribute("aria-checked", String(current[key] ?? key === "osNotifications"));
     paths.replaceChildren(

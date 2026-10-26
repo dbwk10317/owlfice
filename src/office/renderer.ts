@@ -12,7 +12,7 @@ import {
 import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { fill } from "../text.ts";
-import { ActorLayer, seatProps } from "./actors.ts";
+import { ActorLayer, seatProps, type Owls } from "./actors.ts";
 import type { OfficeSound } from "./sound.ts";
 import { DRIVEN_PROP, PropsLayer, ScreenLabel, loadWallFont } from "./props.ts";
 import { LADDER_MS } from "./anim-queue.ts";
@@ -35,7 +35,10 @@ import {
   loadOfficeAssets,
   loadOwls,
   placeSprite,
+  sheetDensity,
   tintedTexture,
+  type Animal,
+  type Density,
   type OfficeAssets,
 } from "./sprites.ts";
 
@@ -57,6 +60,48 @@ export function canvasScale(availDevW: number, availDevH: number, dpr: number) {
     backingH: CANVAS_H * scale,
     cssW: (CANVAS_W * scale) / dpr,
     cssH: (CANVAS_H * scale) / dpr,
+  };
+}
+
+/** 창에 맞는 가장 큰 배율. 720 미만 창은 1× 고정에 패닝 (HANDOFF 2.2, 6.1). */
+export function maxFitScale(
+  availDevW: number,
+  availDevH: number,
+  dpr: number,
+  viewportW: number,
+): number {
+  return viewportW < 720 ? 1 : canvasScale(availDevW, availDevH, dpr).scale;
+}
+
+/**
+ * 직원 시트 교체 (HANDOFF 6.4). 요청이 겹치면 (동물, 밀도) 마지막 것만 적용하고, 로드 중엔 지금 시트를 그대로 그린다.
+ * 실패하면 알리고 지금 시트를 유지한다. 같은 요청이 다시 오면 그때 다시 읽는다.
+ */
+export function sheetSwitcher(
+  animal: Animal,
+  density: Density,
+  load: (animal: Animal, density: Density) => Promise<Owls>,
+  apply: (owls: Owls) => void,
+): (animal: Animal, density: Density) => void {
+  let shown = `${animal}@${density}`;
+  let wanted = shown;
+  return (animal, density) => {
+    const key = `${animal}@${density}`;
+    if (key === wanted) return;
+    wanted = key;
+    // 지금 그리는 시트로 돌아왔으면 읽고 있던 것은 끝나도 버린다
+    if (key === shown) return;
+    load(animal, density).then(
+      (owls) => {
+        if (wanted !== key) return;
+        shown = key;
+        apply(owls);
+      },
+      (e) => {
+        console.error(`직원 시트 ${key} 를 못 읽어 지금 시트를 유지한다`, e);
+        if (wanted === key) wanted = shown;
+      },
+    );
   };
 }
 
@@ -291,8 +336,12 @@ export interface OfficeHandle {
   setRoomLabels(on: boolean): void;
   setBossName(name: string | null): void;
   highlightTeam(officeId: string, teamId: string): void;
+  /** 설정의 직원 동물. 지금 배율의 밀도로 시트를 다시 읽는다 */
+  setAnimal(animal: Animal): void;
 }
 export interface OfficeOptions {
+  /** 직원 동물 (기본 올빼미) */
+  animal?: Animal;
   season?: boolean;
   sound?: OfficeSound;
   bossName?: string | null;
@@ -314,8 +363,20 @@ export async function mountOffice(
   await loadWallFont();
   const assets = await loadOfficeAssets();
   const fp = assets.floorplan;
-  const owls = await loadOwls().catch((e) => {
-    console.error("owls.json 을 못 읽어 대체 몸체로 그린다", e);
+  let animal: Animal = opts.animal ?? "owls";
+  // 첫 layout() 과 같은 배율의 밀도로 읽는다. 아직 고른 배율은 없다
+  const dpr0 = window.devicePixelRatio || 1;
+  const box0 = stage.getBoundingClientRect();
+  const density0 = sheetDensity(
+    maxFitScale(
+      Math.floor(box0.width * dpr0),
+      Math.floor(box0.height * dpr0),
+      dpr0,
+      window.innerWidth,
+    ),
+  );
+  const owls = await loadOwls(animal, density0).catch((e) => {
+    console.error("직원 시트를 못 읽어 대체 몸체로 그린다", e);
     return null;
   });
 
@@ -330,6 +391,10 @@ export async function mountOffice(
   // 이름표보다 아래에 깔리게 먼저 만든다
   const screenLabel = new ScreenLabel(actorOverlay);
   const actors = new ActorLayer(fp, assets.sheet, owls, actorOverlay);
+  // 대체 몸체로 시작했으면 시트를 바꾸지 않는다 (ActorLayer.setOwls)
+  const pickSheet = owls
+    ? sheetSwitcher(animal, density0, loadOwls, (next) => actors.setOwls(next))
+    : () => {};
   let bossName = opts.bossName || phrases.ranks.boss;
   const minimap = document.createElement("div");
   minimap.className = "ow-minimap";
@@ -595,12 +660,13 @@ export async function mountOffice(
   function layout(): void {
     tooltip.close();
     dpr = window.devicePixelRatio || 1;
-    const maxFit = window.innerWidth < 720 ? 1 : canvasScale(avail.w, avail.h, dpr).scale;
+    const maxFit = maxFitScale(avail.w, avail.h, dpr, window.innerWidth);
     const scale = Math.min(preferredScale ?? maxFit, maxFit);
     fit = canvasScale(CANVAS_W * scale, CANVAS_H * scale, dpr);
     if (app.renderer.width !== fit.backingW || app.renderer.height !== fit.backingH)
       app.renderer.resize(fit.backingW, fit.backingH);
     app.stage.scale.set(fit.scale);
+    pickSheet(animal, sheetDensity(fit.scale));
     if (fit.scale !== notifiedScale || maxFit !== notifiedMaxFit) {
       notifiedScale = fit.scale;
       notifiedMaxFit = maxFit;
@@ -784,6 +850,10 @@ export async function mountOffice(
     highlightTeam: (officeId, teamId) => {
       pendingTeam = { officeId, teamId };
       focusTeam();
+    },
+    setAnimal: (next) => {
+      animal = next;
+      pickSheet(animal, sheetDensity(fit.scale));
     },
   };
 }

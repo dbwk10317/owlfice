@@ -53,17 +53,32 @@ const SWEAT_OFFSET: [number, number] = [6, -2];
 const FRAME_STAND: [number, number] = [0.8, 1.2];
 const LADDER_LOOK: Look = { pose: "idle", dir: "b" };
 
+/** 좌표는 모두 시트 텍셀 단위. `density` 로 나눠 월드 px 로 쓴다 (HANDOFF 6.3). */
 export interface OwlMeta {
+  density: number;
+  frame: [number, number];
   anchor: [number, number];
+  bossSpecies: string;
   employeeSpecies: string[];
   poses: Record<string, { dirs: Record<string, number>; fps: number }>;
   anchors: Record<string, { hand: [number, number]; head: [number, number] }>;
 }
 
-/** owls.json 의 텍스처와 `owlfice` 메타. 로드에 실패하면 null 로 받아 대체 몸체를 그린다. */
+/** 직원 시트의 텍스처와 `owlfice` 메타. 로드에 실패하면 null 로 받아 대체 몸체를 그린다. */
 export interface Owls {
   textures: Record<string, Texture>;
   meta: OwlMeta;
+}
+
+/** 시트 텍셀 좌표 → 발 기준 월드 좌표 (held·도장·땀·머리가 같이 쓴다). */
+function worldAt(meta: OwlMeta, [x, y]: [number, number]): [number, number] {
+  return [(x - meta.anchor[0]) / meta.density, (y - meta.anchor[1]) / meta.density];
+}
+
+/** 레이어 스프라이트가 시트 밀도와 상관없이 월드 16×24 를 차지하게 한다. */
+function fitLayer(s: Sprite, meta: OwlMeta): void {
+  s.pivot.set(meta.anchor[0], meta.anchor[1]);
+  s.scale.set(1 / meta.density);
 }
 
 // ---------- 종 ----------
@@ -606,6 +621,25 @@ export class ActorLayer {
       if (v.body.bubble && !v.body.bubble.isConnected)
         this.overlay.insertBefore(v.body.bubble, this.nametag);
     }
+  }
+
+  /**
+   * 직원 시트를 바꾼다 (배율에 따른 밀도, 설정의 동물). 자리·자세·위치는 그대로 두고 레이어 크기와 종만 맞춘다.
+   * 텍스처·손 물건·도장·땀은 다음 update 가 새 시트로 다시 잡는다.
+   */
+  setOwls(next: Owls): void {
+    // ponytail: 대체 몸체(시트 없이 시작)와 시트 사이 전환은 몸을 새로 지어야 해서 안 한다. 시작 때 시트 로드가 실패하는 일이 잦아지면 올린다
+    if (!this.owls) return;
+    this.owls = next;
+    for (const a of this.actors.values()) {
+      a.species = speciesOf(a.id, next.meta.employeeSpecies);
+      for (const s of a.layers) fitLayer(s, next.meta);
+    }
+    for (const v of this.visitors) {
+      v.body.species = next.meta.bossSpecies;
+      for (const s of v.body.layers) fitLayer(s, next.meta);
+    }
+    this.placeOverlay();
   }
 
   /**
@@ -1186,11 +1220,10 @@ export class ActorLayer {
     const root = new Container();
     const layers: Sprite[] = [];
     if (this.owls) {
-      const [ax, ay] = this.owls.meta.anchor;
       for (let i = 0; i < 8; i++) {
         const s = new Sprite();
         s.anchor.set(0);
-        s.pivot.set(ax, ay);
+        fitLayer(s, this.owls.meta);
         layers.push(s);
         root.addChild(s);
       }
@@ -1271,7 +1304,7 @@ export class ActorLayer {
     b.root.cursor = "pointer";
     b.root.on("pointertap", () => this.onBossPick?.(c.teamId, b.root.x, b.root.y));
     if (this.owls) {
-      b.species = "snowy";
+      b.species = this.owls.meta.bossSpecies;
       b.outfit = "boss";
     }
     const door = stand(this.fp, "door");
@@ -1328,9 +1361,12 @@ export class ActorLayer {
     if (!a.stamp.visible || !this.owls) return;
     // 몸이 좌우로 뒤집혀도 도장 글자는 뒤집지 않는다
     a.stamp.scale.x = a.root.scale.x;
-    const { anchors, anchor } = this.owls.meta;
-    const hand = (anchors[`${a.look.pose}_${a.look.dir}_0`] ?? anchors.carry_f_0).hand;
-    a.stamp.position.set(hand[0] - anchor[0], hand[1] - anchor[1] - 4);
+    const { anchors } = this.owls.meta;
+    const hand = worldAt(
+      this.owls.meta,
+      (anchors[`${a.look.pose}_${a.look.dir}_0`] ?? anchors.carry_f_0).hand,
+    );
+    a.stamp.position.set(hand[0], hand[1] - 4);
   }
 
   private placeSweat(a: Actor, now: number): void {
@@ -1346,12 +1382,12 @@ export class ActorLayer {
     // 움직임 줄이기: 첫 장에 멈춘다. 프레임마다 기준점이 같아 텍스처만 바꾼다
     const i = reducedMotion() ? 0 : Math.floor((now * SWEAT_FPS) / 1000) % 2;
     a.sweat.texture = this.office.textures[`sweat/${i}`];
-    const { anchors, anchor } = this.owls.meta;
-    const head = (anchors[`${a.look.pose}_${a.look.dir}_0`] ?? anchors.crouch_f_0).head;
-    a.sweat.position.set(
-      head[0] - anchor[0] + SWEAT_OFFSET[0],
-      head[1] - anchor[1] + SWEAT_OFFSET[1],
+    const { anchors } = this.owls.meta;
+    const head = worldAt(
+      this.owls.meta,
+      (anchors[`${a.look.pose}_${a.look.dir}_0`] ?? anchors.crouch_f_0).head,
     );
+    a.sweat.position.set(head[0] + SWEAT_OFFSET[0], head[1] + SWEAT_OFFSET[1]);
   }
 
   private fallbackBody(): Graphics {
@@ -1401,8 +1437,7 @@ export class ActorLayer {
     if (!a.held || !this.owls) return;
     const anchor = this.owls.meta.anchors[`${a.look.pose}_${a.look.dir}_${frame}`];
     if (!anchor) return;
-    const [ax, ay] = this.owls.meta.anchor;
-    a.held.position.set(anchor.hand[0] - ax, anchor.hand[1] - ay);
+    a.held.position.set(...worldAt(this.owls.meta, anchor.hand));
   }
 
   private setZz(a: Body): void {
@@ -1526,10 +1561,8 @@ export class ActorLayer {
     const meta = this.owls?.meta;
     const anchor = meta?.anchors[`${look.pose}_${look.dir}_0`];
     if (!meta || !anchor) return { x, y: y - 18 };
-    return {
-      x: x + (anchor.head[0] - meta.anchor[0]) * scaleX,
-      y: y + anchor.head[1] - meta.anchor[1],
-    };
+    const [hx, hy] = worldAt(meta, anchor.head);
+    return { x: x + hx * scaleX, y: y + hy };
   }
 
   private put(el: HTMLElement, x: number, y: number): void {

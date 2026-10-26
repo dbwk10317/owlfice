@@ -5,14 +5,14 @@ import {
   canvasAria,
   canvasScale,
   cueCollector,
-  lightOf,
   panLimits,
   maxFitScale,
   sheetSwitcher,
   teamOfProp,
   toCss,
 } from "./renderer.ts";
-import type { Owls } from "./actors.ts";
+import { lightOf } from "./prop-state.ts";
+import type { Owls } from "./actor-appearance.ts";
 import { sheetDensity, type Density } from "./sprites.ts";
 
 test("액자 클릭은 포커스 팀을 따르고 팀장석 클릭은 자기 팀을 유지한다", () => {

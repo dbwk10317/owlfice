@@ -2,7 +2,7 @@
 import { Rectangle, Texture } from "pixi.js";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import raw from "../design/sprites/employees.json";
-import { speciesOf, type OwlMeta, type Owls } from "./office/actors.ts";
+import { speciesOf, type OwlMeta, type Owls } from "./office/actor-appearance.ts";
 import { loadOwls } from "./office/sprites.ts";
 import { emp } from "./test-office.ts";
 
@@ -218,6 +218,22 @@ test("동물이 바뀌면 붙어 있는 아바타를 다시 그리고 떨어진 
   expect(gone.firstChild).toBe(goneOld);
 });
 
+test("여러 카드의 detached 아바타를 등록한 뒤 붙여도 동물 변경이 모두 반영된다", async () => {
+  const { setAvatar, setAvatarAnimal, mountedCount } = await import("./avatar.ts");
+  const cardA = document.createElement("article");
+  const cardB = document.createElement("article");
+  const a = cardA.appendChild(document.createElement("span"));
+  const b = cardB.appendChild(document.createElement("span"));
+  setAvatar(a, emp("a"), "A");
+  setAvatar(b, emp("b"), "B");
+  expect(mountedCount()).toBe(2);
+  document.body.append(cardA, cardB);
+  setAvatarAnimal("dogs");
+  await settle();
+  expect(bodyAt(a, speciesOf("a", owls.meta.animals.dogs.employees))).toBe(true);
+  expect(bodyAt(b, speciesOf("b", owls.meta.animals.dogs.employees))).toBe(true);
+});
+
 test("제거된 요소는 동물을 안 바꿔도 다음 setAvatar 뒤 묶음에서 빠진다", async () => {
   const { setAvatar, mountedCount } = await import("./avatar.ts");
   const a = host();
@@ -229,6 +245,9 @@ test("제거된 요소는 동물을 안 바꿔도 다음 setAvatar 뒤 묶음에
   gone.remove();
   setAvatar(a, emp("c"), "A");
   expect(mountedCount()).toBe(1);
+  document.body.append(gone);
+  setAvatar(gone, emp("b"), "A");
+  expect(mountedCount()).toBe(2);
 });
 
 test("시트 로드가 한 번 실패해도 다음 setAvatar 가 다시 시도해 그린다", async () => {

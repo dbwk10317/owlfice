@@ -18,12 +18,11 @@ import {
   kanbanNotes,
   paperCount,
   plantState,
-  PropsLayer,
-  ScreenLabel,
   safeMinutes,
   trashState,
   windowState,
-} from "./props.ts";
+} from "./prop-state.ts";
+import { PropsLayer, ScreenLabel } from "./props.ts";
 import { buildScene } from "./renderer.ts";
 import { emp as testEmp, team as testTeam, office as testOffice } from "../test-office.ts";
 

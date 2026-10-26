@@ -21,6 +21,7 @@ export function act(over: Partial<Activity> = {}): Activity {
 export function emp(id: string, over: Partial<EmployeeDto> = {}): EmployeeDto {
   return {
     agentId: id,
+    state: "Working",
     name: `이름${id}`,
     rank: "Daeri",
     role: "Backend",

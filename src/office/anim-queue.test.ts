@@ -75,18 +75,18 @@ test("같은 방은 직선 하나, 다른 방은 방 entry 를 지나고 개발�
   expect(walkPath(fp, to, lib)).toEqual([to, entry("test"), entry("dev"), entry("library"), lib]);
 });
 
-test("걷는 시간은 0.5–1.5초로 자른다", () => {
+test("걷는 시간은 1–3초로 자른다", () => {
   const t = track();
   t.reset(target(SEAT), NOW);
   t.retarget(target({ ...SEAT, gx: SEAT.gx + 1 }), NOW);
-  expect(walking(t.update(NOW + WALK_MIN_MS - 1))).toBe(true);
-  expect(walking(t.update(NOW + WALK_MIN_MS))).toBe(false);
-  // 가장 먼 방 사이 걷기도 1.5초를 넘지 않는다
+  expect(walking(t.update(NOW + 999))).toBe(true);
+  expect(walking(t.update(NOW + 1000))).toBe(false);
+  // 가장 먼 방 사이 걷기도 3초를 넘지 않는다
   const far = track();
   far.reset(target(pt("door")), NOW);
   far.retarget(target(pt("boss_window")), NOW);
-  expect(walking(far.update(NOW + WALK_MAX_MS - 1))).toBe(true);
-  expect(walking(far.update(NOW + WALK_MAX_MS))).toBe(false);
+  expect(walking(far.update(NOW + 2999))).toBe(true);
+  expect(walking(far.update(NOW + 3000))).toBe(false);
 });
 
 test("화면 왼쪽으로 걸을 때만 뒤집는다", () => {
@@ -173,13 +173,13 @@ test("reset 은 큐를 비우고 바로 제자리 (조용한 재구성·사무�
   expect(s.look).toBe(to.look);
 });
 
-test("출근은 문에서 좌석까지 4초 걷는다", () => {
+test("출근은 문에서 좌석까지 6초 걷는다", () => {
   const t = track();
   t.retarget(target(SEAT), NOW, true);
   expect(t.update(NOW).at).toEqual(pt("door"));
-  const mid = t.update(NOW + ENTER_MS - 1);
+  const mid = t.update(NOW + 5999);
   expect(mid.look.pose).toBe("walk");
-  expect(t.update(NOW + ENTER_MS).at).toEqual(SEAT);
+  expect(t.update(NOW + 6000).at).toEqual(SEAT);
 });
 
 test("숨기면 출구까지 걸어가 사라지고, 다시 보이면 문에서 들어온다", () => {
@@ -202,7 +202,7 @@ test("clap 은 앞 걷기가 끝난 뒤 1초, 그다음 자리 자세", () => {
   const center = target(pt("dev_center"), { look: { pose: "idle", dir: "f" } });
   t.retarget(center, NOW);
   playCue(clap(), t, NOW);
-  // 가까운 걷기라 0.5초
+  // 가까운 걷기라 1초
   expect(t.update(NOW + WALK_MIN_MS - 1).look.pose).toBe("walk");
   expect(t.update(NOW + WALK_MIN_MS).look.pose).toBe("clap");
   expect(t.update(NOW + WALK_MIN_MS + CLAP_MS - 1).look.pose).toBe("clap");

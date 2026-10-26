@@ -139,7 +139,7 @@ export function mountHeader(
     try {
       await opts.onSound?.(!soundOn);
     } catch (e) {
-      soundError.textContent = String(e);
+      soundError.textContent = e instanceof Error ? e.message : String(e);
       soundError.hidden = false;
     } finally {
       sound.disabled = false;
@@ -154,7 +154,7 @@ export function mountHeader(
     try {
       await opts.onNightMode?.(doc.documentElement.dataset.theme === "night" ? "off" : "on");
     } catch (e) {
-      soundError.textContent = String(e);
+      soundError.textContent = e instanceof Error ? e.message : String(e);
       soundError.hidden = false;
     } finally {
       nightToggle.disabled = false;
@@ -235,7 +235,7 @@ export function mountHeader(
       try {
         await opts.toggleMaximize?.();
       } catch (e) {
-        soundError.textContent = String(e);
+        soundError.textContent = e instanceof Error ? e.message : String(e);
         soundError.hidden = false;
       } finally {
         maximize.disabled = false;

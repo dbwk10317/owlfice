@@ -25,19 +25,16 @@ import type {
   Room,
   TeamDto,
 } from "../types/ipc.ts";
+import { ActorLayer, bubbleText } from "./actors.ts";
 import {
-  ActorLayer,
-  bubbleText,
   castOf,
   fnv1a64,
-  layoutActors,
   owlFrameKeys,
-  roundEven,
-  seatProps,
   speciesOf,
   type OwlMeta,
   type Owls,
-} from "./actors.ts";
+} from "./actor-appearance.ts";
+import { layoutActors, roundEven, seatProps } from "./actor-layout.ts";
 import {
   CHEER_MS,
   CLAP_MS,
@@ -52,7 +49,7 @@ import {
 } from "./anim-queue.ts";
 import { gridToScreen, parseFloorplan, type Kind } from "./floorplan.ts";
 import { toCss } from "./renderer.ts";
-import { empKey } from "../ticker.ts";
+import { empKey } from "../employee-key.ts";
 import { emp as testEmp, team as testTeam, office as testOffice } from "../test-office.ts";
 
 const fp = parseFloorplan(rawFloorplan);
@@ -89,6 +86,7 @@ function emp(
 ): EmployeeDto {
   return {
     agentId,
+    state: "Working",
     name: "박서준",
     rank: "Daeri",
     role: "Backend",
@@ -723,19 +721,21 @@ test("같은 직원·같은 at 이면 다시 그려도 같은 문구", () => {
   expect(bubbleOf(overlay)!.textContent).toBe(first);
 });
 
-test("4초가 지나면 숨기고, 오래된 스냅샷은 만들지도 않는다", () => {
+test("8초가 지나면 숨기고, 오래된 스냅샷은 만들지도 않는다", () => {
   const { layer, overlay } = newLayer();
   const a = emp("a", "Dev", "Type", { seat: 0, bubble: bub({ kind: "Say", text: "안녕" }, NOW) });
   layer.sync(office([team("t", [boss(), a])]), "large", NOW);
   expect(bubbleOf(overlay)!.hidden).toBe(false);
-  layer.update(NOW + 3999);
+  layer.update(NOW + 7999);
   expect(bubbleOf(overlay)!.hidden).toBe(false);
-  layer.update(NOW + 4000);
+  layer.sync(office([team("t", [boss(), a])]), "large", NOW + 7999);
+  expect(bubbleOf(overlay)!.hidden).toBe(false);
+  layer.update(NOW + 8000);
   expect(bubbleOf(overlay)!.hidden).toBe(true);
 
   const old = emp("b", "Dev", "Type", {
     seat: 1,
-    bubble: bub({ kind: "Say", text: "옛날" }, NOW - 4001),
+    bubble: bub({ kind: "Say", text: "옛날" }, NOW - 8000),
   });
   const fresh = newLayer();
   fresh.layer.sync(office([team("t", [boss(), old])]), "large", NOW);
@@ -765,18 +765,22 @@ test("is-incident 는 방이 아니라 Incident 말풍선에 붙는다", () => {
   expect(bubbleOf(overlay)!.classList.contains("is-incident")).toBe(true);
 });
 
-test("미래 at 은 4초 넘게 앞서면 안 보인다", () => {
+test("미래 at 은 4초 이상 앞서면 안 보이고, 허용된 말풍선은 사건 8초 뒤 만료된다", () => {
   const near = newLayer();
   const a = emp("a", "Dev", "Type", {
     seat: 0,
-    bubble: bub({ kind: "Say", text: "x" }, NOW + 3000),
+    bubble: bub({ kind: "Say", text: "x" }, NOW + 3999),
   });
   near.layer.sync(office([team("t", [boss(), a])]), "large", NOW);
   expect(bubbleOf(near.overlay)!.hidden).toBe(false);
+  near.layer.update(NOW + 3999 + 7999);
+  expect(bubbleOf(near.overlay)!.hidden).toBe(false);
+  near.layer.update(NOW + 3999 + 8000);
+  expect(bubbleOf(near.overlay)!.hidden).toBe(true);
   const far = newLayer();
   const b = emp("b", "Dev", "Type", {
     seat: 0,
-    bubble: bub({ kind: "Say", text: "x" }, NOW + 5000),
+    bubble: bub({ kind: "Say", text: "x" }, NOW + 4000),
   });
   far.layer.sync(office([team("t", [boss(), b])]), "large", NOW);
   expect(bubbleOf(far.overlay)).toBeNull();
@@ -919,7 +923,7 @@ test("걷는 동안 walk 8fps, 왼쪽이면 scale.x −1", () => {
   layer.sync(office([team("t", [boss(), emp("a", "Test")])]), "large", NOW);
   // 테스트실 → 서고: 통로에서 서고 entry 로 가는 구간은 왼쪽 위
   layer.sync(office([team("t", [boss(), emp("a", "Archive")])]), "large", NOW);
-  layer.update(NOW + 500);
+  layer.update(NOW + 1000);
   const sp = speciesOf("a", meta.employeeSpecies);
   expect(bodyOf(layer, "a")).toMatch(new RegExp(`^body/${sp}/walk_b_[0-3]$`));
   expect(layer.rootOf("t", "a")!.scale.x).toBe(-1);
@@ -1047,7 +1051,7 @@ const SEAT_BOSS = fp.layouts.large.seats.boss[0];
 const ARRIVE = walkMs(walkPath(fp, stand(fp, "door"), frontOf(SEAT_BOSS)));
 const LEAVE = walkMs(walkPath(fp, frontOf(SEAT_BOSS), stand(fp, "exit")));
 
-test("BossVisit cue 로 사장님 액터가 생기고 도착 5초 뒤 나가 사라진다, 부장은 펄쩍, 인터폰이 울린다", () => {
+test("BossVisit cue 로 사장님 액터가 생기고 도착 8초 뒤 나가 사라진다, 부장은 펄쩍, 인터폰이 울린다", () => {
   const { layer, overlay, world } = newLayer({ owls: labeled });
   const ring = vi.fn();
   layer.onRing = ring;
@@ -1073,10 +1077,12 @@ test("BossVisit cue 로 사장님 액터가 생기고 도착 5초 뒤 나가 사
   layer.update(NOW + ARRIVE);
   expect(bubble.hidden).toBe(false);
   expect(world.children).toHaveLength(base + 1);
-  // 도착 5초 뒤 문으로 나가 사라진다
-  layer.update(NOW + ARRIVE + VISIT_STAY_MS - 1);
+  // 도착 8초 뒤 문으로 나가 사라진다
+  layer.update(NOW + ARRIVE + 7999);
+  expect(bubble.hidden).toBe(false);
   expect(world.children).toHaveLength(base + 1);
-  layer.update(NOW + ARRIVE + VISIT_STAY_MS);
+  layer.update(NOW + ARRIVE + 8000);
+  expect(bubble.hidden).toBe(true);
   expect(world.children).toHaveLength(base + 1);
   layer.update(NOW + ARRIVE + VISIT_STAY_MS + LEAVE);
   expect(world.children).toHaveLength(base);
@@ -1107,15 +1113,19 @@ test("Reject cue: 부장이 머리를 긁고, 결재판 자리에 도장이 1초
   expect(bodyOf(layer, "boss")).toMatch(/\/walk_b_/);
   expect(stamp.visible).toBe(false);
   const seat = fp.layouts.large.seats.boss[0];
-  const arrive =
-    NOW + walkMs(walkPath(fp, { gx: seat.gx, gy: seat.gy, z: 0 }, stand(fp, "security")));
+  const arrive = NOW + 2000;
+  layer.update(arrive - 1);
+  expect(bodyOf(layer, "boss")).toMatch(/\/walk_/);
+  expect(stamp.visible).toBe(false);
   layer.update(arrive);
+  expect(posOf(layer, "boss")).toEqual(screen(...(fp.stands.security[0] as [number, number])));
   expect(bodyOf(layer, "boss")).toMatch(/\/scratch_f_/);
   expect(stamp.visible).toBe(true);
   layer.update(arrive + STAMP_MS - 1);
   expect(stamp.visible).toBe(true);
   layer.update(arrive + STAMP_MS);
   expect(stamp.visible).toBe(false);
+  expect(posOf(layer, "boss")).toEqual(screen(seat.gx, seat.gy));
   // 조용한 재구성에서는 다시 보이지 않는다
   layer.sync(
     withCues(office(BOSS_IN), [cue({ kind: "Reject", agent: "boss" })], true),
@@ -1126,7 +1136,7 @@ test("Reject cue: 부장이 머리를 긁고, 결재판 자리에 도장이 1초
   expect(bodyOf(layer, "boss")).toMatch(/\/sit_f_/);
 });
 
-test("움직임 줄이기: 사장님은 걷지 않고 바로 서고 도착 정확히 5초 뒤 사라진다", () => {
+test("움직임 줄이기: 사장님은 걷지 않고 바로 서고 도착 정확히 8초 뒤 사라진다", () => {
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   try {
     const { layer, world } = newLayer();
@@ -1240,16 +1250,25 @@ test("반려 도장은 걷는 동안 숨고 긁기가 시작된 때부터 1초 �
   const { layer } = newLayer({ owls: labeled });
   layer.sync(office(BOSS_IN), "large", NOW);
   const moved = [team("t", [boss("TeamLead", "Pace")])];
-  layer.sync(withCues(office(moved), [cue({ kind: "Reject", agent: "boss" })]), "large", NOW);
+  const [placed] = layer.sync(
+    withCues(office(moved), [cue({ kind: "Reject", agent: "boss" })]),
+    "large",
+    NOW,
+  );
   const root = layer.rootOf("t", "boss")!;
   const stamp = root.children.slice(-1)[0] as Sprite;
   expect(bodyOf(layer, "boss")).toMatch(/\/walk_/);
   expect(stamp.visible).toBe(false);
-  // 걷기(0.5초 이상)가 끝나면 긁는다
-  layer.update(NOW + WALK_MAX_MS);
+  const seat = fp.layouts.large.seats.boss[0];
+  const arrive = NOW + walkMs(walkPath(fp, { ...seat, z: 0 }, placed));
+  layer.update(arrive - 1);
+  expect(stamp.visible).toBe(false);
+  layer.update(arrive);
   expect(bodyOf(layer, "boss")).toMatch(/\/scratch_/);
   expect(stamp.visible).toBe(true);
-  layer.update(NOW + WALK_MAX_MS + STAMP_MS);
+  layer.update(arrive + STAMP_MS - 1);
+  expect(stamp.visible).toBe(true);
+  layer.update(arrive + STAMP_MS);
   expect(stamp.visible).toBe(false);
 });
 
@@ -1654,7 +1673,7 @@ for (const [kind, room, ms] of [
     layer.sync(office([team("t", [boss()])]), "large", NOW);
     const o = withCues(office([team("t", [boss()])]), [event]);
     layer.sync(o, "large", NOW);
-    layer.update(NOW + WALK_MAX_MS);
+    layer.update(NOW + Math.min(WALK_MAX_MS, ms - 1000));
     expect(posOf(layer, "boss")).toEqual(screen(...(fp.stands[room][0] as [number, number])));
     layer.sync(o, "large", NOW + ms - 1);
     layer.update(NOW + ms);

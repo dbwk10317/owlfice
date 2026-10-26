@@ -5,11 +5,49 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex, MutexGuard};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use ts_rs::TS;
 
-use crate::ipc::{NightMode, SettingsDto};
 use crate::office::names::{unwritable, write_atomic};
 use crate::office::world::Scale;
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum NightMode {
+    Auto,
+    On,
+    Off,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum Animal {
+    Mixed,
+    Owls,
+    Dogs,
+    Cats,
+}
+
+/// `get_settings` 반환, `set_settings` 인자. 칸이 비어 있으면(null) 그 설정은 건드리지 않는다.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDto {
+    /// 아직 안 골랐으면 null (첫 실행, 손상된 설정 파일)
+    pub scale: Option<Scale>,
+    /// 저장된 회사 이름. 없으면 null 이고 프론트가 기본 이름을 쓴다. 보낼 때 ""(공백뿐)는 기본으로 되돌린다
+    pub company_name: Option<String>,
+    // 자동 탐색에 추가한다. 빈 배열은 저장된 수동 경로를 모두 지운다.
+    pub manual_paths: Option<Vec<ManualPath>>,
+    pub sound: Option<bool>,
+    pub night_mode: Option<NightMode>,
+    pub os_notifications: Option<bool>,
+    // 비면 프론트가 기본 호칭을 쓴다. 빈 문자열을 보내면 기본으로 되돌린다.
+    pub boss_name: Option<String>,
+    pub raw_diagnostics: Option<bool>,
+    /// 없으면 null 이고 프론트가 섞기로 본다
+    pub animal: Option<Animal>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 pub enum ManualVendor {
@@ -78,7 +116,7 @@ pub struct SettingsBook {
     inner: Mutex<Inner>,
     /// 규모가 정해지면 깨운다 (기동이 첫 선택을 기다린다)
     chosen: Condvar,
-    /// 파일이 있는데 JSON 객체가 아니었다 (docs/CONTRACTS.md C3 "설정 파일 손상")
+    /// 파일이 있는데 JSON 객체가 아니었다 (design/HANDOFF.md 9절 설정 파일 손상)
     pub corrupt: bool,
 }
 
@@ -262,7 +300,6 @@ impl SettingsBook {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ipc::Animal;
 
     fn read(dir: &Path) -> Value {
         serde_json::from_slice(&std::fs::read(dir.join("settings.json")).unwrap()).unwrap()

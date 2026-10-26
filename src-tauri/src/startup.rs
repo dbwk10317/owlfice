@@ -21,7 +21,7 @@ use crate::office::{Rank, TeamPhase};
 
 pub const EVENT: &str = "startup-progress";
 
-/// 이 안에 수정된 팀을 "불 켜진 팀"으로 센다. 읽기 전이라 docs/CONTRACTS.md C2 의 퇴근 문턱(30분)을 mtime 으로 어림한다
+/// 이 안에 수정된 팀을 "불 켜진 팀"으로 센다. 읽기 전이라 퇴근 문턱(30분)을 mtime 으로 어림한다
 const LIT_WITHIN: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -63,7 +63,7 @@ pub enum StartupSummary {
         daeri: u32,
         sawon: u32,
     },
-    /// 알림 줄: 꺼진 배포판 (docs/CONTRACTS.md C3 "소등")
+    /// 알림 줄: 꺼진 배포판 (design/HANDOFF.md 4.7절 소등)
     WslOff {
         floor: u32,
         distro: String,
@@ -73,7 +73,7 @@ pub enum StartupSummary {
         floor: u32,
         distro: String,
     },
-    /// 알림 줄: 설정 파일 손상 (docs/CONTRACTS.md C3)
+    /// 알림 줄: 설정 파일 손상 (design/HANDOFF.md 9절)
     SettingsBroken,
 }
 
@@ -255,7 +255,7 @@ impl ScanWatch {
 
 /// 기동이 바깥 세계에 하는 일. 실제 앱은 lib.rs, 테스트는 가짜 Site·가짜 Probe 로 바꿔 끼운다
 pub trait Boot {
-    /// 규모를 고를 때까지 기다린다 (docs/CONTRACTS.md C4 "고르기 전에는 진행하지 않는다"). 이미 있으면 바로 돌아온다
+    /// 규모를 고를 때까지 기다린다 (design/HANDOFF.md 4.7절). 이미 있으면 바로 돌아온다
     fn wait_for_scale(&self);
     /// 2단계: Windows의 Site와 이미 탐색된 WSL 배포판. WSL 탐색 완료는 기다리지 않는다.
     fn discover(&self) -> (Vec<Site>, Vec<WslDistro>);
@@ -273,7 +273,7 @@ pub trait Boot {
 pub struct Limits {
     /// 4~5단계가 호스트를 기다리는 최대 시간 (둘이 마감 하나를 나눠 쓴다). 지나면 그 호스트는 "응답 없음"으로 두고 진행한다
     pub step: Duration,
-    /// 진행 상황을 내는 최소 간격 (docs/CONTRACTS.md C9 "1초에 한 번 이하")
+    /// 진행 상황을 내는 최소 간격
     pub tick: Duration,
 }
 

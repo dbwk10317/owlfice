@@ -2,8 +2,8 @@ import phrases from "../design/handoff/phrases.ko.json";
 import { openModal } from "./popup-modal.ts";
 import { h } from "./sidebar-right.ts";
 import type { Invoke } from "./scale.ts";
-import type { Animal, NightMode, SettingsDto } from "./types/ipc.ts";
-import type { UpdateStore } from "./store.ts";
+import type { Animal, DiscoveryPathDto, NightMode, SettingsDto } from "./types/ipc.ts";
+import type { UpdateStore } from "./update-store.ts";
 
 const S = phrases.settings;
 
@@ -23,12 +23,12 @@ export async function saveSettings(deps: SettingsDeps, dto: Partial<SettingsDto>
   try {
     await deps.invoke("set_settings", { dto });
   } catch (error) {
-    failure = `설정을 파일에 저장하지 못했습니다: ${String(error)}`;
+    failure = error instanceof Error ? error.message : String(error);
   }
   try {
     deps.onSettings(await deps.invoke<SettingsDto>("get_settings"));
   } catch (error) {
-    failure += `${failure ? " " : ""}현재 설정을 확인하지 못했습니다: ${String(error)}`;
+    failure += `${failure ? " " : ""}현재 설정을 확인하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`;
   }
   if (failure) throw new Error(failure);
 }
@@ -55,7 +55,17 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
   status.setAttribute("role", "status");
   const retry = button("다시 불러오기", () => void load());
   retry.hidden = true;
-  const foot = h(doc, "footer", "ow-modal__foot ow-settings__foot", error, status, retry);
+  const purgeRetry = button("원문 제거 다시 시도", () => save({ rawDiagnostics: false }));
+  purgeRetry.hidden = true;
+  const foot = h(
+    doc,
+    "footer",
+    "ow-modal__foot ow-settings__foot",
+    error,
+    status,
+    retry,
+    purgeRetry,
+  );
   modal.modal.append(head, scroll, foot);
   let current: SettingsDto | null = null;
   let busy = false;
@@ -83,6 +93,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     body.disabled = on;
     body.setAttribute("aria-busy", String(on));
     retry.disabled = on;
+    purgeRetry.disabled = on;
   }
   function fail(message: string): void {
     error.textContent = message;
@@ -94,23 +105,31 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     deps.onSettings(settings);
     if (!modal.closed) render();
   }
-  async function run(action: () => Promise<void>, message: string): Promise<void> {
-    if (busy) return;
+  async function run(action: () => Promise<void>, message: string): Promise<boolean> {
+    if (busy) return false;
     setBusy(true);
     error.hidden = true;
     status.textContent = "처리 중입니다.";
     try {
       await action();
       status.textContent = message;
+      return true;
     } catch (e) {
-      if (!modal.closed) fail(String(e));
-      else deps.onError?.(String(e));
+      const text = e instanceof Error ? e.message : String(e);
+      if (!modal.closed) fail(text);
+      else deps.onError?.(text);
+      return false;
     } finally {
       if (!modal.closed) setBusy(false);
     }
   }
   function save(dto: Partial<SettingsDto>): void {
-    void run(() => saveSettings({ ...deps, onSettings: accept }, dto), "저장했습니다.");
+    void run(() => saveSettings({ ...deps, onSettings: accept }, dto), "저장했습니다.").then(
+      (saved) => {
+        if (!modal.closed && dto.rawDiagnostics !== undefined)
+          purgeRetry.hidden = saved || dto.rawDiagnostics !== false;
+      },
+    );
   }
   function nameInput(key: "companyName" | "bossName", placeholder: string): HTMLInputElement {
     const input = doc.createElement("input");
@@ -119,7 +138,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
     input.placeholder = placeholder;
     input.addEventListener("change", () => {
       if (Array.from(input.value.trim()).length > 20) {
-        fail("이름은 20자까지 입력해 주세요.");
+        fail(S.nameLengthHint);
         return;
       }
       save({ [key]: input.value.trim() });
@@ -130,7 +149,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
   const company = section(S.company);
   const companyName = nameInput("companyName", phrases.app.brand);
   const bossName = nameInput("bossName", S.bossNamePlaceholder);
-  company.append(label("회사 이름", companyName, "비워 두면 Owlfice로 표시합니다. 최대 20자."));
+  company.append(label(S.companyName, companyName, `${S.companyNameHint} ${S.nameLengthHint}`));
   const scales = h(doc, "div", "ow-settings__scale");
   scales.setAttribute("role", "group");
   scales.setAttribute("aria-label", S.scale);
@@ -147,7 +166,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
       h(doc, "small", "ow-settings__hint", S.scaleHint),
     ),
   );
-  company.append(label(S.bossName, bossName, `${S.bossNameHint} 최대 20자.`));
+  company.append(label(S.bossName, bossName, `${S.bossNameHint} ${S.nameLengthHint}`));
   const animals = h(doc, "div", "ow-seg");
   animals.setAttribute("role", "group");
   animals.setAttribute("aria-label", S.animal);
@@ -247,11 +266,49 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
   const path = doc.createElement("input");
   path.className = "ow-input";
   path.id = "settings-path";
-  path.placeholder = "C:\\Users\\이름\\.claude\\projects";
+  const pathHint = h(doc, "small", "ow-settings__hint");
+  pathHint.id = "settings-path-hint";
+  path.setAttribute("aria-describedby", pathHint.id);
+  const discovery = h(doc, "ul", "ow-settings__paths");
+  discovery.setAttribute("aria-label", "찾아본 경로");
+  const discoveryStatus = h(doc, "p", "ow-settings__hint", "찾아본 경로를 불러오는 중입니다.");
+  discoveryStatus.setAttribute("role", "status");
+  let candidates: DiscoveryPathDto[] | null = null;
+  function renderPaths(): void {
+    const codex = vendor.value === "Codex";
+    path.placeholder = codex
+      ? "C:\\Users\\이름\\.codex\\sessions"
+      : "C:\\Users\\이름\\.claude\\projects";
+    pathHint.textContent = `${vendor.value}의 ${codex ? "sessions" : "projects"} 폴더 자체를 입력합니다. 입력칸의 흐린 경로는 예시입니다. 매핑 드라이브 대신 원래 로컬 경로나 WSL 공유 경로를 입력해 주세요. 꺼진 WSL은 켜지 않습니다.`;
+    if (candidates === null) return;
+    const selected = candidates.filter((candidate) => candidate.vendor === vendor.value);
+    const states = { Found: "찾음", Missing: "없음", Offline: "소등", Unknown: "미확인" };
+    discovery.replaceChildren(
+      ...selected.map((candidate) =>
+        h(
+          doc,
+          "li",
+          "ow-settings__path",
+          h(
+            doc,
+            "span",
+            "ow-settings__path-text ow-settings__log-path",
+            `${candidate.host} · ${states[candidate.status]} · ${candidate.path ?? "경로 미확인"}`,
+          ),
+        ),
+      ),
+    );
+    discoveryStatus.textContent = selected.length
+      ? ""
+      : `${vendor.value}의 찾아본 경로가 없습니다.`;
+  }
+  vendor.addEventListener("change", renderPaths);
+  renderPaths();
   const add = button(S.addFolder, () => {
     const root = path.value.trim();
     if (!/^(?:[a-z]:[\\/]|[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/][^\\/]+(?:[\\/]|$))/i.test(root)) {
       fail("Windows 절대 경로나 WSL 공유의 세션 폴더 경로를 입력해 주세요.");
+      path.focus();
       return;
     }
     save({
@@ -261,14 +318,18 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
       ],
     });
   });
+  path.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      add.click();
+    }
+  });
   folders.append(
     paths,
     label("제품", vendor),
-    label(
-      "세션 폴더 경로",
-      path,
-      "Claude는 projects, Codex는 sessions 폴더 자체를 입력합니다. 꺼진 WSL은 켜지 않습니다.",
-    ),
+    h(doc, "div", "ow-settings__field", "찾아본 경로", discovery, discoveryStatus),
+    label("직접 입력할 경로", path),
+    pathHint,
     add,
   );
 
@@ -392,7 +453,7 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
       status.textContent = "바꾸면 바로 저장합니다.";
     } catch (e) {
       if (!modal.closed) {
-        fail(`설정을 불러오지 못했습니다: ${String(e)}`);
+        fail(`설정을 불러오지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
         retry.hidden = false;
       }
     } finally {
@@ -405,12 +466,23 @@ export function openSettings(deps: SettingsDeps, opener?: HTMLElement | null): v
   void load();
   void (async () => {
     try {
+      const result = await deps.invoke<DiscoveryPathDto[]>("get_discovery");
+      if (modal.closed) return;
+      candidates = result;
+      renderPaths();
+    } catch (e) {
+      if (!modal.closed)
+        discoveryStatus.textContent = `찾아본 경로를 불러오지 못했습니다: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  })();
+  void (async () => {
+    try {
       const path = await deps.invoke<string>("get_log_folder");
       if (!modal.closed) logPath.textContent = path;
     } catch (e) {
       if (!modal.closed) {
         logPath.textContent = "";
-        logError.textContent = `${S.logFolderError}: ${String(e)}`;
+        logError.textContent = `${S.logFolderError}: ${e instanceof Error ? e.message : String(e)}`;
         logError.hidden = false;
       }
     }

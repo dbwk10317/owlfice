@@ -5,7 +5,10 @@
     "main"
   ],
   "permissions": [
-    "core:default",
+    "core:app:allow-version",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:resources:allow-close",
     "core:window:allow-toggle-maximize",
     "updater:default"
   ]

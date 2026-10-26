@@ -1444,6 +1444,92 @@ fn background_codex_result_paged_alone_is_still_readable() {
     }
 }
 
+#[test]
+fn codex_followup_spawn_paged_alone_requires_matching_raw_activity() {
+    const CHILD: &str = "00000000-0000-4000-8000-0000000000bb";
+    for direct in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("p");
+        fs::create_dir_all(&root).unwrap();
+        let rec = |s: u32, ty: &str, payload: serde_json::Value| json!({"timestamp":format!("2026-03-02T09:00:{s:02}Z"),"type":ty,"payload":payload});
+        let activity = |s: u32, id: &str, kind: &str| {
+            let item = json!({"type":"SubAgentActivity","id":id,"kind":kind,
+                "agent_thread_id":CHILD,"agent_path":"/root/w"});
+            if direct {
+                rec(
+                    s,
+                    "event_msg",
+                    json!({"type":"sub_agent_activity","id":id,"kind":kind,
+                    "agent_thread_id":CHILD,"agent_path":"/root/w"}),
+                )
+            } else {
+                rec(s, "event_msg", json!({"type":"item_completed","item":item}))
+            }
+        };
+        let mut lines = vec![
+            rec(
+                0,
+                "session_meta",
+                json!({"id":"fbeee44f-138a-8f82-87fd-61f01dfc0cca",
+                "cwd":"/w","originator":"Codex Desktop","source":"vscode"}),
+            ),
+            activity(1, "spawn", "started"),
+            activity(2, "stop", "interrupted"),
+            rec(
+                3,
+                "response_item",
+                json!({"type":"function_call","name":"followup_task",
+                "call_id":"follow","arguments":json!({"target":"/root/w","message":"m"}).to_string()}),
+            ),
+            activity(4, "follow", "interacted"),
+        ];
+        let name = "rollout-2026-03-02T09-00-00-fbeee44f-138a-8f82-87fd-61f01dfc0cca.jsonl";
+        let path = root.join(name);
+        let write = |rows: &[serde_json::Value]| {
+            fs::write(
+                &path,
+                rows.iter().map(|v| format!("{v}\n")).collect::<String>(),
+            )
+            .unwrap();
+        };
+        write(&lines);
+        let s = Session::at(dir, root, "windows");
+        let e = env();
+        e.put(&s, s.team(0));
+        let agent = &e.agents(&s)[0];
+        let page = || e.timeline(&s, agent, None, Some(1)).unwrap();
+        assert_eq!(page()[0].kind, TimelineKind::SubagentSpawn);
+        assert_eq!(page()[0].summary, "작업 재개");
+
+        let original = lines[4].clone();
+        lines[4]["timestamp"] = json!("2026-03-02T09:00:05Z");
+        write(&lines);
+        assert_eq!(page()[0].summary, UNREADABLE);
+        lines[4] = original.clone();
+        let item = if direct {
+            &mut lines[4]["payload"]
+        } else {
+            &mut lines[4]["payload"]["item"]
+        };
+        item["kind"] = json!("completed");
+        write(&lines);
+        assert_eq!(page()[0].summary, UNREADABLE);
+        lines[4] = original.clone();
+        let item = if direct {
+            &mut lines[4]["payload"]
+        } else {
+            &mut lines[4]["payload"]["item"]
+        };
+        item["agent_thread_id"] = json!("invalid");
+        write(&lines);
+        assert_eq!(page()[0].summary, UNREADABLE);
+        lines[4] = original;
+        lines[4]["payload"]["type"] = json!("different");
+        write(&lines);
+        assert_eq!(page()[0].summary, UNREADABLE);
+    }
+}
+
 /// TaskStop 결과는 TaskStop 호출 줄(다른 call)의 상태가 있어야 이벤트가 나서, 짝 줄 문맥으로도 못 읽는다.
 /// 한 줄씩 페이징해도 결과 칸은 요약을 원문 대체로 채운다
 #[test]

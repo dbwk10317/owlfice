@@ -1,4 +1,4 @@
-import { castOf, owlFrameKeys, speciesOf } from "./office/actors.ts";
+import { castOf, owlFrameKeys, speciesOf } from "./office/actor-appearance.ts";
 import { themeOf } from "./office/floorplan.ts";
 import { loadOwls, type Animal } from "./office/sprites.ts";
 import type { EmployeeDto } from "./types/ipc.ts";
@@ -8,14 +8,23 @@ let animal: Animal = "mixed";
 let atlas: ReturnType<typeof loadOwls> | undefined;
 let pictures = new Map<string, HTMLCanvasElement>();
 const requests = new WeakMap<HTMLElement, string>();
-// 붙어 있는 아바타 자리. 동물이 바뀌면 다시 그리려고 둔다.
-// 요소를 강하게 붙들면 제거된 카드·팝업이 회수되지 않으므로 WeakRef 로 두고 호출 때마다 죽은 자리를 지운다
-type Mount = { ref: WeakRef<HTMLElement>; employee: Employee; building?: string };
+// DOM 조립 중인 자리도 등록해 둬야 삽입 직후 동물 변경을 받는다.
+// WeakRef 로 회수를 허용하고, 한 번 붙었던 자리가 떨어졌을 때만 지운다.
+type Mount = {
+  ref: WeakRef<HTMLElement>;
+  employee: Employee;
+  building?: string;
+  connected: boolean;
+};
 const mounted = new Set<Mount>();
 const mountOf = new WeakMap<HTMLElement, Mount>();
 
 function prune(): void {
-  for (const m of mounted) if (!m.ref.deref()?.isConnected) mounted.delete(m);
+  for (const m of mounted) {
+    const host = m.ref.deref();
+    if (host?.isConnected) m.connected = true;
+    else if (!host || m.connected) mounted.delete(m);
+  }
 }
 
 /** 테스트용 */
@@ -86,16 +95,18 @@ export function setAvatar(host: HTMLElement, employee: Employee, building?: stri
     employee.role,
     themeOf(building),
   ]);
-  if (requests.get(host) === key) return;
-  requests.set(host, key);
   prune();
   const mount = mountOf.get(host);
-  if (mount) Object.assign(mount, { employee, building });
-  else {
-    const added = { ref: new WeakRef(host), employee, building };
+  if (mount) {
+    Object.assign(mount, { employee, building, connected: mount.connected || host.isConnected });
+    mounted.add(mount);
+  } else {
+    const added = { ref: new WeakRef(host), employee, building, connected: host.isConnected };
     mountOf.set(host, added);
     mounted.add(added);
   }
+  if (requests.get(host) === key) return;
+  requests.set(host, key);
   host.replaceChildren();
   host.style.setProperty("--ow-avatar-bg", `var(--ow-${themeOf(building)}-tint)`);
   void picture(host.ownerDocument, employee, building)

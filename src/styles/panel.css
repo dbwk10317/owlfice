@@ -3,6 +3,9 @@
 .ow-panel[hidden] {
   display: none !important;
 }
+.ow-panel .ow-pin[data-state="interrupted"] {
+  --ow-dot-color: var(--ow-off);
+}
 .ow-panel {
   position: relative;
 }
@@ -31,6 +34,20 @@
 }
 .ow-panel__close {
   margin-left: 4px;
+}
+.ow-panel__filter {
+  display: block;
+  margin: 4px 16px 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--ow-line);
+  border-radius: 6px;
+  background: var(--ow-surface);
+  color: var(--ow-ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ow-panel__filter[aria-pressed="true"]::before {
+  content: "✓ ";
 }
 .ow-panel__list {
   min-height: 0;

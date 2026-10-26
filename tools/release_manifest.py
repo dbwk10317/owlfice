@@ -62,6 +62,7 @@ def main():
     parser.add_argument("version")
     parser.add_argument("installer", type=Path)
     parser.add_argument("--repo", default=DEFAULT_REPO)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
         url = release_url(args.version, args.repo)
@@ -74,10 +75,14 @@ def main():
             .replace("+00:00", "Z"),
             "platforms": {"windows-x86_64": {"signature": signature, "url": url}},
         }
+        text = json.dumps(manifest, indent=2) + "\n"
+        if args.output is None:
+            print(text, end="")
+        else:
+            args.output.write_text(text, encoding="utf-8", newline="\n")
     except (OSError, UnicodeError, ValueError) as error:
         print(f"release_manifest: {error}", file=sys.stderr)
         return 1
-    print(json.dumps(manifest, indent=2))
     return 0
 
 

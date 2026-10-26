@@ -58,6 +58,7 @@ pub struct Diagnostics {
 #[derive(Default)]
 pub struct Runtime {
     pub rescan: AtomicBool,
+    pub refresh_requested: AtomicBool,
     pub candidates: Mutex<Vec<Candidate>>,
     hosts: Mutex<BTreeMap<String, Arc<Heartbeat>>>,
     removed: Mutex<BTreeMap<RootKey, Candidate>>,
@@ -83,6 +84,11 @@ impl Runtime {
     }
 
     pub fn request_rescan(&self) {
+        self.refresh_requested.store(true, Ordering::Relaxed);
+        self.wake_discovery();
+    }
+
+    pub fn wake_discovery(&self) {
         self.rescan.store(true, Ordering::Relaxed);
     }
 

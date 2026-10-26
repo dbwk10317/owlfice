@@ -21,7 +21,7 @@
 | Visual Studio | "C++를 사용한 데스크톱 개발" 워크로드 (MSVC, Windows SDK). Build Tools만 깔아도 된다 |
 | Rust | `winget install Rustlang.Rustup`. 기본 호스트 `x86_64-pc-windows-msvc`, rustfmt·clippy 포함 |
 | Node / npm | `winget install OpenJS.NodeJS` |
-| uv | `winget install --id astral-sh.uv -e`. Python과 ruff·Pillow는 uv가 받는다 (`uv run`, `uvx`) |
+| uv | `winget install --id astral-sh.uv -e`. Python은 `uv run`, ruff는 `uvx ruff`, 아트 생성의 Pillow는 `uv run --with pillow`로 받는다 |
 | WebView2 | Windows 11에 들어 있다 |
 | Vite+, tauri-cli, NSIS | 따로 깔지 않는다. Vite+(`vp`: Vite, Oxlint, Oxfmt, 타입 검사)와 tauri-cli는 `package.json` devDependency, NSIS는 Tauri 번들러가 첫 빌드 때 받는다 |
 
@@ -41,11 +41,12 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | 부분 I/O 벤치마크 (합성 파일을 만들므로 임시 폴더만 지정) | `cargo run --release --manifest-path src-tauri/Cargo.toml --bin owlfice-probe -- bench <임시 폴더> --json` |
 | fixture 재생 | `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 1 --shift-to-now fixtures/claude/async-subagent <빈 대상 폴더>` |
 | 앱에서 fixture 재생해 보기 (실제 세션 폴더를 건드리지 않는다) | 빈 임시 폴더 T 에 `T/claude/projects` 를 먼저 만들고 앱을 띄운다. Git Bash: `APPDATA=T/appdata CLAUDE_CONFIG_DIR=T/claude CODEX_HOME=T/codex npm run tauri dev`. PowerShell: `powershell -NoProfile -Command { $env:APPDATA='T\appdata'; $env:CLAUDE_CONFIG_DIR='T\claude'; $env:CODEX_HOME='T\codex'; npm run tauri dev }`. 다른 셸에서 `cargo run --manifest-path src-tauri/Cargo.toml --bin owlfice-replay -- --speed 1 --shift-to-now fixtures/claude/async-subagent T/claude/projects/replay`. 화면을 스크립트로 보려면 같은 자리에 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` 을 더해 CDP 로 붙는다. 배포 CSP 까지 보려면 `tauri dev` 대신 `npm run tauri build -- --no-bundle` 로 만든 `owlfice.exe` 를 같은 환경변수로 띄운다 (`tauri dev` 는 CSP 를 걸지 않는다) |
-| 프론트 IPC 타입 다시 만들기 (`ipc.rs` 를 고친 뒤. 낡으면 Rust 테스트가 실패한다) | Git Bash: `OWLFICE_WRITE_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml ts_bindings`. PowerShell: `powershell -NoProfile -Command { $env:OWLFICE_WRITE_TYPES=1; cargo test --manifest-path src-tauri/Cargo.toml ts_bindings }` |
+| 프론트 IPC 타입 다시 만들기 (`IPC` 타입을 고친 뒤. 낡으면 Rust 테스트가 실패한다) | Git Bash: `OWLFICE_WRITE_TYPES=1 cargo test --manifest-path src-tauri/Cargo.toml ts_bindings`. PowerShell: `powershell -NoProfile -Command { $env:OWLFICE_WRITE_TYPES=1; cargo test --manifest-path src-tauri/Cargo.toml ts_bindings }` |
 | 프론트 포맷·린트·타입 검사 | `npm run check` (포맷만 고치기 `npm run fmt`) |
 | 프론트 테스트 | `npm test` (DOM 이 필요한 테스트 파일은 첫 줄에 `// @vitest-environment jsdom`) |
 | 프론트 빌드 | `npm run build` (린트·타입 검사 후 빌드) |
 | Python 린트·포맷 검사 | `uvx ruff check tools`, `uvx ruff format --check tools` |
+| Python 도구 테스트 | `uv run python -B -m unittest discover -s tools -p "test_*.py"` (합성 자료·임시 폴더 사용) |
 | 개발 실행 | `npm run tauri dev` |
 | 릴리스 | 아래 [릴리스 절차](#릴리스-절차) 1–6을 따른다. 설치 파일·서명·매니페스트는 저장소에 넣지 않는다 |
 | 의존 DLL 확인 | `dumpbin /dependents src-tauri\target\release\owlfice.exe` (Developer PowerShell for VS) |
@@ -64,9 +65,11 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 1. `README.md` 설치 링크의 파일명을 `Owlfice_<버전>_x64-setup.exe`로 바꾸고 `src-tauri/tauri.conf.json`·`package.json`·`src-tauri/Cargo.toml`과 lock 파일 버전을 올린 커밋을 만든다. 버전은 `v` 접두 없는 SemVer다. README의 `releases/latest/download/<파일명>`은 새 릴리스에도 그 파일명이 있어야 동작한다.
 2. 통합 브랜치를 main에 합친 뒤 검증한 그 커밋에 `git tag -a v<버전> -m "<버전>"`을 붙이고 `git push origin v<버전>`으로 올린다. 태그를 생략하면 릴리스 생성 시 다른 커밋에 태그가 붙을 수 있다.
 3. 그 커밋을 체크아웃하고 `TAURI_SIGNING_PRIVATE_KEY`와 필요하면 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`를 지정한 셸에서 `npm run tauri build`를 실행한다. 기본 설치 파일은 `src-tauri/target/release/bundle/nsis/Owlfice_<버전>_x64-setup.exe`이고 옆에 `.sig`가 있어야 한다. 개인 키와 비밀번호는 저장소 밖에 둔다 (이 PC는 `%USERPROFILE%\.tauri\owlfice.key` 와 PowerShell `ConvertFrom-SecureString` 으로 저장한 `owlfice.password.dpapi`. 같은 Windows 계정에서 `ConvertTo-SecureString` 으로 풀어 빌드 프로세스의 환경변수로만 넘기고 출력하지 않는다).
-4. 저장소 밖 임시 폴더를 만들고 `python tools/release_manifest.py <버전> <설치파일> > <임시폴더>/latest.json`으로 매니페스트를 만든다. `.sig`의 실제 내용을 넣으며 다운로드 URL은 해당 버전 태그에 고정한다. 검증 저장소용으로 만들 때만 `--repo <owner/name>`을 더한다.
-5. `python tools/release_check.py <버전> --manifest <임시폴더>/latest.json --installer <설치파일>`을 통과시킨다. 버전 셋·설치 파일명·서명·매니페스트·README 링크·현재 HEAD의 태그가 일치해야 한다. 이 검사는 정식 저장소용이며 검증 저장소 매니페스트는 거부한다. 옵션을 생략하면 저장소 루트의 `latest.json`과 3단계 기본 설치 경로를 쓴다.
+4. 저장소 밖 임시 폴더를 만들고 `uv run tools/release_manifest.py <버전> <설치파일> --output <임시폴더>/latest.json`으로 UTF-8 매니페스트를 만든다. `.sig`의 실제 내용을 넣으며 다운로드 URL은 해당 버전 태그에 고정한다. 검증 저장소용으로 만들 때만 `--repo <owner/name>`을 더한다.
+5. `uv run tools/release_check.py <버전> --manifest <임시폴더>/latest.json --installer <설치파일>`을 통과시킨다. 버전 셋·설치 파일명·서명·매니페스트·README 링크·현재 HEAD의 태그가 일치해야 한다. 이 검사는 정식 저장소용이며 검증 저장소 매니페스트는 거부한다. `--manifest`는 필수다. `--installer`를 생략하면 3단계 기본 설치 경로를 쓰므로 GNU 산출물은 `--installer`로 실제 경로를 지정한다.
 6. `gh release create v<버전> --verify-tag <설치파일> <설치파일>.sig <임시폴더>/latest.json`으로 정식 릴리스를 만든다. `latest.json`을 빼거나 prerelease·draft로 올리면 설치된 앱의 `releases/latest/download/` 경로에서 새 버전을 찾지 못한다.
+
+현재 설치 파일에는 Windows Authenticode 서명을 하지 않는다. 업데이터용 `.sig`는 별개이며 위 개인 키로 반드시 만든다. GNU 릴리스도 같은 업데이터 서명 키가 필요하다.
 
 ## 폴백 1: MSYS2 (GNU)
 
@@ -77,8 +80,7 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | Node, uv, NSIS, tauri-cli | 기본 경로와 같다 |
 
 - 명령은 MSYS2 셸이나 Git Bash에서 돌린다. 기본 경로 명령표의 `cargo test`·`cargo clippy`·`tauri dev` 에 `--target x86_64-pc-windows-gnu` 를 붙인다 (`tauri dev` 는 `npm run tauri dev -- --target ...`).
-- 릴리스는 `bash build-gnu.sh` 다. 설치 파일을 만들고 의존 DLL을 검사한다.
-- **(미확인)** Vite+ 전환 뒤 이 경로.
+- 릴리스는 [릴리스 절차](#릴리스-절차)의 서명 환경변수를 지정한 셸에서 `bash build-gnu.sh`로 만든다. 설치 파일을 만들고 의존 DLL을 검사한다.
 - **(미확인)** 이 경로로 앱 전체를 빌드한 적은 없다. UCRT64와 Rust의 C 런타임이 섞일 때의 호환성도 미확인이다.
 
 ## 폴백 2: WSL 크로스 빌드 (GNU)
@@ -92,7 +94,7 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 | tauri-cli | `package.json` devDependency | 같다 |
 
 - 명령은 폴백 1과 같다 (`--target x86_64-pc-windows-gnu`, 릴리스는 `bash build-gnu.sh`). 로그인 셸(`bash -l`)에서 돌린다. 비로그인 셸이면 `~/.cargo/bin`·`~/.local/bin` 이 PATH에서 빠질 수 있다.
-- **(미확인)** Vite+ 전환 뒤 이 경로. Debian 계열에서 이 경로 전체.
+- **(미확인)** Debian 계열에서 이 경로 전체.
 - 링커는 rustc 기본값 `x86_64-w64-mingw32-gcc` 를 그대로 쓴다. 저장소의 `.cargo/config.toml` 말고 따로 둘 cargo 설정은 없다.
 - `npm ci` 도 WSL에서 한다. 저장소는 `/mnt/c/...` 그대로 쓰고, 산출물만 WSL 디스크에 둔다. `/mnt/c` 위의 target은 느리다.
 
@@ -110,7 +112,7 @@ winget으로 깐 직후의 셸에는 새 PATH가 없다. 터미널을 새로 연
 
 - `cargo test`·`tauri dev` 가 만든 Windows exe는 WSL interop으로 Windows 프로세스로 뜬다. 레지스트리·환경변수 테스트도 WSL에서 돌린다.
 - Windows 쪽에서 고친 파일은 WSL의 파일 감시에 잡히지 않는다. 프론트는 `vite.config.ts` 가 WSL에서 폴링으로 감시해 반영된다. Rust 코드를 고쳤으면 `tauri dev` 를 다시 띄운다.
-- 크로스 빌드에서 나오는 경고 셋은 무시한다. Tauri의 "실험 기능" 경고, 설치 파일 서명 건너뜀(서명은 아직 안 한다), makensis `warning 5202: -OUTPUTCHARSET`(리눅스 빌드라 나온다).
+- 크로스 빌드의 Tauri "실험 기능" 경고와 makensis `warning 5202: -OUTPUTCHARSET`은 이 경로의 경고다. 설치 파일의 Authenticode 서명 생략과 업데이터 `.sig` 생성 실패를 구분한다. 업데이터 서명이 없으면 릴리스하지 않는다.
 
 ## 앱 아이콘
 
@@ -130,5 +132,5 @@ frames[-1].save('src-tauri/icons/icon.ico', sizes=[f.size for f in frames], appe
 
 ## 저장소 규칙
 
-- 티켓 하나 = 브랜치 하나 = PR 하나. 브랜치 이름은 `t<두 자리 번호>-<영문 요약>` (예: `t04-tail-reader`). 아트와 코드는 PR을 나눈다.
+- 티켓 작업은 브랜치·PR을 나누며 브랜치 이름은 `t<번호>-<영문 요약>`으로 쓴다 (예: `t04-tail-reader`, `t104-settings`). 여러 티켓을 모으는 통합 버전 브랜치를 허용하며, 사용자가 명시한 브랜치 이름을 우선한다. 통합 브랜치에 `v` 접두를 강제하지 않는다. 아트와 코드는 PR을 나눈다.
 - main에는 사용하는 경로의 명령표 테스트·검사가 모두 통과한 것만 합친다.

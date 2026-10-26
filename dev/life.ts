@@ -25,6 +25,14 @@ function emp(
   const since = iso();
   return {
     agentId,
+    state:
+      room === "Door"
+        ? "Waiting"
+        : room === "Pantry"
+          ? "Dozing"
+          : room === "Incident"
+            ? "Incident"
+            : "Working",
     name: rank === "Bujang" ? "김부장" : agentId,
     rank,
     role: "Backend",
@@ -134,7 +142,10 @@ const show = (o: OfficeDto) => {
   store.state.office = o;
   for (const fn of listeners) fn();
 };
-const cue = (c: Record<string, unknown>) => ({ teamId: T, ...c }) as CueDto;
+type LocalCue = {
+  [K in CueDto["kind"]]: Omit<Extract<CueDto, { kind: K }>, "teamId">;
+}[CueDto["kind"]];
+const cue = (c: LocalCue): CueDto => ({ teamId: T, ...c });
 const then = (first: () => void, next: () => void) => {
   first();
   setTimeout(next, 150);

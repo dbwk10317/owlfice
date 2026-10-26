@@ -638,6 +638,7 @@ impl Parser for ClaudeParser {
         unhandled: &mut Vec<Unhandled>,
     ) -> Vec<Event> {
         let Ok(rec) = serde_json::from_slice::<Value>(bytes) else {
+            unhandled.push(Unhandled::InvalidJson);
             return Vec::new();
         };
         if !rec.is_object() {
@@ -794,7 +795,12 @@ fn is_internal(name: &str) -> bool {
     .any(|p| name.starts_with(p))
         || matches!(
             name,
-            "ToolSearch" | "Monitor" | "SendMessage" | "ScheduleWakeup" | "Workflow"
+            "ToolSearch"
+                | "Monitor"
+                | "SendMessage"
+                | "SubagentHandback"
+                | "ScheduleWakeup"
+                | "Workflow"
         )
 }
 
@@ -944,14 +950,15 @@ mod tests {
     /// TailReader처럼 `\n` 으로 자르고 `\r` 을 뗀 줄을 넣는다
     fn run_bytes(bytes: &[u8], path: &Path, p: &mut ClaudeParser) -> Run {
         let (mut events, mut unhandled, mut offset) = (Vec::new(), Vec::new(), 0u64);
-        for (i, line) in bytes.split(|&b| b == b'\n').enumerate() {
+        for (i, line) in bytes.split_inclusive(|&b| b == b'\n').enumerate() {
             let raw = RawRef {
                 path: path.to_path_buf(),
                 generation: 0,
                 byte_offset: offset,
                 line_no: i as u64 + 1,
             };
-            offset += line.len() as u64 + 1;
+            offset += line.len() as u64;
+            let line = line.strip_suffix(b"\n").unwrap_or(line);
             let line = line.strip_suffix(b"\r").unwrap_or(line);
             events.extend(p.parse_line(line, &raw, &mut unhandled));
         }
@@ -1527,6 +1534,25 @@ mod tests {
     }
 
     #[test]
+    fn subagent_handback_is_internal_report_not_completion() {
+        let r = feed(&[
+            tool_use(
+                "toolu_handback",
+                "SubagentHandback",
+                r#"{"message":"보고"}"#,
+            ),
+            tool_result("toolu_handback", "", ""),
+        ]);
+        assert!(r.events.iter().all(|e| !matches!(
+            e.kind,
+            EventKind::ToolCall { .. }
+                | EventKind::ToolResult { .. }
+                | EventKind::SubagentDone { .. }
+        )));
+        assert!(r.unhandled.is_empty());
+    }
+
+    #[test]
     fn exit_plan_mode_is_a_plan_request() {
         let r = feed(&[tool_use("toolu_fake01", "ExitPlanMode", r#"{"plan":"P"}"#)]);
         assert_eq!(call_at(&r, 1).1, ToolKind::ExitPlanMode);
@@ -1722,7 +1748,7 @@ mod tests {
     #[test]
     fn malformed_lines_do_not_drop_the_record_or_panic() {
         let r = feed(&[
-            "not json",
+            "private-token {invalid",
             "[1,2]",
             "",
             r#"{"type":"user","timestamp":5,"message":{"content":"hi"}}"#,
@@ -1739,7 +1765,14 @@ mod tests {
                 (7, None),
             ]
         );
-        assert!(r.unhandled.is_empty());
+        assert_eq!(
+            r.unhandled,
+            [Unhandled::InvalidJson, Unhandled::InvalidJson]
+        );
+        assert_eq!(
+            serde_json::to_string(&r.unhandled).unwrap(),
+            r#"["InvalidJson","InvalidJson"]"#
+        );
     }
 
     #[test]

@@ -21,6 +21,14 @@ function emp(agentId: string, rank: "Bujang" | "Daeri", room: Room, pose: Pose, 
   const since = iso(msAgo);
   return {
     agentId,
+    state:
+      room === "Door"
+        ? "Waiting"
+        : room === "Pantry"
+          ? "Dozing"
+          : room === "Incident"
+            ? "Incident"
+            : "Working",
     name: rank === "Bujang" ? "김부장" : "박대리",
     rank,
     role: "Backend",
@@ -122,7 +130,10 @@ const show = (
 
 const dev = (light: Light = "Off") => show(emp("a", "Daeri", "Dev", "Type"), light);
 const at = (room: Room, pose: Pose = "Sit", msAgo = 0) => emp("a", "Daeri", room, pose, msAgo);
-const cue = (c: Record<string, unknown>) => ({ teamId: T, ...c }) as CueDto;
+type LocalCue = {
+  [K in CueDto["kind"]]: Omit<Extract<CueDto, { kind: K }>, "teamId">;
+}[CueDto["kind"]];
+const cue = (c: LocalCue): CueDto => ({ teamId: T, ...c });
 // 앞 상태를 그리고 이동이 시작되게 한 틱 뒤에 다음 상태를 보낸다
 const then = (first: () => void, next: () => void) => {
   first();

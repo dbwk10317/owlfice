@@ -251,24 +251,25 @@ impl Diag {
     }
 
     /// 끈 뒤 다음 flush가 예전에 모은 원문을 다시 쓰지 않도록 메모리에서도 지운다.
-    pub fn set_raw(&mut self, raw: bool) {
+    pub fn set_raw(&mut self, raw: bool) -> io::Result<()> {
         self.raw = raw;
         if !raw {
             for entry in self.entries.values_mut() {
                 self.dirty |= entry.fields.remove("raw").is_some();
             }
             // 다음 정기 저장 전에 앱이 꺼져도 파일에 원문이 남지 않게 바로 쓴다
-            if self.dirty {
-                self.purge_now();
+            if self.dirty || !self.writable {
+                self.purge_now()?;
             }
         }
+        Ok(())
     }
 
     /// 실패해도 dirty 는 그대로라 다음 flush_if_due 가 다시 시도한다
-    fn purge_now(&mut self) {
-        if let Err(e) = self.flush() {
+    fn purge_now(&mut self) -> io::Result<()> {
+        self.flush().inspect_err(|e| {
             crate::oplog_once!("원문 진단 제거 저장 실패 {}: {e}", self.path.display());
-        }
+        })
     }
 
     fn open_with_limit(dir: &Path, raw: bool, max_bytes: usize) -> Self {
@@ -286,7 +287,7 @@ impl Diag {
         };
         // 껐는데 파일에 원문이 남아 있으면 재시작 때 바로 지운다
         if stripped {
-            d.purge_now();
+            let _ = d.purge_now();
         }
         d
     }
@@ -332,6 +333,7 @@ impl Diag {
     pub fn observe_unhandled(&mut self, product: Product, u: &Unhandled, now: DateTime<Utc>) {
         let p = product_name(product);
         let (kind, key, fields) = match u {
+            Unhandled::InvalidJson => ("invalid_json", p.to_owned(), json!({"product": p})),
             Unhandled::RecordType {
                 type_name,
                 keys,
@@ -546,14 +548,15 @@ pub fn summarize(path: &Path) -> io::Result<String> {
     Ok(out)
 }
 
-/// 정규식 계열 이름. 파서의 테스트 결과 정규식이 어느 계열을 기대했는지 command_key 로 정한다
+/// Test 호출로 확인된 키만 받는다. 패키지 스크립트 이름으로 내부 실행기를 추측하지 않는다.
 fn test_family(command_key: &str) -> &'static str {
     let mut w = command_key.split_whitespace();
     match w.next() {
         Some("cargo") => "cargo",
         Some("pytest") => "pytest",
         Some("jest" | "vitest") => "jest",
-        Some("npm" | "pnpm" | "yarn" | "bun") if w.any(|t| t.starts_with("test")) => "jest",
+        Some("node") => "node",
+        Some("npm" | "pnpm" | "yarn" | "bun") if w.any(|t| t.starts_with("test")) => "test-summary",
         _ => "none",
     }
 }
@@ -908,6 +911,57 @@ mod tests {
     }
 
     #[test]
+    fn indirect_node_test_summaries_only_diagnose_incomplete_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = Diag::open(dir.path(), false);
+        let mut parser = ClaudeParser::new(0, None);
+        let complete =
+            r"ℹ tests 2\nℹ suites 0\nℹ pass 1\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0";
+        let (events, _) = feed(
+            &mut parser,
+            &[
+                claude_tool_use("complete", "Bash", r#"{"command":"npm test"}"#),
+                claude_result("complete", complete),
+            ],
+        );
+        for event in &events {
+            d.observe_event(event, t(0));
+        }
+        d.flush().unwrap();
+        assert!(read(dir.path()).is_empty());
+
+        for (id, command) in [
+            ("indirect", "npm test"),
+            ("direct", "node --test sample.test.js"),
+            ("script", "node -e '1 + 1'"),
+        ] {
+            let (events, _) = feed(
+                &mut parser,
+                &[
+                    claude_tool_use(id, "Bash", &json!({"command": command}).to_string()),
+                    claude_result(id, r"✔ example one\n▶ example group"),
+                ],
+            );
+            for event in &events {
+                d.observe_event(event, t(1));
+            }
+        }
+        d.flush().unwrap();
+        let rows: Vec<Value> = read(dir.path())
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        for (key, expected) in [("npm test", "test-summary"), ("node", "node")] {
+            let row = rows.iter().find(|row| row["command_key"] == key).unwrap();
+            assert_eq!(row["kind"], "result_shape");
+            assert_eq!(row["expected"], expected);
+            assert_eq!(row["count"], 1);
+            assert!(row.get("raw").is_none());
+        }
+    }
+
+    #[test]
     fn raw_on_adds_command_80_and_result_200() {
         let dir = tempfile::tempdir().unwrap();
         let mut d = Diag::open(dir.path(), true);
@@ -939,7 +993,7 @@ mod tests {
     fn runtime_raw_toggle_removes_raw_and_keeps_counts_after_reopen() {
         let dir = tempfile::tempdir().unwrap();
         let mut d = Diag::open(dir.path(), false);
-        d.set_raw(true);
+        d.set_raw(true).unwrap();
         run_all(&mut d);
         d.flush().unwrap();
         let before = read(dir.path());
@@ -955,7 +1009,7 @@ mod tests {
             .iter()
             .map(|entry| entry["count"].as_u64().unwrap())
             .sum();
-        d.set_raw(false);
+        d.set_raw(false).unwrap();
         d.flush_if_due(t(61)).unwrap();
         let after = read(dir.path());
         let actual: Vec<Value> = after
@@ -989,7 +1043,7 @@ mod tests {
     fn raw_off_purges_file_immediately() {
         let dir = tempfile::tempdir().unwrap();
         let mut d = Diag::open(dir.path(), false);
-        d.set_raw(true);
+        d.set_raw(true).unwrap();
         run_all(&mut d);
         d.flush().unwrap();
         let before = read(dir.path());
@@ -1003,7 +1057,7 @@ mod tests {
                 })
                 .sum()
         };
-        d.set_raw(false);
+        d.set_raw(false).unwrap();
         let after = read(dir.path());
         assert!(!after.contains(SECRET));
         assert!(!after.contains("\"raw\""));
@@ -1023,6 +1077,46 @@ mod tests {
         assert!(!out.contains("\"raw\""));
         let v: Value = serde_json::from_str(out.trim()).unwrap();
         assert_eq!(v["count"], 4);
+    }
+
+    /// 디스크 삭제 실패를 알려도 수집은 멈추고, 잠금이 풀린 뒤 다시 끄면 원문을 제거한다.
+    #[test]
+    fn failed_purge_stops_collection_and_can_be_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = Diag::open(dir.path(), true);
+        run_all(&mut d);
+        d.flush().unwrap();
+        let blocked = d.path.with_extension("jsonl.tmp");
+        std::fs::create_dir(&blocked).unwrap();
+
+        assert!(d.set_raw(false).is_err());
+        assert!(read(dir.path()).contains(SECRET));
+        run_all(&mut d);
+        assert!(!d.render().unwrap().0.contains(SECRET));
+
+        std::fs::remove_dir(blocked).unwrap();
+        d.set_raw(false).unwrap();
+        assert!(!read(dir.path()).contains(SECRET));
+    }
+
+    #[test]
+    fn unreadable_existing_diagnostics_do_not_report_purge_success() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(FILE_NAME)).unwrap();
+        let mut d = Diag::open(dir.path(), true);
+        assert!(d.set_raw(false).is_err());
+        assert!(!d.raw);
+    }
+
+    #[test]
+    fn invalid_json_diagnostic_has_no_raw_even_when_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut d = Diag::open(dir.path(), true);
+        d.observe_unhandled(Product::CodexCli, &Unhandled::InvalidJson, t(0));
+        d.flush().unwrap();
+        let entry: Value = serde_json::from_str(read(dir.path()).trim()).unwrap();
+        assert_eq!(entry["kind"], "invalid_json");
+        assert!(entry.get("raw").is_none());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 // 사무실 시트를 읽고 시트 규약(HANDOFF 6.3)대로 스프라이트를 만든다.
 import { Assets, Sprite, Spritesheet, Texture } from "pixi.js";
-import type { OwlMeta, Owls } from "./actors.ts";
+import type { OwlMeta, Owls } from "./actor-appearance.ts";
 import { hexToRgb, parseFloorplan, type Floorplan } from "./floorplan.ts";
 
 interface FrameData {

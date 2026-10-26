@@ -98,11 +98,14 @@ fn read_file(path: &Path, vendor: Vendor, counts: &mut Counts) -> io::Result<()>
     let mut bad_in_file = false;
     loop {
         let pending = reader.read_new_lines(MAX_READ_BYTES)?;
+        if pending.reset {
+            parser = make_parser(path, vendor);
+        }
         let end = pending.finished(&mut prev_end);
         for line in &pending.lines {
             let raw = RawRef {
                 path: path.to_path_buf(),
-                generation: u64::from(reader.generation()),
+                generation: u64::from(pending.generation()),
                 byte_offset: line.offset,
                 line_no: line.line_no,
             };

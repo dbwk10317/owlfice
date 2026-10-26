@@ -30,18 +30,18 @@ const WARM: Duration = Duration::seconds(2);
 const COLD: Duration = Duration::seconds(60);
 const SCAN: Duration = Duration::seconds(3);
 const PROBE: StdDuration = StdDuration::from_secs(30);
-/// 등록부에 있는데 jsonl 이 아직 없는 세션을 보는 간격 (docs/CONTRACTS.md C6 신규 세션 발견)
+/// 등록부에 있는데 jsonl 이 아직 없는 세션을 보는 간격 (docs/CONTRACTS.md C6)
 const AWAIT: Duration = Duration::seconds(1);
-/// 첫 레코드가 이보다 최근이면 방금 시작된 세션이라 출근 연출을 낸다 (docs/CONTRACTS.md C6 신규 세션 발견)
+/// 첫 레코드가 이보다 최근이면 방금 시작된 세션이라 출근 연출을 낸다 (docs/CONTRACTS.md C6)
 const JUST_STARTED: Duration = Duration::seconds(60);
-/// 다른 호스트의 심장박동이 이만큼 멈추면 의심 (docs/CONTRACTS.md C6 감시자)
+/// 다른 호스트의 심장박동이 이만큼 멈추면 의심 (docs/CONTRACTS.md C5·C13)
 const STALL_MS: i64 = 2000;
 const TICK: StdDuration = StdDuration::from_millis(200);
 const SLOW_TICK: StdDuration = StdDuration::from_millis(400);
 /// 이만큼 연달아 틱이 200ms 를 넘기면 그 호스트만 늦춘다 (docs/CONTRACTS.md C13)
 const SLOW_AFTER: u32 = 5;
 
-/// 실행 중에는 벽시계, replay·테스트에서는 논리 시계 (docs/CONTRACTS.md C4 시계 규칙)
+/// 실행 중에는 벽시계, replay·테스트에서는 논리 시계 (docs/CONTRACTS.md C4)
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
     /// 읽은 이벤트의 ts 를 알린다. 논리 시계만 쓴다
@@ -111,7 +111,7 @@ pub struct ProbeUpdate {
     pub removed: Vec<(Vendor, PathBuf)>,
 }
 
-/// 다른 스레드가 이 호스트를 지켜보고 지시하는 값 (docs/CONTRACTS.md C6 감시자). 멈춘 I/O 안의 스레드는 자기 지연을 잴 수 없다
+/// 다른 스레드가 이 호스트를 지켜보고 지시하는 값 (docs/CONTRACTS.md C5·C13). 멈춘 I/O 안의 스레드는 자기 지연을 잴 수 없다
 pub struct Heartbeat {
     pub diagnostic: Mutex<Option<mpsc::Sender<HostDiagnostic>>>,
     /// `mono_ms` 로 잰 마지막 틱
@@ -186,7 +186,7 @@ impl Tracked {
     }
 }
 
-/// 미뤄 둔 재구성의 이유. 성공할 때까지 합쳐 들고 가고, 어느 길의 재구성이든 이것을 합쳐 쓴다. 잃으면 성공했을 때 rebuilt 표시(docs/CONTRACTS.md C4 조용한 재구성)나
+/// 미뤄 둔 재구성의 이유. 성공할 때까지 합쳐 들고 가고, 어느 길의 재구성이든 이것을 합쳐 쓴다. 잃으면 성공했을 때 rebuilt 표시(docs/CONTRACTS.md C4)나
 /// Reset 파일의 세대 올림이 빠져, 팝업의 옛 커서가 같은 바이트 자리의 새 줄에 붙는다
 #[derive(Debug, Default)]
 struct Due {
@@ -219,7 +219,7 @@ pub struct HostLoop {
     side: BTreeSet<PathBuf>,
     /// Windows 스레드만: 감시할 다른 호스트
     remotes: Remotes,
-    /// Claude 등록부에 살아 있는 세션(id → 항목)과 Windows에서 jsonl 이 아직 없는 세션 (docs/CONTRACTS.md C6 신규 세션 발견)
+    /// Claude 등록부에 살아 있는 세션(id → 항목)과 Windows에서 jsonl 이 아직 없는 세션 (docs/CONTRACTS.md C6)
     alive: HashMap<String, registry::RegistryEntry>,
     registry_roots: BTreeMap<PathBuf, HashMap<String, registry::RegistryEntry>>,
     #[cfg(test)]
@@ -274,7 +274,7 @@ impl HostLoop {
         }
     }
 
-    /// 다른 호스트의 심장박동을 매 틱 본다 (docs/CONTRACTS.md C6 감시자)
+    /// 다른 호스트의 심장박동을 매 틱 본다 (docs/CONTRACTS.md C5·C13)
     pub fn watch(&mut self, host_id: String, heartbeat: Arc<Heartbeat>) {
         self.remotes
             .lock()
@@ -535,7 +535,7 @@ impl HostLoop {
         }
     }
 
-    /// 한 팀의 파일들을 읽어 docs/CONTRACTS.md C4 순서로 합쳐 한 번 적용하고, 적용이 끝난 뒤에만 모두 commit 한다 (docs/CONTRACTS.md C6 2단계 commit)
+    /// 한 팀의 파일들을 읽어 docs/CONTRACTS.md C4 순서로 합쳐 한 번 적용하고, 적용이 끝난 뒤에만 모두 commit 한다 (docs/CONTRACTS.md C6)
     fn poll_team(&mut self, key: &TeamKey, paths: &[PathBuf], now: DateTime<Utc>, path_ok: bool) {
         let mut batch: Vec<(PathBuf, Pending)> = Vec::new();
         let mut reset = BTreeSet::new();
@@ -586,7 +586,7 @@ impl HostLoop {
             }
         }
         self.sync_read_failed(key);
-        // 멈췄던 I/O 의 결과는 버리고 commit 하지 않는다. 재개한 첫 틱이 같은 구간을 다시 읽는다 (docs/CONTRACTS.md C6 감시자).
+        // 멈췄던 I/O 의 결과는 버리고 commit 하지 않는다. 재개한 첫 틱이 같은 구간을 다시 읽는다 (docs/CONTRACTS.md C5·C13).
         // 파서에 넣기 전에 본다. 넣고 버리면 파서가 같은 줄을 두 번 본다. 이미 본 Reset 은 재구성에 싣는다
         if self.suspect() {
             if !reset.is_empty() {
@@ -595,7 +595,7 @@ impl HostLoop {
             return;
         }
         if !reset.is_empty() {
-            // 어느 파일의 Reset 이든 팀 전체를 다시 만든다 (docs/CONTRACTS.md C4 범위). 다른 파일의 이번 읽기는 재구성이 다시 읽는다
+            // 어느 파일의 Reset 이든 팀 전체를 다시 만든다 (docs/CONTRACTS.md C4). 다른 파일의 이번 읽기는 재구성이 다시 읽는다
             for p in &reset {
                 crate::oplog!("Reset {}", p.display());
             }
@@ -754,8 +754,8 @@ impl HostLoop {
         }
     }
 
-    /// Spawn 결과로 안 서브 파일은 Scan 을 기다리지 않고 바로 읽는다. S19 가 끊기지 않게 (docs/CONTRACTS.md C6 서브 파일 발견).
-    /// 서브 파일에는 Spawn 보다 이른 줄이 있어 이어 읽지 않고 팀을 다시 만든다 (docs/CONTRACTS.md C4 직원 사전 등록).
+    /// Spawn 결과로 안 서브 파일은 Scan 을 기다리지 않고 바로 읽는다. S19 가 끊기지 않게 (docs/CONTRACTS.md C6).
+    /// 서브 파일에는 Spawn 보다 이른 줄이 있어 이어 읽지 않고 팀을 다시 만든다 (docs/CONTRACTS.md C4).
     /// 아직 없으면 Scan 이 찾는다
     fn register_subs(&mut self, key: &TeamKey, events: &[Event], now: DateTime<Utc>) {
         if key.vendor != Vendor::Claude {
@@ -844,7 +844,7 @@ impl HostLoop {
         self.lock_world().set_read_failed(key, failed);
     }
 
-    /// 팀의 파일을 모두 처음부터 다시 읽어 만든다 (새 세션, Reset. docs/CONTRACTS.md C4 재구성 규칙).
+    /// 팀의 파일을 모두 처음부터 다시 읽어 만든다 (새 세션, Reset. docs/CONTRACTS.md C4).
     /// `new` 는 이번에 처음 찾은 파일, `reset` 은 Reset 을 본 파일이다 (세대를 하나 올린다).
     /// 기존 팀의 파일을 못 읽으면 기록을 잃지 않도록 교체를 보류한다. 새 팀은 읽힌 서브만으로 만들고 실패는 보존한다.
     /// 방금 시작된 새 파일이면 출근 cue 를 내고 미대응 재료를 센다. 늦게 발견한 옛 파일은 세지 않는다 (재시작마다 다시 세지 않게)
@@ -1021,7 +1021,7 @@ impl HostLoop {
         self.files.extend(fresh);
     }
 
-    /// 첫 레코드 ts(없으면 파일 생성 시각)가 지금부터 60초 안인가 (docs/CONTRACTS.md C6 신규 세션 발견)
+    /// 첫 레코드 ts(없으면 파일 생성 시각)가 지금부터 60초 안인가 (docs/CONTRACTS.md C6)
     fn just_started(&mut self, path: &Path, events: &[Event], now: DateTime<Utc>) -> bool {
         let first = events.iter().find_map(|e| e.ts).or_else(|| {
             self.path_ops += 1;
@@ -1031,21 +1031,30 @@ impl HostLoop {
         first.is_some_and(|t| now - t < JUST_STARTED)
     }
 
-    /// 새 세션 파일·서브 파일·meta.json 과 사라진 파일을 찾는다 (docs/CONTRACTS.md C6 신규 세션 발견).
+    /// 새 세션 파일·서브 파일·meta.json 과 사라진 파일을 찾는다 (docs/CONTRACTS.md C6).
     /// 접근에 실패한 Site 의 파일은 "없음"이 아니라 "못 봄"이라 아무것도 지우지 않는다.
     /// 경로 접근마다 앞에서 의심을 보고 멈춘다
     fn scan(&mut self, now: DateTime<Utc>) {
+        self.scan_listing(now, list_site);
+    }
+
+    fn scan_listing(
+        &mut self,
+        now: DateTime<Utc>,
+        mut list: impl FnMut(&Site, &mut u64) -> io::Result<Listing>,
+    ) {
         self.read_registry();
         let mut seen = HashSet::new();
         let mut metas = HashSet::new();
         let mut ok_roots = Vec::new();
+        let mut failed_subtrees = Vec::new();
         let mut project_dirs = Vec::new();
         let mut found: BTreeMap<TeamKey, BTreeSet<PathBuf>> = BTreeMap::new();
         for site in self.sites.clone() {
             if self.suspect() {
                 return;
             }
-            let listing = match list_site(&site, &mut self.path_ops) {
+            let listing = match list(&site, &mut self.path_ops) {
                 Ok(l) => l,
                 Err(e) => {
                     crate::oplog_once!("세션 폴더 나열 실패 {}: {e}", site.root.display());
@@ -1058,6 +1067,7 @@ impl HostLoop {
                 }
             };
             ok_roots.push(site.root.clone());
+            failed_subtrees.extend(listing.failed_subtrees);
             metas.extend(listing.metas);
             project_dirs.extend(listing.projects);
             for (path, session) in listing.files {
@@ -1073,9 +1083,12 @@ impl HostLoop {
             }
         }
         self.project_dirs = project_dirs;
+        let observed = |path: &Path| {
+            ok_roots.iter().any(|r| path.starts_with(r))
+                && !failed_subtrees.iter().any(|r| path.starts_with(r))
+        };
         // 나열에 실패한 Site 의 파일은 "없음"이 아니라 "못 봄"이라 잊지 않는다
-        self.side
-            .retain(|p| seen.contains(p) || !ok_roots.iter().any(|r| p.starts_with(r)));
+        self.side.retain(|p| seen.contains(p) || !observed(p));
         if let Some(w) = self.watch.clone() {
             // 팀마다 메인 파일 하나. 서브만 있는 팀은 아무 파일이나
             // 수정 시각도 여기서 함께 모은다: 경로는 이 스레드만 건드려야 의심·Probe 가드가 먹는다
@@ -1098,7 +1111,7 @@ impl HostLoop {
         let mut rebuild: BTreeMap<TeamKey, BTreeSet<PathBuf>> = BTreeMap::new();
         let mut verify = Vec::new();
         for (path, t) in &mut self.files {
-            if !ok_roots.iter().any(|r| path.starts_with(r)) {
+            if !observed(path) {
                 continue;
             }
             if !seen.contains(path) {
@@ -1190,9 +1203,7 @@ impl HostLoop {
         }
         let failed: BTreeSet<_> = self.read_failures.values().cloned().collect();
         self.read_failures.retain(|path, _| {
-            self.files.contains_key(path)
-                || seen.contains(path)
-                || !ok_roots.iter().any(|root| path.starts_with(root))
+            self.files.contains_key(path) || seen.contains(path) || !observed(path)
         });
         for key in failed {
             self.sync_read_failed(&key);
@@ -1360,7 +1371,7 @@ impl HostLoop {
         }
     }
 
-    /// 기다리는 세션의 jsonl 이 생겼나. 그 경로만 1초 간격으로 본다 (docs/CONTRACTS.md C6 신규 세션 발견).
+    /// 기다리는 세션의 jsonl 이 생겼나. 그 경로만 1초 간격으로 본다 (docs/CONTRACTS.md C6).
     /// 새 프로젝트 폴더에 생긴 파일은 다음 Scan 이 찾는다
     fn awaited_appeared(&mut self, now: DateTime<Utc>) -> bool {
         if self.awaited.is_empty() || self.last_await.is_some_and(|t| now - t < AWAIT) {
@@ -1375,7 +1386,7 @@ impl HostLoop {
         })
     }
 
-    /// 2초 넘게 멈춘 호스트를 의심으로 바꾼다. 멈춘 I/O 는 취소하지 않는다 (docs/CONTRACTS.md C6 감시자)
+    /// 2초 넘게 멈춘 호스트를 의심으로 바꾼다. 멈춘 I/O 는 취소하지 않는다 (docs/CONTRACTS.md C5·C13)
     fn watch_remotes(&self) {
         let now = mono_ms();
         let remotes = self
@@ -1702,7 +1713,7 @@ fn claude_session_of(path: &Path) -> Option<String> {
         .map(|n| n.to_string_lossy().into_owned())
 }
 
-/// 옆의 `agent-<id>.meta.json` (docs/CONTRACTS.md C7 서브에이전트)
+/// 옆의 `agent-<id>.meta.json` (docs/CONTRACTS.md C7)
 pub fn sub_meta(path: &Path) -> Option<SubMeta> {
     let stem = path.file_stem()?.to_str()?;
     let agent_id = stem.strip_prefix("agent-")?.to_string();
@@ -1740,23 +1751,39 @@ pub struct Listing {
     metas: HashSet<PathBuf>,
     /// Claude 프로젝트 폴더 (등록부 세션 기다리기용)
     projects: Vec<PathBuf>,
+    failed_subtrees: Vec<PathBuf>,
 }
 
-/// Site 아래 세션 파일과 그 세션 id. Claude 는 `<프로젝트>/<uuid>.jsonl` 과 `<프로젝트>/<uuid>/subagents/*.jsonl`,
-/// Codex 는 `YYYY/MM/DD/rollout-*.jsonl` (docs/CONTRACTS.md C5). 어디서든 나열이 실패하면 Site 전체를 "못 봄"으로 돌려준다
+/// Site 루트 실패는 Err, 하위 폴더 실패는 기존 파일을 보존할 범위와 정상 발견을 함께 돌려준다.
 pub fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
+    list_site_with(site, ops, &mut entries)
+}
+
+type EntryReader<'a> = dyn FnMut(&Path, bool, &mut u64) -> io::Result<Vec<(PathBuf, bool)>> + 'a;
+
+fn list_site_with(site: &Site, ops: &mut u64, read: &mut EntryReader<'_>) -> io::Result<Listing> {
     let mut out = Listing::default();
+    let roots = read(&site.root, false, ops)?
+        .into_iter()
+        .filter(|(_, dir)| *dir)
+        .map(|(p, _)| p);
     match site.vendor {
         Vendor::Claude => {
-            for project in dirs(&site.root, false, ops)? {
-                for f in files(&project, ops)? {
+            for project in roots {
+                for f in partial_entries(&project, false, ops, read, &mut out) {
                     if f.extension().is_none_or(|e| e != "jsonl") {
                         continue;
                     }
                     let Some(id) = f.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
                         continue;
                     };
-                    for sub in files(&project.join(&id).join("subagents"), ops)? {
+                    for sub in partial_entries(
+                        &project.join(&id).join("subagents"),
+                        false,
+                        ops,
+                        read,
+                        &mut out,
+                    ) {
                         let name = sub.file_name().map(|n| n.to_string_lossy().into_owned());
                         if name.as_deref().is_some_and(|n| n.ends_with(".meta.json")) {
                             out.metas.insert(sub);
@@ -1770,10 +1797,10 @@ pub fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
             }
         }
         Vendor::Codex => {
-            for y in dirs(&site.root, false, ops)? {
-                for m in dirs(&y, true, ops)? {
-                    for d in dirs(&m, true, ops)? {
-                        for f in files(&d, ops)? {
+            for y in roots {
+                for m in partial_entries(&y, true, ops, read, &mut out) {
+                    for d in partial_entries(&m, true, ops, read, &mut out) {
+                        for f in partial_entries(&d, false, ops, read, &mut out) {
                             let stem = f.file_stem().map(|s| s.to_string_lossy().into_owned());
                             let jsonl = f.extension().is_some_and(|e| e == "jsonl");
                             if let Some(stem) = stem.filter(|s| jsonl && s.starts_with("rollout-"))
@@ -1791,7 +1818,28 @@ pub fn list_site(site: &Site, ops: &mut u64) -> io::Result<Listing> {
     Ok(out)
 }
 
-/// 폴더 안 (경로, 폴더인가). 종류는 나열 결과에서 읽어 항목마다 stat 하지 않는다 (docs/CONTRACTS.md C13 Scan 예산).
+fn partial_entries(
+    p: &Path,
+    dirs: bool,
+    ops: &mut u64,
+    read: &mut EntryReader<'_>,
+    out: &mut Listing,
+) -> Vec<PathBuf> {
+    match read(p, true, ops) {
+        Ok(entries) => entries
+            .into_iter()
+            .filter(|(_, dir)| *dir == dirs)
+            .map(|(p, _)| p)
+            .collect(),
+        Err(e) => {
+            crate::oplog_once!("세션 하위 폴더 나열 실패 {}: {e}", p.display());
+            out.failed_subtrees.push(p.to_owned());
+            Vec::new()
+        }
+    }
+}
+
+/// 폴더 안 (경로, 폴더인가). 종류는 나열 결과에서 읽어 항목마다 stat 하지 않는다 (docs/CONTRACTS.md C13).
 /// `missing_ok` 면 그새 없어진 폴더는 빈 목록이다. Site 루트가 없으면 "못 봄"이라 에러로 둔다
 fn entries(p: &Path, missing_ok: bool, ops: &mut u64) -> io::Result<Vec<(PathBuf, bool)>> {
     *ops += 1;
@@ -1814,22 +1862,6 @@ fn entries(p: &Path, missing_ok: bool, ops: &mut u64) -> io::Result<Vec<(PathBuf
         out.push((p, dir));
     }
     Ok(out)
-}
-
-fn dirs(p: &Path, missing_ok: bool, ops: &mut u64) -> io::Result<Vec<PathBuf>> {
-    Ok(entries(p, missing_ok, ops)?
-        .into_iter()
-        .filter(|e| e.1)
-        .map(|e| e.0)
-        .collect())
-}
-
-fn files(p: &Path, ops: &mut u64) -> io::Result<Vec<PathBuf>> {
-    Ok(entries(p, true, ops)?
-        .into_iter()
-        .filter(|e| !e.1)
-        .map(|e| e.0)
-        .collect())
 }
 
 #[cfg(test)]
@@ -2428,7 +2460,7 @@ mod tests {
     }
 
     /// fixture 하나를 (a) 한 번에 전체 읽기 (b) 줄마다 그 논리 시각에 append 하며 틱.
-    /// 같은 논리 시점에서 팀 상태 전체가 같다 (docs/CONTRACTS.md C4 시계·순서)
+    /// 같은 논리 시점에서 팀 상태 전체가 같다 (docs/CONTRACTS.md C4)
     #[test]
     fn appending_line_by_line_matches_full_read_under_logical_clock() {
         let cases = [
@@ -2601,7 +2633,7 @@ mod tests {
     }
 
     /// 잠든 노트북·의심이 풀린 WSL 처럼 시계가 크게 건너뛴 뒤 밀린 줄을 한 번에 읽어도 전체 읽기와 같다.
-    /// 결과보다 30분 포기가 먼저 일어나야 한다 (docs/CONTRACTS.md C4 재구성 규칙, docs/CONTRACTS.md C8)
+    /// 결과보다 30분 포기가 먼저 일어나야 한다 (docs/CONTRACTS.md C4, docs/CONTRACTS.md C8)
     #[test]
     fn batch_after_clock_jump_matches_full_read() {
         let lines = [
@@ -3183,6 +3215,67 @@ mod tests {
         assert!(e.w().suspect_hosts.contains("wsl:Test"));
     }
 
+    #[test]
+    fn partial_listing_keeps_failed_project_and_discovers_healthy_project() {
+        let e = env();
+        let root = e.dir("projects");
+        let blocked = root.join("blocked");
+        copy_dir(&fixture("claude/reject"), &blocked);
+        let mut h = e.host(win(), vec![site_of(&win(), Vendor::Claude, &root)]);
+        let now = t0() + secs(150);
+        e.at(now);
+        h.tick();
+        assert_eq!(e.w().teams.len(), 1);
+        copy_dir(&fixture("claude/sync-subagent"), &root.join("healthy"));
+        for n in 1..=3 {
+            h.scan_listing(now + secs(n * 3), |site, ops| {
+                list_site_with(site, ops, &mut |path, missing_ok, ops| {
+                    if path == blocked {
+                        Err(io::Error::from(io::ErrorKind::PermissionDenied))
+                    } else {
+                        entries(path, missing_ok, ops)
+                    }
+                })
+            });
+        }
+        assert_eq!(e.w().teams.len(), 2);
+        assert!(h.files.keys().any(|p| p.starts_with(&blocked)));
+        assert!(
+            h.files
+                .values()
+                .filter(|t| t.key.session == REJECT)
+                .all(|t| t.missing == 0)
+        );
+        assert_eq!(e.team(SYNC).id, SYNC);
+        fs::remove_dir_all(&blocked).unwrap();
+        h.scan(now + secs(12));
+        h.scan(now + secs(15));
+        assert_eq!(e.w().teams.len(), 1);
+    }
+
+    #[test]
+    fn codex_partial_listing_continues_after_unreadable_month() {
+        let e = env();
+        let root = e.dir("sessions");
+        let blocked = root.join("2026/01");
+        fs::create_dir_all(&blocked).unwrap();
+        copy_dir(&fixture("codex/codex-app"), &root.join("2026/02/01"));
+        let listing = list_site_with(
+            &site_of(&win(), Vendor::Codex, &root),
+            &mut 0,
+            &mut |path, missing_ok, ops| {
+                if path == blocked {
+                    Err(io::Error::from(io::ErrorKind::PermissionDenied))
+                } else {
+                    entries(path, missing_ok, ops)
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(listing.files.len(), 1);
+        assert_eq!(listing.failed_subtrees, vec![blocked]);
+    }
+
     /// `\\wsl.localhost\X` 와 `\\wsl$\X` 처럼 같은 폴더의 다른 경로로 루트가 바뀌어도 줄을 두 번 적용하지 않는다
     #[test]
     fn site_root_change_does_not_apply_lines_twice() {
@@ -3262,7 +3355,7 @@ mod tests {
         assert!(w.list_seq > list);
     }
 
-    /// 시간 전이는 자기 호스트 팀만, 의심 중인 호스트의 팀은 멈춘다 (docs/CONTRACTS.md C4 시계)
+    /// 시간 전이는 자기 호스트 팀만, 의심 중인 호스트의 팀은 멈춘다 (docs/CONTRACTS.md C4)
     #[test]
     fn tick_moves_only_own_host_teams_and_freezes_suspect_host() {
         let e = env();

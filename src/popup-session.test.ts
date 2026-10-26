@@ -90,6 +90,7 @@ function setup(handlers: { detail?: (limit: number) => unknown; open?: () => unk
 
 test("머리·정보 표·최근 사건 20개를 get_session_detail(limit 20) 로 불러 그린다", async () => {
   const s = setup();
+  expect(s.q(".ow-pop__body")?.hasAttribute("aria-live")).toBe(false);
   expect(s.calls[0]).toEqual(["get_session_detail", { officeId: "o1", teamId: "t1", limit: 20 }]);
   await flush();
   expect(s.q("#sd-title")!.textContent).toBe("B동 203호");

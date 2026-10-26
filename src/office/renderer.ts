@@ -12,9 +12,12 @@ import {
 import "pixi.js/unsafe-eval";
 import phrases from "../../design/handoff/phrases.ko.json";
 import { fill } from "../text.ts";
-import { ActorLayer, seatProps, type Owls } from "./actors.ts";
+import { ActorLayer } from "./actors.ts";
+import { seatProps } from "./actor-layout.ts";
+import type { Owls } from "./actor-appearance.ts";
 import type { OfficeSound } from "./sound.ts";
 import { DRIVEN_PROP, PropsLayer, ScreenLabel, loadWallFont } from "./props.ts";
+import { lightOf } from "./prop-state.ts";
 import { LADDER_MS } from "./anim-queue.ts";
 import { CanvasTooltip, propTooltip, roomTooltip } from "./canvas-tooltip.ts";
 import type { CueDto, OfficeDto, OfficeListDto, TeamDto } from "../types/ipc.ts";
@@ -550,7 +553,7 @@ export async function mountOffice(
       buildLabels(kind);
     }
     officeId = office?.officeId ?? "";
-    if (switched || resumed || office?.rebuilt) {
+    if (switched || resumed || (office?.rebuilt && office !== shown)) {
       props?.reset();
       tooltip.close();
     }
@@ -860,13 +863,4 @@ export function canvasAria(office: OfficeDto | null, list: OfficeListDto): strin
   const n = office.teams.reduce((sum, t) => sum + t.employees.length, 0);
   const tpl = office.shared.incident ? phrases.canvas.ariaIncident : phrases.canvas.aria;
   return fill(tpl, { office: name, n });
-}
-
-/** 퇴근·대기 조명이 시간표보다 우선한다 (HANDOFF 6.2). */
-export function lightOf(office: OfficeDto | null): LightName | null {
-  const live = office?.teams.filter((t) => t.phase !== "Off") ?? [];
-  if (live.length === 0) return "off";
-  if (live.every((t) => t.idleAlive)) return "dim";
-  const daylight = live[0].daylight;
-  return daylight === "day" ? null : daylight;
 }

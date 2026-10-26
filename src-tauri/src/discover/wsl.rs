@@ -239,10 +239,47 @@ pub(super) fn discover() -> Vec<WslDistro> {
 }
 
 pub(super) fn discover_with_candidates() -> (Vec<WslDistro>, Vec<Candidate>) {
+    let mut distros = Vec::new();
     let mut candidates = Vec::new();
-    let distros = find_distros_reporting(
-        &read_lxss(),
-        &|| run_wsl(&["-l", "--running", "-q"], RUNNING_LIMIT).map(|b| parse_running(&b)),
+    for (entry, running) in status_entries() {
+        let (distro, found) = discover_entry(entry, running);
+        distros.push(distro);
+        candidates.extend(found);
+    }
+    (distros, candidates)
+}
+
+pub(super) fn status_entries() -> Vec<(LxssEntry, Option<bool>)> {
+    let entries = read_lxss();
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let running = run_wsl(&["-l", "--running", "-q"], RUNNING_LIMIT).map(|b| parse_running(&b));
+    entries
+        .into_iter()
+        .map(|entry| {
+            let on = running.as_ref().map(|names| names.contains(&entry.name));
+            (entry, on)
+        })
+        .collect()
+}
+
+pub(super) fn discover_entry(
+    entry: LxssEntry,
+    running: Option<bool>,
+) -> (WslDistro, Vec<Candidate>) {
+    let mut candidates = Vec::new();
+    let mut distros = find_distros_reporting(
+        std::slice::from_ref(&entry),
+        &|| {
+            running.map(|on| {
+                if on {
+                    vec![entry.name.clone()]
+                } else {
+                    Vec::new()
+                }
+            })
+        },
         &unc_roots,
         &|name| {
             run_wsl(&["-d", name, "--", "printenv"], PRINTENV_LIMIT)
@@ -250,7 +287,7 @@ pub(super) fn discover_with_candidates() -> (Vec<WslDistro>, Vec<Candidate>) {
         },
         &mut candidates,
     );
-    (distros, candidates)
+    (distros.remove(0), candidates)
 }
 
 fn unc_roots(name: &str) -> Vec<PathBuf> {

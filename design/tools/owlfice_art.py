@@ -1,8 +1,8 @@
 """Owlfice 픽셀아트 원본 생성기. 손으로 그림을 고치지 말고 이 파일을 고친다.
 
 한 번 실행하면 아래를 모두 다시 만든다.
-  sprites/{owls,dogs,cats}.png·json      직원 부품 시트 2× (몸통 · 옷 · 근속 · 담당 · 소지품, 자세별 프레임)
-  sprites/{owls,dogs,cats}@3x.png·json   같은 시트 3×
+  sprites/employees.png·json      직원 부품 시트 2× (몸통 · 옷 · 근속 · 담당 · 소지품, 자세별 프레임)
+  sprites/employees@3x.png·json    같은 시트 3×
   sprites/office.png office.json  벽 · 바닥 타일 · 가구 · 소품 · 효과 시트 (상태별 프레임)
   sprites/ui.png    ui.json       로고 · 로딩 건물 부품 · 규모 선택 미리보기
   sprites/floorplan.json          평면도: 방, 배치, 좌석, 서 있을 자리, 통로, 테마
@@ -10,7 +10,7 @@
   assets/*.png                    캔버스 시안용 참조 렌더. 위 시트와 평면도만으로 그린다.
 
 참조 렌더(render_scene)는 앱의 PixiJS 렌더러가 따라야 할 그리기 순서 그대로다.
-사용: python design/tools/owlfice_art.py
+사용: uv run --with pillow design/tools/owlfice_art.py
 """
 import json
 import math

@@ -11,6 +11,7 @@ use crate::office::{BubbleSay, PendingCall, Pose, Room};
 use crate::parse::{
     Compound, Event, EventKind, RawRef, TestResult, TodoStatus, ToolKind, ToolOutcome, ToolSummary,
 };
+use crate::settings::{Animal, ManualPath, NightMode};
 use crate::startup::{StartupDetail, StartupProgressDto, StartupSummary, StepState};
 use crate::tail::scheduler::{codex_id, make_parser, sub_meta};
 
@@ -297,6 +298,61 @@ fn asking_count_excludes_retired_and_off_and_updates_at_escalation_boundary() {
     t.phase = TeamPhase::Off;
     let off = team_summary(&w, &k, &t, now);
     assert_eq!((off.asking_count, off.asking), (0, false));
+}
+
+#[test]
+fn employee_state_keeps_individual_waiting_and_finished_separate_from_team_dot() {
+    let now = t0() + Duration::minutes(1);
+    let w = world_with_hosts(Scale::Large, tempfile::tempdir().unwrap().path());
+    let k = key("windows", Vendor::Claude, "s");
+    let mut t = team("s");
+    t.employees[0].quiet_since = Some(now - Duration::seconds(5));
+    t.employees[0].activity.pose = Pose::Think;
+    t.employees[1].pending.push(call(now));
+    assert_eq!(team_summary(&w, &k, &t, now).dot, Dot::Working);
+    assert_eq!(
+        employee_dto(&t, &t.employees[0], now).state,
+        EmployeeState::Waiting
+    );
+    assert_eq!(
+        employee_dto(&t, &t.employees[1], now).state,
+        EmployeeState::Working
+    );
+
+    t.employees[0].activity.pose = Pose::Duck;
+    assert_eq!(
+        employee_dto(&t, &t.employees[0], now).state,
+        EmployeeState::Waiting
+    );
+    t.employees[0].quiet_since = None;
+    t.employees[0].asking = Some("approval".into());
+    assert_eq!(
+        employee_dto(&t, &t.employees[0], now).state,
+        EmployeeState::Waiting
+    );
+
+    t.employees[1].pending.clear();
+    t.employees[1].interrupted_at = Some(now);
+    assert_eq!(
+        employee_dto(&t, &t.employees[1], now).state,
+        EmployeeState::Interrupted
+    );
+
+    t.employees[1].retired_at = Some(now);
+    assert_eq!(
+        employee_dto(&t, &t.employees[1], now).state,
+        EmployeeState::Finished
+    );
+    t.employees[1].departed_at = Some(now);
+    assert_eq!(
+        employee_dto(&t, &t.employees[1], now).state,
+        EmployeeState::Off
+    );
+    t.phase = TeamPhase::Off;
+    assert_eq!(
+        employee_dto(&t, &t.employees[0], now).state,
+        EmployeeState::Off
+    );
 }
 
 #[test]
@@ -1028,6 +1084,41 @@ fn settings_save_failure_keeps_all_changes_in_memory() {
     assert!(!std::fs::read_to_string(log).unwrap().contains("SECRET"));
 }
 
+/// 설정 파일 저장 성공과 원문 제거 성공은 별개다. 실패 뒤 재조회는 수집 중단 상태를 돌려준다.
+#[test]
+fn raw_purge_failure_is_returned_even_when_settings_save_succeeds() {
+    let e = env(Scale::Large);
+    let book = SettingsBook::load(e._dir.path());
+    let patch = |raw| SettingsDto {
+        raw_diagnostics: Some(raw),
+        ..SettingsDto::default()
+    };
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, patch(true)).unwrap();
+    let mut kind = tool("diagnostic", ToolKind::Shell, "custom SECRET");
+    if let EventKind::ToolCall { summary, .. } = &mut kind {
+        summary.command_key = Some("custom".into());
+        summary.command_norm = Some("custom SECRET".into());
+    }
+    lock(&e.diag).observe_event(&ev("a", 0, kind), t0());
+    lock(&e.diag).flush().unwrap();
+    let log = e._dir.path().join("unhandled.jsonl");
+    let blocker = log.with_extension("jsonl.tmp");
+    std::fs::create_dir(&blocker).unwrap();
+
+    let err = apply_settings(&e.ipc, &book, &e.diag, &e.runtime, patch(false)).unwrap_err();
+    assert!(err.contains("원문 수집은 중단"), "{err}");
+    assert!(std::fs::read_to_string(&log).unwrap().contains("SECRET"));
+    assert_eq!(book.snapshot().raw_diagnostics, Some(false));
+    assert_eq!(
+        SettingsBook::load(e._dir.path()).snapshot().raw_diagnostics,
+        Some(false)
+    );
+
+    std::fs::remove_dir(blocker).unwrap();
+    apply_settings(&e.ipc, &book, &e.diag, &e.runtime, patch(false)).unwrap();
+    assert!(!std::fs::read_to_string(log).unwrap().contains("SECRET"));
+}
+
 /// 중소기업 사무실의 연출에는 어느 팀 것인지 실린다
 #[test]
 fn cues_carry_team_id_in_shared_office() {
@@ -1301,7 +1392,7 @@ fn employee_carries_jobs_meeting_and_review() {
     assert_eq!(live.review, review(0, false));
 
     let rebuilt = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
-    let again = employee_dto(&rebuilt.employees[0], rebuilt.last_activity);
+    let again = employee_dto(&rebuilt, &rebuilt.employees[0], rebuilt.last_activity);
     assert_eq!(
         (again.jobs, again.meeting, again.review),
         (live.jobs, live.meeting, live.review)
@@ -1320,16 +1411,16 @@ fn employee_pending_count_survives_waiting_and_rebuild() {
     let mut team = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
     team.employees[0].asking = Some("계속할까요?".into());
     team.employees[0].pending[0].summary.escalated = true;
-    let dto = employee_dto(&team.employees[0], team.last_activity);
+    let dto = employee_dto(&team, &team.employees[0], team.last_activity);
     assert_eq!((dto.pending_count, dto.jobs), (2, 1));
     events.push(ev("a", 5, done("one", ToolOutcome::Ok, None)));
     let restored = rebuild("a", Product::ClaudeCli, &[], vec![events.clone()], utc());
-    let dto = employee_dto(&restored.employees[0], restored.last_activity);
+    let dto = employee_dto(&restored, &restored.employees[0], restored.last_activity);
     assert_eq!((dto.pending_count, dto.jobs), (1, 1));
     events.push(ev("a", 6, done("two", ToolOutcome::Ok, None)));
     let restored = rebuild("a", Product::ClaudeCli, &[], vec![events], utc());
     assert_eq!(
-        employee_dto(&restored.employees[0], restored.last_activity).pending_count,
+        employee_dto(&restored, &restored.employees[0], restored.last_activity).pending_count,
         0
     );
 }
@@ -1533,6 +1624,7 @@ fn bindings() -> String {
         OfficeSummaryDto,
         TeamSummaryDto,
         Dot,
+        EmployeeState,
         Border,
         OfficeDto,
         RoomRecentDto,
@@ -1715,7 +1807,7 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
         let now = event.ts.unwrap();
         team.tick(now, utc(), &mut Vec::new());
         team.apply(event, &mut Vec::new());
-        let current = employee_dto(&team.employees[0], now);
+        let current = employee_dto(&team, &team.employees[0], now);
         let expected = match i {
             0..=1 | 4..=7 => Border::Running,
             2..=3 => Border::Failed,
@@ -1729,7 +1821,7 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
         );
         if i >= 1 {
             assert_eq!(
-                employee_dto(&team.employees[1], now).build_test_border,
+                employee_dto(&team, &team.employees[1], now).build_test_border,
                 if i < 3 {
                     Border::Running
                 } else {
@@ -1746,8 +1838,8 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
         );
         for (live, restored) in team.employees.iter().zip(&rebuilt.employees) {
             assert_eq!(
-                employee_dto(live, now).build_test_border,
-                employee_dto(restored, now).build_test_border
+                employee_dto(&team, live, now).build_test_border,
+                employee_dto(&rebuilt, restored, now).build_test_border
             );
         }
     }
@@ -1756,13 +1848,12 @@ fn employee_check_border_uses_own_calls_and_rebuilds() {
 #[test]
 fn rejection_dto_uses_hold_time_even_after_a_compaction_sentence() {
     let mut team = Team::new("a", Product::ClaudeCli, t0());
-    let e = &mut team.employees[0];
-    e.rejected_at = Some(t0());
-    e.activity.sentence = "분갈이 중".into();
-    assert!(employee_dto(e, t0() + Duration::seconds(1)).rejected);
-    assert!(!employee_dto(e, t0() + Duration::seconds(4)).rejected);
-    e.activity.sentence = "반려: 옛 호출".into();
-    assert!(!employee_dto(e, t0() + Duration::seconds(5)).rejected);
+    team.employees[0].rejected_at = Some(t0());
+    team.employees[0].activity.sentence = "분갈이 중".into();
+    assert!(employee_dto(&team, &team.employees[0], t0() + Duration::seconds(1)).rejected);
+    assert!(!employee_dto(&team, &team.employees[0], t0() + Duration::seconds(4)).rejected);
+    team.employees[0].activity.sentence = "반려: 옛 호출".into();
+    assert!(!employee_dto(&team, &team.employees[0], t0() + Duration::seconds(5)).rejected);
 }
 
 #[test]
@@ -1793,14 +1884,13 @@ fn blanket_boundary_publishes_once_and_off_removes_it() {
 #[test]
 fn item_candidates_use_employee_state_and_medal_expiry() {
     let mut t = team("items");
-    let e = &mut t.employees[0];
-    e.medal_until = Some(t0() + Duration::seconds(10));
-    e.activity.room = Room::Incident;
-    e.blanket = true;
-    e.background.push(call(t0()));
-    e.planning = true;
+    t.employees[0].medal_until = Some(t0() + Duration::seconds(10));
+    t.employees[0].activity.room = Room::Incident;
+    t.employees[0].blanket = true;
+    t.employees[0].background.push(call(t0()));
+    t.employees[0].planning = true;
     assert_eq!(
-        employee_dto(e, t0()).items,
+        employee_dto(&t, &t.employees[0], t0()).items,
         [
             Item::Medal,
             Item::Helmet,
@@ -1810,15 +1900,15 @@ fn item_candidates_use_employee_state_and_medal_expiry() {
         ]
     );
     assert!(
-        !employee_dto(e, t0() + Duration::seconds(10))
+        !employee_dto(&t, &t.employees[0], t0() + Duration::seconds(10))
             .items
             .contains(&Item::Medal)
     );
-    e.activity.room = Room::Door;
-    e.blanket = false;
-    e.background.clear();
+    t.employees[0].activity.room = Room::Door;
+    t.employees[0].blanket = false;
+    t.employees[0].background.clear();
     assert_eq!(
-        employee_dto(e, t0() + Duration::seconds(10)).items,
+        employee_dto(&t, &t.employees[0], t0() + Duration::seconds(10)).items,
         [Item::Scroll]
     );
 }

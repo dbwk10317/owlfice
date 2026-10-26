@@ -72,7 +72,7 @@ def check(version, manifest_path, installer):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
-    parser.add_argument("--manifest", type=Path, default=ROOT / "latest.json")
+    parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--installer", type=Path)
     args = parser.parse_args()
     try:

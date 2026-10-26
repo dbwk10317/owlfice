@@ -70,7 +70,10 @@ test.each(["auto", "on", "off"] as const)(
 test("직원 동물 세그먼트를 누르면 animal 만 부분 저장한다", async () => {
   const s = setup();
   await settle();
-  expect(button("올빼미").getAttribute("aria-pressed")).toBe("true");
+  expect(button("섞기").getAttribute("aria-pressed")).toBe("true");
+  button("올빼미").click();
+  await settle();
+  expect(s.invoke).toHaveBeenCalledWith("set_settings", { dto: { animal: "owls" } });
   button("강아지").click();
   await settle();
   expect(s.invoke).toHaveBeenCalledWith("set_settings", { dto: { animal: "dogs" } });

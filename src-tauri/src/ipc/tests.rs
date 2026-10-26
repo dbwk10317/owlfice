@@ -1521,7 +1521,9 @@ fn bindings() -> String {
                 out.push_str(&d);
             }
             out.push_str("export ");
-            out.push_str(&<$t as TS>::decl(&cfg));
+            // ts-rs 가 줄 끝에 남기는 공백을 뗀다 (git diff --check 가 잡는다)
+            let decl = <$t as TS>::decl(&cfg);
+            out.push_str(&decl.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"));
             out.push('\n');
         )*};
     }

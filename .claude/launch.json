@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "v020-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d D:\\workspace\\owlfice-wt\\v0.2.0 && npm run dev"],
+      "port": 1420
+    },
+    {
+      "name": "v021-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d D:\\workspace\\owlfice-wt\\v0.2.1 && npm run dev"],
+      "port": 1420
+    }
+  ]
+}

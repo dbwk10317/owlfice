@@ -11,21 +11,11 @@
 
 ## 티켓
 
-### T104 생성기 밀도·동물 일반화 (과장 · 상) — 디자인 쪽
-`design/tools/owlfice_art.py`. 시트 6장, 메타(`density`·`animal`·`bossSpecies`·`faces`·`eyeBoxes`), 미리보기, 참조 렌더(1× 축소), 검사 확장. 완료: 생성기 실행이 검사를 통과하고 여섯 시트 키 집합이 같다.
+T104(생성기)·T105(렌더러 밀도·시트 선택)·T106(카드 아바타 40×44)·T107(설정 "직원 동물")은 이 브랜치에 들어갔다. `npm run check`·`npm test`·`cargo test` 녹색. 개발 페이지(`dev/actors.html`)에서 배율 2·3 전환 때 `owls.json`·`owls@3x.json` 이 바뀌어 읽히고 직원이 월드 16×24 를 차지하는 것, `dev/avatar.html` 의 40×44 아바타를 확인했다.
 
-### T105 렌더러 밀도·시트 선택 (과장 · 중) — T104 뒤
-`src/office/sprites.ts`, `src/office/actors.ts`, `src/office/renderer.ts`. 시트 경로 = 설정 동물 + 캔버스 배율(3이면 `@3x`). 직원 스프라이트 `scale = 1/density`, `anchors.head/hand` 를 `density` 로 나눠 월드 좌표로 (headAt · held · stamp · sweat 가 한 헬퍼). 사장님 종 = `meta.bossSpecies`. `hitArea`·좌석·말풍선 기준점은 월드 단위 그대로. 배율이 바뀌면 시트를 다시 고르고 로드 중엔 이전 시트 유지. 완료: `dev/ref` 픽셀 비교 녹색, 배율 1·2·3 에서 직원이 같은 자리·같은 크기.
-
-### T106 카드 아바타 (대리 · 하) — T105 뒤
-`src/avatar.ts`. `meta.frame` 검사, 2× 시트 `idle_f_0` 위 4줄을 잘라 40×44 원본, 직원 상세 2배. 동물이 바뀌면 캐시를 비운다. 완료: 카드·직원 상세·세션 상세 아바타가 HANDOFF 6.4 와 같다.
-
-### T107 설정 "직원 동물" (대리 · 중) — T105 와 병렬
-`src-tauri/src/settings.rs` 필드 `animal: "owls"|"dogs"|"cats"` (기본 `owls`, 알 수 없는 값은 기본값), `src/popup-settings.ts` 회사 그룹 세그먼트, `design/handoff/phrases.ko.json` 문구, `docs/CONTRACTS.md` 설정 문단에 한 줄. 완료: 바꾸면 저장되고 시트 재로드·아바타 갱신, 재시작 후 유지.
-
-### T108 검수 (메인 + 사용자) — 위 전부 뒤
-실제 창에서 배율 1·2·3 각각 표정·자세 가독, 야근 모드 조명 곱하기 아래의 얼굴 대비, HANDOFF 12절 항목 재확인. 끝나면 이 문서를 지운다.
+### T108 검수 (메인 + 사용자) — 남은 것
+실제 Tauri 창(`npm run tauri dev`, fixture 재생)에서: 배율 1·2·3 각각 표정·자세 가독, 설정에서 직원 동물을 강아지·고양이로 바꿀 때 캔버스·카드·직원 상세·세션 상세가 함께 바뀌고 재시작 후 유지되는지, 야근 모드 조명 곱하기 아래의 얼굴 대비, HANDOFF 12절 항목 재확인. 끝나면 이 문서를 지운다.
 
 ## 순서
 
-T104 → T105 → (T106 ‖ T107) → T108 → 이 문서 삭제.
+T108 → 이 문서 삭제.

@@ -19,7 +19,7 @@
 | 4 | `design/handoff/icons/*.svg` | 선 아이콘 49개 (24 격자, 선 1.75, `currentColor`) | `import` (`?raw` 로 SVG 문자열) |
 | 4 | `design/fonts/*.woff2` | IBM Plex Sans KR 4굵기, IBM Plex Mono 3굵기, Galmuri11. 라이선스 OFL 1.1 (`LICENSE-*.txt` 함께 배포) | tokens.css 가 가리킨다 |
 | 5 | `design/assets/office-*.png` | 참조 렌더. 위 시트와 평면도만으로 그린 정답 그림 | 테스트 고정 자료 |
-| 6 | 캔버스 시안 | 25장. 메인 v2 2장, 컴포넌트 v2 3장, 확장안 2장, 토큰 1장, v2 토큰을 적용한 첫 실행·팝업·반응형 11장, 직원 스프라이트 v3 6장 (`Employee*.dc.html`, 그림은 캔버스 [Owlfice 직원 스프라이트 v3](https://claude.ai/artifact/LKTWr2Pc9sTH8PBdb5dt8N) 에 있다. 앱 구현은 PLAN_0.2.1.md) | 시각 참조 |
+| 6 | 캔버스 시안 | 25장. 메인 v2 2장, 컴포넌트 v2 3장, 확장안 2장, 토큰 1장, v2 토큰을 적용한 첫 실행·팝업·반응형 11장, 직원 스프라이트 v3 6장 (`Employee*.dc.html`, 그림은 캔버스 [Owlfice 직원 스프라이트 v3](https://claude.ai/artifact/LKTWr2Pc9sTH8PBdb5dt8N) 에 있다. 0.2.1 에 구현됨) | 시각 참조 |
 
 그림은 손으로 고치지 않는다. `design/tools/owlfice_art.py` 를 고치고 다시 만든다.
 
@@ -222,7 +222,7 @@ wide 구간에서도 창 너비가 1300 미만이면 보조 글자·슬래시·�
 | 팝업 | 너비 | 구성 |
 |---|---|---|
 | 세션 상세 | 780 | 머리 (색 사각형, 이름 20/600, 업무 칩, 제품·호스트 줄) → 정보 2열 표 (세션 ID + 복사, 브랜치, 작업 폴더 전체 폭, 모델, 시작·경과, 턴 수, 토큰, 직원 수, PR) → 최근 사건 20개 (시각 mono, 아바타 20×22, 직원, 요약, 추정 꼬리표) + "더 보기 · 최대 100개" → 바닥 띠 버튼 "원본 파일 폴더 열기", "작업 폴더 열기" |
-| 직원 상세 | 940 | 머리 (아바타 4배 80×88 `ow-avatar--xl` 반지름 16, 이름 22/600 + 직급 칩 + 근무 상태 칩 `is-live`, 칩 줄: 담당·모델(mono)·방(아이콘)·컨텍스트 막대, 입사·근속·상사·사무실 줄 12 흐린 글자, 오른쪽 `open-external`(원본 열기)·닫기) → 왼쪽: 받은 지시 상자 (회색 바탕, 1px 테, 안쪽 10/12), 타임라인 `ow-tl` (접힌 행 38: mono 시각·도구 칩 `ow-tool`·요약·결과색(`ow-tl__ok`/`__run`/`__bad`)·`chevron`, 펼치면 `ow-tl__raw` 회색 바탕 mono 11 로 입력과 결과 원문, 길면 앞뒤 2KB + "가운데 n KB 생략" 점선 구분 + "원본 열기 파일:줄") + "더 보기 · 50개씩" / 오른쪽 280 (`--ow-panel` 바탕): 실적 요약 `ow-stat` 묶음 3개 (읽은 파일, 수정한 파일 n회, 실행한 명령 n회; 머리 13/600 + 오른쪽 mono 합계, 항목 mono 11) |
+| 직원 상세 | 940 | 머리 (아바타 2배 80×88 `ow-avatar--xl` 반지름 16, 이름 22/600 + 직급 칩 + 근무 상태 칩 `is-live`, 칩 줄: 담당·모델(mono)·방(아이콘)·컨텍스트 막대, 입사·근속·상사·사무실 줄 12 흐린 글자, 오른쪽 `open-external`(원본 열기)·닫기) → 왼쪽: 받은 지시 상자 (회색 바탕, 1px 테, 안쪽 10/12), 타임라인 `ow-tl` (접힌 행 38: mono 시각·도구 칩 `ow-tool`·요약·결과색(`ow-tl__ok`/`__run`/`__bad`)·`chevron`, 펼치면 `ow-tl__raw` 회색 바탕 mono 11 로 입력과 결과 원문, 길면 앞뒤 2KB + "가운데 n KB 생략" 점선 구분 + "원본 열기 파일:줄") + "더 보기 · 50개씩" / 오른쪽 280 (`--ow-panel` 바탕): 실적 요약 `ow-stat` 묶음 3개 (읽은 파일, 수정한 파일 n회, 실행한 명령 n회; 머리 13/600 + 오른쪽 mono 합계, 항목 mono 11) |
 | 설정 | 580 | 회사 (규모 세그먼트, 사장님 이름, 직원 동물 세그먼트 올빼미·강아지·고양이 — 바꾸면 시트를 다시 읽고 아바타 캐시를 비운다) · 화면과 소리 (소리 스위치) · 세션 폴더 (자동·직접 지정 경로 목록, 빼기, 폴더 직접 지정, 컨텍스트 창 기본값 200k/1M) · 업데이트 (현재 버전, 새 버전 확인, 명시한 새 버전 설치와 진행 상태) · 진단 (원문 진단 스위치, 진단 정보 복사, 선택 가능한 실제 앱 로그 경로, 로그 폴더 열기). 운영 오류와 미대응 동작 기록의 위치를 함께 안내한다. 바꾸면 바로 저장. "선명 모드" 는 없다 |
 
 타임라인 결과색: 진행 중 `--ow-ask`, 성공 `--ow-ok-ink`, 실패 `--ow-bad-ink`, 확인 불가 흐린 글자 + 추정 꼬리표.
@@ -365,7 +365,7 @@ wide 구간에서도 창 너비가 1300 미만이면 보조 글자·슬래시·�
 
 ```ts
 const dpr = window.devicePixelRatio;
-const scale = Math.max(1, Math.floor(Math.min(availW * dpr / 520, availH * dpr / 320)));
+const scale = Math.min(3, Math.max(1, Math.floor(Math.min(availW * dpr / 520, availH * dpr / 320))));   // 최대 3 (2.2절, 배율 메뉴)
 // 백킹 크기 = (520·scale, 320·scale) 장치 픽셀. CSS 크기 = 백킹 / dpr (소수여도 된다)
 app.renderer.resize(520 * scale, 320 * scale);            // resolution: 1, antialias: false, roundPixels: true
 app.stage.scale.set(scale);

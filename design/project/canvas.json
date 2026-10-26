@@ -52,7 +52,7 @@
     "t-popup": {"x": 0, "y": 6400, "text": "팝업 (v2 토큰 적용)", "kind": "title1", "maxW": 2760},
     "t-resp": {"x": 0, "y": 7760, "text": "반응형 (v2 토큰 적용)", "kind": "title1", "maxW": 2400},
     "t-sprites": {"x": 0, "y": 8840, "text": "스프라이트 시트", "kind": "title1", "maxW": 1760},
-    "t-emp3": {"x": 0, "y": 14100, "text": "직원 스프라이트 v3 · 해상도 · 표정 · 강아지·고양이 (PLAN_0.2.1.md 티켓)", "kind": "title1", "maxW": 5440}
+    "t-emp3": {"x": 0, "y": 14100, "text": "직원 스프라이트 v3 · 해상도 · 표정 · 강아지·고양이 (0.2.1)", "kind": "title1", "maxW": 5440}
   },
   "designSystems": []
 }
